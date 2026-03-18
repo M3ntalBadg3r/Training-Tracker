@@ -25,6 +25,15 @@ else
     echo "Node.js already installed: $(node --version)"
 fi
 
+# Ensure node/npm are on PATH (NodeSource installs to /usr/bin, but just in case)
+export PATH="/usr/bin:/usr/local/bin:$PATH"
+hash -r
+if ! command -v npm &> /dev/null; then
+    echo "ERROR: npm not found. Check your Node.js installation."
+    exit 1
+fi
+echo "Using Node $(node --version), npm $(npm --version)"
+
 # 3. Install PostgreSQL
 echo "[3/9] Installing PostgreSQL..."
 if ! command -v psql &> /dev/null; then
