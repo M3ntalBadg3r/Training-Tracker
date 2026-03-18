@@ -17,20 +17,16 @@ apt-get update -qq
 
 # 2. Install Node.js 22 LTS
 echo "[2/9] Installing Node.js 22 LTS..."
-if ! command -v node &> /dev/null; then
-    apt-get install -y ca-certificates curl gnupg
-    curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
-    apt-get install -y nodejs
-else
-    echo "Node.js already installed: $(node --version)"
-fi
+apt-get install -y ca-certificates curl gnupg
+curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+apt-get install -y nodejs
 
-# Ensure node/npm are on PATH (NodeSource installs to /usr/bin, but just in case)
+# Ensure node/npm are on PATH
 export PATH="/usr/bin:/usr/local/bin:$PATH"
 hash -r
 if ! command -v npm &> /dev/null; then
-    echo "ERROR: npm not found. Check your Node.js installation."
-    exit 1
+    echo "npm still not found, installing npm separately..."
+    apt-get install -y npm
 fi
 echo "Using Node $(node --version), npm $(npm --version)"
 
