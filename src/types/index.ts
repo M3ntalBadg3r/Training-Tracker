@@ -1,0 +1,74 @@
+export interface StudentRow {
+  email: string;
+  fullName: string;
+  theatre: string;
+  country: string;
+  region?: string | null;
+}
+
+export interface StudentRecord extends StudentRow {
+  trainings: StudentTrainingRow[];
+}
+
+export interface StudentTrainingRow {
+  id: number;
+  fullTitle: string;
+  link: string | null;
+  trainingType: string;
+  productType: string;
+  function: string;
+  completedDate: string;
+  expiryDate: string;
+  active: boolean;
+}
+
+export interface TrainingAvailableRow {
+  fullTitle: string;
+  trainingType: string;
+  productType: string;
+  function: string;
+  link: string | null;
+  studentsTaken: number;
+}
+
+export interface TrainingTakenRow {
+  fullName: string;
+  email: string;
+  theatre: string;
+  country: string;
+  active: boolean;
+  completedDate: string;
+  expiryDate: string;
+}
+
+export interface RegionDataRow {
+  country: string;
+  region: string;
+}
+
+export interface TrainingDataRow {
+  trainingTitle: string;
+  fullTitle: string;
+  trainingType: string;
+  productType: string;
+  function: string;
+  link: string | null;
+}
+
+export interface ImportSummary {
+  studentsCreated: number;
+  studentsUpdated: number;
+  trainingsCreated: number;
+  trainingsSkipped: number;
+  errors: string[];
+}
+
+export interface ColumnDef<T> {
+  key: string;
+  header: string;
+  sortable?: boolean;
+  filterable?: boolean;
+  filterOptions?: string[];
+  render?: (row: T) => React.ReactNode;
+  accessor?: (row: T) => string | number | boolean | null | undefined;
+}

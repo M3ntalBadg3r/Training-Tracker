@@ -1,0 +1,25 @@
+[Unit]
+Description=Training Tracker Next.js Application
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=tracker
+Group=tracker
+WorkingDirectory=/opt/training-tracker
+ExecStart=/usr/bin/npm start
+Restart=on-failure
+RestartSec=10
+Environment=NODE_ENV=production
+Environment=PORT=3000
+EnvironmentFile=/opt/training-tracker/.env
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/training-tracker
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

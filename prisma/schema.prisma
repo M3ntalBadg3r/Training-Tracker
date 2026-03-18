@@ -1,0 +1,75 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum TrainingType {
+  Certification
+  Accreditation
+  InstructorLedTraining @map("Instructor-Led Training")
+}
+
+enum ProductType {
+  Cortex
+  SASE
+  Cloud
+  Strata
+  Foundation
+}
+
+enum FunctionType {
+  Sales
+  PreSales     @map("Pre-Sales")
+  Deployments
+}
+
+model Student {
+  email      String          @id
+  fullName   String          @map("full_name")
+  theatre    String
+  country    String
+  regionData RegionData?     @relation(fields: [country], references: [country])
+  trainings  TrainingTaken[]
+
+  @@map("students")
+}
+
+model TrainingTaken {
+  id            Int          @id @default(autoincrement())
+  email         String
+  trainingTitle String       @map("training_title")
+  completedDate DateTime     @map("completed_date")
+  expiryDate    DateTime     @map("expiry_date")
+
+  student      Student      @relation(fields: [email], references: [email], onDelete: Cascade)
+  trainingData TrainingData @relation(fields: [trainingTitle], references: [trainingTitle], onDelete: Cascade)
+
+  @@index([email])
+  @@index([trainingTitle])
+  @@map("training_taken")
+}
+
+model TrainingData {
+  trainingTitle String       @id @map("training_title")
+  fullTitle     String       @map("full_title")
+  trainingType  TrainingType @map("training_type")
+  productType   ProductType  @map("product_type")
+  function      FunctionType
+  link          String?
+
+  trainingsTaken TrainingTaken[]
+
+  @@index([fullTitle])
+  @@map("training_data")
+}
+
+model RegionData {
+  country  String    @id
+  region   String
+  students Student[]
+
+  @@map("region_data")
+}
