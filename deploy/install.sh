@@ -59,16 +59,18 @@ su - postgres -c "psql -d ${DB_NAME} -c \"GRANT ALL ON SCHEMA public TO ${DB_USE
 
 # 5. Set up application directory
 echo "[5/9] Setting up application directory..."
-if [ ! -d "${APP_DIR}" ]; then
-    mkdir -p ${APP_DIR}
-fi
-
-# If running from the repo, copy files
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-if [ -f "${SCRIPT_DIR}/package.json" ]; then
-    echo "Copying application files..."
-    cp -r "${SCRIPT_DIR}/"* ${APP_DIR}/
-    cp "${SCRIPT_DIR}/".[!.]* ${APP_DIR}/ 2>/dev/null || true
+
+# Determine if we're already running from APP_DIR or need to copy
+if [ "$(realpath "${SCRIPT_DIR}")" = "$(realpath "${APP_DIR}" 2>/dev/null)" ]; then
+    echo "Already running from ${APP_DIR}, skipping copy."
+else
+    mkdir -p ${APP_DIR}
+    if [ -f "${SCRIPT_DIR}/package.json" ]; then
+        echo "Copying application files..."
+        cp -r "${SCRIPT_DIR}/"* ${APP_DIR}/
+        cp "${SCRIPT_DIR}/".[!.]* ${APP_DIR}/ 2>/dev/null || true
+    fi
 fi
 
 # 6. Configure environment
