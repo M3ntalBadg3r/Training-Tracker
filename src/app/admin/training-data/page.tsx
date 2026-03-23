@@ -7,11 +7,13 @@ import { TrainingDataRow } from "@/types";
 import {
   Plus,
   Trash2,
+  Save,
   Upload,
   FileSpreadsheet,
   CheckCircle,
   AlertCircle,
   AlertTriangle,
+  Search,
   X,
 } from "lucide-react";
 import Papa from "papaparse";
@@ -114,6 +116,23 @@ export default function TrainingDataPage() {
   });
   const [loading, setLoading] = useState(true);
 
+  // Search and filter state
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filterTrainingType, setFilterTrainingType] = useState("");
+  const [filterProductType, setFilterProductType] = useState("");
+  const [filterFunction, setFilterFunction] = useState("");
+
+  // Editing state
+  const [editingTitle, setEditingTitle] = useState<string | null>(null);
+  const [editValues, setEditValues] = useState({
+    trainingTitle: "",
+    fullTitle: "",
+    trainingType: "",
+    productType: "",
+    function: "",
+    link: "",
+  });
+
   // Import state
   const [showImport, setShowImport] = useState(false);
   const [importStep, setImportStep] = useState<ImportStep>("upload");
@@ -178,6 +197,21 @@ export default function TrainingDataPage() {
       setTrainingList((prev) =>
         prev.filter((t) => t.trainingTitle !== trainingTitle)
       );
+    }
+  };
+
+  const handleUpdateTraining = async (originalTitle: string) => {
+    const res = await fetch(
+      `/api/training-data/${encodeURIComponent(originalTitle)}`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editValues),
+      }
+    );
+    if (res.ok) {
+      setEditingTitle(null);
+      fetchRawTrainingData();
     }
   };
 
@@ -932,6 +966,50 @@ export default function TrainingDataPage() {
         )}
       </section>
 
+      {/* Search and Filter */}
+      <section className="mb-4 flex flex-col sm:flex-row gap-3">
+        <div className="relative flex-1">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Search training titles..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg"
+          />
+        </div>
+        <select
+          value={filterTrainingType}
+          onChange={(e) => setFilterTrainingType(e.target.value)}
+          className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+        >
+          <option value="">All Types</option>
+          {TRAINING_TYPES.map((t) => (
+            <option key={t} value={t}>{TRAINING_TYPE_LABELS[t]}</option>
+          ))}
+        </select>
+        <select
+          value={filterProductType}
+          onChange={(e) => setFilterProductType(e.target.value)}
+          className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+        >
+          <option value="">All Products</option>
+          {PRODUCT_TYPES.map((t) => (
+            <option key={t} value={t}>{t}</option>
+          ))}
+        </select>
+        <select
+          value={filterFunction}
+          onChange={(e) => setFilterFunction(e.target.value)}
+          className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+        >
+          <option value="">All Functions</option>
+          {FUNCTION_TYPES.map((t) => (
+            <option key={t} value={t}>{FUNCTION_TYPE_LABELS[t]}</option>
+          ))}
+        </select>
+      </section>
+
       {/* Training Data Table */}
       <section className="mb-8">
         <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
@@ -949,19 +1027,98 @@ export default function TrainingDataPage() {
                 </tr>
               </thead>
               <tbody>
-                {trainingList.map((t) => (
+                {trainingList
+                  .filter((t) => {
+                    const q = searchQuery.toLowerCase();
+                    const matchesSearch = !searchQuery ||
+                      t.trainingTitle.toLowerCase().includes(q) ||
+                      t.fullTitle.toLowerCase().includes(q);
+                    const matchesType = !filterTrainingType || t.trainingType === filterTrainingType;
+                    const matchesProduct = !filterProductType || t.productType === filterProductType;
+                    const matchesFunction = !filterFunction || t.function === filterFunction;
+                    return matchesSearch && matchesType && matchesProduct && matchesFunction;
+                  })
+                  .map((t) => (
                   <tr key={t.trainingTitle} className="border-b hover:bg-gray-50">
-                    <td className="px-4 py-3">{t.trainingTitle}</td>
-                    <td className="px-4 py-3">{t.fullTitle}</td>
                     <td className="px-4 py-3">
-                      {TRAINING_TYPE_LABELS[t.trainingType] || t.trainingType}
+                      {editingTitle === t.trainingTitle ? (
+                        <input
+                          type="text"
+                          value={editValues.trainingTitle}
+                          onChange={(e) => setEditValues((prev) => ({ ...prev, trainingTitle: e.target.value }))}
+                          className="border border-gray-300 rounded px-2 py-1 text-sm w-full"
+                        />
+                      ) : (
+                        t.trainingTitle
+                      )}
                     </td>
-                    <td className="px-4 py-3">{t.productType}</td>
                     <td className="px-4 py-3">
-                      {FUNCTION_TYPE_LABELS[t.function] || t.function}
+                      {editingTitle === t.trainingTitle ? (
+                        <input
+                          type="text"
+                          value={editValues.fullTitle}
+                          onChange={(e) => setEditValues((prev) => ({ ...prev, fullTitle: e.target.value }))}
+                          className="border border-gray-300 rounded px-2 py-1 text-sm w-full"
+                        />
+                      ) : (
+                        t.fullTitle
+                      )}
                     </td>
                     <td className="px-4 py-3">
-                      {t.link ? (
+                      {editingTitle === t.trainingTitle ? (
+                        <select
+                          value={editValues.trainingType}
+                          onChange={(e) => setEditValues((prev) => ({ ...prev, trainingType: e.target.value }))}
+                          className="border border-gray-300 rounded px-2 py-1 text-sm"
+                        >
+                          {TRAINING_TYPES.map((tt) => (
+                            <option key={tt} value={tt}>{TRAINING_TYPE_LABELS[tt]}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        TRAINING_TYPE_LABELS[t.trainingType] || t.trainingType
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      {editingTitle === t.trainingTitle ? (
+                        <select
+                          value={editValues.productType}
+                          onChange={(e) => setEditValues((prev) => ({ ...prev, productType: e.target.value }))}
+                          className="border border-gray-300 rounded px-2 py-1 text-sm"
+                        >
+                          {PRODUCT_TYPES.map((pt) => (
+                            <option key={pt} value={pt}>{pt}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        t.productType
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      {editingTitle === t.trainingTitle ? (
+                        <select
+                          value={editValues.function}
+                          onChange={(e) => setEditValues((prev) => ({ ...prev, function: e.target.value }))}
+                          className="border border-gray-300 rounded px-2 py-1 text-sm"
+                        >
+                          {FUNCTION_TYPES.map((ft) => (
+                            <option key={ft} value={ft}>{FUNCTION_TYPE_LABELS[ft]}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        FUNCTION_TYPE_LABELS[t.function] || t.function
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      {editingTitle === t.trainingTitle ? (
+                        <input
+                          type="url"
+                          value={editValues.link}
+                          onChange={(e) => setEditValues((prev) => ({ ...prev, link: e.target.value }))}
+                          className="border border-gray-300 rounded px-2 py-1 text-sm w-full"
+                          placeholder="https://..."
+                        />
+                      ) : t.link ? (
                         <a
                           href={t.link}
                           target="_blank"
@@ -975,12 +1132,49 @@ export default function TrainingDataPage() {
                       )}
                     </td>
                     <td className="px-4 py-3">
-                      <button
-                        onClick={() => handleDeleteTraining(t.trainingTitle)}
-                        className="px-2 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200"
-                      >
-                        <Trash2 size={14} />
-                      </button>
+                      <div className="flex gap-2">
+                        {editingTitle === t.trainingTitle ? (
+                          <>
+                            <button
+                              onClick={() => handleUpdateTraining(t.trainingTitle)}
+                              className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200"
+                            >
+                              <Save size={14} />
+                            </button>
+                            <button
+                              onClick={() => setEditingTitle(null)}
+                              className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+                            >
+                              Cancel
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              onClick={() => {
+                                setEditingTitle(t.trainingTitle);
+                                setEditValues({
+                                  trainingTitle: t.trainingTitle,
+                                  fullTitle: t.fullTitle,
+                                  trainingType: t.trainingType,
+                                  productType: t.productType,
+                                  function: t.function,
+                                  link: t.link || "",
+                                });
+                              }}
+                              className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => handleDeleteTraining(t.trainingTitle)}
+                              className="px-2 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}

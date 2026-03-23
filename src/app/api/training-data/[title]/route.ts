@@ -28,6 +28,45 @@ export async function PUT(
   const decodedTitle = decodeURIComponent(title);
   const body = await request.json();
 
+  const newTitle = body.trainingTitle?.trim();
+
+  // If trainingTitle changed, need to delete + recreate since it's the PK
+  if (newTitle && newTitle !== decodedTitle) {
+    const existing = await prisma.trainingData.findUnique({
+      where: { trainingTitle: newTitle },
+    });
+    if (existing) {
+      return NextResponse.json(
+        { error: `Training title "${newTitle}" already exists` },
+        { status: 409 }
+      );
+    }
+
+    const training = await prisma.$transaction(async (tx) => {
+      // Update all references in training_taken
+      await tx.trainingTaken.updateMany({
+        where: { trainingTitle: decodedTitle },
+        data: { trainingTitle: newTitle },
+      });
+      const old = await tx.trainingData.findUnique({
+        where: { trainingTitle: decodedTitle },
+      });
+      await tx.trainingData.delete({ where: { trainingTitle: decodedTitle } });
+      return tx.trainingData.create({
+        data: {
+          trainingTitle: newTitle,
+          fullTitle: body.fullTitle ?? old?.fullTitle ?? "",
+          trainingType: (body.trainingType as TrainingType) ?? old?.trainingType ?? "Certification",
+          productType: (body.productType as ProductType) ?? old?.productType ?? "Cortex",
+          function: (body.function as FunctionType) ?? old?.function ?? "Sales",
+          link: body.link !== undefined ? body.link || null : old?.link ?? null,
+        },
+      });
+    });
+
+    return NextResponse.json(training);
+  }
+
   const training = await prisma.trainingData.update({
     where: { trainingTitle: decodedTitle },
     data: {
