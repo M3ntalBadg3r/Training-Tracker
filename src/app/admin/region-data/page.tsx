@@ -8,6 +8,7 @@ import {
   Trash2,
   Save,
   Upload,
+  Download,
   FileSpreadsheet,
   CheckCircle,
   AlertCircle,
@@ -16,6 +17,7 @@ import {
 } from "lucide-react";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
+import { exportToCsv, exportToExcel } from "@/lib/export";
 
 const TARGET_FIELDS = [
   { key: "country", label: "Country", required: true },
@@ -41,6 +43,7 @@ export default function RegionDataPage() {
   const [filterRegion, setFilterRegion] = useState("");
   const [loading, setLoading] = useState(true);
   const [lastImport, setLastImport] = useState<string | null>(null);
+  const [showExportMenu, setShowExportMenu] = useState(false);
 
   // Import state
   const [showImport, setShowImport] = useState(false);
@@ -280,15 +283,53 @@ export default function RegionDataPage() {
         }
       />
 
-      {/* Import Section */}
+      {/* Import / Export Section */}
       <section className="mb-6">
         {!showImport ? (
-          <button
-            onClick={() => setShowImport(true)}
-            className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-          >
-            <Upload size={16} /> Import Region Data
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setShowImport(true)}
+              className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              <Upload size={16} /> Import Region Data
+            </button>
+            <div className="relative">
+              <button
+                onClick={() => setShowExportMenu((prev) => !prev)}
+                className="flex items-center gap-2 px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300"
+              >
+                <Download size={16} /> Export
+              </button>
+              {showExportMenu && (
+                <div className="absolute left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[140px]">
+                  <button
+                    onClick={() => {
+                      exportToCsv(regions, [
+                        { key: "country", header: "Country" },
+                        { key: "region", header: "Region" },
+                      ], "region-data");
+                      setShowExportMenu(false);
+                    }}
+                    className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-t-lg"
+                  >
+                    Export as CSV
+                  </button>
+                  <button
+                    onClick={() => {
+                      exportToExcel(regions, [
+                        { key: "country", header: "Country" },
+                        { key: "region", header: "Region" },
+                      ], "region-data");
+                      setShowExportMenu(false);
+                    }}
+                    className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-b-lg"
+                  >
+                    Export as Excel
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
         ) : (
           <div className="bg-white rounded-lg border border-gray-200 p-6">
             <div className="flex items-center justify-between mb-4">
