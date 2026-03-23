@@ -57,14 +57,20 @@ export default function ImportPage() {
           const data = new Uint8Array(e.target?.result as ArrayBuffer);
           const workbook = XLSX.read(data, { type: "array" });
           const sheet = workbook.Sheets[workbook.SheetNames[0]];
-          const jsonData = XLSX.utils.sheet_to_json<Record<string, string>>(sheet, {
+          // Read header row separately to capture ALL columns, even those empty in the first data rows
+          const allRows = XLSX.utils.sheet_to_json<string[]>(sheet, {
+            header: 1,
             raw: false,
           });
-          if (jsonData.length === 0) {
+          if (allRows.length < 2) {
             setError("No data found in file");
             return;
           }
-          const hdrs = Object.keys(jsonData[0]);
+          const hdrs = (allRows[0] || []).map((h) => String(h).trim()).filter(Boolean);
+          const jsonData = XLSX.utils.sheet_to_json<Record<string, string>>(sheet, {
+            raw: false,
+            defval: "",
+          });
           setHeaders(hdrs);
           setRows(jsonData);
           autoMapColumns(hdrs);
