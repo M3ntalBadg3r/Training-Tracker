@@ -120,6 +120,7 @@ export default function TrainingDataPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [filterTrainingType, setFilterTrainingType] = useState("");
   const [filterProductType, setFilterProductType] = useState("");
+  const [filterFullTitle, setFilterFullTitle] = useState("");
   const [filterFunction, setFilterFunction] = useState("");
 
   // Editing state
@@ -979,6 +980,16 @@ export default function TrainingDataPage() {
           />
         </div>
         <select
+          value={filterFullTitle}
+          onChange={(e) => setFilterFullTitle(e.target.value)}
+          className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+        >
+          <option value="">All Full Titles</option>
+          {[...new Set(trainingList.map((t) => t.fullTitle))].sort().map((title) => (
+            <option key={title} value={title}>{title}</option>
+          ))}
+        </select>
+        <select
           value={filterTrainingType}
           onChange={(e) => setFilterTrainingType(e.target.value)}
           className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
@@ -1033,10 +1044,11 @@ export default function TrainingDataPage() {
                     const matchesSearch = !searchQuery ||
                       t.trainingTitle.toLowerCase().includes(q) ||
                       t.fullTitle.toLowerCase().includes(q);
+                    const matchesFullTitle = !filterFullTitle || t.fullTitle === filterFullTitle;
                     const matchesType = !filterTrainingType || t.trainingType === filterTrainingType;
                     const matchesProduct = !filterProductType || t.productType === filterProductType;
                     const matchesFunction = !filterFunction || t.function === filterFunction;
-                    return matchesSearch && matchesType && matchesProduct && matchesFunction;
+                    return matchesSearch && matchesFullTitle && matchesType && matchesProduct && matchesFunction;
                   })
                   .map((t) => (
                   <tr key={t.trainingTitle} className="border-b hover:bg-gray-50">
