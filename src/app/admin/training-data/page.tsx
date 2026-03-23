@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
-import { exportToCsv, exportToExcel } from "@/lib/export";
+import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 
 const TRAINING_TYPES = ["Certification", "Accreditation", "InstructorLedTraining"];
 const PRODUCT_TYPES = ["Cortex", "SASE", "Cloud", "Strata", "Foundation"];
@@ -572,9 +572,26 @@ export default function TrainingDataPage() {
                       ], "training-data");
                       setShowExportMenu(false);
                     }}
-                    className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-b-lg"
+                    className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100"
                   >
                     Export as Excel
+                  </button>
+                  <button
+                    onClick={() => {
+                      exportToPdf(trainingList, [
+                        { key: "trainingTitle", header: "Training Title" },
+                        { key: "fullTitle", header: "Full Title" },
+                        { key: "trainingType", header: "Training Type" },
+                        { key: "productType", header: "Product Type" },
+                        { key: "function", header: "Function" },
+                        { key: "link", header: "Link" },
+                        { key: "certification", header: "Certification" },
+                      ], "training-data");
+                      setShowExportMenu(false);
+                    }}
+                    className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-b-lg"
+                  >
+                    Export as PDF
                   </button>
                 </div>
               )}

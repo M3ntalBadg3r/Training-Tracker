@@ -341,9 +341,10 @@ Export functionality is available on the following pages:
 | **Admin > Training Data** | Training Title, Full Title, Type, Product, Function, Link, Certification |
 | **Reports** | Full report results with all columns |
 
-Each export supports two formats:
+Each export supports three formats:
 
 - **CSV** — Comma-separated values, compatible with any spreadsheet application.
 - **Excel** — `.xlsx` format for Microsoft Excel.
+- **PDF** — Formatted table document. Automatically switches to landscape orientation when there are more than 5 columns.
 
 Click the **Export** button and select the desired format. For reports, the export respects any active filters — only the currently displayed results are exported.

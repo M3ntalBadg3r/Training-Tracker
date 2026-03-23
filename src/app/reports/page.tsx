@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo } from "react";
 import PageHeader from "@/components/layout/PageHeader";
 import { Search, Download, ChevronDown, ChevronRight } from "lucide-react";
-import { exportToCsv, exportToExcel } from "@/lib/export";
+import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 
 interface TrainedNotCertifiedRow {
   fullName: string;
@@ -158,9 +158,18 @@ export default function ReportsPage() {
                             exportToExcel(filteredData, exportColumns, "trained-not-certified");
                             setShowExportMenu(false);
                           }}
-                          className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-b-lg"
+                          className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100"
                         >
                           Export as Excel
+                        </button>
+                        <button
+                          onClick={() => {
+                            exportToPdf(filteredData, exportColumns, "trained-not-certified");
+                            setShowExportMenu(false);
+                          }}
+                          className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-b-lg"
+                        >
+                          Export as PDF
                         </button>
                       </div>
                     )}

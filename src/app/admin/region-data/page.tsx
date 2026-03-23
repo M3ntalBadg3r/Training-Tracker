@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
-import { exportToCsv, exportToExcel } from "@/lib/export";
+import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 
 const TARGET_FIELDS = [
   { key: "country", label: "Country", required: true },
@@ -322,9 +322,21 @@ export default function RegionDataPage() {
                       ], "region-data");
                       setShowExportMenu(false);
                     }}
-                    className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-b-lg"
+                    className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100"
                   >
                     Export as Excel
+                  </button>
+                  <button
+                    onClick={() => {
+                      exportToPdf(regions, [
+                        { key: "country", header: "Country" },
+                        { key: "region", header: "Region" },
+                      ], "region-data");
+                      setShowExportMenu(false);
+                    }}
+                    className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-b-lg"
+                  >
+                    Export as PDF
                   </button>
                 </div>
               )}
