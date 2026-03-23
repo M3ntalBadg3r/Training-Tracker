@@ -80,6 +80,7 @@ export default function TrainingPage() {
     <div>
       <PageHeader
         title="Training"
+        helpSlug="training"
         rightContent={
           lastImport && (
             <span className="text-sm text-gray-500">

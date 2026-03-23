@@ -52,7 +52,7 @@ export default function TrainingTakenPage({
 
   return (
     <div>
-      <PageHeader title={fullTitle} showBack />
+      <PageHeader title={fullTitle} showBack helpSlug="training-detail" />
       <p className="text-gray-600 mb-4">
         {students.length} student(s) have taken this training
       </p>

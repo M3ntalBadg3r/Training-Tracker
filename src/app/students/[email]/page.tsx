@@ -169,7 +169,7 @@ export default function StudentRecordPage({
 
   return (
     <div>
-      <PageHeader title="Student Record" showBack />
+      <PageHeader title="Student Record" showBack helpSlug="student-detail" />
 
       {/* Contact Card */}
       <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6">

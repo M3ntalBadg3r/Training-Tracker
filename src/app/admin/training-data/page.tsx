@@ -508,6 +508,7 @@ export default function TrainingDataPage() {
       <PageHeader
         title="Training Data"
         showBack
+        helpSlug="training-data"
         rightContent={
           lastImport && (
             <span className="text-sm text-gray-500">

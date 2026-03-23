@@ -98,7 +98,7 @@ export default function ReportsPage() {
 
   return (
     <div>
-      <PageHeader title="Reports" />
+      <PageHeader title="Reports" helpSlug="reports" />
 
       {/* Report: Trained but not Certified */}
       <section className="mb-8">

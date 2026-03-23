@@ -160,7 +160,7 @@ export default function ImportPage() {
 
   return (
     <div>
-      <PageHeader title="Import" />
+      <PageHeader title="Import" helpSlug="import" />
 
       {error && (
         <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">

@@ -25,7 +25,7 @@ export default function AdminPage() {
 
   return (
     <div>
-      <PageHeader title="Admin" />
+      <PageHeader title="Admin" helpSlug="admin" />
 
       {/* Sub-page links */}
       <section className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

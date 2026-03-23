@@ -274,6 +274,7 @@ export default function RegionDataPage() {
       <PageHeader
         title="Region Data"
         showBack
+        helpSlug="region-data"
         rightContent={
           lastImport && (
             <span className="text-sm text-gray-500">

@@ -48,6 +48,7 @@ export default function StudentsPage() {
     <div>
       <PageHeader
         title="Students"
+        helpSlug="students"
         rightContent={
           lastImport && (
             <span className="text-sm text-gray-500">

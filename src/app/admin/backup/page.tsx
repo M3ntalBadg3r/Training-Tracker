@@ -89,7 +89,7 @@ export default function BackupPage() {
 
   return (
     <div>
-      <PageHeader title="Backup &amp; Restore" showBack />
+      <PageHeader title="Backup &amp; Restore" showBack helpSlug="backup" />
 
       {/* Status message */}
       {result && (
