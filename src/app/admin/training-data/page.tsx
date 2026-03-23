@@ -116,7 +116,7 @@ export default function TrainingDataPage() {
     productType: "Cortex",
     function: "Sales",
     link: "",
-    certification: "",
+    certification: [] as string[],
   });
   const [loading, setLoading] = useState(true);
   const [lastImport, setLastImport] = useState<string | null>(null);
@@ -138,7 +138,7 @@ export default function TrainingDataPage() {
     productType: "",
     function: "",
     link: "",
-    certification: "",
+    certification: [] as string[],
   });
 
   // Import state
@@ -210,7 +210,7 @@ export default function TrainingDataPage() {
         productType: "Cortex",
         function: "Sales",
         link: "",
-        certification: "",
+        certification: [],
       });
       fetchRawTrainingData();
     }
@@ -1170,7 +1170,7 @@ export default function TrainingDataPage() {
                             setEditValues((prev) => ({
                               ...prev,
                               trainingType: val,
-                              certification: val === "InstructorLedTraining" ? prev.certification : "",
+                              certification: val === "InstructorLedTraining" ? prev.certification : [],
                             }));
                           }}
                           className="border border-gray-300 rounded px-2 py-1 text-sm"
@@ -1238,18 +1238,31 @@ export default function TrainingDataPage() {
                     <td className="px-4 py-3">
                       {t.trainingType === "InstructorLedTraining" ? (
                         editingTitle === t.trainingTitle ? (
-                          <select
-                            value={editValues.certification}
-                            onChange={(e) => setEditValues((prev) => ({ ...prev, certification: e.target.value }))}
-                            className="border border-gray-300 rounded px-2 py-1 text-sm"
-                          >
-                            <option value="">-- None --</option>
+                          <div className="max-h-32 overflow-y-auto border border-gray-300 rounded px-2 py-1 text-sm space-y-1">
+                            {certificationOptions.length === 0 && (
+                              <span className="text-gray-400 text-xs">No certifications available</span>
+                            )}
                             {certificationOptions.map((c) => (
-                              <option key={c} value={c}>{c}</option>
+                              <label key={c} className="flex items-center gap-1.5 cursor-pointer hover:bg-gray-50 rounded px-1">
+                                <input
+                                  type="checkbox"
+                                  checked={editValues.certification.includes(c)}
+                                  onChange={(e) => {
+                                    setEditValues((prev) => ({
+                                      ...prev,
+                                      certification: e.target.checked
+                                        ? [...prev.certification, c]
+                                        : prev.certification.filter((x) => x !== c),
+                                    }));
+                                  }}
+                                  className="rounded border-gray-300"
+                                />
+                                <span className="text-xs">{c}</span>
+                              </label>
                             ))}
-                          </select>
+                          </div>
                         ) : (
-                          t.certification || "-"
+                          t.certification.length > 0 ? t.certification.join(", ") : "-"
                         )
                       ) : (
                         <span className="text-gray-300">-</span>
@@ -1284,7 +1297,7 @@ export default function TrainingDataPage() {
                                   productType: t.productType,
                                   function: t.function,
                                   link: t.link || "",
-                                  certification: t.certification || "",
+                                  certification: t.certification || [],
                                 });
                               }}
                               className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
@@ -1370,7 +1383,7 @@ export default function TrainingDataPage() {
                 setNewTraining((prev) => ({
                   ...prev,
                   trainingType: val,
-                  certification: val === "InstructorLedTraining" ? prev.certification : "",
+                  certification: val === "InstructorLedTraining" ? prev.certification : [],
                 }));
               }}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
@@ -1429,18 +1442,29 @@ export default function TrainingDataPage() {
           {newTraining.trainingType === "InstructorLedTraining" && (
             <div>
               <label className="block text-sm font-medium mb-1">Certification</label>
-              <select
-                value={newTraining.certification}
-                onChange={(e) =>
-                  setNewTraining((prev) => ({ ...prev, certification: e.target.value }))
-                }
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-              >
-                <option value="">-- None --</option>
+              <div className="max-h-40 overflow-y-auto border border-gray-300 rounded-lg px-3 py-2 text-sm space-y-1">
+                {certificationOptions.length === 0 && (
+                  <span className="text-gray-400 text-xs">No certifications available</span>
+                )}
                 {certificationOptions.map((c) => (
-                  <option key={c} value={c}>{c}</option>
+                  <label key={c} className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 rounded px-1">
+                    <input
+                      type="checkbox"
+                      checked={newTraining.certification.includes(c)}
+                      onChange={(e) => {
+                        setNewTraining((prev) => ({
+                          ...prev,
+                          certification: e.target.checked
+                            ? [...prev.certification, c]
+                            : prev.certification.filter((x) => x !== c),
+                        }));
+                      }}
+                      className="rounded border-gray-300"
+                    />
+                    <span>{c}</span>
+                  </label>
                 ))}
-              </select>
+              </div>
             </div>
           )}
         </div>

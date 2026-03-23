@@ -2,11 +2,11 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 
 export async function GET() {
-  // Find all ILT trainings that have a certification mapping
+  // Find all ILT trainings that have at least one certification mapping
   const iltWithCert = await prisma.trainingData.findMany({
     where: {
       trainingType: "InstructorLedTraining",
-      certification: { not: null },
+      certification: { isEmpty: false },
     },
   });
 
@@ -14,11 +14,12 @@ export async function GET() {
     return NextResponse.json([]);
   }
 
-  // Build a map: ILT trainingTitle -> certification trainingTitle
-  // Also collect all certification titles we need to look up
+  // Collect all certification titles we need to look up
   const certTitles = new Set<string>();
   for (const ilt of iltWithCert) {
-    if (ilt.certification) certTitles.add(ilt.certification);
+    for (const cert of ilt.certification) {
+      certTitles.add(cert);
+    }
   }
 
   // Get full title info for certifications
@@ -27,10 +28,8 @@ export async function GET() {
   });
   const certFullTitleMap = new Map(certData.map((c) => [c.trainingTitle, c.fullTitle]));
 
-  // Get full title info for ILTs
-  const iltFullTitleMap = new Map(iltWithCert.map((i) => [i.trainingTitle, i.fullTitle]));
-
-  // For each ILT, find students who completed it but NOT the associated certification
+  // For each ILT + certification pair, find students who completed
+  // the ILT but NOT that specific certification
   const results: {
     fullName: string;
     email: string;
@@ -42,7 +41,7 @@ export async function GET() {
   }[] = [];
 
   for (const ilt of iltWithCert) {
-    if (!ilt.certification) continue;
+    if (ilt.certification.length === 0) continue;
 
     // Students who completed this ILT
     const iltStudents = await prisma.trainingTaken.findMany({
@@ -55,40 +54,41 @@ export async function GET() {
 
     const iltEmails = iltStudents.map((s) => s.email);
 
-    // Students who completed the associated certification
-    const certStudents = await prisma.trainingTaken.findMany({
-      where: {
-        trainingTitle: ilt.certification,
-        email: { in: iltEmails },
-      },
-      select: { email: true },
-      distinct: ["email"],
-    });
-
-    const certifiedEmails = new Set(certStudents.map((s) => s.email));
-    const uncertifiedEmails = iltEmails.filter((e) => !certifiedEmails.has(e));
-
-    if (uncertifiedEmails.length === 0) continue;
-
-    // Get student details
-    const students = await prisma.student.findMany({
-      where: { email: { in: uncertifiedEmails } },
-      include: { regionData: true },
-    });
-
-    const iltFull = iltFullTitleMap.get(ilt.trainingTitle) || ilt.trainingTitle;
-    const certFull = certFullTitleMap.get(ilt.certification) || ilt.certification;
-
-    for (const student of students) {
-      results.push({
-        fullName: student.fullName,
-        email: student.email,
-        theatre: student.theatre,
-        region: student.regionData?.region || "",
-        country: student.country,
-        iltFullTitle: iltFull,
-        certificationFullTitle: certFull,
+    // Check each certification mapped to this ILT
+    for (const certTitle of ilt.certification) {
+      const certStudents = await prisma.trainingTaken.findMany({
+        where: {
+          trainingTitle: certTitle,
+          email: { in: iltEmails },
+        },
+        select: { email: true },
+        distinct: ["email"],
       });
+
+      const certifiedEmails = new Set(certStudents.map((s) => s.email));
+      const uncertifiedEmails = iltEmails.filter((e) => !certifiedEmails.has(e));
+
+      if (uncertifiedEmails.length === 0) continue;
+
+      const students = await prisma.student.findMany({
+        where: { email: { in: uncertifiedEmails } },
+        include: { regionData: true },
+      });
+
+      const iltFull = ilt.fullTitle;
+      const certFull = certFullTitleMap.get(certTitle) || certTitle;
+
+      for (const student of students) {
+        results.push({
+          fullName: student.fullName,
+          email: student.email,
+          theatre: student.theatre,
+          region: student.regionData?.region || "",
+          country: student.country,
+          iltFullTitle: iltFull,
+          certificationFullTitle: certFull,
+        });
+      }
     }
   }
 

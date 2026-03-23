@@ -122,7 +122,10 @@ export async function POST(request: NextRequest) {
     const functionType = parseFunctionType(rawFunction) ?? defaultFunctionType;
 
     const link = columnMapping.link ? row[columnMapping.link]?.trim() || null : null;
-    const certification = columnMapping.certification ? row[columnMapping.certification]?.trim() || null : null;
+    const certRaw = columnMapping.certification ? row[columnMapping.certification]?.trim() : "";
+    const certification = certRaw
+      ? certRaw.split(",").map((c: string) => c.trim()).filter(Boolean)
+      : [];
 
     try {
       const existing = await prisma.trainingData.findUnique({
@@ -136,7 +139,7 @@ export async function POST(request: NextRequest) {
           existing.productType !== productType ||
           existing.function !== functionType ||
           existing.link !== link ||
-          existing.certification !== certification;
+          JSON.stringify(existing.certification) !== JSON.stringify(certification);
 
         if (changed) {
           await prisma.trainingData.update({

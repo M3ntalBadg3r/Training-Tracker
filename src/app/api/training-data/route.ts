@@ -73,7 +73,7 @@ export async function POST(request: NextRequest) {
       productType: productType as ProductType,
       function: fn as FunctionType,
       link: link || null,
-      certification: certification || null,
+      certification: Array.isArray(certification) ? certification : [],
     },
   });
 

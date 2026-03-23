@@ -7,7 +7,10 @@ export function exportToCsv<T extends object>(
   filename: string
 ) {
   const rows = data.map((row) =>
-    Object.fromEntries(columns.map((col) => [col.header, row[col.key] ?? ""]))
+    Object.fromEntries(columns.map((col) => {
+      const val = row[col.key];
+      return [col.header, Array.isArray(val) ? val.join(", ") : val ?? ""];
+    }))
   );
   const csv = Papa.unparse(rows);
   downloadBlob(csv, `${filename}.csv`, "text/csv;charset=utf-8;");
@@ -19,7 +22,10 @@ export function exportToExcel<T extends object>(
   filename: string
 ) {
   const rows = data.map((row) =>
-    Object.fromEntries(columns.map((col) => [col.header, row[col.key] ?? ""]))
+    Object.fromEntries(columns.map((col) => {
+      const val = row[col.key];
+      return [col.header, Array.isArray(val) ? val.join(", ") : val ?? ""];
+    }))
   );
   const ws = XLSX.utils.json_to_sheet(rows);
   const wb = XLSX.utils.book_new();
