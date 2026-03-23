@@ -11,6 +11,7 @@ import {
   FileSpreadsheet,
   CheckCircle,
   AlertCircle,
+  Search,
   X,
 } from "lucide-react";
 import Papa from "papaparse";
@@ -34,7 +35,10 @@ export default function RegionDataPage() {
   const [regions, setRegions] = useState<RegionDataRow[]>([]);
   const [newRegion, setNewRegion] = useState({ country: "", region: "" });
   const [editingRegion, setEditingRegion] = useState<string | null>(null);
+  const [editCountryValue, setEditCountryValue] = useState("");
   const [editRegionValue, setEditRegionValue] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filterRegion, setFilterRegion] = useState("");
   const [loading, setLoading] = useState(true);
 
   // Import state
@@ -76,17 +80,21 @@ export default function RegionDataPage() {
     }
   };
 
-  const handleUpdateRegion = async (country: string) => {
-    const res = await fetch(`/api/region-data/${encodeURIComponent(country)}`, {
+  const handleUpdateRegion = async (originalCountry: string) => {
+    const res = await fetch(`/api/region-data/${encodeURIComponent(originalCountry)}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ region: editRegionValue }),
+      body: JSON.stringify({ country: editCountryValue, region: editRegionValue }),
     });
     if (res.ok) {
       setRegions((prev) =>
-        prev.map((r) =>
-          r.country === country ? { ...r, region: editRegionValue } : r
-        )
+        prev
+          .map((r) =>
+            r.country === originalCountry
+              ? { country: editCountryValue, region: editRegionValue }
+              : r
+          )
+          .sort((a, b) => a.country.localeCompare(b.country))
       );
       setEditingRegion(null);
     }
@@ -474,6 +482,32 @@ export default function RegionDataPage() {
         )}
       </section>
 
+      {/* Search and Filter */}
+      <section className="mb-4 flex flex-col sm:flex-row gap-3">
+        <div className="relative flex-1">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Search countries..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg"
+          />
+        </div>
+        <select
+          value={filterRegion}
+          onChange={(e) => setFilterRegion(e.target.value)}
+          className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+        >
+          <option value="">All Regions</option>
+          {[...new Set(regions.map((r) => r.region))].sort().map((region) => (
+            <option key={region} value={region}>
+              {region}
+            </option>
+          ))}
+        </select>
+      </section>
+
       {/* Region Data Table */}
       <section className="mb-8">
         <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
@@ -486,9 +520,26 @@ export default function RegionDataPage() {
               </tr>
             </thead>
             <tbody>
-              {regions.map((r) => (
+              {regions
+                .filter((r) => {
+                  const matchesSearch = !searchQuery || r.country.toLowerCase().includes(searchQuery.toLowerCase());
+                  const matchesFilter = !filterRegion || r.region === filterRegion;
+                  return matchesSearch && matchesFilter;
+                })
+                .map((r) => (
                 <tr key={r.country} className="border-b hover:bg-gray-50">
-                  <td className="px-4 py-3">{r.country}</td>
+                  <td className="px-4 py-3">
+                    {editingRegion === r.country ? (
+                      <input
+                        type="text"
+                        value={editCountryValue}
+                        onChange={(e) => setEditCountryValue(e.target.value)}
+                        className="border border-gray-300 rounded px-2 py-1 text-sm w-full"
+                      />
+                    ) : (
+                      r.country
+                    )}
+                  </td>
                   <td className="px-4 py-3">
                     {editingRegion === r.country ? (
                       <input
@@ -523,6 +574,7 @@ export default function RegionDataPage() {
                           <button
                             onClick={() => {
                               setEditingRegion(r.country);
+                              setEditCountryValue(r.country);
                               setEditRegionValue(r.region);
                             }}
                             className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
