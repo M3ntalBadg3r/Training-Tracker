@@ -115,6 +115,7 @@ export default function TrainingDataPage() {
     productType: "Cortex",
     function: "Sales",
     link: "",
+    certification: "",
   });
   const [loading, setLoading] = useState(true);
   const [lastImport, setLastImport] = useState<string | null>(null);
@@ -136,6 +137,7 @@ export default function TrainingDataPage() {
     productType: "",
     function: "",
     link: "",
+    certification: "",
   });
 
   // Import state
@@ -158,6 +160,15 @@ export default function TrainingDataPage() {
   const [unresolvedTrainingTypes, setUnresolvedTrainingTypes] = useState<UnrecognizedValue[]>([]);
   const [unresolvedProductTypes, setUnresolvedProductTypes] = useState<UnrecognizedValue[]>([]);
   const [unresolvedFunctions, setUnresolvedFunctions] = useState<UnrecognizedValue[]>([]);
+
+  const certificationOptions = useMemo(
+    () =>
+      trainingList
+        .filter((t) => t.trainingType === "Certification")
+        .map((t) => t.trainingTitle)
+        .sort(),
+    [trainingList]
+  );
 
   const fetchLastImport = () => {
     fetch("/api/import-metadata?key=training-data")
@@ -198,6 +209,7 @@ export default function TrainingDataPage() {
         productType: "Cortex",
         function: "Sales",
         link: "",
+        certification: "",
       });
       fetchRawTrainingData();
     }
@@ -538,6 +550,7 @@ export default function TrainingDataPage() {
                         { key: "productType", header: "Product Type" },
                         { key: "function", header: "Function" },
                         { key: "link", header: "Link" },
+                        { key: "certification", header: "Certification" },
                       ], "training-data");
                       setShowExportMenu(false);
                     }}
@@ -554,6 +567,7 @@ export default function TrainingDataPage() {
                         { key: "productType", header: "Product Type" },
                         { key: "function", header: "Function" },
                         { key: "link", header: "Link" },
+                        { key: "certification", header: "Certification" },
                       ], "training-data");
                       setShowExportMenu(false);
                     }}
@@ -1103,6 +1117,7 @@ export default function TrainingDataPage() {
                   <th className="px-4 py-3 text-left font-semibold">Product</th>
                   <th className="px-4 py-3 text-left font-semibold">Function</th>
                   <th className="px-4 py-3 text-left font-semibold">Link</th>
+                  <th className="px-4 py-3 text-left font-semibold">Certification</th>
                   <th className="px-4 py-3 text-left font-semibold">Actions</th>
                 </tr>
               </thead>
@@ -1149,7 +1164,14 @@ export default function TrainingDataPage() {
                       {editingTitle === t.trainingTitle ? (
                         <select
                           value={editValues.trainingType}
-                          onChange={(e) => setEditValues((prev) => ({ ...prev, trainingType: e.target.value }))}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setEditValues((prev) => ({
+                              ...prev,
+                              trainingType: val,
+                              certification: val === "InstructorLedTraining" ? prev.certification : "",
+                            }));
+                          }}
                           className="border border-gray-300 rounded px-2 py-1 text-sm"
                         >
                           {TRAINING_TYPES.map((tt) => (
@@ -1213,6 +1235,26 @@ export default function TrainingDataPage() {
                       )}
                     </td>
                     <td className="px-4 py-3">
+                      {t.trainingType === "InstructorLedTraining" ? (
+                        editingTitle === t.trainingTitle ? (
+                          <select
+                            value={editValues.certification}
+                            onChange={(e) => setEditValues((prev) => ({ ...prev, certification: e.target.value }))}
+                            className="border border-gray-300 rounded px-2 py-1 text-sm"
+                          >
+                            <option value="">-- None --</option>
+                            {certificationOptions.map((c) => (
+                              <option key={c} value={c}>{c}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          t.certification || "-"
+                        )
+                      ) : (
+                        <span className="text-gray-300">-</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
                       <div className="flex gap-2">
                         {editingTitle === t.trainingTitle ? (
                           <>
@@ -1241,6 +1283,7 @@ export default function TrainingDataPage() {
                                   productType: t.productType,
                                   function: t.function,
                                   link: t.link || "",
+                                  certification: t.certification || "",
                                 });
                               }}
                               className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
@@ -1261,7 +1304,7 @@ export default function TrainingDataPage() {
                 ))}
                 {trainingList.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
+                    <td colSpan={8} className="px-4 py-8 text-center text-gray-500">
                       No training data found
                     </td>
                   </tr>
@@ -1321,9 +1364,14 @@ export default function TrainingDataPage() {
             <label className="block text-sm font-medium mb-1">Training Type *</label>
             <select
               value={newTraining.trainingType}
-              onChange={(e) =>
-                setNewTraining((prev) => ({ ...prev, trainingType: e.target.value }))
-              }
+              onChange={(e) => {
+                const val = e.target.value;
+                setNewTraining((prev) => ({
+                  ...prev,
+                  trainingType: val,
+                  certification: val === "InstructorLedTraining" ? prev.certification : "",
+                }));
+              }}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
             >
               {TRAINING_TYPES.map((t) => (
@@ -1377,6 +1425,23 @@ export default function TrainingDataPage() {
               placeholder="https://..."
             />
           </div>
+          {newTraining.trainingType === "InstructorLedTraining" && (
+            <div>
+              <label className="block text-sm font-medium mb-1">Certification</label>
+              <select
+                value={newTraining.certification}
+                onChange={(e) =>
+                  setNewTraining((prev) => ({ ...prev, certification: e.target.value }))
+                }
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+              >
+                <option value="">-- None --</option>
+                {certificationOptions.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
       </Modal>
     </div>

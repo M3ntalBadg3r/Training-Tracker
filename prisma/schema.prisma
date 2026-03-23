@@ -59,6 +59,7 @@ model TrainingData {
   productType   ProductType  @map("product_type")
   function      FunctionType
   link          String?
+  certification String?      @map("certification")
 
   trainingsTaken TrainingTaken[]
 

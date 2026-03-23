@@ -60,6 +60,7 @@ export async function PUT(
           productType: (body.productType as ProductType) ?? old?.productType ?? "Cortex",
           function: (body.function as FunctionType) ?? old?.function ?? "Sales",
           link: body.link !== undefined ? body.link || null : old?.link ?? null,
+          certification: body.certification !== undefined ? body.certification || null : old?.certification ?? null,
         },
       });
     });
@@ -79,6 +80,7 @@ export async function PUT(
       }),
       ...(body.function && { function: body.function as FunctionType }),
       ...(body.link !== undefined && { link: body.link || null }),
+      ...(body.certification !== undefined && { certification: body.certification || null }),
     },
   });
 

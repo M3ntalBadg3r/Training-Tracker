@@ -56,7 +56,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   const body = await request.json();
-  const { trainingTitle, fullTitle, trainingType, productType, function: fn, link } = body;
+  const { trainingTitle, fullTitle, trainingType, productType, function: fn, link, certification } = body;
 
   if (!trainingTitle || !fullTitle || !trainingType || !productType || !fn) {
     return NextResponse.json(
@@ -73,6 +73,7 @@ export async function POST(request: NextRequest) {
       productType: productType as ProductType,
       function: fn as FunctionType,
       link: link || null,
+      certification: certification || null,
     },
   });
 

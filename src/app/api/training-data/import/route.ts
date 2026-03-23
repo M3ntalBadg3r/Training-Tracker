@@ -62,6 +62,7 @@ interface ColumnMapping {
   productType?: string;
   function?: string;
   link?: string;
+  certification?: string;
 }
 
 export async function POST(request: NextRequest) {
@@ -121,6 +122,7 @@ export async function POST(request: NextRequest) {
     const functionType = parseFunctionType(rawFunction) ?? defaultFunctionType;
 
     const link = columnMapping.link ? row[columnMapping.link]?.trim() || null : null;
+    const certification = columnMapping.certification ? row[columnMapping.certification]?.trim() || null : null;
 
     try {
       const existing = await prisma.trainingData.findUnique({
@@ -133,12 +135,13 @@ export async function POST(request: NextRequest) {
           existing.trainingType !== trainingType ||
           existing.productType !== productType ||
           existing.function !== functionType ||
-          existing.link !== link;
+          existing.link !== link ||
+          existing.certification !== certification;
 
         if (changed) {
           await prisma.trainingData.update({
             where: { trainingTitle },
-            data: { fullTitle, trainingType, productType, function: functionType, link },
+            data: { fullTitle, trainingType, productType, function: functionType, link, certification },
           });
           updated++;
         } else {
@@ -153,6 +156,7 @@ export async function POST(request: NextRequest) {
             productType,
             function: functionType,
             link,
+            certification,
           },
         });
         imported++;

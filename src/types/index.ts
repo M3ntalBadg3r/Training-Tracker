@@ -53,6 +53,7 @@ export interface TrainingDataRow {
   productType: string;
   function: string;
   link: string | null;
+  certification: string | null;
 }
 
 export interface ImportSummary {
