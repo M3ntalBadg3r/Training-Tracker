@@ -82,6 +82,18 @@ export async function POST(request: NextRequest) {
       if (existingStudent) {
         summary.studentsUpdated++;
       } else {
+        // Ensure the country exists in region_data before creating the student
+        if (row.country) {
+          const regionExists = await prisma.regionData.findUnique({
+            where: { country: row.country },
+          });
+          if (!regionExists) {
+            await prisma.regionData.create({
+              data: { country: row.country, region: "Unknown" },
+            });
+          }
+        }
+
         await prisma.student.create({
           data: {
             email: row.email,
