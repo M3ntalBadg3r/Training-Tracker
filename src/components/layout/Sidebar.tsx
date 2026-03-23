@@ -13,12 +13,14 @@ import {
   ChevronDown,
   Globe,
   BookOpen,
+  FileBarChart,
 } from "lucide-react";
 
 const navItems = [
   { href: "/students", label: "Students", icon: Users },
   { href: "/training", label: "Training", icon: GraduationCap },
   { href: "/import", label: "Import", icon: Upload },
+  { href: "/reports", label: "Reports", icon: FileBarChart },
 ];
 
 const adminSubItems = [
