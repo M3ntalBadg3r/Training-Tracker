@@ -20,6 +20,7 @@ Built with Next.js, React, PostgreSQL, and Prisma.
 - [Admin](#admin)
   - [Region Data](#region-data)
   - [Training Data](#training-data)
+  - [Backup & Restore](#backup--restore)
   - [Wipe Data](#wipe-data)
 - [Data Model](#data-model)
 - [Exporting Data](#exporting-data)
@@ -298,6 +299,37 @@ The **Certification** column is only available for trainings of type **Instructo
 - This mapping is used by the **Trained but not Certified** report to identify students who completed the ILT but haven't obtained the associated Certification(s).
 - Changing the training type away from ILT automatically clears the certification mapping.
 - During import, multiple certifications can be specified as comma-separated values in a single cell.
+
+### Backup & Restore
+
+Navigate to **Admin > Backup** to create or restore full system backups.
+
+#### Create Backup
+
+Click **Download Backup** to generate and download a `.zip` file containing all system data. The backup includes:
+
+| File | Contents |
+|------|----------|
+| `region_data.json` | All country/region mappings |
+| `training_data.json` | All training program definitions |
+| `students.json` | All student records |
+| `training_taken.json` | All training completion records |
+| `import_metadata.json` | Import timestamps |
+| `backup_metadata.json` | Backup version and creation timestamp |
+
+The downloaded file is named `training-tracker-backup-<timestamp>.zip`.
+
+#### Restore from Backup
+
+Click **Upload Backup File** and select a previously created backup `.zip` file. A confirmation dialog will appear — type `RESTORE` to proceed.
+
+**What happens during restore:**
+
+1. All existing data is deleted (regions, training data, students, training records, import metadata).
+2. Data from the backup is inserted in the correct order to satisfy foreign key constraints.
+3. All operations run inside a single database transaction — if any step fails, no changes are made.
+
+**Important:** Restoring a backup **replaces all existing data**. Create a backup of the current system first if you need to preserve it.
 
 ### Wipe Data
 
