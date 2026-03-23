@@ -20,6 +20,10 @@ Built with Next.js, React, PostgreSQL, and Prisma.
   - [Wipe Data](#wipe-data)
 - [Data Model](#data-model)
 - [Exporting Data](#exporting-data)
+- [Deployment](#deployment)
+  - [Installation Script](#installation-script)
+  - [Update Script](#update-script)
+  - [Service Management](#service-management)
 
 ---
 
@@ -288,3 +292,97 @@ Each export supports two formats:
 - **Excel** — `.xlsx` format for Microsoft Excel.
 
 Click the **Export** button and select the desired format. For reports, the export respects any active filters — only the currently displayed results are exported.
+
+---
+
+## Deployment
+
+The `deploy/` directory contains scripts for installing and updating Training Tracker on a Debian-based Linux server or LXC container. Both scripts should be run as **root**.
+
+### Installation Script
+
+The installation script (`deploy/install.sh`) performs a complete, automated setup from a fresh Debian-based system. Run it from the project root:
+
+```bash
+bash deploy/install.sh
+```
+
+**What it does (9 steps):**
+
+1. **Updates system packages** via `apt-get update`.
+2. **Installs Node.js 22 LTS** from the NodeSource repository.
+3. **Installs PostgreSQL** (if not already installed) and starts the service.
+4. **Creates the database and user** — database `training_tracker`, user `tracker`.
+5. **Copies application files** to `/opt/training-tracker` (skipped if already running from that directory).
+6. **Creates the `.env` file** with the database connection string (only if `.env` doesn't already exist).
+7. **Installs npm dependencies**, runs Prisma migrations, generates the Prisma client, and builds the application.
+8. **Installs a systemd service** (`training-tracker.service`) so the application starts automatically on boot. Falls back to an init.d script if systemd is not available.
+9. **Prints the URL** where the application is accessible (port 3000).
+
+**Default database credentials:**
+
+| Setting | Value |
+|---------|-------|
+| Database | `training_tracker` |
+| User | `tracker` |
+| Password | `tracker123` |
+
+To use different credentials, edit the variables at the top of `deploy/install.sh` before running it, or edit `/opt/training-tracker/.env` after installation and restart the service.
+
+### Update Script
+
+The update script (`deploy/update.sh`) pulls the latest code and rebuilds the application with zero manual steps. Run it from anywhere:
+
+```bash
+bash deploy/update.sh
+```
+
+**What it does (5 steps):**
+
+1. **Pulls latest changes** from the `main` branch via `git pull origin main`.
+2. **Installs dependencies** — picks up any new or updated packages.
+3. **Runs database migrations** — applies any new Prisma migrations and regenerates the client.
+4. **Rebuilds the application** via `npm run build`.
+5. **Restarts the service** using systemd (or init.d as fallback).
+
+If the deployment directory is not a git repository (e.g. files were copied manually), the script will exit with an error at step 1. In that case, copy the updated files manually to `/opt/training-tracker` and run steps 2-5 yourself:
+
+```bash
+cd /opt/training-tracker
+npm install
+npx prisma migrate deploy
+npx prisma generate
+npm run build
+systemctl restart training-tracker
+```
+
+### Service Management
+
+Once installed, the application runs as a systemd service called `training-tracker`. Common commands:
+
+```bash
+# Check status
+systemctl status training-tracker
+
+# View live logs
+journalctl -u training-tracker -f
+
+# Restart the service
+systemctl restart training-tracker
+
+# Stop the service
+systemctl stop training-tracker
+
+# Start the service
+systemctl start training-tracker
+```
+
+If systemd is not available (e.g. in some LXC containers), the init.d fallback is used instead:
+
+```bash
+/etc/init.d/training-tracker status
+/etc/init.d/training-tracker restart
+tail -f /var/log/training-tracker.log
+```
+
+The application runs on **port 3000** by default. To change the port, edit the `PORT` environment variable in `/opt/training-tracker/.env` or in the systemd service file at `/etc/systemd/system/training-tracker.service`, then restart the service.
