@@ -148,5 +148,12 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // Record last import timestamp for students
+  await prisma.importMetadata.upsert({
+    where: { key: "students" },
+    update: { timestamp: new Date() },
+    create: { key: "students", timestamp: new Date() },
+  });
+
   return NextResponse.json(summary);
 }

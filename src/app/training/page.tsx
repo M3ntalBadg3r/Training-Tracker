@@ -50,6 +50,7 @@ export default function TrainingPage() {
   const router = useRouter();
   const [training, setTraining] = useState<TrainingAvailableRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [lastImport, setLastImport] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/training-data")
@@ -59,6 +60,12 @@ export default function TrainingPage() {
         setLoading(false);
       })
       .catch(() => setLoading(false));
+    fetch("/api/import-metadata?key=training-data")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data?.timestamp) setLastImport(data.timestamp);
+      })
+      .catch(() => {});
   }, []);
 
   if (loading) {
@@ -71,7 +78,16 @@ export default function TrainingPage() {
 
   return (
     <div>
-      <PageHeader title="Training" />
+      <PageHeader
+        title="Training"
+        rightContent={
+          lastImport && (
+            <span className="text-sm text-gray-500">
+              Last imported: {new Date(lastImport).toLocaleString()}
+            </span>
+          )
+        }
+      />
       <DataTable<TrainingAvailableRow>
         data={training}
         columns={columns}

@@ -18,6 +18,7 @@ export default function StudentsPage() {
   const router = useRouter();
   const [students, setStudents] = useState<StudentRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [lastImport, setLastImport] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/students")
@@ -27,6 +28,12 @@ export default function StudentsPage() {
         setLoading(false);
       })
       .catch(() => setLoading(false));
+    fetch("/api/import-metadata?key=students")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data?.timestamp) setLastImport(data.timestamp);
+      })
+      .catch(() => {});
   }, []);
 
   if (loading) {
@@ -39,7 +46,16 @@ export default function StudentsPage() {
 
   return (
     <div>
-      <PageHeader title="Students" />
+      <PageHeader
+        title="Students"
+        rightContent={
+          lastImport && (
+            <span className="text-sm text-gray-500">
+              Last imported: {new Date(lastImport).toLocaleString()}
+            </span>
+          )
+        }
+      />
       <DataTable<StudentRow>
         data={students}
         columns={columns}

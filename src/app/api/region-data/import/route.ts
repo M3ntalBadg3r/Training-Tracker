@@ -66,5 +66,12 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // Record last import timestamp for region data
+  await prisma.importMetadata.upsert({
+    where: { key: "region-data" },
+    update: { timestamp: new Date() },
+    create: { key: "region-data", timestamp: new Date() },
+  });
+
   return NextResponse.json({ imported, updated, skipped, errors });
 }

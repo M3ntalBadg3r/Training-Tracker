@@ -73,3 +73,10 @@ model RegionData {
 
   @@map("region_data")
 }
+
+model ImportMetadata {
+  key       String   @id
+  timestamp DateTime @default(now())
+
+  @@map("import_metadata")
+}

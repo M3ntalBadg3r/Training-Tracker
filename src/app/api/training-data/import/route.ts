@@ -165,5 +165,12 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // Record last import timestamp for training data
+  await prisma.importMetadata.upsert({
+    where: { key: "training-data" },
+    update: { timestamp: new Date() },
+    create: { key: "training-data", timestamp: new Date() },
+  });
+
   return NextResponse.json({ imported, updated, skipped, errors });
 }

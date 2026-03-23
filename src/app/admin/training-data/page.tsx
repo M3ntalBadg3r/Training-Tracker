@@ -115,6 +115,7 @@ export default function TrainingDataPage() {
     link: "",
   });
   const [loading, setLoading] = useState(true);
+  const [lastImport, setLastImport] = useState<string | null>(null);
 
   // Search and filter state
   const [searchQuery, setSearchQuery] = useState("");
@@ -155,8 +156,18 @@ export default function TrainingDataPage() {
   const [unresolvedProductTypes, setUnresolvedProductTypes] = useState<UnrecognizedValue[]>([]);
   const [unresolvedFunctions, setUnresolvedFunctions] = useState<UnrecognizedValue[]>([]);
 
+  const fetchLastImport = () => {
+    fetch("/api/import-metadata?key=training-data")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data?.timestamp) setLastImport(data.timestamp);
+      })
+      .catch(() => {});
+  };
+
   useEffect(() => {
     fetchRawTrainingData();
+    fetchLastImport();
   }, []);
 
   const fetchRawTrainingData = async () => {
@@ -433,6 +444,7 @@ export default function TrainingDataPage() {
       setImportSummary(result);
       setImportStep("summary");
       fetchRawTrainingData();
+      fetchLastImport();
     } catch (err) {
       setImportError(`Import failed: ${err instanceof Error ? err.message : String(err)}`);
       setImportStep("mapping");
@@ -477,7 +489,17 @@ export default function TrainingDataPage() {
 
   return (
     <div>
-      <PageHeader title="Training Data" showBack />
+      <PageHeader
+        title="Training Data"
+        showBack
+        rightContent={
+          lastImport && (
+            <span className="text-sm text-gray-500">
+              Last imported: {new Date(lastImport).toLocaleString()}
+            </span>
+          )
+        }
+      />
 
       {/* Import Section */}
       <section className="mb-6">

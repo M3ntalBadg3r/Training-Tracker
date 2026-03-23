@@ -40,6 +40,7 @@ export default function RegionDataPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [filterRegion, setFilterRegion] = useState("");
   const [loading, setLoading] = useState(true);
+  const [lastImport, setLastImport] = useState<string | null>(null);
 
   // Import state
   const [showImport, setShowImport] = useState(false);
@@ -52,8 +53,18 @@ export default function RegionDataPage() {
   const [importError, setImportError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const fetchLastImport = () => {
+    fetch("/api/import-metadata?key=region-data")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data?.timestamp) setLastImport(data.timestamp);
+      })
+      .catch(() => {});
+  };
+
   useEffect(() => {
     fetchRegions();
+    fetchLastImport();
   }, []);
 
   const fetchRegions = () => {
@@ -222,8 +233,9 @@ export default function RegionDataPage() {
       const result = await res.json();
       setImportSummary(result);
       setImportStep("summary");
-      // Refresh the region list
+      // Refresh the region list and last import time
       fetchRegions();
+      fetchLastImport();
     } catch (err) {
       setImportError(`Import failed: ${err instanceof Error ? err.message : String(err)}`);
       setImportStep("mapping");
@@ -256,7 +268,17 @@ export default function RegionDataPage() {
 
   return (
     <div>
-      <PageHeader title="Region Data" showBack />
+      <PageHeader
+        title="Region Data"
+        showBack
+        rightContent={
+          lastImport && (
+            <span className="text-sm text-gray-500">
+              Last imported: {new Date(lastImport).toLocaleString()}
+            </span>
+          )
+        }
+      />
 
       {/* Import Section */}
       <section className="mb-6">
