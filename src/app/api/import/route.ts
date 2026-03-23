@@ -11,6 +11,21 @@ interface ImportRow {
   completedDate: string;
 }
 
+function titleCase(str: string): string {
+  return str
+    .toLowerCase()
+    .replace(/(?:^|\s)\S/g, (char) => char.toUpperCase());
+}
+
+function deriveFullName(email: string): string {
+  const localPart = email.split("@")[0];
+  const parts = localPart.split(".");
+  if (parts.length === 2 && parts[0] && parts[1]) {
+    return titleCase(`${parts[0]} ${parts[1]}`);
+  }
+  return email;
+}
+
 export async function POST(request: NextRequest) {
   const body = await request.json();
   const { rows, columnMapping } = body as {
@@ -34,14 +49,23 @@ export async function POST(request: NextRequest) {
   };
 
   // Map rows using column mapping
-  const mappedRows: ImportRow[] = rows.map((row) => ({
-    fullName: row[columnMapping.fullName] || "",
-    email: row[columnMapping.email] || "",
-    theatre: row[columnMapping.theatre] || "",
-    country: row[columnMapping.country] || "",
-    title: row[columnMapping.title] || "",
-    completedDate: row[columnMapping.completedDate] || "",
-  }));
+  const mappedRows: ImportRow[] = rows.map((row) => {
+    const rawEmail = (row[columnMapping.email] || "").trim();
+    const email = rawEmail.toLowerCase();
+    const rawFullName = (row[columnMapping.fullName] || "").trim();
+    const fullName = rawFullName
+      ? titleCase(rawFullName)
+      : deriveFullName(email);
+
+    return {
+      fullName,
+      email,
+      theatre: row[columnMapping.theatre] || "",
+      country: row[columnMapping.country] || "",
+      title: row[columnMapping.title] || "",
+      completedDate: row[columnMapping.completedDate] || "",
+    };
+  });
 
   for (let i = 0; i < mappedRows.length; i++) {
     const row = mappedRows[i];
