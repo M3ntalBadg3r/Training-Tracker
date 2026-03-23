@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
 import PageHeader from "@/components/layout/PageHeader";
 import Modal from "@/components/ui/Modal";
 import { TrainingDataRow } from "@/types";
@@ -11,6 +11,7 @@ import {
   FileSpreadsheet,
   CheckCircle,
   AlertCircle,
+  AlertTriangle,
   X,
 } from "lucide-react";
 import Papa from "papaparse";
@@ -32,6 +33,49 @@ const FUNCTION_TYPE_LABELS: Record<string, string> = {
   Deployments: "Deployments",
 };
 
+// Known aliases that auto-resolve (case-insensitive)
+const TRAINING_TYPE_ALIASES: Record<string, string> = {
+  certification: "Certification",
+  accreditation: "Accreditation",
+  accreditations: "Accreditation",
+  "instructor-led training": "InstructorLedTraining",
+  instructorledtraining: "InstructorLedTraining",
+  ilt: "InstructorLedTraining",
+  certs: "Certification",
+  cert: "Certification",
+};
+
+const PRODUCT_TYPE_ALIASES: Record<string, string> = {
+  cortex: "Cortex",
+  sase: "SASE",
+  cloud: "Cloud",
+  strata: "Strata",
+  foundation: "Foundation",
+};
+
+const FUNCTION_TYPE_ALIASES: Record<string, string> = {
+  sales: "Sales",
+  "pre-sales": "PreSales",
+  presales: "PreSales",
+  deployments: "Deployments",
+  deployment: "Deployments",
+};
+
+function resolveTrainingType(val: string): string | null {
+  if (TRAINING_TYPES.includes(val)) return val;
+  return TRAINING_TYPE_ALIASES[val.toLowerCase()] ?? null;
+}
+
+function resolveProductType(val: string): string | null {
+  if (PRODUCT_TYPES.includes(val)) return val;
+  return PRODUCT_TYPE_ALIASES[val.toLowerCase()] ?? null;
+}
+
+function resolveFunctionType(val: string): string | null {
+  if (FUNCTION_TYPES.includes(val)) return val;
+  return FUNCTION_TYPE_ALIASES[val.toLowerCase()] ?? null;
+}
+
 const TARGET_FIELDS = [
   { key: "trainingTitle", label: "Training Title", required: true },
   { key: "fullTitle", label: "Full Title", required: true },
@@ -41,13 +85,20 @@ const TARGET_FIELDS = [
   { key: "link", label: "Link", required: false },
 ];
 
-type ImportStep = "upload" | "mapping" | "importing" | "summary";
+type ImportStep = "upload" | "mapping" | "resolve" | "importing" | "summary";
 
 interface ImportSummary {
   imported: number;
   updated: number;
   skipped: number;
   errors: string[];
+}
+
+// Tracks unrecognized values for a given enum field
+interface UnrecognizedValue {
+  value: string;       // the raw value from the file
+  count: number;       // how many rows have this value
+  mappedTo: string;    // what the user chose to map it to
 }
 
 export default function TrainingDataPage() {
@@ -78,6 +129,11 @@ export default function TrainingDataPage() {
   const [importSummary, setImportSummary] = useState<ImportSummary | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Value resolution state
+  const [unresolvedTrainingTypes, setUnresolvedTrainingTypes] = useState<UnrecognizedValue[]>([]);
+  const [unresolvedProductTypes, setUnresolvedProductTypes] = useState<UnrecognizedValue[]>([]);
+  const [unresolvedFunctions, setUnresolvedFunctions] = useState<UnrecognizedValue[]>([]);
 
   useEffect(() => {
     fetchRawTrainingData();
@@ -206,7 +262,8 @@ export default function TrainingDataPage() {
     if (file) parseFile(file);
   };
 
-  const handleImport = async () => {
+  // Scan rows for unrecognized enum values and move to resolve step if needed
+  const proceedFromMapping = () => {
     const missingFields = TARGET_FIELDS.filter(
       (f) => f.required && !columnMapping[f.key]
     );
@@ -216,15 +273,118 @@ export default function TrainingDataPage() {
       );
       return;
     }
+    setImportError(null);
 
+    // Collect unique values for each mapped enum field and find unrecognized ones
+    const ttUnresolved: UnrecognizedValue[] = [];
+    const ptUnresolved: UnrecognizedValue[] = [];
+    const fnUnresolved: UnrecognizedValue[] = [];
+
+    if (columnMapping.trainingType) {
+      const counts = new Map<string, number>();
+      for (const row of rows) {
+        const val = row[columnMapping.trainingType]?.trim();
+        if (val) counts.set(val, (counts.get(val) || 0) + 1);
+      }
+      for (const [val, count] of counts) {
+        if (!resolveTrainingType(val)) {
+          ttUnresolved.push({ value: val, count, mappedTo: TRAINING_TYPES[0] });
+        }
+      }
+    }
+
+    if (columnMapping.productType) {
+      const counts = new Map<string, number>();
+      for (const row of rows) {
+        const val = row[columnMapping.productType]?.trim();
+        if (val) counts.set(val, (counts.get(val) || 0) + 1);
+      }
+      for (const [val, count] of counts) {
+        if (!resolveProductType(val)) {
+          ptUnresolved.push({ value: val, count, mappedTo: PRODUCT_TYPES[0] });
+        }
+      }
+    }
+
+    if (columnMapping.function) {
+      const counts = new Map<string, number>();
+      for (const row of rows) {
+        const val = row[columnMapping.function]?.trim();
+        if (val) counts.set(val, (counts.get(val) || 0) + 1);
+      }
+      for (const [val, count] of counts) {
+        if (!resolveFunctionType(val)) {
+          fnUnresolved.push({ value: val, count, mappedTo: FUNCTION_TYPES[0] });
+        }
+      }
+    }
+
+    setUnresolvedTrainingTypes(ttUnresolved);
+    setUnresolvedProductTypes(ptUnresolved);
+    setUnresolvedFunctions(fnUnresolved);
+
+    if (ttUnresolved.length > 0 || ptUnresolved.length > 0 || fnUnresolved.length > 0) {
+      setImportStep("resolve");
+    } else {
+      handleImport();
+    }
+  };
+
+  // Apply value resolutions to rows and then import
+  const proceedFromResolve = () => {
+    // Build replacement maps from user selections
+    const trainingTypeMap = new Map<string, string>();
+    for (const u of unresolvedTrainingTypes) {
+      trainingTypeMap.set(u.value, u.mappedTo);
+    }
+    const productTypeMap = new Map<string, string>();
+    for (const u of unresolvedProductTypes) {
+      productTypeMap.set(u.value, u.mappedTo);
+    }
+    const functionMap = new Map<string, string>();
+    for (const u of unresolvedFunctions) {
+      functionMap.set(u.value, u.mappedTo);
+    }
+
+    // Apply replacements to row data
+    const updatedRows = rows.map((row) => {
+      const newRow = { ...row };
+      if (columnMapping.trainingType) {
+        const val = newRow[columnMapping.trainingType]?.trim();
+        if (val && trainingTypeMap.has(val)) {
+          newRow[columnMapping.trainingType] = trainingTypeMap.get(val)!;
+        }
+      }
+      if (columnMapping.productType) {
+        const val = newRow[columnMapping.productType]?.trim();
+        if (val && productTypeMap.has(val)) {
+          newRow[columnMapping.productType] = productTypeMap.get(val)!;
+        }
+      }
+      if (columnMapping.function) {
+        const val = newRow[columnMapping.function]?.trim();
+        if (val && functionMap.has(val)) {
+          newRow[columnMapping.function] = functionMap.get(val)!;
+        }
+      }
+      return newRow;
+    });
+
+    setRows(updatedRows);
+    handleImport(updatedRows);
+  };
+
+  const handleImport = async (importRows?: Record<string, string>[]) => {
     setImportStep("importing");
     setImportError(null);
+
+    const dataRows = importRows ?? rows;
 
     try {
       const res = await fetch("/api/training-data/import", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rows, columnMapping, defaults }),
+        body: JSON.stringify({ rows: dataRows, columnMapping, defaults }),
       });
 
       if (!res.ok) {
@@ -253,6 +413,9 @@ export default function TrainingDataPage() {
     setDefaults({ trainingType: "Certification", productType: "Cortex", function: "Sales" });
     setImportSummary(null);
     setImportError(null);
+    setUnresolvedTrainingTypes([]);
+    setUnresolvedProductTypes([]);
+    setUnresolvedFunctions([]);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
@@ -266,6 +429,8 @@ export default function TrainingDataPage() {
   const unmappedProductType = !columnMapping.productType;
   const unmappedFunction = !columnMapping.function;
   const showDefaults = unmappedTrainingType || unmappedProductType || unmappedFunction;
+
+  const totalUnresolved = unresolvedTrainingTypes.length + unresolvedProductTypes.length + unresolvedFunctions.length;
 
   if (loading) {
     return (
@@ -509,16 +674,193 @@ export default function TrainingDataPage() {
                     Back
                   </button>
                   <button
-                    onClick={handleImport}
+                    onClick={proceedFromMapping}
                     className="px-6 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                   >
-                    Import {rows.length} Rows
+                    Continue
                   </button>
                 </div>
               </div>
             )}
 
-            {/* Step 3: Importing */}
+            {/* Step 3: Resolve unrecognized values */}
+            {importStep === "resolve" && (
+              <div className="space-y-4">
+                <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                  <AlertTriangle size={18} className="text-amber-500 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium text-amber-800">
+                      {totalUnresolved} unrecognized value{totalUnresolved !== 1 ? "s" : ""} found
+                    </p>
+                    <p className="text-xs text-amber-700 mt-1">
+                      Select what each unrecognized value should be replaced with.
+                      All rows with the same value will be updated automatically.
+                    </p>
+                  </div>
+                </div>
+
+                {unresolvedTrainingTypes.length > 0 && (
+                  <div>
+                    <h4 className="text-sm font-semibold mb-2">Training Type</h4>
+                    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="bg-gray-50 border-b">
+                            <th className="px-4 py-2 text-left font-medium text-gray-600">Value in File</th>
+                            <th className="px-4 py-2 text-left font-medium text-gray-600">Rows</th>
+                            <th className="px-4 py-2 text-left font-medium text-gray-600">Replace With</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {unresolvedTrainingTypes.map((u) => (
+                            <tr key={u.value} className="border-b">
+                              <td className="px-4 py-2">
+                                <code className="bg-red-50 text-red-700 px-2 py-0.5 rounded text-xs">{u.value}</code>
+                              </td>
+                              <td className="px-4 py-2 text-gray-500">{u.count}</td>
+                              <td className="px-4 py-2">
+                                <select
+                                  value={u.mappedTo}
+                                  onChange={(e) =>
+                                    setUnresolvedTrainingTypes((prev) =>
+                                      prev.map((item) =>
+                                        item.value === u.value
+                                          ? { ...item, mappedTo: e.target.value }
+                                          : item
+                                      )
+                                    )
+                                  }
+                                  className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
+                                >
+                                  {TRAINING_TYPES.map((t) => (
+                                    <option key={t} value={t}>
+                                      {TRAINING_TYPE_LABELS[t]}
+                                    </option>
+                                  ))}
+                                </select>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {unresolvedProductTypes.length > 0 && (
+                  <div>
+                    <h4 className="text-sm font-semibold mb-2">Product Type</h4>
+                    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="bg-gray-50 border-b">
+                            <th className="px-4 py-2 text-left font-medium text-gray-600">Value in File</th>
+                            <th className="px-4 py-2 text-left font-medium text-gray-600">Rows</th>
+                            <th className="px-4 py-2 text-left font-medium text-gray-600">Replace With</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {unresolvedProductTypes.map((u) => (
+                            <tr key={u.value} className="border-b">
+                              <td className="px-4 py-2">
+                                <code className="bg-red-50 text-red-700 px-2 py-0.5 rounded text-xs">{u.value}</code>
+                              </td>
+                              <td className="px-4 py-2 text-gray-500">{u.count}</td>
+                              <td className="px-4 py-2">
+                                <select
+                                  value={u.mappedTo}
+                                  onChange={(e) =>
+                                    setUnresolvedProductTypes((prev) =>
+                                      prev.map((item) =>
+                                        item.value === u.value
+                                          ? { ...item, mappedTo: e.target.value }
+                                          : item
+                                      )
+                                    )
+                                  }
+                                  className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
+                                >
+                                  {PRODUCT_TYPES.map((t) => (
+                                    <option key={t} value={t}>
+                                      {t}
+                                    </option>
+                                  ))}
+                                </select>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {unresolvedFunctions.length > 0 && (
+                  <div>
+                    <h4 className="text-sm font-semibold mb-2">Function</h4>
+                    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="bg-gray-50 border-b">
+                            <th className="px-4 py-2 text-left font-medium text-gray-600">Value in File</th>
+                            <th className="px-4 py-2 text-left font-medium text-gray-600">Rows</th>
+                            <th className="px-4 py-2 text-left font-medium text-gray-600">Replace With</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {unresolvedFunctions.map((u) => (
+                            <tr key={u.value} className="border-b">
+                              <td className="px-4 py-2">
+                                <code className="bg-red-50 text-red-700 px-2 py-0.5 rounded text-xs">{u.value}</code>
+                              </td>
+                              <td className="px-4 py-2 text-gray-500">{u.count}</td>
+                              <td className="px-4 py-2">
+                                <select
+                                  value={u.mappedTo}
+                                  onChange={(e) =>
+                                    setUnresolvedFunctions((prev) =>
+                                      prev.map((item) =>
+                                        item.value === u.value
+                                          ? { ...item, mappedTo: e.target.value }
+                                          : item
+                                      )
+                                    )
+                                  }
+                                  className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
+                                >
+                                  {FUNCTION_TYPES.map((t) => (
+                                    <option key={t} value={t}>
+                                      {FUNCTION_TYPE_LABELS[t]}
+                                    </option>
+                                  ))}
+                                </select>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex gap-3 pt-2">
+                  <button
+                    onClick={() => setImportStep("mapping")}
+                    className="px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300"
+                  >
+                    Back
+                  </button>
+                  <button
+                    onClick={proceedFromResolve}
+                    className="px-6 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                  >
+                    Apply & Import {rows.length} Rows
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Step 4: Importing */}
             {importStep === "importing" && (
               <div className="flex flex-col items-center justify-center py-12">
                 <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mb-4" />
@@ -526,7 +868,7 @@ export default function TrainingDataPage() {
               </div>
             )}
 
-            {/* Step 4: Summary */}
+            {/* Step 5: Summary */}
             {importStep === "summary" && importSummary && (
               <div className="space-y-4">
                 <div className="flex items-center gap-2">
