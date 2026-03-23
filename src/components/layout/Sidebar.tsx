@@ -15,6 +15,7 @@ import {
   Globe,
   BookOpen,
   FileBarChart,
+  HardDrive,
 } from "lucide-react";
 
 const navItems = [
@@ -28,6 +29,7 @@ const navItems = [
 const adminSubItems = [
   { href: "/admin/region-data", label: "Region Data", icon: Globe },
   { href: "/admin/training-data", label: "Training Data", icon: BookOpen },
+  { href: "/admin/backup", label: "Backup", icon: HardDrive },
 ];
 
 export default function Sidebar() {
