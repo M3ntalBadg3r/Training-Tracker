@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  LayoutDashboard,
   Users,
   GraduationCap,
   Upload,
@@ -17,6 +18,7 @@ import {
 } from "lucide-react";
 
 const navItems = [
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/students", label: "Students", icon: Users },
   { href: "/training", label: "Training", icon: GraduationCap },
   { href: "/import", label: "Import", icon: Upload },
