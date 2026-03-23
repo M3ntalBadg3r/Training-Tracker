@@ -87,6 +87,7 @@ const TARGET_FIELDS = [
   { key: "productType", label: "Product Type", required: false },
   { key: "function", label: "Function", required: false },
   { key: "link", label: "Link", required: false },
+  { key: "certification", label: "Certification", required: false },
 ];
 
 type ImportStep = "upload" | "mapping" | "resolve" | "importing" | "summary";
