@@ -9,7 +9,10 @@ const VALID_FUNCTION_TYPES = new Set(Object.values(FunctionType));
 // Maps for human-readable labels → enum values
 const TRAINING_TYPE_MAP: Record<string, TrainingType> = {
   certification: TrainingType.Certification,
+  certs: TrainingType.Certification,
+  cert: TrainingType.Certification,
   accreditation: TrainingType.Accreditation,
+  accreditations: TrainingType.Accreditation,
   "instructor-led training": TrainingType.InstructorLedTraining,
   instructorledtraining: TrainingType.InstructorLedTraining,
   ilt: TrainingType.InstructorLedTraining,
@@ -28,6 +31,7 @@ const FUNCTION_TYPE_MAP: Record<string, FunctionType> = {
   "pre-sales": FunctionType.PreSales,
   presales: FunctionType.PreSales,
   deployments: FunctionType.Deployments,
+  deployment: FunctionType.Deployments,
 };
 
 function parseTrainingType(val: string | undefined): TrainingType | null {
@@ -117,17 +121,6 @@ export async function POST(request: NextRequest) {
     const functionType = parseFunctionType(rawFunction) ?? defaultFunctionType;
 
     const link = columnMapping.link ? row[columnMapping.link]?.trim() || null : null;
-
-    // Validate parsed enum values and warn if raw value was unrecognized
-    if (rawTrainingType && !parseTrainingType(rawTrainingType)) {
-      errors.push(`Row ${rowNum}: Unrecognized Training Type "${rawTrainingType}", using default "${defaultTrainingType}"`);
-    }
-    if (rawProductType && !parseProductType(rawProductType)) {
-      errors.push(`Row ${rowNum}: Unrecognized Product Type "${rawProductType}", using default "${defaultProductType}"`);
-    }
-    if (rawFunction && !parseFunctionType(rawFunction)) {
-      errors.push(`Row ${rowNum}: Unrecognized Function "${rawFunction}", using default "${defaultFunctionType}"`);
-    }
 
     try {
       const existing = await prisma.trainingData.findUnique({
