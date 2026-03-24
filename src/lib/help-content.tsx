@@ -157,8 +157,12 @@ const helpSections: Record<string, HelpSection> = {
       <>
         <p>
           View which students have completed this training. The table shows each
-          student&apos;s name, email, theatre, country, completed date, and
-          whether the training is still active.
+          student&apos;s name, email, theatre, country, and whether the training
+          is still active.
+        </p>
+        <p>
+          Click <strong>View</strong> on any row to open that student&apos;s
+          detailed record.
         </p>
       </>
     ),

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, use } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import PageHeader from "@/components/layout/PageHeader";
 import DataTable from "@/components/data-table/DataTable";
 import Badge from "@/components/ui/Badge";
@@ -29,6 +29,7 @@ export default function TrainingTakenPage({
   const fullTitle = decodeURIComponent(resolvedParams.fullTitle);
   const searchParams = useSearchParams();
   const trainingType = searchParams.get("trainingType");
+  const router = useRouter();
 
   const [students, setStudents] = useState<TrainingTakenRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -65,6 +66,10 @@ export default function TrainingTakenPage({
       <DataTable<TrainingTakenRow>
         data={students}
         columns={columns}
+        rowAction={{
+          label: "View",
+          onClick: (row) => router.push(`/students/${encodeURIComponent(row.email)}`),
+        }}
       />
     </div>
   );
