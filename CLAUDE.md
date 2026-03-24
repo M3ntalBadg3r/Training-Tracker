@@ -1,0 +1,95 @@
+# CLAUDE.md — Training Tracker
+
+## Project Overview
+
+Training Tracker is a full-stack Next.js app for managing student certifications, accreditations, and instructor-led training (ILT). Built with Next.js 16 (App Router), React 19, PostgreSQL, Prisma 7, TypeScript, and Tailwind CSS v4.
+
+## Quick Start
+
+```bash
+npm install
+npx prisma migrate deploy && npx prisma generate
+npm run dev          # http://localhost:3000
+```
+
+Requires a `.env` file with `DATABASE_URL` pointing to a PostgreSQL instance (see `.env.example`).
+
+## Key Commands
+
+- `npm run dev` — Start dev server
+- `npm run build` — Production build
+- `npm start` — Start production server
+- `npx prisma migrate dev` — Create/apply migrations in dev
+- `npx prisma migrate deploy` — Apply migrations in prod
+- `npx prisma generate` — Regenerate Prisma client
+- `npx prisma studio` — Open DB browser
+
+## Project Structure
+
+```
+src/
+  app/
+    api/          # Route handlers (dashboard, students, training-data, import, reports, admin)
+    dashboard/    # Dashboard page (metrics + charts)
+    students/     # Student list + [email] detail page
+    training/     # Training catalog + [fullTitle] detail page
+    reports/      # Trained-but-not-certified report
+    admin/        # Admin pages (region-data, training-data, backup, import)
+    layout.tsx    # Root layout with Sidebar
+  components/
+    layout/       # Sidebar, PageHeader
+    ui/           # Modal, Badge, HelpModal
+    data-table/   # Generic DataTable (search, sort, filter, paginate)
+  hooks/          # useDebounce
+  lib/
+    prisma.ts     # Prisma client singleton (PrismaPg adapter)
+    utils.ts      # Date helpers, formatters, label mappers
+    export.ts     # CSV/Excel/PDF export utilities
+    help-content.tsx
+  types/
+    index.ts      # Shared TypeScript interfaces
+prisma/
+  schema.prisma   # Data model
+  migrations/     # Migration history
+deploy/           # install.sh, update.sh, systemd service
+```
+
+## Data Model
+
+- **Student** — PK: `email`. Fields: fullName, theatre, country.
+- **TrainingData** — PK: `trainingTitle`. Fields: fullTitle (display name), trainingType, productType, function, link, certification[].
+- **TrainingTaken** — FK: email → Student, trainingTitle → TrainingData. Fields: completedDate, expiryDate (auto: +2 years).
+- **RegionData** — PK: `country`. Fields: region.
+
+### Enums
+- **TrainingType**: `Certification`, `Accreditation`, `InstructorLedTraining`
+- **ProductType**: `Cortex`, `SASE`, `Cloud`, `Strata`, `Foundation`
+- **FunctionType**: `Sales`, `PreSales`, `Deployments`
+
+## Architecture Notes
+
+- Path alias: `@/*` → `./src/*`
+- Pages are server components by default; client components use `"use client"` directive.
+- API routes query Prisma directly — no middleware or auth layer.
+- Multiple `trainingTitle`s can map to the same `fullTitle`. Deduplication by `email + fullTitle + trainingType` is applied in dashboard and training-page APIs to avoid double-counting.
+- Expiry is always completedDate + 2 years (computed in `lib/utils.ts:computeExpiryDate`).
+- Sidebar collapse state is persisted to `localStorage`.
+
+## Coding Conventions
+
+- Enum values: PascalCase (`InstructorLedTraining`, `PreSales`)
+- DB columns: snake_case via Prisma `@map`
+- API responses: camelCase JSON
+- TypeScript interfaces use Row/Record suffixes (`StudentRow`, `TrainingRecord`)
+- ESLint: `eslint-config-next` with core-web-vitals + TypeScript rules (strict mode)
+- No implicit any — strict TypeScript enabled
+
+## Common Pitfalls
+
+- **fullTitle vs trainingTitle**: `trainingTitle` is the internal DB key (from imports); `fullTitle` is the human-readable display name. Multiple trainingTitles can share a fullTitle — always group/deduplicate by fullTitle when counting.
+- **Date handling**: All dates flow through `lib/utils.ts`. Use `parseDate()` for parsing, `formatDate()` for display (DD Mmm YYYY), `computeExpiryDate()` for expiry.
+- **Import column mapping**: The import API auto-maps columns with fuzzy matching and supports type aliases (e.g., `ilt` → `InstructorLedTraining`, `pre-sales` → `PreSales`).
+
+## Deployment
+
+Production runs via systemd at `/opt/training-tracker` on port 3000. See `deploy/` for install/update scripts.
