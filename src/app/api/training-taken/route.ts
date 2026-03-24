@@ -32,7 +32,16 @@ export async function GET(request: NextRequest) {
     orderBy: { completedDate: "desc" },
   });
 
-  const result = trainingTaken.map((t) => ({
+  // Deduplicate by student email, keeping the most recent record
+  const byStudent = new Map<string, (typeof trainingTaken)[number]>();
+  for (const t of trainingTaken) {
+    const existing = byStudent.get(t.email);
+    if (!existing || t.completedDate > existing.completedDate) {
+      byStudent.set(t.email, t);
+    }
+  }
+
+  const result = Array.from(byStudent.values()).map((t) => ({
     fullName: t.student.fullName,
     email: t.student.email,
     theatre: t.student.theatre,
