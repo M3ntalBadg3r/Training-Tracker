@@ -174,7 +174,7 @@ export default function StudentRecordPage({
     (t) => t.trainingType === "Accreditation" && t.active
   ).length;
   const activeILT = visibleTrainings.filter(
-    (t) => t.trainingType === "InstructorLedTraining" && t.active
+    (t) => t.trainingType === "Instructor-Led Training" && t.active
   ).length;
 
   const statCards = [
