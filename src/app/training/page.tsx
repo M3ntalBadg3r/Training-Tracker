@@ -1,11 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import PageHeader from "@/components/layout/PageHeader";
 import DataTable from "@/components/data-table/DataTable";
 import { ColumnDef, TrainingAvailableRow } from "@/types";
 import { trainingTypeLabel, functionTypeLabel } from "@/lib/utils";
+
+interface FilterOptions {
+  theatres: string[];
+  regions: string[];
+  countries: string[];
+}
 
 const columns: ColumnDef<TrainingAvailableRow>[] = [
   { key: "fullTitle", header: "Full Title" },
@@ -51,15 +57,36 @@ export default function TrainingPage() {
   const [training, setTraining] = useState<TrainingAvailableRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastImport, setLastImport] = useState<string | null>(null);
+  const [filterOptions, setFilterOptions] = useState<FilterOptions>({ theatres: [], regions: [], countries: [] });
+  const [theatre, setTheatre] = useState("");
+  const [region, setRegion] = useState("");
+  const [country, setCountry] = useState("");
 
-  useEffect(() => {
-    fetch("/api/training-data")
+  const fetchTraining = useCallback(() => {
+    const params = new URLSearchParams();
+    if (theatre) params.set("theatre", theatre);
+    if (region) params.set("region", region);
+    if (country) params.set("country", country);
+    const qs = params.toString();
+    setLoading(true);
+    fetch(`/api/training-data${qs ? `?${qs}` : ""}`)
       .then((res) => res.json())
       .then((data) => {
         setTraining(data);
         setLoading(false);
       })
       .catch(() => setLoading(false));
+  }, [theatre, region, country]);
+
+  useEffect(() => {
+    fetchTraining();
+  }, [fetchTraining]);
+
+  useEffect(() => {
+    fetch("/api/training-data/filters")
+      .then((res) => res.json())
+      .then((data) => setFilterOptions(data))
+      .catch(() => {});
     fetch("/api/import-metadata?key=training-data")
       .then((res) => res.json())
       .then((data) => {
@@ -89,6 +116,47 @@ export default function TrainingPage() {
           )
         }
       />
+      <div className="flex items-center gap-3 mb-4">
+        <select
+          value={theatre}
+          onChange={(e) => setTheatre(e.target.value)}
+          className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="">All Theatres</option>
+          {filterOptions.theatres.map((t) => (
+            <option key={t} value={t}>{t}</option>
+          ))}
+        </select>
+        <select
+          value={region}
+          onChange={(e) => setRegion(e.target.value)}
+          className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="">All Regions</option>
+          {filterOptions.regions.map((r) => (
+            <option key={r} value={r}>{r}</option>
+          ))}
+        </select>
+        <select
+          value={country}
+          onChange={(e) => setCountry(e.target.value)}
+          className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="">All Countries</option>
+          {filterOptions.countries.map((c) => (
+            <option key={c} value={c}>{c}</option>
+          ))}
+        </select>
+        {(theatre || region || country) && (
+          <button
+            onClick={() => { setTheatre(""); setRegion(""); setCountry(""); }}
+            className="px-3 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+          >
+            Clear filters
+          </button>
+        )}
+      </div>
+
       <DataTable<TrainingAvailableRow>
         data={training}
         columns={columns}

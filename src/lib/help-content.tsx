@@ -144,6 +144,13 @@ const helpSections: Record<string, HelpSection> = {
           </li>
         </ul>
         <p>
+          Use the <strong>Theatre</strong>, <strong>Region</strong>, and{" "}
+          <strong>Country</strong> dropdowns above the table to filter trainings
+          by student location. When filters are active, the Students Taken count
+          reflects only students matching the selected filters, and trainings
+          with no matching students are hidden.
+        </p>
+        <p>
           Click <strong>View Students</strong> on any row to see which students
           have completed that training.
         </p>
