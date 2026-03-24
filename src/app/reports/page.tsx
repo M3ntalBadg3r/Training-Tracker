@@ -263,25 +263,15 @@ export default function ReportsPage() {
                       <option key={c} value={c}>{c}</option>
                     ))}
                   </select>
-                  <div className="flex items-center gap-1">
-                    {[
-                      { value: "", label: "All" },
-                      { value: "yes", label: "Active" },
-                      { value: "no", label: "Not Active" },
-                    ].map((opt) => (
-                      <button
-                        key={opt.value}
-                        onClick={() => setFilterActive(opt.value)}
-                        className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
-                          filterActive === opt.value
-                            ? "text-blue-600 bg-blue-50 hover:bg-blue-100"
-                            : "text-gray-600 bg-gray-50 hover:bg-gray-100"
-                        }`}
-                      >
-                        {opt.label}
-                      </button>
-                    ))}
-                  </div>
+                  <select
+                    value={filterActive}
+                    onChange={(e) => setFilterActive(e.target.value)}
+                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  >
+                    <option value="">All Active Status</option>
+                    <option value="yes">Active</option>
+                    <option value="no">Not Active</option>
+                  </select>
                 </div>
               </div>
 
@@ -323,7 +313,7 @@ export default function ReportsPage() {
                         <td className="px-4 py-3">
                           <button
                             onClick={() => router.push(`/students/${encodeURIComponent(row.email)}`)}
-                            className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+                            className="px-3 py-1 text-xs font-medium text-blue-600 bg-blue-50 rounded-md hover:bg-blue-100 transition-colors"
                           >
                             View
                           </button>
