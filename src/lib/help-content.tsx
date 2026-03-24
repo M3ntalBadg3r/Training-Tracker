@@ -164,6 +164,10 @@ const helpSections: Record<string, HelpSection> = {
           Click <strong>View</strong> on any row to open that student&apos;s
           detailed record.
         </p>
+        <p>
+          Use the <strong>Export</strong> button to download the student list as
+          CSV, Excel, or PDF.
+        </p>
       </>
     ),
   },
