@@ -136,12 +136,12 @@ export default function TrainingDataPage() {
   // Column definitions for search/filter (order matches desired table order)
   const tableColumns = useMemo(() => [
     { key: "fullTitle", header: "Full Title", filterable: true },
-    { key: "trainingTitle", header: "Training Title", filterable: false },
+    { key: "trainingTitle", header: "Training Title", filterable: true },
     { key: "trainingType", header: "Type", filterable: true, filterOptions: TRAINING_TYPES, labelMap: TRAINING_TYPE_LABELS },
     { key: "link", header: "Link", filterable: false },
     { key: "productType", header: "Product", filterable: true, filterOptions: PRODUCT_TYPES },
     { key: "function", header: "Function", filterable: true, filterOptions: FUNCTION_TYPES, labelMap: FUNCTION_TYPE_LABELS },
-    { key: "certification", header: "Certification", filterable: false },
+    { key: "certification", header: "Certification", filterable: true },
   ], []);
 
   const getCellValue = (row: TrainingDataRow, key: string): string => {
