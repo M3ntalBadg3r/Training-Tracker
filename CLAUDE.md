@@ -97,6 +97,7 @@ After every change, you MUST complete these steps before considering the task do
 1. **Bump the version** — Update `"version"` in `package.json` using semver (patch for fixes, minor for features, major for breaking changes).
 2. **Update README.md** — If the change affects how the system is used (new features, changed behavior, new pages, config changes), update `README.md` to reflect it.
 3. **Update the help system** — If the change affects user-facing behavior, update the relevant section in `src/lib/help-content.tsx` so the in-app help stays accurate.
+4. **Update CLAUDE.md** — If the change modifies the project structure (new/renamed/removed files or directories) or the data model (new/changed models, fields, enums, or relationships), update the relevant sections in this file.
 
 ## Deployment
 
