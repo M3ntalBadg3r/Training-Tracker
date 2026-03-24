@@ -37,6 +37,7 @@ export async function GET() {
     region: string;
     country: string;
     iltFullTitle: string;
+    iltProductType: string;
     certificationFullTitle: string;
     iltCompletedDate: string;
     iltActive: boolean;
@@ -88,6 +89,7 @@ export async function GET() {
       });
 
       const iltFull = ilt.fullTitle;
+      const iltProduct = ilt.productType;
       const certFull = certFullTitleMap.get(certTitle) || certTitle;
 
       for (const student of students) {
@@ -99,6 +101,7 @@ export async function GET() {
           region: student.regionData?.region || "",
           country: student.country,
           iltFullTitle: iltFull,
+          iltProductType: iltProduct,
           certificationFullTitle: certFull,
           iltCompletedDate: iltRecord.completedDate.toISOString(),
           iltActive: iltRecord.expiryDate > now,

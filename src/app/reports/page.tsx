@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import PageHeader from "@/components/layout/PageHeader";
 import { Search, Download, ChevronDown, ChevronRight } from "lucide-react";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
@@ -12,12 +13,15 @@ interface TrainedNotCertifiedRow {
   region: string;
   country: string;
   iltFullTitle: string;
+  iltProductType: string;
   certificationFullTitle: string;
   iltCompletedDate: string;
   iltActive: boolean;
 }
 
 export default function ReportsPage() {
+  const router = useRouter();
+
   // Trained but not Certified report
   const [reportData, setReportData] = useState<TrainedNotCertifiedRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -28,6 +32,7 @@ export default function ReportsPage() {
   const [filterTheatre, setFilterTheatre] = useState("");
   const [filterRegion, setFilterRegion] = useState("");
   const [filterCountry, setFilterCountry] = useState("");
+  const [filterProduct, setFilterProduct] = useState("");
   const [filterIlt, setFilterIlt] = useState("");
   const [filterCert, setFilterCert] = useState("");
 
@@ -55,6 +60,10 @@ export default function ReportsPage() {
     () => [...new Set(reportData.map((r) => r.country))].filter(Boolean).sort(),
     [reportData]
   );
+  const productTypes = useMemo(
+    () => [...new Set(reportData.map((r) => r.iltProductType))].filter(Boolean).sort(),
+    [reportData]
+  );
   const iltTitles = useMemo(
     () => [...new Set(reportData.map((r) => r.iltFullTitle))].sort(),
     [reportData]
@@ -74,11 +83,12 @@ export default function ReportsPage() {
       const matchesTheatre = !filterTheatre || r.theatre === filterTheatre;
       const matchesRegion = !filterRegion || r.region === filterRegion;
       const matchesCountry = !filterCountry || r.country === filterCountry;
+      const matchesProduct = !filterProduct || r.iltProductType === filterProduct;
       const matchesIlt = !filterIlt || r.iltFullTitle === filterIlt;
       const matchesCert = !filterCert || r.certificationFullTitle === filterCert;
-      return matchesSearch && matchesTheatre && matchesRegion && matchesCountry && matchesIlt && matchesCert;
+      return matchesSearch && matchesTheatre && matchesRegion && matchesCountry && matchesProduct && matchesIlt && matchesCert;
     });
-  }, [reportData, searchQuery, filterTheatre, filterRegion, filterCountry, filterIlt, filterCert]);
+  }, [reportData, searchQuery, filterTheatre, filterRegion, filterCountry, filterProduct, filterIlt, filterCert]);
 
   const exportData = useMemo(
     () =>
@@ -97,6 +107,7 @@ export default function ReportsPage() {
     { key: "region", header: "Region" },
     { key: "country", header: "Country" },
     { key: "iltFullTitle", header: "Instructor-Led Training" },
+    { key: "iltProductType", header: "Product" },
     { key: "iltCompletedDate", header: "ILT Completed Date" },
     { key: "iltActive", header: "ILT Active" },
     { key: "certificationFullTitle", header: "Certification Not Obtained" },
@@ -221,6 +232,16 @@ export default function ReportsPage() {
                     ))}
                   </select>
                   <select
+                    value={filterProduct}
+                    onChange={(e) => setFilterProduct(e.target.value)}
+                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  >
+                    <option value="">All Products</option>
+                    {productTypes.map((p) => (
+                      <option key={p} value={p}>{p}</option>
+                    ))}
+                  </select>
+                  <select
                     value={filterIlt}
                     onChange={(e) => setFilterIlt(e.target.value)}
                     className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
@@ -254,9 +275,11 @@ export default function ReportsPage() {
                       <th className="px-4 py-3 text-left font-semibold">Region</th>
                       <th className="px-4 py-3 text-left font-semibold">Country</th>
                       <th className="px-4 py-3 text-left font-semibold">Instructor-Led Training</th>
+                      <th className="px-4 py-3 text-left font-semibold">Product</th>
                       <th className="px-4 py-3 text-left font-semibold">ILT Completed Date</th>
                       <th className="px-4 py-3 text-left font-semibold">ILT Active</th>
                       <th className="px-4 py-3 text-left font-semibold">Certification Not Obtained</th>
+                      <th className="px-4 py-3 text-left font-semibold"></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -268,6 +291,7 @@ export default function ReportsPage() {
                         <td className="px-4 py-3">{row.region || "-"}</td>
                         <td className="px-4 py-3">{row.country || "-"}</td>
                         <td className="px-4 py-3">{row.iltFullTitle}</td>
+                        <td className="px-4 py-3">{row.iltProductType}</td>
                         <td className="px-4 py-3">{new Date(row.iltCompletedDate).toLocaleDateString()}</td>
                         <td className="px-4 py-3">
                           <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${row.iltActive ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>
@@ -275,11 +299,19 @@ export default function ReportsPage() {
                           </span>
                         </td>
                         <td className="px-4 py-3">{row.certificationFullTitle}</td>
+                        <td className="px-4 py-3">
+                          <button
+                            onClick={() => router.push(`/students/${encodeURIComponent(row.email)}`)}
+                            className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+                          >
+                            View
+                          </button>
+                        </td>
                       </tr>
                     ))}
                     {filteredData.length === 0 && (
                       <tr>
-                        <td colSpan={9} className="px-4 py-8 text-center text-gray-500">
+                        <td colSpan={11} className="px-4 py-8 text-center text-gray-500">
                           {reportData.length === 0
                             ? "No results found. Ensure ILT trainings have certification mappings in Training Data."
                             : "No results match the current filters."}
