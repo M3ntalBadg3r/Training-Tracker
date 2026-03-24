@@ -96,7 +96,7 @@ export default function TrainingPage() {
           label: "View Students",
           onClick: (row) =>
             router.push(
-              `/training/${encodeURIComponent(row.fullTitle)}`
+              `/training/${encodeURIComponent(row.fullTitle)}?trainingType=${encodeURIComponent(row.trainingType)}`
             ),
         }}
       />

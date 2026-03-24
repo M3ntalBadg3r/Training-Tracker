@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, use } from "react";
+import { useSearchParams } from "next/navigation";
 import PageHeader from "@/components/layout/PageHeader";
 import DataTable from "@/components/data-table/DataTable";
 import Badge from "@/components/ui/Badge";
@@ -26,21 +27,26 @@ export default function TrainingTakenPage({
 }) {
   const resolvedParams = use(params);
   const fullTitle = decodeURIComponent(resolvedParams.fullTitle);
+  const searchParams = useSearchParams();
+  const trainingType = searchParams.get("trainingType");
 
   const [students, setStudents] = useState<TrainingTakenRow[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch(
-      `/api/training-taken?fullTitle=${encodeURIComponent(fullTitle)}`
-    )
+    const url = new URL(`/api/training-taken`, window.location.origin);
+    url.searchParams.set("fullTitle", fullTitle);
+    if (trainingType) {
+      url.searchParams.set("trainingType", trainingType);
+    }
+    fetch(url.toString())
       .then((res) => res.json())
       .then((data) => {
         setStudents(data);
         setLoading(false);
       })
       .catch(() => setLoading(false));
-  }, [fullTitle]);
+  }, [fullTitle, trainingType]);
 
   if (loading) {
     return (

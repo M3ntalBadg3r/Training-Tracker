@@ -10,7 +10,7 @@ export async function GET() {
     orderBy: { fullTitle: "asc" },
   });
 
-  // Group by fullTitle and aggregate student counts
+  // Group by fullTitle + trainingType to avoid merging different types
   const grouped = new Map<
     string,
     {
@@ -24,15 +24,15 @@ export async function GET() {
   >();
 
   for (const td of trainingData) {
-    const existing = grouped.get(td.fullTitle);
+    const groupKey = `${td.fullTitle}::${td.trainingType}`;
+    const existing = grouped.get(groupKey);
     const count = new Set(td.trainingsTaken.map((t) => t.email)).size;
 
     if (existing) {
-      // Merge: add student counts (collect all unique emails)
+      // Merge: collect all unique emails across training titles with same fullTitle AND trainingType
       const allEmails = new Set<string>();
-      // Re-count from all training titles with this full title
       for (const other of trainingData) {
-        if (other.fullTitle === td.fullTitle) {
+        if (other.fullTitle === td.fullTitle && other.trainingType === td.trainingType) {
           for (const t of other.trainingsTaken) {
             allEmails.add(t.email);
           }
@@ -40,7 +40,7 @@ export async function GET() {
       }
       existing.studentsTaken = allEmails.size;
     } else {
-      grouped.set(td.fullTitle, {
+      grouped.set(groupKey, {
         fullTitle: td.fullTitle,
         trainingType: td.trainingType,
         productType: td.productType,

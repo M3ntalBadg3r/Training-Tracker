@@ -5,6 +5,7 @@ import { isActive, formatDate } from "@/lib/utils";
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const fullTitle = searchParams.get("fullTitle");
+  const trainingType = searchParams.get("trainingType");
 
   if (!fullTitle) {
     return NextResponse.json(
@@ -13,9 +14,14 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  // Find all training titles with this full title
+  // Find all training titles with this full title (and optionally trainingType)
+  const where: { fullTitle: string; trainingType?: string } = { fullTitle };
+  if (trainingType) {
+    where.trainingType = trainingType;
+  }
+
   const trainingDataRecords = await prisma.trainingData.findMany({
-    where: { fullTitle },
+    where,
     select: { trainingTitle: true },
   });
 
