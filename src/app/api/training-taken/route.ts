@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
+import { TrainingType } from "@prisma/client";
 import { isActive, formatDate } from "@/lib/utils";
 
 export async function GET(request: NextRequest) {
@@ -15,9 +16,9 @@ export async function GET(request: NextRequest) {
   }
 
   // Find all training titles with this full title (and optionally trainingType)
-  const where: { fullTitle: string; trainingType?: string } = { fullTitle };
-  if (trainingType) {
-    where.trainingType = trainingType;
+  const where: { fullTitle: string; trainingType?: TrainingType } = { fullTitle };
+  if (trainingType && Object.values(TrainingType).includes(trainingType as TrainingType)) {
+    where.trainingType = trainingType as TrainingType;
   }
 
   const trainingDataRecords = await prisma.trainingData.findMany({
