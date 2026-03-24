@@ -162,6 +162,11 @@ export default function ImportPage() {
     <div>
       <PageHeader title="Import" helpSlug="import" />
 
+      <p className="text-sm text-gray-500 mb-6">
+        Upload a CSV or Excel file to bulk-import student training records. The wizard will guide you through
+        mapping columns from your file to the required fields, then import the data into the system.
+      </p>
+
       {error && (
         <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
           <AlertCircle size={18} className="text-red-500 mt-0.5 shrink-0" />

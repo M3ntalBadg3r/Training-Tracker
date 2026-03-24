@@ -22,11 +22,11 @@ const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/students", label: "Students", icon: Users },
   { href: "/training", label: "Training", icon: GraduationCap },
-  { href: "/import", label: "Import", icon: Upload },
   { href: "/reports", label: "Reports", icon: FileBarChart },
 ];
 
 const adminSubItems = [
+  { href: "/admin/import", label: "Import", icon: Upload },
   { href: "/admin/region-data", label: "Region Data", icon: Globe },
   { href: "/admin/training-data", label: "Training Data", icon: BookOpen },
   { href: "/admin/backup", label: "Backup", icon: HardDrive },

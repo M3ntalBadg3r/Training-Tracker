@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import PageHeader from "@/components/layout/PageHeader";
 import Modal from "@/components/ui/Modal";
-import { AlertTriangle, Globe, BookOpen, HardDrive, ChevronRight } from "lucide-react";
+import { AlertTriangle, Globe, BookOpen, HardDrive, Upload, ChevronRight } from "lucide-react";
 
 export default function AdminPage() {
   const [showWipeConfirm, setShowWipeConfirm] = useState(false);
@@ -29,6 +29,19 @@ export default function AdminPage() {
 
       {/* Sub-page links */}
       <section className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <Link
+          href="/admin/import"
+          className="flex items-center justify-between p-4 bg-white rounded-lg border border-gray-200 hover:border-blue-300 hover:shadow-sm transition-all"
+        >
+          <div className="flex items-center gap-3">
+            <Upload size={20} className="text-blue-600" />
+            <div>
+              <h3 className="font-semibold">Import</h3>
+              <p className="text-sm text-gray-500">Import student training data from CSV or Excel</p>
+            </div>
+          </div>
+          <ChevronRight size={20} className="text-gray-400" />
+        </Link>
         <Link
           href="/admin/region-data"
           className="flex items-center justify-between p-4 bg-white rounded-lg border border-gray-200 hover:border-blue-300 hover:shadow-sm transition-all"
