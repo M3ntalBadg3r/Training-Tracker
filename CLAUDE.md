@@ -90,6 +90,14 @@ deploy/           # install.sh, update.sh, systemd service
 - **Date handling**: All dates flow through `lib/utils.ts`. Use `parseDate()` for parsing, `formatDate()` for display (DD Mmm YYYY), `computeExpiryDate()` for expiry.
 - **Import column mapping**: The import API auto-maps columns with fuzzy matching and supports type aliases (e.g., `ilt` → `InstructorLedTraining`, `pre-sales` → `PreSales`).
 
+## Mandatory Post-Change Rules
+
+After every change, you MUST complete these steps before considering the task done:
+
+1. **Bump the version** — Update `"version"` in `package.json` using semver (patch for fixes, minor for features, major for breaking changes).
+2. **Update README.md** — If the change affects how the system is used (new features, changed behavior, new pages, config changes), update `README.md` to reflect it.
+3. **Update the help system** — If the change affects user-facing behavior, update the relevant section in `src/lib/help-content.tsx` so the in-app help stays accurate.
+
 ## Deployment
 
 Production runs via systemd at `/opt/training-tracker` on port 3000. See `deploy/` for install/update scripts.
