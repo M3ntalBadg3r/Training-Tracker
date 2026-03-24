@@ -166,11 +166,13 @@ export default function Sidebar() {
           )}
         </div>
       </nav>
-      <div className="border-t border-slate-700 p-3 text-center">
-        <span className="text-xs text-slate-500">
-          {collapsed ? `v${process.env.APP_VERSION}` : `Version ${process.env.APP_VERSION}`}
-        </span>
-      </div>
+      {!collapsed && (
+        <div className="border-t border-slate-700 p-3 text-center">
+          <span className="text-xs text-slate-500">
+            Version {process.env.APP_VERSION}
+          </span>
+        </div>
+      )}
     </aside>
   );
 }
