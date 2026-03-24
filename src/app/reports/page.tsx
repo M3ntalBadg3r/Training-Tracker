@@ -35,6 +35,7 @@ export default function ReportsPage() {
   const [filterProduct, setFilterProduct] = useState("");
   const [filterIlt, setFilterIlt] = useState("");
   const [filterCert, setFilterCert] = useState("");
+  const [filterActive, setFilterActive] = useState("");
 
   const [showExportMenu, setShowExportMenu] = useState(false);
 
@@ -86,9 +87,10 @@ export default function ReportsPage() {
       const matchesProduct = !filterProduct || r.iltProductType === filterProduct;
       const matchesIlt = !filterIlt || r.iltFullTitle === filterIlt;
       const matchesCert = !filterCert || r.certificationFullTitle === filterCert;
-      return matchesSearch && matchesTheatre && matchesRegion && matchesCountry && matchesProduct && matchesIlt && matchesCert;
+      const matchesActive = !filterActive || (filterActive === "yes" ? r.iltActive : !r.iltActive);
+      return matchesSearch && matchesTheatre && matchesRegion && matchesCountry && matchesProduct && matchesIlt && matchesCert && matchesActive;
     });
-  }, [reportData, searchQuery, filterTheatre, filterRegion, filterCountry, filterProduct, filterIlt, filterCert]);
+  }, [reportData, searchQuery, filterTheatre, filterRegion, filterCountry, filterProduct, filterIlt, filterCert, filterActive]);
 
   const exportData = useMemo(
     () =>
@@ -260,6 +262,15 @@ export default function ReportsPage() {
                     {certTitles.map((c) => (
                       <option key={c} value={c}>{c}</option>
                     ))}
+                  </select>
+                  <select
+                    value={filterActive}
+                    onChange={(e) => setFilterActive(e.target.value)}
+                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  >
+                    <option value="">All Active Status</option>
+                    <option value="yes">Active</option>
+                    <option value="no">Not Active</option>
                   </select>
                 </div>
               </div>
