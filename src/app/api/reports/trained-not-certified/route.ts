@@ -38,21 +38,33 @@ export async function GET() {
     country: string;
     iltFullTitle: string;
     certificationFullTitle: string;
+    iltCompletedDate: string;
+    iltActive: boolean;
   }[] = [];
+
+  const now = new Date();
 
   for (const ilt of iltWithCert) {
     if (ilt.certification.length === 0) continue;
 
-    // Students who completed this ILT
-    const iltStudents = await prisma.trainingTaken.findMany({
+    // Students who completed this ILT (include dates for the report)
+    const iltRecords = await prisma.trainingTaken.findMany({
       where: { trainingTitle: ilt.trainingTitle },
-      select: { email: true },
-      distinct: ["email"],
+      select: { email: true, completedDate: true, expiryDate: true },
     });
 
-    if (iltStudents.length === 0) continue;
+    if (iltRecords.length === 0) continue;
 
-    const iltEmails = iltStudents.map((s) => s.email);
+    // Build a map of email -> most recent ILT record
+    const iltByEmail = new Map<string, { completedDate: Date; expiryDate: Date }>();
+    for (const rec of iltRecords) {
+      const existing = iltByEmail.get(rec.email);
+      if (!existing || rec.completedDate > existing.completedDate) {
+        iltByEmail.set(rec.email, { completedDate: rec.completedDate, expiryDate: rec.expiryDate });
+      }
+    }
+
+    const iltEmails = Array.from(iltByEmail.keys());
 
     // Check each certification mapped to this ILT
     for (const certTitle of ilt.certification) {
@@ -79,6 +91,7 @@ export async function GET() {
       const certFull = certFullTitleMap.get(certTitle) || certTitle;
 
       for (const student of students) {
+        const iltRecord = iltByEmail.get(student.email)!;
         results.push({
           fullName: student.fullName,
           email: student.email,
@@ -87,6 +100,8 @@ export async function GET() {
           country: student.country,
           iltFullTitle: iltFull,
           certificationFullTitle: certFull,
+          iltCompletedDate: iltRecord.completedDate.toISOString(),
+          iltActive: iltRecord.expiryDate > now,
         });
       }
     }

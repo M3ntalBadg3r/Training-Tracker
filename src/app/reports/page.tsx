@@ -13,6 +13,8 @@ interface TrainedNotCertifiedRow {
   country: string;
   iltFullTitle: string;
   certificationFullTitle: string;
+  iltCompletedDate: string;
+  iltActive: boolean;
 }
 
 export default function ReportsPage() {
@@ -78,13 +80,25 @@ export default function ReportsPage() {
     });
   }, [reportData, searchQuery, filterTheatre, filterRegion, filterCountry, filterIlt, filterCert]);
 
-  const exportColumns: { key: keyof TrainedNotCertifiedRow; header: string }[] = [
+  const exportData = useMemo(
+    () =>
+      filteredData.map((r) => ({
+        ...r,
+        iltCompletedDate: new Date(r.iltCompletedDate).toLocaleDateString(),
+        iltActive: r.iltActive ? "Yes" : "No",
+      })),
+    [filteredData]
+  );
+
+  const exportColumns: { key: keyof typeof exportData[0]; header: string }[] = [
     { key: "fullName", header: "Full Name" },
     { key: "email", header: "Email Address" },
     { key: "theatre", header: "Theatre" },
     { key: "region", header: "Region" },
     { key: "country", header: "Country" },
     { key: "iltFullTitle", header: "Instructor-Led Training" },
+    { key: "iltCompletedDate", header: "ILT Completed Date" },
+    { key: "iltActive", header: "ILT Active" },
     { key: "certificationFullTitle", header: "Certification Not Obtained" },
   ];
 
@@ -146,7 +160,7 @@ export default function ReportsPage() {
                       <div className="absolute right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[140px]">
                         <button
                           onClick={() => {
-                            exportToCsv(filteredData, exportColumns, "trained-not-certified");
+                            exportToCsv(exportData, exportColumns, "trained-not-certified");
                             setShowExportMenu(false);
                           }}
                           className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-t-lg"
@@ -155,7 +169,7 @@ export default function ReportsPage() {
                         </button>
                         <button
                           onClick={() => {
-                            exportToExcel(filteredData, exportColumns, "trained-not-certified");
+                            exportToExcel(exportData, exportColumns, "trained-not-certified");
                             setShowExportMenu(false);
                           }}
                           className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100"
@@ -164,7 +178,7 @@ export default function ReportsPage() {
                         </button>
                         <button
                           onClick={() => {
-                            exportToPdf(filteredData, exportColumns, "trained-not-certified");
+                            exportToPdf(exportData, exportColumns, "trained-not-certified");
                             setShowExportMenu(false);
                           }}
                           className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-b-lg"
@@ -240,6 +254,8 @@ export default function ReportsPage() {
                       <th className="px-4 py-3 text-left font-semibold">Region</th>
                       <th className="px-4 py-3 text-left font-semibold">Country</th>
                       <th className="px-4 py-3 text-left font-semibold">Instructor-Led Training</th>
+                      <th className="px-4 py-3 text-left font-semibold">ILT Completed Date</th>
+                      <th className="px-4 py-3 text-left font-semibold">ILT Active</th>
                       <th className="px-4 py-3 text-left font-semibold">Certification Not Obtained</th>
                     </tr>
                   </thead>
@@ -252,12 +268,18 @@ export default function ReportsPage() {
                         <td className="px-4 py-3">{row.region || "-"}</td>
                         <td className="px-4 py-3">{row.country || "-"}</td>
                         <td className="px-4 py-3">{row.iltFullTitle}</td>
+                        <td className="px-4 py-3">{new Date(row.iltCompletedDate).toLocaleDateString()}</td>
+                        <td className="px-4 py-3">
+                          <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${row.iltActive ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>
+                            {row.iltActive ? "Yes" : "No"}
+                          </span>
+                        </td>
                         <td className="px-4 py-3">{row.certificationFullTitle}</td>
                       </tr>
                     ))}
                     {filteredData.length === 0 && (
                       <tr>
-                        <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
+                        <td colSpan={9} className="px-4 py-8 text-center text-gray-500">
                           {reportData.length === 0
                             ? "No results found. Ensure ILT trainings have certification mappings in Training Data."
                             : "No results match the current filters."}
