@@ -162,10 +162,14 @@ export default function TrainingPage() {
         columns={columns}
         rowAction={{
           label: "View Students",
-          onClick: (row) =>
-            router.push(
-              `/training/${encodeURIComponent(row.fullTitle)}?trainingType=${encodeURIComponent(row.trainingType)}`
-            ),
+          onClick: (row) => {
+            const params = new URLSearchParams();
+            params.set("trainingType", row.trainingType);
+            if (theatre) params.set("theatre", theatre);
+            if (region) params.set("region", region);
+            if (country) params.set("country", country);
+            router.push(`/training/${encodeURIComponent(row.fullTitle)}?${params.toString()}`);
+          },
         }}
       />
     </div>

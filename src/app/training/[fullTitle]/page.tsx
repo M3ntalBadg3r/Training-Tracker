@@ -31,6 +31,10 @@ export default function TrainingTakenPage({
   const fullTitle = decodeURIComponent(resolvedParams.fullTitle);
   const searchParams = useSearchParams();
   const trainingType = searchParams.get("trainingType");
+  const theatre = searchParams.get("theatre");
+  const region = searchParams.get("region");
+  const country = searchParams.get("country");
+  const hasLocationFilters = !!(theatre || region || country);
   const router = useRouter();
 
   const [students, setStudents] = useState<TrainingTakenRow[]>([]);
@@ -64,9 +68,10 @@ export default function TrainingTakenPage({
   useEffect(() => {
     const url = new URL(`/api/training-taken`, window.location.origin);
     url.searchParams.set("fullTitle", fullTitle);
-    if (trainingType) {
-      url.searchParams.set("trainingType", trainingType);
-    }
+    if (trainingType) url.searchParams.set("trainingType", trainingType);
+    if (theatre) url.searchParams.set("theatre", theatre);
+    if (region) url.searchParams.set("region", region);
+    if (country) url.searchParams.set("country", country);
     fetch(url.toString())
       .then((res) => res.json())
       .then((data) => {
@@ -74,7 +79,7 @@ export default function TrainingTakenPage({
         setLoading(false);
       })
       .catch(() => setLoading(false));
-  }, [fullTitle, trainingType]);
+  }, [fullTitle, trainingType, theatre, region, country]);
 
   if (loading) {
     return (
@@ -87,6 +92,14 @@ export default function TrainingTakenPage({
   return (
     <div>
       <PageHeader title={fullTitle} showBack helpSlug="training-detail" />
+      {hasLocationFilters && (
+        <div className="flex items-center gap-2 mb-3 text-sm text-gray-600">
+          <span>Filtered by:</span>
+          {theatre && <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded">{theatre}</span>}
+          {region && <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded">{region}</span>}
+          {country && <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded">{country}</span>}
+        </div>
+      )}
       <div className="flex items-center justify-between mb-4">
         <p className="text-gray-600">
           {students.length} student(s) have taken this training

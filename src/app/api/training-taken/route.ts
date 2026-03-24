@@ -28,9 +28,23 @@ export async function GET(request: NextRequest) {
 
   const trainingTitles = trainingDataRecords.map((td) => td.trainingTitle);
 
+  // Optional location filters
+  const theatre = searchParams.get("theatre");
+  const region = searchParams.get("region");
+  const country = searchParams.get("country");
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const studentWhere: Record<string, any> = {};
+  if (theatre) studentWhere.theatre = theatre;
+  if (country) studentWhere.country = country;
+  if (region) studentWhere.regionData = { region };
+
   // Find all training taken records with these titles
   const trainingTaken = await prisma.trainingTaken.findMany({
-    where: { trainingTitle: { in: trainingTitles } },
+    where: {
+      trainingTitle: { in: trainingTitles },
+      ...(Object.keys(studentWhere).length > 0 ? { student: studentWhere } : {}),
+    },
     include: {
       student: {
         include: { regionData: true },
