@@ -13,6 +13,7 @@ const columns: ColumnDef<TrainingTakenRow>[] = [
   { key: "fullName", header: "Full Name" },
   { key: "email", header: "Email Address" },
   { key: "theatre", header: "Theatre" },
+  { key: "region", header: "Region" },
   { key: "country", header: "Country" },
   {
     key: "active",
@@ -47,6 +48,7 @@ export default function TrainingTakenPage({
         fullName: s.fullName,
         email: s.email,
         theatre: s.theatre,
+        region: s.region,
         country: s.country,
         completedDate: s.completedDate,
         expiryDate: s.expiryDate,
@@ -59,6 +61,7 @@ export default function TrainingTakenPage({
     { key: "fullName", header: "Full Name" },
     { key: "email", header: "Email Address" },
     { key: "theatre", header: "Theatre" },
+    { key: "region", header: "Region" },
     { key: "country", header: "Country" },
     { key: "completedDate", header: "Completed Date" },
     { key: "expiryDate", header: "Expiry Date" },

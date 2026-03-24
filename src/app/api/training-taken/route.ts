@@ -66,6 +66,7 @@ export async function GET(request: NextRequest) {
     fullName: t.student.fullName,
     email: t.student.email,
     theatre: t.student.theatre,
+    region: t.student.regionData?.region ?? "",
     country: t.student.country,
     active: isActive(t.expiryDate),
     completedDate: formatDate(t.completedDate),

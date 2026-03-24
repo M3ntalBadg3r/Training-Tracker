@@ -35,6 +35,7 @@ export interface TrainingTakenRow {
   fullName: string;
   email: string;
   theatre: string;
+  region: string;
   country: string;
   active: boolean;
   completedDate: string;
