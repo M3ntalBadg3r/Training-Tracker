@@ -6,7 +6,7 @@ import DataTable from "@/components/data-table/DataTable";
 import Badge from "@/components/ui/Badge";
 import Modal from "@/components/ui/Modal";
 import { ColumnDef, StudentRecord, StudentTrainingRow } from "@/types";
-import { Pencil, Save, X } from "lucide-react";
+import { Pencil, Save, X, Award, ShieldCheck, GraduationCap } from "lucide-react";
 
 const trainingColumns: ColumnDef<StudentTrainingRow>[] = [
   {
@@ -167,6 +167,40 @@ export default function StudentRecordPage({
     (t) => !deletedTrainingIds.includes(t.id)
   );
 
+  const activeCerts = visibleTrainings.filter(
+    (t) => t.trainingType === "Certification" && t.active
+  ).length;
+  const activeAccred = visibleTrainings.filter(
+    (t) => t.trainingType === "Accreditation" && t.active
+  ).length;
+  const activeILT = visibleTrainings.filter(
+    (t) => t.trainingType === "InstructorLedTraining" && t.active
+  ).length;
+
+  const statCards = [
+    {
+      label: "Certifications Earned",
+      value: activeCerts,
+      icon: Award,
+      color: "bg-indigo-50",
+      iconColor: "text-indigo-500",
+    },
+    {
+      label: "Accreditations Earned",
+      value: activeAccred,
+      icon: ShieldCheck,
+      color: "bg-emerald-50",
+      iconColor: "text-emerald-500",
+    },
+    {
+      label: "Instructor-Led Trainings",
+      value: activeILT,
+      icon: GraduationCap,
+      color: "bg-amber-50",
+      iconColor: "text-amber-500",
+    },
+  ];
+
   return (
     <div>
       <PageHeader title="Student Record" showBack helpSlug="student-detail" />
@@ -276,6 +310,27 @@ export default function StudentRecordPage({
           </div>
         </div>
       </div>
+
+      {/* Stat Cards */}
+      <section className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+        {statCards.map((card) => {
+          const Icon = card.icon;
+          return (
+            <div
+              key={card.label}
+              className="bg-white rounded-lg border border-gray-200 p-5 flex items-center gap-4"
+            >
+              <div className={`p-3 rounded-lg ${card.color}`}>
+                <Icon size={24} className={card.iconColor} />
+              </div>
+              <div>
+                <div className="text-2xl font-bold text-gray-900">{card.value}</div>
+                <div className="text-sm text-gray-500">{card.label}</div>
+              </div>
+            </div>
+          );
+        })}
+      </section>
 
       {/* Training Table */}
       <h3 className="text-lg font-semibold mb-3">
