@@ -4,6 +4,7 @@ import { useEffect, useState, useRef, useMemo } from "react";
 import PageHeader from "@/components/layout/PageHeader";
 import Modal from "@/components/ui/Modal";
 import { TrainingDataRow } from "@/types";
+import { useDebounce } from "@/hooks/useDebounce";
 import {
   Plus,
   Trash2,
@@ -16,6 +17,8 @@ import {
   AlertTriangle,
   Search,
   X,
+  ChevronUp,
+  ChevronDown,
 } from "lucide-react";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
@@ -122,12 +125,90 @@ export default function TrainingDataPage() {
   const [lastImport, setLastImport] = useState<string | null>(null);
   const [showExportMenu, setShowExportMenu] = useState(false);
 
-  // Search and filter state
-  const [searchQuery, setSearchQuery] = useState("");
-  const [filterTrainingType, setFilterTrainingType] = useState("");
-  const [filterProductType, setFilterProductType] = useState("");
-  const [filterFullTitle, setFilterFullTitle] = useState("");
-  const [filterFunction, setFilterFunction] = useState("");
+  // Search and filter state (DataTable-style)
+  const [searchTerm, setSearchTerm] = useState("");
+  const [searchColumn, setSearchColumn] = useState("all");
+  const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
+  const [sortColumn, setSortColumn] = useState<string | null>(null);
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+  const debouncedSearch = useDebounce(searchTerm);
+
+  // Column definitions for search/filter (order matches desired table order)
+  const tableColumns = useMemo(() => [
+    { key: "fullTitle", header: "Full Title", filterable: true },
+    { key: "trainingTitle", header: "Training Title", filterable: false },
+    { key: "trainingType", header: "Type", filterable: true, filterOptions: TRAINING_TYPES, labelMap: TRAINING_TYPE_LABELS },
+    { key: "link", header: "Link", filterable: false },
+    { key: "productType", header: "Product", filterable: true, filterOptions: PRODUCT_TYPES },
+    { key: "function", header: "Function", filterable: true, filterOptions: FUNCTION_TYPES, labelMap: FUNCTION_TYPE_LABELS },
+    { key: "certification", header: "Certification", filterable: false },
+  ], []);
+
+  const getCellValue = (row: TrainingDataRow, key: string): string => {
+    if (key === "certification") return row.certification?.join(", ") || "";
+    if (key === "link") return row.link || "";
+    return String((row as unknown as Record<string, unknown>)[key] ?? "");
+  };
+
+  const filteredTrainingList = useMemo(() => {
+    let result = [...trainingList];
+
+    // Free-form search
+    if (debouncedSearch) {
+      const term = debouncedSearch.toLowerCase();
+      result = result.filter((row) => {
+        if (searchColumn === "all") {
+          return tableColumns.some((col) =>
+            getCellValue(row, col.key).toLowerCase().includes(term)
+          );
+        }
+        return getCellValue(row, searchColumn).toLowerCase().includes(term);
+      });
+    }
+
+    // Column filters
+    for (const [key, value] of Object.entries(columnFilters)) {
+      if (!value) continue;
+      result = result.filter(
+        (row) => getCellValue(row, key).toLowerCase() === value.toLowerCase()
+      );
+    }
+
+    // Sorting
+    if (sortColumn) {
+      result.sort((a, b) => {
+        const aVal = getCellValue(a, sortColumn);
+        const bVal = getCellValue(b, sortColumn);
+        const cmp = aVal.localeCompare(bVal, undefined, { numeric: true });
+        return sortDirection === "asc" ? cmp : -cmp;
+      });
+    }
+
+    return result;
+  }, [trainingList, debouncedSearch, searchColumn, columnFilters, sortColumn, sortDirection, tableColumns]);
+
+  const handleSort = (key: string) => {
+    if (sortColumn === key) {
+      setSortDirection((prev) => (prev === "asc" ? "desc" : "asc"));
+    } else {
+      setSortColumn(key);
+      setSortDirection("asc");
+    }
+  };
+
+  const handleColumnFilter = (key: string, value: string) => {
+    setColumnFilters((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const getFilterOptions = (col: { key: string; filterOptions?: string[] }): string[] => {
+    if (col.filterOptions) return col.filterOptions;
+    const values = new Set<string>();
+    trainingList.forEach((row) => {
+      const val = getCellValue(row, col.key);
+      if (val) values.add(val);
+    });
+    return Array.from(values).sort();
+  };
 
   // Editing state
   const [editingTitle, setEditingTitle] = useState<string | null>(null);
@@ -1069,56 +1150,28 @@ export default function TrainingDataPage() {
         )}
       </section>
 
-      {/* Search and Filter */}
-      <section className="mb-4 flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1">
+      {/* Search bar */}
+      <section className="mb-4 flex items-center gap-3">
+        <div className="relative flex-1 max-w-md">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
             type="text"
-            placeholder="Search training titles..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg"
+            placeholder="Search..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           />
         </div>
         <select
-          value={filterFullTitle}
-          onChange={(e) => setFilterFullTitle(e.target.value)}
-          className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+          value={searchColumn}
+          onChange={(e) => setSearchColumn(e.target.value)}
+          className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
         >
-          <option value="">All Full Titles</option>
-          {[...new Set(trainingList.map((t) => t.fullTitle))].sort().map((title) => (
-            <option key={title} value={title}>{title}</option>
-          ))}
-        </select>
-        <select
-          value={filterTrainingType}
-          onChange={(e) => setFilterTrainingType(e.target.value)}
-          className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
-        >
-          <option value="">All Types</option>
-          {TRAINING_TYPES.map((t) => (
-            <option key={t} value={t}>{TRAINING_TYPE_LABELS[t]}</option>
-          ))}
-        </select>
-        <select
-          value={filterProductType}
-          onChange={(e) => setFilterProductType(e.target.value)}
-          className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
-        >
-          <option value="">All Products</option>
-          {PRODUCT_TYPES.map((t) => (
-            <option key={t} value={t}>{t}</option>
-          ))}
-        </select>
-        <select
-          value={filterFunction}
-          onChange={(e) => setFilterFunction(e.target.value)}
-          className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
-        >
-          <option value="">All Functions</option>
-          {FUNCTION_TYPES.map((t) => (
-            <option key={t} value={t}>{FUNCTION_TYPE_LABELS[t]}</option>
+          <option value="all">All columns</option>
+          {tableColumns.map((col) => (
+            <option key={col.key} value={col.key}>
+              {col.header}
+            </option>
           ))}
         </select>
       </section>
@@ -1129,44 +1182,50 @@ export default function TrainingDataPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="bg-gray-50 border-b">
-                  <th className="px-4 py-3 text-left font-semibold">Training Title</th>
-                  <th className="px-4 py-3 text-left font-semibold">Full Title</th>
-                  <th className="px-4 py-3 text-left font-semibold">Type</th>
-                  <th className="px-4 py-3 text-left font-semibold">Product</th>
-                  <th className="px-4 py-3 text-left font-semibold">Function</th>
-                  <th className="px-4 py-3 text-left font-semibold">Link</th>
-                  <th className="px-4 py-3 text-left font-semibold">Certification</th>
-                  <th className="px-4 py-3 text-left font-semibold">Actions</th>
+                <tr className="bg-gray-50 border-b border-gray-200">
+                  {tableColumns.map((col) => (
+                    <th key={col.key} className="px-4 py-3 text-left">
+                      <div className="space-y-1">
+                        <button
+                          onClick={() => handleSort(col.key)}
+                          className="flex items-center gap-1 font-semibold text-gray-700 hover:text-gray-900"
+                        >
+                          {col.header}
+                          {sortColumn === col.key && (
+                            sortDirection === "asc" ? <ChevronUp size={14} /> : <ChevronDown size={14} />
+                          )}
+                        </button>
+                        {col.filterable && (
+                          <select
+                            value={columnFilters[col.key] || ""}
+                            onChange={(e) => handleColumnFilter(col.key, e.target.value)}
+                            className="w-full text-xs border border-gray-200 rounded px-1 py-0.5 font-normal"
+                          >
+                            <option value="">All</option>
+                            {getFilterOptions(col).map((opt) => (
+                              <option key={opt} value={opt}>
+                                {col.labelMap ? (col.labelMap[opt] || opt) : opt}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                      </div>
+                    </th>
+                  ))}
+                  <th className="px-4 py-3 text-left font-semibold text-gray-700">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {trainingList
-                  .filter((t) => {
-                    const q = searchQuery.toLowerCase();
-                    const matchesSearch = !searchQuery ||
-                      t.trainingTitle.toLowerCase().includes(q) ||
-                      t.fullTitle.toLowerCase().includes(q);
-                    const matchesFullTitle = !filterFullTitle || t.fullTitle === filterFullTitle;
-                    const matchesType = !filterTrainingType || t.trainingType === filterTrainingType;
-                    const matchesProduct = !filterProductType || t.productType === filterProductType;
-                    const matchesFunction = !filterFunction || t.function === filterFunction;
-                    return matchesSearch && matchesFullTitle && matchesType && matchesProduct && matchesFunction;
-                  })
-                  .map((t) => (
-                  <tr key={t.trainingTitle} className="border-b hover:bg-gray-50">
-                    <td className="px-4 py-3">
-                      {editingTitle === t.trainingTitle ? (
-                        <input
-                          type="text"
-                          value={editValues.trainingTitle}
-                          onChange={(e) => setEditValues((prev) => ({ ...prev, trainingTitle: e.target.value }))}
-                          className="border border-gray-300 rounded px-2 py-1 text-sm w-full"
-                        />
-                      ) : (
-                        t.trainingTitle
-                      )}
+                {filteredTrainingList.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="px-4 py-8 text-center text-gray-500">
+                      No records found
                     </td>
+                  </tr>
+                ) : (
+                  filteredTrainingList.map((t) => (
+                  <tr key={t.trainingTitle} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                    {/* Full Title */}
                     <td className="px-4 py-3">
                       {editingTitle === t.trainingTitle ? (
                         <input
@@ -1179,6 +1238,20 @@ export default function TrainingDataPage() {
                         t.fullTitle
                       )}
                     </td>
+                    {/* Training Title */}
+                    <td className="px-4 py-3">
+                      {editingTitle === t.trainingTitle ? (
+                        <input
+                          type="text"
+                          value={editValues.trainingTitle}
+                          onChange={(e) => setEditValues((prev) => ({ ...prev, trainingTitle: e.target.value }))}
+                          className="border border-gray-300 rounded px-2 py-1 text-sm w-full"
+                        />
+                      ) : (
+                        t.trainingTitle
+                      )}
+                    </td>
+                    {/* Type */}
                     <td className="px-4 py-3">
                       {editingTitle === t.trainingTitle ? (
                         <select
@@ -1201,36 +1274,7 @@ export default function TrainingDataPage() {
                         TRAINING_TYPE_LABELS[t.trainingType] || t.trainingType
                       )}
                     </td>
-                    <td className="px-4 py-3">
-                      {editingTitle === t.trainingTitle ? (
-                        <select
-                          value={editValues.productType}
-                          onChange={(e) => setEditValues((prev) => ({ ...prev, productType: e.target.value }))}
-                          className="border border-gray-300 rounded px-2 py-1 text-sm"
-                        >
-                          {PRODUCT_TYPES.map((pt) => (
-                            <option key={pt} value={pt}>{pt}</option>
-                          ))}
-                        </select>
-                      ) : (
-                        t.productType
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      {editingTitle === t.trainingTitle ? (
-                        <select
-                          value={editValues.function}
-                          onChange={(e) => setEditValues((prev) => ({ ...prev, function: e.target.value }))}
-                          className="border border-gray-300 rounded px-2 py-1 text-sm"
-                        >
-                          {FUNCTION_TYPES.map((ft) => (
-                            <option key={ft} value={ft}>{FUNCTION_TYPE_LABELS[ft]}</option>
-                          ))}
-                        </select>
-                      ) : (
-                        FUNCTION_TYPE_LABELS[t.function] || t.function
-                      )}
-                    </td>
+                    {/* Link */}
                     <td className="px-4 py-3">
                       {editingTitle === t.trainingTitle ? (
                         <input
@@ -1253,6 +1297,39 @@ export default function TrainingDataPage() {
                         "-"
                       )}
                     </td>
+                    {/* Product */}
+                    <td className="px-4 py-3">
+                      {editingTitle === t.trainingTitle ? (
+                        <select
+                          value={editValues.productType}
+                          onChange={(e) => setEditValues((prev) => ({ ...prev, productType: e.target.value }))}
+                          className="border border-gray-300 rounded px-2 py-1 text-sm"
+                        >
+                          {PRODUCT_TYPES.map((pt) => (
+                            <option key={pt} value={pt}>{pt}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        t.productType
+                      )}
+                    </td>
+                    {/* Function */}
+                    <td className="px-4 py-3">
+                      {editingTitle === t.trainingTitle ? (
+                        <select
+                          value={editValues.function}
+                          onChange={(e) => setEditValues((prev) => ({ ...prev, function: e.target.value }))}
+                          className="border border-gray-300 rounded px-2 py-1 text-sm"
+                        >
+                          {FUNCTION_TYPES.map((ft) => (
+                            <option key={ft} value={ft}>{FUNCTION_TYPE_LABELS[ft]}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        FUNCTION_TYPE_LABELS[t.function] || t.function
+                      )}
+                    </td>
+                    {/* Certification */}
                     <td className="px-4 py-3">
                       {t.trainingType === "InstructorLedTraining" ? (
                         editingTitle === t.trainingTitle ? (
@@ -1286,6 +1363,7 @@ export default function TrainingDataPage() {
                         <span className="text-gray-300">-</span>
                       )}
                     </td>
+                    {/* Actions */}
                     <td className="px-4 py-3">
                       <div className="flex gap-2">
                         {editingTitle === t.trainingTitle ? (
@@ -1333,14 +1411,7 @@ export default function TrainingDataPage() {
                       </div>
                     </td>
                   </tr>
-                ))}
-                {trainingList.length === 0 && (
-                  <tr>
-                    <td colSpan={8} className="px-4 py-8 text-center text-gray-500">
-                      No training data found
-                    </td>
-                  </tr>
-                )}
+                )))}
               </tbody>
             </table>
           </div>
