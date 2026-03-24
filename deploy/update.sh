@@ -12,7 +12,11 @@ cd ${APP_DIR}
 
 # Pull latest changes
 echo "[1/5] Pulling latest changes..."
-git pull origin main || {
+BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null) || {
+    echo "Git pull failed. If running from a non-git directory, copy files manually."
+    exit 1
+}
+git pull origin "${BRANCH}" || {
     echo "Git pull failed. If running from a non-git directory, copy files manually."
     exit 1
 }
