@@ -263,15 +263,25 @@ export default function ReportsPage() {
                       <option key={c} value={c}>{c}</option>
                     ))}
                   </select>
-                  <select
-                    value={filterActive}
-                    onChange={(e) => setFilterActive(e.target.value)}
-                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                  >
-                    <option value="">All Active Status</option>
-                    <option value="yes">Active</option>
-                    <option value="no">Not Active</option>
-                  </select>
+                  <div className="flex items-center gap-1">
+                    {[
+                      { value: "", label: "All" },
+                      { value: "yes", label: "Active" },
+                      { value: "no", label: "Not Active" },
+                    ].map((opt) => (
+                      <button
+                        key={opt.value}
+                        onClick={() => setFilterActive(opt.value)}
+                        className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                          filterActive === opt.value
+                            ? "text-blue-600 bg-blue-50 hover:bg-blue-100"
+                            : "text-gray-600 bg-gray-50 hover:bg-gray-100"
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
 
