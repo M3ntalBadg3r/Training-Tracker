@@ -4,10 +4,13 @@ UPDATE "training_data"
   SET "certification" = ''
   WHERE "certification" IS NULL;
 
--- Now safe to set NOT NULL and default
+-- Apply NOT NULL constraint (all rows now have a value)
 ALTER TABLE "training_data"
-  ALTER COLUMN "certification" SET DEFAULT '{}',
   ALTER COLUMN "certification" SET NOT NULL;
+
+-- Drop any existing default before type change to avoid cast error
+ALTER TABLE "training_data"
+  ALTER COLUMN "certification" DROP DEFAULT;
 
 -- Convert to text array: empty string becomes empty array, others become single-element arrays
 ALTER TABLE "training_data"
@@ -16,3 +19,7 @@ ALTER TABLE "training_data"
     WHEN "certification" = '' THEN '{}'::text[]
     ELSE ARRAY["certification"]
   END;
+
+-- Set the default as a proper text array
+ALTER TABLE "training_data"
+  ALTER COLUMN "certification" SET DEFAULT '{}'::text[];
