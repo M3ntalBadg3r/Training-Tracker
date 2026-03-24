@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
+import { requireAuth, handleAuthError } from "@/lib/auth";
 
 export async function GET() {
   const regions = await prisma.regionData.findMany({
@@ -10,6 +11,11 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  try {
+    await requireAuth(request, "Admin");
+  } catch (error) {
+    return handleAuthError(error);
+  }
   const body = await request.json();
   const { country, region } = body;
 

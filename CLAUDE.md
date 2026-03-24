@@ -12,7 +12,7 @@ npx prisma migrate deploy && npx prisma generate
 npm run dev          # http://localhost:3000
 ```
 
-Requires a `.env` file with `DATABASE_URL` pointing to a PostgreSQL instance (see `.env.example`).
+Requires a `.env` file with `DATABASE_URL` and `JWT_SECRET` (see `.env.example`).
 
 ## Key Commands
 
@@ -29,20 +29,25 @@ Requires a `.env` file with `DATABASE_URL` pointing to a PostgreSQL instance (se
 ```
 src/
   app/
-    api/          # Route handlers (dashboard, students, training-data, import, reports, admin)
+    api/          # Route handlers (dashboard, students, training-data, import, reports, admin, auth)
     dashboard/    # Dashboard page (metrics + charts)
     students/     # Student list + [email] detail page
     training/     # Training catalog + [fullTitle] detail page
     reports/      # Trained-but-not-certified report
-    admin/        # Admin pages (region-data, training-data, backup, import)
-    layout.tsx    # Root layout with Sidebar
+    admin/        # Admin pages (region-data, training-data, backup, import, users)
+    login/        # Login page
+    setup/        # First-run setup wizard
+    layout.tsx    # Root layout with AuthProvider + AppShell
   components/
-    layout/       # Sidebar, PageHeader
+    layout/       # Sidebar, PageHeader, AppShell
     ui/           # Modal, Badge, HelpModal
+    auth/         # AuthProvider (context + useAuth hook)
     data-table/   # Generic DataTable (search, sort, filter, paginate)
   hooks/          # useDebounce
+  middleware.ts   # Route protection (auth + role checks)
   lib/
     prisma.ts     # Prisma client singleton (PrismaPg adapter)
+    auth.ts       # JWT, password hashing, TOTP/MFA utilities
     utils.ts      # Date helpers, formatters, label mappers
     export.ts     # CSV/Excel/PDF export utilities
     help-content.tsx
@@ -60,17 +65,22 @@ deploy/           # install.sh, update.sh, systemd service
 - **TrainingData** — PK: `trainingTitle`. Fields: fullTitle (display name), trainingType, productType, function, link, certification[].
 - **TrainingTaken** — FK: email → Student, trainingTitle → TrainingData. Fields: completedDate, expiryDate (auto: +2 years).
 - **RegionData** — PK: `country`. Fields: region.
+- **User** — PK: `id` (auto-increment). Fields: username (unique), passwordHash, displayName, role (Admin/User), mfaEnabled, mfaSecret.
 
 ### Enums
 - **TrainingType**: `Certification`, `Accreditation`, `InstructorLedTraining`
 - **ProductType**: `Cortex`, `SASE`, `Cloud`, `Strata`, `Foundation`
 - **FunctionType**: `Sales`, `PreSales`, `Deployments`
+- **Role**: `Admin`, `User`
 
 ## Architecture Notes
 
 - Path alias: `@/*` → `./src/*`
 - Pages are server components by default; client components use `"use client"` directive.
-- API routes query Prisma directly — no middleware or auth layer.
+- Authentication uses JWT tokens in HTTP-only cookies (via `jose` library). Middleware (`src/middleware.ts`) protects all routes. API routes have additional `requireAuth()` guards for defense-in-depth.
+- Two fixed roles: **Admin** (full access) and **User** (read-only, no admin pages). Role checked in middleware and API routes.
+- TOTP-based MFA supported via `otpauth` library. Optional per-user, managed in Admin > Users.
+- First-run setup wizard creates the initial admin account when no users exist in the database.
 - Multiple `trainingTitle`s can map to the same `fullTitle`. Deduplication by `email + fullTitle + trainingType` is applied in dashboard and training-page APIs to avoid double-counting.
 - Expiry is always completedDate + 2 years (computed in `lib/utils.ts:computeExpiryDate`).
 - Sidebar collapse state is persisted to `localStorage`.

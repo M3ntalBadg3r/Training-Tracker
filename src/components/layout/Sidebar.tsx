@@ -16,7 +16,10 @@ import {
   BookOpen,
   FileBarChart,
   HardDrive,
+  LogOut,
+  User,
 } from "lucide-react";
+import { useAuth } from "@/components/auth/AuthProvider";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -30,10 +33,12 @@ const adminSubItems = [
   { href: "/admin/region-data", label: "Region Data", icon: Globe },
   { href: "/admin/training-data", label: "Training Data", icon: BookOpen },
   { href: "/admin/backup", label: "Backup", icon: HardDrive },
+  { href: "/admin/users", label: "Users", icon: Users },
 ];
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const { user, isAdmin, logout } = useAuth();
   const [collapsed, setCollapsed] = useState(true);
   const [adminOpen, setAdminOpen] = useState(false);
 
@@ -98,81 +103,114 @@ export default function Sidebar() {
           );
         })}
 
-        {/* Admin with sub-items */}
-        <div>
-          {collapsed ? (
-            <Link
-              href="/admin"
-              className={`flex items-center gap-3 px-4 py-3 transition-colors ${
-                isAdminActive
-                  ? "bg-slate-700 text-white border-l-4 border-blue-400"
-                  : "text-slate-300 hover:bg-slate-800 hover:text-white border-l-4 border-transparent"
-              }`}
-              title="Admin"
-            >
-              <Settings size={20} className="shrink-0" />
-            </Link>
-          ) : (
-            <>
-              <button
-                onClick={() => setAdminOpen((prev) => !prev)}
-                className={`w-full flex items-center gap-3 px-4 py-3 transition-colors ${
+        {/* Admin with sub-items — only visible to Admin role */}
+        {isAdmin && (
+          <div>
+            {collapsed ? (
+              <Link
+                href="/admin"
+                className={`flex items-center gap-3 px-4 py-3 transition-colors ${
                   isAdminActive
                     ? "bg-slate-700 text-white border-l-4 border-blue-400"
                     : "text-slate-300 hover:bg-slate-800 hover:text-white border-l-4 border-transparent"
                 }`}
+                title="Admin"
               >
                 <Settings size={20} className="shrink-0" />
-                <span className="flex-1 text-left">Admin</span>
-                <ChevronDown
-                  size={16}
-                  className={`transition-transform ${adminOpen ? "rotate-0" : "-rotate-90"}`}
-                />
-              </button>
-              {adminOpen && (
-                <div className="ml-4 border-l border-slate-700">
-                  <Link
-                    href="/admin"
-                    className={`flex items-center gap-3 px-4 py-2 text-sm transition-colors ${
-                      pathname === "/admin"
-                        ? "text-white bg-slate-700"
-                        : "text-slate-400 hover:text-white hover:bg-slate-800"
-                    }`}
-                  >
-                    <Settings size={16} className="shrink-0" />
-                    <span>General</span>
-                  </Link>
-                  {adminSubItems.map((item) => {
-                    const isActive = pathname === item.href;
-                    const Icon = item.icon;
-                    return (
-                      <Link
-                        key={item.href}
-                        href={item.href}
-                        className={`flex items-center gap-3 px-4 py-2 text-sm transition-colors ${
-                          isActive
-                            ? "text-white bg-slate-700"
-                            : "text-slate-400 hover:text-white hover:bg-slate-800"
-                        }`}
-                      >
-                        <Icon size={16} className="shrink-0" />
-                        <span>{item.label}</span>
-                      </Link>
-                    );
-                  })}
-                </div>
-              )}
-            </>
-          )}
-        </div>
+              </Link>
+            ) : (
+              <>
+                <button
+                  onClick={() => setAdminOpen((prev) => !prev)}
+                  className={`w-full flex items-center gap-3 px-4 py-3 transition-colors ${
+                    isAdminActive
+                      ? "bg-slate-700 text-white border-l-4 border-blue-400"
+                      : "text-slate-300 hover:bg-slate-800 hover:text-white border-l-4 border-transparent"
+                  }`}
+                >
+                  <Settings size={20} className="shrink-0" />
+                  <span className="flex-1 text-left">Admin</span>
+                  <ChevronDown
+                    size={16}
+                    className={`transition-transform ${adminOpen ? "rotate-0" : "-rotate-90"}`}
+                  />
+                </button>
+                {adminOpen && (
+                  <div className="ml-4 border-l border-slate-700">
+                    <Link
+                      href="/admin"
+                      className={`flex items-center gap-3 px-4 py-2 text-sm transition-colors ${
+                        pathname === "/admin"
+                          ? "text-white bg-slate-700"
+                          : "text-slate-400 hover:text-white hover:bg-slate-800"
+                      }`}
+                    >
+                      <Settings size={16} className="shrink-0" />
+                      <span>General</span>
+                    </Link>
+                    {adminSubItems.map((item) => {
+                      const isActive = pathname === item.href;
+                      const Icon = item.icon;
+                      return (
+                        <Link
+                          key={item.href}
+                          href={item.href}
+                          className={`flex items-center gap-3 px-4 py-2 text-sm transition-colors ${
+                            isActive
+                              ? "text-white bg-slate-700"
+                              : "text-slate-400 hover:text-white hover:bg-slate-800"
+                          }`}
+                        >
+                          <Icon size={16} className="shrink-0" />
+                          <span>{item.label}</span>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
       </nav>
-      {!collapsed && (
-        <div className="border-t border-slate-700 p-3 text-center">
-          <span className="text-xs text-slate-500">
-            Version {process.env.APP_VERSION}
-          </span>
-        </div>
-      )}
+      {/* User info + logout */}
+      <div className="border-t border-slate-700 p-3">
+        {collapsed ? (
+          <button
+            onClick={logout}
+            className="w-full flex justify-center p-1 rounded hover:bg-slate-700 transition-colors"
+            title="Sign out"
+          >
+            <LogOut size={20} className="text-slate-400" />
+          </button>
+        ) : (
+          <>
+            {user && (
+              <div className="flex items-center gap-2 mb-2">
+                <User size={16} className="text-slate-400 shrink-0" />
+                <div className="min-w-0">
+                  <div className="text-sm text-white truncate">
+                    {user.displayName}
+                  </div>
+                  <div className="text-xs text-slate-500">{user.role}</div>
+                </div>
+              </div>
+            )}
+            <button
+              onClick={logout}
+              className="w-full flex items-center gap-2 px-2 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
+            >
+              <LogOut size={16} />
+              <span>Sign out</span>
+            </button>
+            <div className="mt-2 text-center">
+              <span className="text-xs text-slate-500">
+                Version {process.env.APP_VERSION}
+              </span>
+            </div>
+          </>
+        )}
+      </div>
     </aside>
   );
 }

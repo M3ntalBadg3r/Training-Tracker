@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import PageHeader from "@/components/layout/PageHeader";
 import Modal from "@/components/ui/Modal";
-import { AlertTriangle, Globe, BookOpen, HardDrive, Upload, ChevronRight } from "lucide-react";
+import { AlertTriangle, Globe, BookOpen, HardDrive, Upload, ChevronRight, Users } from "lucide-react";
 
 export default function AdminPage() {
   const [showWipeConfirm, setShowWipeConfirm] = useState(false);
@@ -64,6 +64,19 @@ export default function AdminPage() {
             <div>
               <h3 className="font-semibold">Training Data</h3>
               <p className="text-sm text-gray-500">Manage training programs</p>
+            </div>
+          </div>
+          <ChevronRight size={20} className="text-gray-400" />
+        </Link>
+        <Link
+          href="/admin/users"
+          className="flex items-center justify-between p-4 bg-white rounded-lg border border-gray-200 hover:border-blue-300 hover:shadow-sm transition-all"
+        >
+          <div className="flex items-center gap-3">
+            <Users size={20} className="text-blue-600" />
+            <div>
+              <h3 className="font-semibold">User Management</h3>
+              <p className="text-sm text-gray-500">Manage user accounts, roles, and MFA</p>
             </div>
           </div>
           <ChevronRight size={20} className="text-gray-400" />

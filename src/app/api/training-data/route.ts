@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { TrainingType, ProductType, FunctionType } from "@prisma/client";
+import { requireAuth, handleAuthError } from "@/lib/auth";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
@@ -89,6 +90,11 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  try {
+    await requireAuth(request, "Admin");
+  } catch (error) {
+    return handleAuthError(error);
+  }
   const body = await request.json();
   const { trainingTitle, fullTitle, trainingType, productType, function: fn, link, certification } = body;
 

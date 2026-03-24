@@ -81,3 +81,22 @@ model ImportMetadata {
 
   @@map("import_metadata")
 }
+
+enum Role {
+  Admin
+  User
+}
+
+model User {
+  id            Int      @id @default(autoincrement())
+  username      String   @unique
+  passwordHash  String   @map("password_hash")
+  displayName   String   @map("display_name")
+  role          Role     @default(User)
+  mfaEnabled    Boolean  @default(false) @map("mfa_enabled")
+  mfaSecret     String?  @map("mfa_secret")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@map("users")
+}

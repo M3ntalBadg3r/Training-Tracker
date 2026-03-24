@@ -7,6 +7,7 @@ import Badge from "@/components/ui/Badge";
 import Modal from "@/components/ui/Modal";
 import { ColumnDef, StudentRecord, StudentTrainingRow } from "@/types";
 import { Pencil, Save, X, Award, ShieldCheck, GraduationCap } from "lucide-react";
+import { useAuth } from "@/components/auth/AuthProvider";
 
 const trainingColumns: ColumnDef<StudentTrainingRow>[] = [
   {
@@ -45,6 +46,7 @@ export default function StudentRecordPage({
 }) {
   const resolvedParams = use(params);
   const email = decodeURIComponent(resolvedParams.email);
+  const { isAdmin } = useAuth();
 
   const [student, setStudent] = useState<StudentRecord | null>(null);
   const [loading, setLoading] = useState(true);
@@ -284,28 +286,30 @@ export default function StudentRecordPage({
             )}
           </div>
           <div className="flex gap-2">
-            {editing ? (
-              <>
+            {isAdmin && (
+              editing ? (
+                <>
+                  <button
+                    onClick={() => setShowSaveConfirm(true)}
+                    className="flex items-center gap-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm"
+                  >
+                    <Save size={16} /> Save
+                  </button>
+                  <button
+                    onClick={handleCancelEdit}
+                    className="flex items-center gap-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors text-sm"
+                  >
+                    <X size={16} /> Cancel
+                  </button>
+                </>
+              ) : (
                 <button
-                  onClick={() => setShowSaveConfirm(true)}
-                  className="flex items-center gap-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm"
+                  onClick={() => setEditing(true)}
+                  className="flex items-center gap-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
                 >
-                  <Save size={16} /> Save
+                  <Pencil size={16} /> Edit
                 </button>
-                <button
-                  onClick={handleCancelEdit}
-                  className="flex items-center gap-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors text-sm"
-                >
-                  <X size={16} /> Cancel
-                </button>
-              </>
-            ) : (
-              <button
-                onClick={() => setEditing(true)}
-                className="flex items-center gap-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
-              >
-                <Pencil size={16} /> Edit
-              </button>
+              )
             )}
           </div>
         </div>
@@ -342,7 +346,7 @@ export default function StudentRecordPage({
         defaultPageSize={25}
         defaultSortColumn="fullTitle"
         rowDelete={
-          editing
+          isAdmin && editing
             ? { label: "Remove", onDelete: handleDeleteTraining }
             : undefined
         }

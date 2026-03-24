@@ -300,6 +300,10 @@ const helpSections: Record<string, HelpSection> = {
             <strong>Backup &amp; Restore</strong> &mdash; Create and restore
             full system backups.
           </li>
+          <li>
+            <strong>User Management</strong> &mdash; Manage user accounts,
+            roles, and multi-factor authentication.
+          </li>
         </ul>
 
         <h3>Wipe Data</h3>
@@ -466,6 +470,54 @@ const helpSections: Record<string, HelpSection> = {
             comma-separated values in a single cell.
           </li>
         </ul>
+      </>
+    ),
+  },
+
+  "user-management": {
+    title: "User Management",
+    content: (
+      <>
+        <p>
+          Manage user accounts for the Training Tracker system. Only
+          administrators can access this page.
+        </p>
+
+        <h3>Roles</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Role</th>
+              <th>Access</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Admin</strong></td>
+              <td>Full access to all pages and features, including admin functions</td>
+            </tr>
+            <tr>
+              <td><strong>User</strong></td>
+              <td>Read-only access to Dashboard, Students, Training, and Reports. No access to admin pages or edit/delete actions.</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3>Features</h3>
+        <ul>
+          <li><strong>Add User</strong> &mdash; Create a new account with username, display name, password, and role.</li>
+          <li><strong>Edit User</strong> &mdash; Change display name or role.</li>
+          <li><strong>Reset Password</strong> &mdash; Set a new password for any user.</li>
+          <li><strong>Disable MFA</strong> &mdash; Turn off multi-factor authentication for a user.</li>
+          <li><strong>Delete User</strong> &mdash; Remove a user account. You cannot delete yourself or the last admin.</li>
+        </ul>
+
+        <h3>Multi-Factor Authentication (MFA)</h3>
+        <p>
+          Users can enable TOTP-based MFA using an authenticator app (Google Authenticator, Authy, etc.).
+          When enabled, a 6-digit code is required after entering the password during login.
+          Admins can disable MFA for any user from this page.
+        </p>
       </>
     ),
   },

@@ -1,15 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import JSZip from "jszip";
+import { requireAuth, handleAuthError } from "@/lib/auth";
 
-export async function GET() {
-  const [regionData, trainingData, students, trainingTaken, importMetadata] =
+export async function GET(request: NextRequest) {
+  try {
+    await requireAuth(request, "Admin");
+  } catch (error) {
+    return handleAuthError(error);
+  }
+  const [regionData, trainingData, students, trainingTaken, importMetadata, users] =
     await Promise.all([
       prisma.regionData.findMany({ orderBy: { country: "asc" } }),
       prisma.trainingData.findMany({ orderBy: { trainingTitle: "asc" } }),
       prisma.student.findMany({ orderBy: { email: "asc" } }),
       prisma.trainingTaken.findMany({ orderBy: { id: "asc" } }),
       prisma.importMetadata.findMany(),
+      prisma.user.findMany({ orderBy: { id: "asc" } }),
     ]);
 
   const zip = new JSZip();
@@ -26,6 +33,7 @@ export async function GET() {
   zip.file("students.json", JSON.stringify(students, null, 2));
   zip.file("training_taken.json", JSON.stringify(trainingTaken, null, 2));
   zip.file("import_metadata.json", JSON.stringify(importMetadata, null, 2));
+  zip.file("users.json", JSON.stringify(users, null, 2));
 
   const buffer = await zip.generateAsync({ type: "arraybuffer" });
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
@@ -39,6 +47,11 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  try {
+    await requireAuth(request, "Admin");
+  } catch (error) {
+    return handleAuthError(error);
+  }
   const formData = await request.formData();
   const file = formData.get("file") as File | null;
 
@@ -81,6 +94,9 @@ export async function POST(request: NextRequest) {
     ? await readJson("import_metadata.json")
     : [];
 
+  const usersFile = zip.file("users.json");
+  const users = usersFile ? await readJson("users.json") : [];
+
   // Restore inside a transaction: wipe then re-insert in FK order
   await prisma.$transaction(async (tx) => {
     await tx.trainingTaken.deleteMany({});
@@ -88,6 +104,7 @@ export async function POST(request: NextRequest) {
     await tx.trainingData.deleteMany({});
     await tx.regionData.deleteMany({});
     await tx.importMetadata.deleteMany({});
+    await tx.user.deleteMany({});
 
     if (regionData.length > 0) {
       await tx.regionData.createMany({ data: regionData });
@@ -127,6 +144,17 @@ export async function POST(request: NextRequest) {
       );
       await tx.importMetadata.createMany({ data: rows });
     }
+    if (users.length > 0) {
+      const userRows = users.map(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ({ id: _id, ...rest }: any) => ({
+          ...rest,
+          createdAt: new Date(rest.createdAt),
+          updatedAt: new Date(rest.updatedAt),
+        })
+      );
+      await tx.user.createMany({ data: userRows });
+    }
   });
 
   return NextResponse.json({
@@ -137,6 +165,7 @@ export async function POST(request: NextRequest) {
       students: students.length,
       trainingTaken: trainingTaken.length,
       importMetadata: importMetadata.length,
+      users: users.length,
     },
   });
 }

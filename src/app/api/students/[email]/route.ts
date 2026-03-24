@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { isActive, formatDate, trainingTypeLabel, functionTypeLabel } from "@/lib/utils";
+import { requireAuth, handleAuthError } from "@/lib/auth";
 
 export async function GET(
   _request: NextRequest,
@@ -60,6 +61,11 @@ export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ email: string }> }
 ) {
+  try {
+    await requireAuth(request, "Admin");
+  } catch (error) {
+    return handleAuthError(error);
+  }
   const { email } = await params;
   const decodedEmail = decodeURIComponent(email);
   const body = await request.json();
@@ -110,9 +116,14 @@ export async function PUT(
 }
 
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ email: string }> }
 ) {
+  try {
+    await requireAuth(request, "Admin");
+  } catch (error) {
+    return handleAuthError(error);
+  }
   const { email } = await params;
   const decodedEmail = decodeURIComponent(email);
 

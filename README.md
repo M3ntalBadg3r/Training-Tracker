@@ -12,6 +12,7 @@ Built with Next.js, React, PostgreSQL, and Prisma.
   - [Installation Script](#installation-script)
   - [Update Script](#update-script)
   - [Service Management](#service-management)
+- [Authentication & Users](#authentication--users)
 - [Dashboard](#dashboard)
 - [Students](#students)
 - [Training Catalog](#training-catalog)
@@ -20,6 +21,7 @@ Built with Next.js, React, PostgreSQL, and Prisma.
 - [Admin](#admin)
   - [Region Data](#region-data)
   - [Training Data](#training-data)
+  - [User Management](#user-management)
   - [Backup & Restore](#backup--restore)
   - [Wipe Data](#wipe-data)
 - [Data Model](#data-model)
@@ -118,6 +120,40 @@ tail -f /var/log/training-tracker.log
 ```
 
 The application runs on **port 3000** by default. To change the port, edit the `PORT` environment variable in `/opt/training-tracker/.env` or in the systemd service file at `/etc/systemd/system/training-tracker.service`, then restart the service.
+
+---
+
+## Authentication & Users
+
+Training Tracker requires authentication to access. On first launch (when no users exist), a setup wizard guides you through creating the initial administrator account.
+
+### Roles
+
+| Role | Access |
+|------|--------|
+| **Admin** | Full access to all pages and features, including admin functions (import, backup, wipe, user management) |
+| **User** | Read-only access to Dashboard, Students, Training, and Reports. No access to admin pages or edit/delete actions. |
+
+### Login
+
+Navigate to any page and you will be redirected to the login screen. Enter your username and password. If MFA is enabled on your account, you will be prompted for a 6-digit code from your authenticator app.
+
+### Multi-Factor Authentication (MFA)
+
+Admins can enable TOTP-based MFA for any user via **Admin > Users**. When enabled, login requires a 6-digit code from an authenticator app (Google Authenticator, Authy, etc.). Admins can also disable MFA for any user.
+
+### First-Run Setup
+
+On a fresh installation with no users in the database, all routes redirect to `/setup`. Fill in a username, display name, and password to create the first Admin account, then log in normally.
+
+### Environment Variables
+
+The `.env` file requires:
+
+| Variable | Description |
+|----------|-------------|
+| `DATABASE_URL` | PostgreSQL connection string |
+| `JWT_SECRET` | Secret key for JWT token signing (minimum 32 characters recommended) |
 
 ---
 
@@ -300,6 +336,18 @@ The **Certification** column is only available for trainings of type **Instructo
 - Changing the training type away from ILT automatically clears the certification mapping.
 - During import, multiple certifications can be specified as comma-separated values in a single cell.
 
+### User Management
+
+Navigate to **Admin > Users** to manage user accounts.
+
+**Features:**
+
+- **Add User** — Create a new account with username, display name, password, and role (Admin or User).
+- **Edit User** — Change display name or role. Cannot demote the last admin.
+- **Reset Password** — Set a new password for any user.
+- **Disable MFA** — Turn off multi-factor authentication for a user.
+- **Delete User** — Remove a user account. Cannot delete yourself or the last admin.
+
 ### Backup & Restore
 
 Navigate to **Admin > Backup** to create or restore full system backups.
@@ -315,6 +363,7 @@ Click **Download Backup** to generate and download a `.zip` file containing all 
 | `students.json` | All student records |
 | `training_taken.json` | All training completion records |
 | `import_metadata.json` | Import timestamps |
+| `users.json` | User accounts (with hashed passwords) |
 | `backup_metadata.json` | Backup version and creation timestamp |
 
 The downloaded file is named `training-tracker-backup-<timestamp>.zip`.

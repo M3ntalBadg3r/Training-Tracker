@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { TrainingType, ProductType, FunctionType } from "@prisma/client";
+import { requireAuth, handleAuthError } from "@/lib/auth";
 
 const VALID_TRAINING_TYPES = new Set(Object.values(TrainingType));
 const VALID_PRODUCT_TYPES = new Set(Object.values(ProductType));
@@ -66,6 +67,11 @@ interface ColumnMapping {
 }
 
 export async function POST(request: NextRequest) {
+  try {
+    await requireAuth(request, "Admin");
+  } catch (error) {
+    return handleAuthError(error);
+  }
   const body = await request.json();
   const { rows, columnMapping, defaults } = body as {
     rows: Record<string, string>[];
