@@ -168,7 +168,7 @@ export default function Sidebar() {
       </nav>
       <div className="border-t border-slate-700 p-3 text-center">
         <span className="text-xs text-slate-500">
-          {collapsed ? "v0.1.0" : "Version 0.1.0"}
+          {collapsed ? `v${process.env.APP_VERSION}` : `Version ${process.env.APP_VERSION}`}
         </span>
       </div>
     </aside>

@@ -16,7 +16,7 @@ export async function GET() {
   zip.file(
     "backup_metadata.json",
     JSON.stringify(
-      { version: "1.0", createdAt: new Date().toISOString() },
+      { version: process.env.APP_VERSION || "0.0.0", createdAt: new Date().toISOString() },
       null,
       2
     )

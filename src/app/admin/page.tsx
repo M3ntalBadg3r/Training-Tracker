@@ -150,7 +150,7 @@ export default function AdminPage() {
 
       {/* Version */}
       <div className="text-sm text-gray-400 text-right">
-        Version 1.00
+        Version {process.env.APP_VERSION}
       </div>
     </div>
   );
