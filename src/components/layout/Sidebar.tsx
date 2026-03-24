@@ -34,14 +34,14 @@ const adminSubItems = [
 
 export default function Sidebar() {
   const pathname = usePathname();
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);
   const [adminOpen, setAdminOpen] = useState(false);
 
   const isAdminActive = pathname.startsWith("/admin");
 
   useEffect(() => {
     const stored = localStorage.getItem("sidebar-collapsed");
-    if (stored === "true") setCollapsed(true);
+    if (stored !== null) setCollapsed(stored === "true");
   }, []);
 
   // Auto-expand admin submenu when on an admin page
@@ -166,6 +166,11 @@ export default function Sidebar() {
           )}
         </div>
       </nav>
+      <div className="border-t border-slate-700 p-3 text-center">
+        <span className="text-xs text-slate-500">
+          {collapsed ? "v0.1.0" : "Version 0.1.0"}
+        </span>
+      </div>
     </aside>
   );
 }
