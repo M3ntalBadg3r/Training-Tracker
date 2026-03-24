@@ -129,7 +129,7 @@ export default function TrainingDataPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [searchColumn, setSearchColumn] = useState("all");
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
-  const [sortColumn, setSortColumn] = useState<string | null>(null);
+  const [sortColumn, setSortColumn] = useState<string | null>("fullTitle");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
   const debouncedSearch = useDebounce(searchTerm);
 
