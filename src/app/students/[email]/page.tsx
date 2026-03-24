@@ -340,6 +340,7 @@ export default function StudentRecordPage({
         data={visibleTrainings}
         columns={trainingColumns}
         defaultPageSize={25}
+        defaultSortColumn="fullTitle"
         rowDelete={
           editing
             ? { label: "Remove", onDelete: handleDeleteTraining }

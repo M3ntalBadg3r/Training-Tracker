@@ -60,6 +60,7 @@ export default function StudentsPage() {
       <DataTable<StudentRow>
         data={students}
         columns={columns}
+        defaultSortColumn="fullName"
         rowAction={{
           label: "View",
           onClick: (row) =>

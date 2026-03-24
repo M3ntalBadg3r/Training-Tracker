@@ -10,6 +10,8 @@ interface DataTableProps<T> {
   columns: ColumnDef<T>[];
   pageSizeOptions?: number[];
   defaultPageSize?: number;
+  defaultSortColumn?: string;
+  defaultSortDirection?: "asc" | "desc";
   rowAction?: {
     label: string;
     onClick: (row: T) => void;
@@ -26,14 +28,16 @@ export default function DataTable<T extends Record<string, any>>({
   columns,
   pageSizeOptions = [10, 25, 50, 100],
   defaultPageSize = 50,
+  defaultSortColumn,
+  defaultSortDirection = "asc",
   rowAction,
   rowDelete,
 }: DataTableProps<T>) {
   const [searchTerm, setSearchTerm] = useState("");
   const [searchColumn, setSearchColumn] = useState("all");
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
-  const [sortColumn, setSortColumn] = useState<string | null>(null);
-  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+  const [sortColumn, setSortColumn] = useState<string | null>(defaultSortColumn ?? null);
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">(defaultSortDirection);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(defaultPageSize);
 

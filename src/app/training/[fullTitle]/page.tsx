@@ -152,6 +152,7 @@ export default function TrainingTakenPage({
       <DataTable<TrainingTakenRow>
         data={students}
         columns={columns}
+        defaultSortColumn="fullName"
         rowAction={{
           label: "View",
           onClick: (row) => router.push(`/students/${encodeURIComponent(row.email)}`),
