@@ -8,9 +8,20 @@ export async function GET() {
   const totalStudents = await prisma.student.count();
 
   // All training taken joined with training data for type info
-  const allTrainingTaken = await prisma.trainingTaken.findMany({
+  const rawTrainingTaken = await prisma.trainingTaken.findMany({
     include: { trainingData: true },
   });
+
+  // Deduplicate: keep one record per student + fullTitle + trainingType (most recent)
+  const dedupeMap = new Map<string, (typeof rawTrainingTaken)[number]>();
+  for (const tt of rawTrainingTaken) {
+    const key = `${tt.email}::${tt.trainingData.fullTitle}::${tt.trainingData.trainingType}`;
+    const existing = dedupeMap.get(key);
+    if (!existing || tt.completedDate > existing.completedDate) {
+      dedupeMap.set(key, tt);
+    }
+  }
+  const allTrainingTaken = Array.from(dedupeMap.values());
 
   let certCount = 0;
   let accredCount = 0;

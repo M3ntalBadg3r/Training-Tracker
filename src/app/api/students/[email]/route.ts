@@ -24,13 +24,23 @@ export async function GET(
     return NextResponse.json({ error: "Student not found" }, { status: 404 });
   }
 
+  // Deduplicate trainings by fullTitle + trainingType, keeping most recent
+  const dedupeMap = new Map<string, (typeof student.trainings)[number]>();
+  for (const t of student.trainings) {
+    const key = `${t.trainingData.fullTitle}::${t.trainingData.trainingType}`;
+    const existing = dedupeMap.get(key);
+    if (!existing || t.completedDate > existing.completedDate) {
+      dedupeMap.set(key, t);
+    }
+  }
+
   const result = {
     email: student.email,
     fullName: student.fullName,
     theatre: student.theatre,
     country: student.country,
     region: student.regionData?.region || null,
-    trainings: student.trainings.map((t) => ({
+    trainings: Array.from(dedupeMap.values()).map((t) => ({
       id: t.id,
       fullTitle: t.trainingData.fullTitle,
       link: t.trainingData.link,
