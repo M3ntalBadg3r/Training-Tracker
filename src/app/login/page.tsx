@@ -44,8 +44,9 @@ export default function LoginPage() {
       }
 
       router.push("/dashboard");
-    } catch {
-      setError("An error occurred. Please try again.");
+    } catch (err) {
+      console.error("Login fetch error:", err);
+      setError("Unable to connect to the server. Please try again.");
       setLoading(false);
     }
   };
