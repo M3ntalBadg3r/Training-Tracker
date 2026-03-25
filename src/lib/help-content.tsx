@@ -801,6 +801,37 @@ const helpSections: Record<string, HelpSection> = {
           <strong>replaces all existing data</strong>. Create a backup of the
           current system first if you need to preserve it.
         </p>
+
+        <h3>Automatic Backups</h3>
+        <p>
+          Enable automatic backups to have the system save a backup to a local
+          directory on a schedule. Configure the backup location, retention
+          count, frequency (daily or weekly), and time.
+        </p>
+        <ul>
+          <li>
+            <strong>Location</strong> &mdash; The directory where backups are
+            saved. Click <strong>Browse</strong> to open a folder picker. You
+            can also create new folders from the browser.
+          </li>
+          <li>
+            <strong>Keep last N backups</strong> &mdash; When the number of
+            saved backups exceeds this count, the oldest are automatically
+            deleted.
+          </li>
+          <li>
+            <strong>Run Backup Now</strong> &mdash; Immediately saves a backup
+            to the configured location without waiting for the schedule.
+          </li>
+        </ul>
+
+        <h3>Saved Backups</h3>
+        <p>
+          Lists all backup zip files in the configured directory. You can
+          restore directly from a saved backup by clicking{" "}
+          <strong>Restore</strong> next to the file, or delete individual
+          backups with <strong>Delete</strong>.
+        </p>
       </>
     ),
   },

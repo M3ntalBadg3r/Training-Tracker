@@ -422,6 +422,22 @@ Click **Upload Backup File** and select a previously created backup `.zip` file.
 
 **Important:** Restoring a backup **replaces all existing data**. Create a backup of the current system first if you need to preserve it.
 
+#### Automatic Backups
+
+Enable automatic backups to save backups to a local directory on a schedule:
+
+- **Backup Location** — Configurable directory path with a folder browser GUI. Click **Browse** to navigate the filesystem and select or create a folder.
+- **Retention** — Set how many backup copies to keep. When the count is exceeded, the oldest backups are automatically deleted.
+- **Schedule** — Daily or weekly, at a configurable time.
+- **Run Backup Now** — Immediately saves a backup without waiting for the schedule.
+
+#### Saved Backups
+
+Lists all backup zip files in the configured directory. You can:
+
+- **Restore** — Click Restore on any saved backup to restore from it (type `RESTORE` to confirm).
+- **Delete** — Remove individual backup files.
+
 ### Updates
 
 Navigate to **Admin > Updates** to check for and apply application updates.

@@ -3,12 +3,10 @@ import prisma from "@/lib/prisma";
 import JSZip from "jszip";
 import { requireAuth, handleAuthError } from "@/lib/auth";
 
-export async function GET(request: NextRequest) {
-  try {
-    await requireAuth(request, "Admin");
-  } catch (error) {
-    return handleAuthError(error);
-  }
+export async function generateBackupZip(): Promise<{
+  buffer: ArrayBuffer;
+  timestamp: string;
+}> {
   const [regionData, trainingData, students, trainingTaken, importMetadata, users] =
     await Promise.all([
       prisma.regionData.findMany({ orderBy: { country: "asc" } }),
@@ -37,6 +35,18 @@ export async function GET(request: NextRequest) {
 
   const buffer = await zip.generateAsync({ type: "arraybuffer" });
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+
+  return { buffer, timestamp };
+}
+
+export async function GET(request: NextRequest) {
+  try {
+    await requireAuth(request, "Admin");
+  } catch (error) {
+    return handleAuthError(error);
+  }
+
+  const { buffer, timestamp } = await generateBackupZip();
 
   return new NextResponse(new Blob([buffer]), {
     headers: {

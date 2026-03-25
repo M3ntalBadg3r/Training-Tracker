@@ -58,7 +58,7 @@ src/
 prisma/
   schema.prisma   # Data model
   migrations/     # Migration history
-deploy/           # install.sh, update.sh, install-remote.sh, perform-update.sh, check-update.sh, auto-update.sh, systemd service
+deploy/           # install.sh, update.sh, install-remote.sh, perform-update.sh, check-update.sh, auto-update.sh, auto-backup.sh, systemd service
 ```
 
 ## Data Model
