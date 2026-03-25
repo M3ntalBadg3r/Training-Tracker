@@ -9,6 +9,10 @@ import {
   Download,
   Clock,
   Calendar,
+  FileText,
+  ChevronDown,
+  ChevronRight,
+  Undo2,
 } from "lucide-react";
 
 interface UpdateInfo {
@@ -29,7 +33,9 @@ interface UpdateStatus {
   message?: string;
   status: "idle" | "in_progress" | "complete" | "error";
   newVersion?: string;
+  previousVersion?: string;
   error?: string;
+  rolledBack?: boolean;
 }
 
 interface ScheduleConfig {
@@ -66,6 +72,9 @@ export default function UpdatesPage() {
     type: "success" | "error";
     message: string;
   } | null>(null);
+  const [updateLog, setUpdateLog] = useState<string | null>(null);
+  const [logOpen, setLogOpen] = useState(false);
+  const [loadingLog, setLoadingLog] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const currentVersion = process.env.APP_VERSION || "0.0";
@@ -93,14 +102,15 @@ export default function UpdatesPage() {
     pollRef.current = setInterval(async () => {
       try {
         const res = await fetch("/api/admin/updates/status");
-        if (!res.ok) {
-          // Server may be restarting
-          return;
-        }
+        if (!res.ok) return;
         const data: UpdateStatus = await res.json();
         setUpdateStatus(data);
         if (data.status === "complete" || data.status === "error") {
           stopPolling();
+          // Auto-load log on error
+          if (data.status === "error") {
+            fetchUpdateLog();
+          }
         }
       } catch {
         // Server may be restarting during update — keep polling
@@ -134,10 +144,12 @@ export default function UpdatesPage() {
   const applyUpdate = async () => {
     setUpdateStatus({
       step: 0,
-      totalSteps: 6,
+      totalSteps: 8,
       message: "Starting update...",
       status: "in_progress",
     });
+    setUpdateLog(null);
+    setLogOpen(false);
     try {
       const res = await fetch("/api/admin/updates/apply", { method: "POST" });
       if (res.ok) {
@@ -155,6 +167,22 @@ export default function UpdatesPage() {
         message: "Failed to start update",
         error: "Could not connect to server",
       });
+    }
+  };
+
+  const fetchUpdateLog = async () => {
+    setLoadingLog(true);
+    try {
+      const res = await fetch("/api/admin/updates/log");
+      const data = await res.json();
+      if (data.log) {
+        setUpdateLog(data.log);
+        setLogOpen(true);
+      }
+    } catch {
+      // Ignore
+    } finally {
+      setLoadingLog(false);
     }
   };
 
@@ -346,6 +374,8 @@ export default function UpdatesPage() {
                 {updateStatus.newVersion && (
                   <p className="text-sm text-green-700 mt-1">
                     Updated to v{updateStatus.newVersion}
+                    {updateStatus.previousVersion &&
+                      ` (from v${updateStatus.previousVersion})`}
                   </p>
                 )}
                 <p className="text-sm text-green-600 mt-2">
@@ -356,25 +386,80 @@ export default function UpdatesPage() {
           )}
 
           {updateStatus.status === "error" && (
-            <div className="flex items-start gap-3 p-4 bg-red-50 border border-red-200 rounded-lg">
-              <AlertTriangle
-                size={20}
-                className="text-red-600 shrink-0 mt-0.5"
-              />
-              <div>
-                <p className="font-medium text-red-800">
-                  {updateStatus.message || "Update failed"}
-                </p>
-                {updateStatus.error && (
-                  <p className="text-sm text-red-600 mt-1 font-mono whitespace-pre-wrap">
-                    {updateStatus.error}
+            <div>
+              <div className="flex items-start gap-3 p-4 bg-red-50 border border-red-200 rounded-lg">
+                <AlertTriangle
+                  size={20}
+                  className="text-red-600 shrink-0 mt-0.5"
+                />
+                <div className="flex-1">
+                  <p className="font-medium text-red-800">
+                    {updateStatus.message || "Update failed"}
                   </p>
-                )}
+                  {updateStatus.rolledBack && (
+                    <div className="flex items-center gap-1.5 mt-2 text-sm text-amber-700">
+                      <Undo2 size={14} />
+                      <span>
+                        The system was automatically rolled back to the
+                        previous working version.
+                      </span>
+                    </div>
+                  )}
+                  {updateStatus.error && (
+                    <p className="text-sm text-red-600 mt-2 font-mono whitespace-pre-wrap">
+                      {updateStatus.error}
+                    </p>
+                  )}
+                </div>
               </div>
             </div>
           )}
         </section>
       )}
+
+      {/* Update Log */}
+      <section className="mb-6 p-6 bg-white rounded-lg border border-gray-200">
+        <button
+          onClick={() => {
+            if (!logOpen && !updateLog) fetchUpdateLog();
+            else setLogOpen(!logOpen);
+          }}
+          className="flex items-center gap-2 w-full text-left"
+        >
+          {logOpen ? (
+            <ChevronDown size={18} className="text-gray-500" />
+          ) : (
+            <ChevronRight size={18} className="text-gray-500" />
+          )}
+          <FileText size={18} className="text-gray-600" />
+          <h2 className="text-lg font-semibold text-gray-900">Update Log</h2>
+          {loadingLog && (
+            <RefreshCw size={14} className="animate-spin text-gray-400" />
+          )}
+        </button>
+
+        {logOpen && (
+          <div className="mt-4">
+            {updateLog ? (
+              <pre className="p-4 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-700 font-mono whitespace-pre-wrap overflow-x-auto max-h-96 overflow-y-auto">
+                {updateLog}
+              </pre>
+            ) : (
+              <p className="text-sm text-gray-500">
+                No update log available. A log is created each time an update
+                is performed.
+              </p>
+            )}
+            <button
+              onClick={fetchUpdateLog}
+              disabled={loadingLog}
+              className="mt-2 text-sm text-blue-600 hover:underline"
+            >
+              Refresh log
+            </button>
+          </div>
+        )}
+      </section>
 
       {/* Automatic Updates */}
       <section className="p-6 bg-white rounded-lg border border-gray-200">
@@ -464,8 +549,8 @@ export default function UpdatesPage() {
 
               <p className="text-xs text-gray-400">
                 The system will automatically check for and apply updates at
-                the scheduled time. The application will restart during the
-                update.
+                the scheduled time. If an update fails, it will be rolled back
+                automatically.
               </p>
             </div>
           )}

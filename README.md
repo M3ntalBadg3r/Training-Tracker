@@ -441,7 +441,19 @@ Click **Update Now** to start the update. A progress bar shows the current step:
 5. Rebuilds the application
 6. Restarts the service
 
-On completion, a success message is shown with the new version. If an error occurs, the error details are displayed. Do not close the page during the update.
+On completion, a success message is shown with the new version. Do not close the page during the update.
+
+#### Rollback & Error Handling
+
+Before starting an update, the system creates a backup of the current build output and database. If any step fails, the system automatically rolls back:
+
+1. Restores git to the previous commit
+2. Restores the previous `.next` build directory
+3. Restores the database from the pre-update dump (if migrations ran)
+4. Regenerates the Prisma client
+5. Restarts the service with the previous version
+
+A detailed timestamped log is available via the **Update Log** section on the Updates page.
 
 #### Automatic Updates
 

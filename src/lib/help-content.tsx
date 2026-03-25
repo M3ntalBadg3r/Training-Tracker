@@ -698,15 +698,31 @@ const helpSections: Record<string, HelpSection> = {
         <p>
           During an update, a progress bar shows the current step. Do not close
           the page while the update is in progress. On completion, a success
-          message is shown with the new version number. If an error occurs, the
-          error details are displayed.
+          message is shown with the new version number.
+        </p>
+
+        <h3>Rollback &amp; Error Handling</h3>
+        <p>
+          Before starting an update, the system creates a backup of the current
+          build and database. If any step fails (dependency installation,
+          database migration, build, or service restart), the system
+          automatically rolls back to the previous working version. The
+          rollback restores the git state, build output, and database.
+        </p>
+
+        <h3>Update Log</h3>
+        <p>
+          Click <strong>Update Log</strong> to view a detailed timestamped log
+          of the most recent update. The log includes each step performed, any
+          errors encountered, and rollback details if applicable.
         </p>
 
         <h3>Automatic Updates</h3>
         <p>
           Enable automatic updates to have the system check for and apply
           updates on a schedule. Configure the frequency (daily or weekly) and
-          time. The application will restart during automatic updates.
+          time. If an automatic update fails, it will be rolled back
+          automatically.
         </p>
       </>
     ),
