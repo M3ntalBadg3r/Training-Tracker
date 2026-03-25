@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import PageHeader from "@/components/layout/PageHeader";
 import {
   Users,
   Award,
   ShieldCheck,
   GraduationCap,
+  Globe,
 } from "lucide-react";
 import {
   BarChart,
@@ -22,6 +23,7 @@ import {
 } from "recharts";
 
 interface DashboardData {
+  regions: string[];
   metrics: {
     totalStudents: number;
     certifications: number;
@@ -63,16 +65,47 @@ const COLORS = {
 export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [selectedRegion, setSelectedRegion] = useState("Global");
+  const [regionLoading, setRegionLoading] = useState(false);
+  const cache = useRef<Record<string, DashboardData>>({});
 
+  const fetchDashboard = useCallback(async (region: string) => {
+    const params = region !== "Global" ? `?region=${encodeURIComponent(region)}` : "";
+    const res = await fetch(`/api/dashboard${params}`);
+    if (!res.ok) throw new Error("Failed to fetch");
+    const d: DashboardData = await res.json();
+    cache.current[region] = d;
+    return d;
+  }, []);
+
+  // Initial load
   useEffect(() => {
-    fetch("/api/dashboard")
-      .then((r) => r.json())
+    fetchDashboard("Global")
       .then((d) => {
         setData(d);
         setLoading(false);
       })
       .catch(() => setLoading(false));
-  }, []);
+  }, [fetchDashboard]);
+
+  // Region change
+  const handleRegionChange = async (region: string) => {
+    setSelectedRegion(region);
+
+    if (cache.current[region]) {
+      setData(cache.current[region]);
+      return;
+    }
+
+    setRegionLoading(true);
+    try {
+      const d = await fetchDashboard(region);
+      setData(d);
+    } catch {
+      // Keep current data on error
+    }
+    setRegionLoading(false);
+  };
 
   if (loading) {
     return (
@@ -125,7 +158,30 @@ export default function DashboardPage() {
 
   return (
     <div>
-      <PageHeader title="Dashboard" helpSlug="dashboard" />
+      <PageHeader
+        title="Dashboard"
+        helpSlug="dashboard"
+        rightContent={
+          <div className="flex items-center gap-2">
+            <Globe size={16} className="text-gray-400" />
+            <select
+              value={selectedRegion}
+              onChange={(e) => handleRegionChange(e.target.value)}
+              className="text-sm border border-gray-300 rounded-lg px-3 py-1.5 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="Global">Global</option>
+              {data.regions.map((r) => (
+                <option key={r} value={r}>
+                  {r}
+                </option>
+              ))}
+            </select>
+            {regionLoading && (
+              <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+            )}
+          </div>
+        }
+      />
 
       {/* Metric Cards */}
       <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">

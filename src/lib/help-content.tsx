@@ -44,6 +44,14 @@ const helpSections: Record<string, HelpSection> = {
           </tbody>
         </table>
 
+        <h3>Region Filter</h3>
+        <p>
+          Use the <strong>Region</strong> dropdown in the top-right corner to filter
+          all metrics and charts by region. Options include <em>Global</em> (all
+          regions) plus any regions defined in your Region Data (e.g., EMEA, NAM,
+          LATAM, JAPAC). Previously selected regions are cached for instant switching.
+        </p>
+
         <h3>Charts</h3>
         <table>
           <thead>
