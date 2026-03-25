@@ -285,7 +285,7 @@ const helpSections: Record<string, HelpSection> = {
           <strong>Achieved Over Last 12 Months</strong> dashboard chart.
         </p>
 
-        <h3>Trained but not Certified</h3>
+        <h3>Trained But Not Certified</h3>
         <p>
           This report identifies students who have completed an{" "}
           <strong>Instructor-Led Training</strong> but have <strong>not</strong>{" "}

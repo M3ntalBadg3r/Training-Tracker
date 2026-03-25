@@ -581,7 +581,7 @@ function ReportsContent() {
           >
             {reportOpen ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">Trained but not Certified</h2>
+              <h2 className="text-lg font-semibold text-gray-900">Trained But Not Certified</h2>
               <p className="text-sm text-gray-500">Students who completed an Instructor-Led Training but haven&apos;t obtained the associated Certification</p>
             </div>
             <span className="ml-auto text-sm font-medium text-gray-500 bg-gray-100 px-3 py-1 rounded-full">

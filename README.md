@@ -280,7 +280,7 @@ Shows training records expiring within a selectable time window (1, 3, or 6 mont
 
 Shows all training records completed in the last 12 months, filterable by training type and theatre. This is the report behind the **Achieved Over Last 12 Months** dashboard chart.
 
-### Trained but not Certified
+### Trained But Not Certified
 
 This report identifies students who have completed an **Instructor-Led Training** but have **not** obtained the associated **Certification**.
 
