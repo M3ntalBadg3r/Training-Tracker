@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import PageHeader from "@/components/layout/PageHeader";
 import Modal from "@/components/ui/Modal";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { ShieldCheck, ShieldOff } from "lucide-react";
+import { ShieldCheck, ShieldOff, KeyRound } from "lucide-react";
 
 export default function AccountPage() {
   const { user } = useAuth();
@@ -18,6 +18,14 @@ export default function AccountPage() {
   const [verifyCode, setVerifyCode] = useState("");
   const [setupError, setSetupError] = useState("");
   const [setupLoading, setSetupLoading] = useState(false);
+
+  // Change Password state
+  const [showChangePassword, setShowChangePassword] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
+  const [changePasswordError, setChangePasswordError] = useState("");
+  const [changePasswordSuccess, setChangePasswordSuccess] = useState(false);
 
   // MFA Disable state
   const [showMfaDisable, setShowMfaDisable] = useState(false);
@@ -96,6 +104,31 @@ export default function AccountPage() {
     setMfaEnabled(false);
   };
 
+  const handleChangePassword = async () => {
+    setChangePasswordError("");
+    setChangePasswordSuccess(false);
+
+    if (newPassword !== confirmNewPassword) {
+      setChangePasswordError("New passwords do not match");
+      return;
+    }
+
+    const res = await fetch("/api/auth/change-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ currentPassword, newPassword }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      setChangePasswordError(data.error || "Failed to change password");
+      return;
+    }
+    setChangePasswordSuccess(true);
+    setCurrentPassword("");
+    setNewPassword("");
+    setConfirmNewPassword("");
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -128,6 +161,30 @@ export default function AccountPage() {
               <p className="font-medium text-gray-900">{user?.role}</p>
             </div>
           </div>
+        </div>
+
+        {/* Change Password Section */}
+        <div className="bg-white rounded-lg border border-gray-200 p-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-2">
+            Change Password
+          </h2>
+          <p className="text-sm text-gray-500 mb-4">
+            Update your password to keep your account secure.
+          </p>
+          <button
+            onClick={() => {
+              setShowChangePassword(true);
+              setCurrentPassword("");
+              setNewPassword("");
+              setConfirmNewPassword("");
+              setChangePasswordError("");
+              setChangePasswordSuccess(false);
+            }}
+            className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          >
+            <KeyRound size={16} />
+            Change Password
+          </button>
         </div>
 
         {/* MFA Section */}
@@ -176,6 +233,79 @@ export default function AccountPage() {
           )}
         </div>
       </div>
+
+      {/* Change Password Modal */}
+      <Modal
+        open={showChangePassword}
+        onClose={() => setShowChangePassword(false)}
+        title="Change Password"
+        actions={
+          <>
+            <button
+              onClick={() => setShowChangePassword(false)}
+              className="px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleChangePassword}
+              disabled={!currentPassword || !newPassword || !confirmNewPassword}
+              className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+            >
+              Change Password
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Current Password
+            </label>
+            <input
+              type="password"
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              New Password
+            </label>
+            <input
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+            />
+            <p className="text-xs text-gray-400 mt-1">
+              Min 8 characters with uppercase, lowercase, number, and special character
+            </p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Confirm New Password
+            </label>
+            <input
+              type="password"
+              value={confirmNewPassword}
+              onChange={(e) => setConfirmNewPassword(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+            />
+          </div>
+          {changePasswordError && (
+            <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2">
+              {changePasswordError}
+            </div>
+          )}
+          {changePasswordSuccess && (
+            <div className="text-sm text-green-600 bg-green-50 border border-green-200 rounded-lg p-2">
+              Password changed successfully.
+            </div>
+          )}
+        </div>
+      </Modal>
 
       {/* MFA Setup Modal */}
       <Modal

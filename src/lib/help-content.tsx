@@ -543,6 +543,13 @@ const helpSections: Record<string, HelpSection> = {
       <>
         <p>View your account information and manage security settings.</p>
 
+        <h3>Change Password</h3>
+        <p>
+          Click <strong>Change Password</strong> to update your password. You
+          must enter your current password for verification, then provide a new
+          password that meets the complexity requirements.
+        </p>
+
         <h3>Multi-Factor Authentication (MFA)</h3>
         <p>
           Add an extra layer of security to your account by enabling TOTP-based
