@@ -520,6 +520,13 @@ const helpSections: Record<string, HelpSection> = {
           <li><strong>Delete User</strong> &mdash; Remove a user account. You cannot delete yourself or the last admin.</li>
         </ul>
 
+        <h3>Password Requirements</h3>
+        <p>
+          All passwords must meet the following complexity requirements:
+          minimum 8 characters, at least one uppercase letter, one lowercase
+          letter, one number, and one special character.
+        </p>
+
         <h3>Multi-Factor Authentication (MFA)</h3>
         <p>
           Users can enable TOTP-based MFA using an authenticator app (Google Authenticator, Authy, etc.).

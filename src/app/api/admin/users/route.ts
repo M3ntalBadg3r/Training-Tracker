@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { requireAuth, handleAuthError, hashPassword } from "@/lib/auth";
+import { requireAuth, handleAuthError, hashPassword, validatePassword } from "@/lib/auth";
 
 // GET: List all users
 export async function GET(request: NextRequest) {
@@ -43,11 +43,9 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  if (password.length < 8) {
-    return NextResponse.json(
-      { error: "Password must be at least 8 characters" },
-      { status: 400 }
-    );
+  const passwordError = validatePassword(password);
+  if (passwordError) {
+    return NextResponse.json({ error: passwordError }, { status: 400 });
   }
 
   if (role && !["Admin", "User"].includes(role)) {

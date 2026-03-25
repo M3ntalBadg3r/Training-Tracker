@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { requireAuth, handleAuthError, hashPassword } from "@/lib/auth";
+import { requireAuth, handleAuthError, hashPassword, validatePassword } from "@/lib/auth";
 
 // POST: Reset a user's password (admin only)
 export async function POST(
@@ -22,11 +22,15 @@ export async function POST(
   const body = await request.json();
   const { password } = body;
 
-  if (!password || password.length < 8) {
+  if (!password) {
     return NextResponse.json(
-      { error: "Password must be at least 8 characters" },
+      { error: "Password is required" },
       { status: 400 }
     );
+  }
+  const passwordError = validatePassword(password);
+  if (passwordError) {
+    return NextResponse.json({ error: passwordError }, { status: 400 });
   }
 
   const passwordHash = await hashPassword(password);

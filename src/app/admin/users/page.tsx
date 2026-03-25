@@ -328,7 +328,7 @@ export default function UserManagementPage() {
               }
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
             />
-            <p className="text-xs text-gray-400 mt-1">Minimum 8 characters</p>
+            <p className="text-xs text-gray-400 mt-1">Min 8 characters with uppercase, lowercase, number, and special character</p>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -445,7 +445,7 @@ export default function UserManagementPage() {
               onChange={(e) => setResetPassword(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
             />
-            <p className="text-xs text-gray-400 mt-1">Minimum 8 characters</p>
+            <p className="text-xs text-gray-400 mt-1">Min 8 characters with uppercase, lowercase, number, and special character</p>
           </div>
           {resetError && (
             <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2">
