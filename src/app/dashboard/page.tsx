@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import PageHeader from "@/components/layout/PageHeader";
 import {
   Users,
@@ -63,6 +64,7 @@ const COLORS = {
 };
 
 export default function DashboardPage() {
+  const router = useRouter();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedTheatre, setSelectedTheatre] = useState("Global");
@@ -206,7 +208,11 @@ export default function DashboardPage() {
 
       {/* Charts Row 1: By Product Type & By Function */}
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-        <div className="bg-white rounded-lg border border-gray-200 p-5">
+        <div
+          onClick={() => router.push("/reports?report=by-product-type")}
+          className="bg-white rounded-lg border border-gray-200 p-5 cursor-pointer hover:border-blue-300 hover:shadow-md transition-all"
+          title="Click to view full report"
+        >
           <h3 className="text-base font-semibold text-gray-900 mb-4">By Product Type</h3>
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={data.byProductType}>
@@ -222,7 +228,11 @@ export default function DashboardPage() {
           </ResponsiveContainer>
         </div>
 
-        <div className="bg-white rounded-lg border border-gray-200 p-5">
+        <div
+          onClick={() => router.push("/reports?report=by-function")}
+          className="bg-white rounded-lg border border-gray-200 p-5 cursor-pointer hover:border-blue-300 hover:shadow-md transition-all"
+          title="Click to view full report"
+        >
           <h3 className="text-base font-semibold text-gray-900 mb-4">By Function</h3>
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={data.byFunction}>
@@ -241,7 +251,11 @@ export default function DashboardPage() {
 
       {/* Charts Row 2: Expiring & Monthly Achieved */}
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-        <div className="bg-white rounded-lg border border-gray-200 p-5">
+        <div
+          onClick={() => router.push("/reports?report=expiring")}
+          className="bg-white rounded-lg border border-gray-200 p-5 cursor-pointer hover:border-blue-300 hover:shadow-md transition-all"
+          title="Click to view full report"
+        >
           <h3 className="text-base font-semibold text-gray-900 mb-4">Expiring Soon</h3>
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={data.expiring}>
@@ -257,7 +271,11 @@ export default function DashboardPage() {
           </ResponsiveContainer>
         </div>
 
-        <div className="bg-white rounded-lg border border-gray-200 p-5">
+        <div
+          onClick={() => router.push("/reports?report=achieved")}
+          className="bg-white rounded-lg border border-gray-200 p-5 cursor-pointer hover:border-blue-300 hover:shadow-md transition-all"
+          title="Click to view full report"
+        >
           <h3 className="text-base font-semibold text-gray-900 mb-4">Achieved Over Last 12 Months</h3>
           <ResponsiveContainer width="100%" height={300}>
             <LineChart data={data.monthlyAchieved}>

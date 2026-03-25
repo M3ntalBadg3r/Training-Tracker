@@ -189,6 +189,8 @@ Four summary cards are displayed at the top:
 | **Expiring Soon** | Bar chart | Number of trainings expiring within 1, 3, and 6 months |
 | **Achieved Over Last 12 Months** | Line chart | Monthly trend of completions over the past year |
 
+Each chart is clickable — clicking a chart navigates to its corresponding detailed report in the **Reports** section.
+
 ---
 
 ## Students
@@ -260,7 +262,23 @@ During import, the following cleansing rules are applied automatically:
 
 ## Reports
 
-Navigate to **Reports** in the sidebar. Reports are presented as collapsible sections, each with their own filters and export options.
+Navigate to **Reports** in the sidebar. Reports are presented as collapsible sections, each with their own filters and export options. Clicking a dashboard chart navigates directly to the corresponding report.
+
+### By Product Type
+
+Detailed listing of all training records, filterable by product type, training type, and theatre. This is the report behind the **By Product Type** dashboard chart.
+
+### By Function
+
+Detailed listing of all training records, filterable by function, training type, and theatre. This is the report behind the **By Function** dashboard chart.
+
+### Expiring Soon
+
+Shows training records expiring within a selectable time window (1, 3, or 6 months). Filterable by training type and theatre. This is the report behind the **Expiring Soon** dashboard chart.
+
+### Achieved Over Last 12 Months
+
+Shows all training records completed in the last 12 months, filterable by training type and theatre. This is the report behind the **Achieved Over Last 12 Months** dashboard chart.
 
 ### Trained but not Certified
 

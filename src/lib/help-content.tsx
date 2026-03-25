@@ -53,6 +53,10 @@ const helpSections: Record<string, HelpSection> = {
         </p>
 
         <h3>Charts</h3>
+        <p>
+          Each chart is clickable &mdash; click any chart to navigate to the
+          corresponding detailed report in the <strong>Reports</strong> section.
+        </p>
         <table>
           <thead>
             <tr>
@@ -251,6 +255,34 @@ const helpSections: Record<string, HelpSection> = {
         <p>
           Reports are presented as collapsible sections, each with their own
           filters and export options.
+        </p>
+
+        <h3>By Product Type</h3>
+        <p>
+          Detailed listing of all training records, filterable by product type,
+          training type, and theatre. This is the report behind the{" "}
+          <strong>By Product Type</strong> dashboard chart.
+        </p>
+
+        <h3>By Function</h3>
+        <p>
+          Detailed listing of all training records, filterable by function,
+          training type, and theatre. This is the report behind the{" "}
+          <strong>By Function</strong> dashboard chart.
+        </p>
+
+        <h3>Expiring Soon</h3>
+        <p>
+          Shows training records expiring within a selectable time window (1, 3,
+          or 6 months). Filterable by training type and theatre. This is the
+          report behind the <strong>Expiring Soon</strong> dashboard chart.
+        </p>
+
+        <h3>Achieved Over Last 12 Months</h3>
+        <p>
+          Shows all training records completed in the last 12 months, filterable
+          by training type and theatre. This is the report behind the{" "}
+          <strong>Achieved Over Last 12 Months</strong> dashboard chart.
         </p>
 
         <h3>Trained but not Certified</h3>
