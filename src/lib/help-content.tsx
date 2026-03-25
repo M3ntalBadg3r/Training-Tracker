@@ -44,12 +44,12 @@ const helpSections: Record<string, HelpSection> = {
           </tbody>
         </table>
 
-        <h3>Region Filter</h3>
+        <h3>Theatre Filter</h3>
         <p>
-          Use the <strong>Region</strong> dropdown in the top-right corner to filter
-          all metrics and charts by region. Options include <em>Global</em> (all
-          regions) plus any regions defined in your Region Data (e.g., EMEA, NAM,
-          LATAM, JAPAC). Previously selected regions are cached for instant switching.
+          Use the <strong>Theatre</strong> dropdown in the top-right corner to filter
+          all metrics and charts by theatre. Options include <em>Global</em> (all
+          theatres) plus any theatres found in your student data (e.g., EMEA, NAM,
+          LATAM, JAPAC). Previously selected theatres are cached for instant switching.
         </p>
 
         <h3>Charts</h3>

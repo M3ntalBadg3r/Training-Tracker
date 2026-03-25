@@ -108,20 +108,20 @@ function computeChartData(allTrainingTaken: TrainingRecord[]) {
 }
 
 export async function GET(request: NextRequest) {
-  const region = request.nextUrl.searchParams.get("region");
-  const filterByRegion = region && region !== "Global";
+  const theatre = request.nextUrl.searchParams.get("theatre");
+  const filterByTheatre = theatre && theatre !== "Global";
 
-  // Fetch distinct regions for the dropdown
-  const distinctRegions = await prisma.regionData.findMany({
-    select: { region: true },
-    distinct: ["region"],
-    orderBy: { region: "asc" },
+  // Fetch distinct theatres for the dropdown
+  const distinctTheatres = await prisma.student.findMany({
+    select: { theatre: true },
+    distinct: ["theatre"],
+    orderBy: { theatre: "asc" },
   });
-  const regions = distinctRegions.map((r) => r.region);
+  const theatres = distinctTheatres.map((s) => s.theatre);
 
-  // Region filter for Prisma queries
-  const studentWhere = filterByRegion ? { regionData: { region } } : {};
-  const trainingWhere = filterByRegion ? { student: { regionData: { region } } } : {};
+  // Theatre filter for Prisma queries
+  const studentWhere = filterByTheatre ? { theatre } : {};
+  const trainingWhere = filterByTheatre ? { student: { theatre } } : {};
 
   // --- Top-level metrics ---
   const totalStudents = await prisma.student.count({ where: studentWhere });
@@ -157,7 +157,7 @@ export async function GET(request: NextRequest) {
   const chartData = computeChartData(allTrainingTaken);
 
   return NextResponse.json({
-    regions,
+    theatres,
     metrics: {
       totalStudents,
       certifications: certCount,

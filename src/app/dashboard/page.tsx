@@ -23,7 +23,7 @@ import {
 } from "recharts";
 
 interface DashboardData {
-  regions: string[];
+  theatres: string[];
   metrics: {
     totalStudents: number;
     certifications: number;
@@ -65,16 +65,16 @@ const COLORS = {
 export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [selectedRegion, setSelectedRegion] = useState("Global");
-  const [regionLoading, setRegionLoading] = useState(false);
+  const [selectedTheatre, setSelectedTheatre] = useState("Global");
+  const [theatreLoading, setTheatreLoading] = useState(false);
   const cache = useRef<Record<string, DashboardData>>({});
 
-  const fetchDashboard = useCallback(async (region: string) => {
-    const params = region !== "Global" ? `?region=${encodeURIComponent(region)}` : "";
+  const fetchDashboard = useCallback(async (theatre: string) => {
+    const params = theatre !== "Global" ? `?theatre=${encodeURIComponent(theatre)}` : "";
     const res = await fetch(`/api/dashboard${params}`);
     if (!res.ok) throw new Error("Failed to fetch");
     const d: DashboardData = await res.json();
-    cache.current[region] = d;
+    cache.current[theatre] = d;
     return d;
   }, []);
 
@@ -88,23 +88,23 @@ export default function DashboardPage() {
       .catch(() => setLoading(false));
   }, [fetchDashboard]);
 
-  // Region change
-  const handleRegionChange = async (region: string) => {
-    setSelectedRegion(region);
+  // Theatre change
+  const handleTheatreChange = async (theatre: string) => {
+    setSelectedTheatre(theatre);
 
-    if (cache.current[region]) {
-      setData(cache.current[region]);
+    if (cache.current[theatre]) {
+      setData(cache.current[theatre]);
       return;
     }
 
-    setRegionLoading(true);
+    setTheatreLoading(true);
     try {
-      const d = await fetchDashboard(region);
+      const d = await fetchDashboard(theatre);
       setData(d);
     } catch {
       // Keep current data on error
     }
-    setRegionLoading(false);
+    setTheatreLoading(false);
   };
 
   if (loading) {
@@ -165,18 +165,18 @@ export default function DashboardPage() {
           <div className="flex items-center gap-2">
             <Globe size={16} className="text-gray-400" />
             <select
-              value={selectedRegion}
-              onChange={(e) => handleRegionChange(e.target.value)}
+              value={selectedTheatre}
+              onChange={(e) => handleTheatreChange(e.target.value)}
               className="text-sm border border-gray-300 rounded-lg px-3 py-1.5 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             >
               <option value="Global">Global</option>
-              {data.regions.map((r) => (
-                <option key={r} value={r}>
-                  {r}
+              {data.theatres.map((t) => (
+                <option key={t} value={t}>
+                  {t}
                 </option>
               ))}
             </select>
-            {regionLoading && (
+            {theatreLoading && (
               <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
             )}
           </div>

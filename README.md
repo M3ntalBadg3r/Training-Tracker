@@ -165,9 +165,9 @@ The `.env` file requires:
 
 The Dashboard is the default landing page and provides an at-a-glance overview of all training activity.
 
-### Region Filter
+### Theatre Filter
 
-Use the **Region** dropdown in the top-right corner to filter all metrics and charts by region. Options include **Global** (all regions) plus any regions defined in your Region Data (e.g., EMEA, NAM, LATAM, JAPAC). Previously selected regions are cached for instant switching.
+Use the **Theatre** dropdown in the top-right corner to filter all metrics and charts by theatre. Options include **Global** (all theatres) plus any theatres found in your student data (e.g., EMEA, NAM, LATAM, JAPAC). Previously selected theatres are cached for instant switching.
 
 ### Metric Cards
 
