@@ -165,6 +165,10 @@ The `.env` file requires:
 
 The Dashboard is the default landing page and provides an at-a-glance overview of all training activity.
 
+### Night Mode
+
+Click the **Moon** icon in the sidebar to toggle night (dark) mode. Click the **Sun** icon to switch back to light mode. Your preference is saved in the browser and persists across sessions.
+
 ### Theatre Filter
 
 Use the **Theatre** dropdown in the top-right corner to filter all metrics and charts by theatre. Options include **Global** (all theatres) plus any theatres found in your student data (e.g., EMEA, NAM, LATAM, JAPAC). Previously selected theatres are cached for instant switching.

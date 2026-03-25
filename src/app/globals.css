@@ -3,3 +3,55 @@
 body {
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Dark mode — invert the gray scale so all existing Tailwind gray/white classes adapt automatically */
+.dark {
+  color-scheme: dark;
+
+  /* White → dark surface */
+  --color-white: oklch(0.21 0.006 285.88);
+
+  /* Gray scale inversion */
+  --color-gray-50: oklch(0.145 0.005 285.88);
+  --color-gray-100: oklch(0.21 0.006 285.88);
+  --color-gray-200: oklch(0.37 0.013 285.88);
+  --color-gray-300: oklch(0.44 0.014 285.88);
+  --color-gray-400: oklch(0.556 0.014 285.88);
+  --color-gray-500: oklch(0.65 0.01 285.88);
+  --color-gray-600: oklch(0.75 0.01 285.88);
+  --color-gray-700: oklch(0.87 0.006 285.88);
+  --color-gray-800: oklch(0.92 0.004 285.88);
+  --color-gray-900: oklch(0.985 0 0);
+
+  /* Form elements */
+  & input,
+  & select,
+  & textarea {
+    background-color: oklch(0.17 0.005 285.88);
+    color: oklch(0.92 0.004 285.88);
+  }
+
+  /* Dialog / modal backgrounds */
+  & dialog {
+    background-color: oklch(0.21 0.006 285.88);
+    color: oklch(0.92 0.004 285.88);
+  }
+
+  /* Colored light backgrounds — slightly darken for dark mode readability */
+  --color-red-50: oklch(0.25 0.05 25);
+  --color-red-100: oklch(0.3 0.06 25);
+  --color-green-50: oklch(0.22 0.04 155);
+  --color-green-100: oklch(0.27 0.05 155);
+  --color-blue-50: oklch(0.22 0.04 260);
+  --color-blue-100: oklch(0.27 0.05 260);
+  --color-amber-50: oklch(0.25 0.04 80);
+  --color-amber-100: oklch(0.3 0.05 80);
+  --color-indigo-50: oklch(0.22 0.04 280);
+  --color-purple-100: oklch(0.27 0.05 300);
+  --color-emerald-50: oklch(0.22 0.04 160);
+  --color-emerald-100: oklch(0.27 0.05 160);
+  --color-yellow-100: oklch(0.3 0.05 90);
+  --color-orange-200: oklch(0.35 0.06 55);
+  --color-red-200: oklch(0.35 0.06 25);
+  --color-green-200: oklch(0.32 0.05 155);
+}

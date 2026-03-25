@@ -115,6 +115,16 @@ export default function HelpModal({
         .help-content strong {
           color: #1f2937;
         }
+        /* Dark mode overrides */
+        .dark .help-content h3 { color: #f3f4f6; }
+        .dark .help-content h4 { color: #e5e7eb; }
+        .dark .help-content p,
+        .dark .help-content ul,
+        .dark .help-content ol { color: #d1d5db; }
+        .dark .help-content th { background: #1f2937; border-color: #374151; color: #e5e7eb; }
+        .dark .help-content td { border-color: #374151; color: #d1d5db; }
+        .dark .help-content code { background: #374151; color: #e5e7eb; }
+        .dark .help-content strong { color: #f3f4f6; }
       `}</style>
     </dialog>
   );

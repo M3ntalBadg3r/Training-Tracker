@@ -20,8 +20,11 @@ import {
   User,
   UserCog,
   Sparkles,
+  Moon,
+  Sun,
 } from "lucide-react";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { useTheme } from "@/components/theme/ThemeProvider";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -42,6 +45,7 @@ const adminSubItems = [
 export default function Sidebar() {
   const pathname = usePathname();
   const { user, isAdmin, logout } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const [collapsed, setCollapsed] = useState(true);
   const [adminOpen, setAdminOpen] = useState(false);
 
@@ -188,6 +192,13 @@ export default function Sidebar() {
               <UserCog size={20} className="text-slate-400" />
             </Link>
             <button
+              onClick={toggleTheme}
+              className="p-1 rounded hover:bg-slate-700 transition-colors"
+              title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+            >
+              {theme === "dark" ? <Sun size={20} className="text-slate-400" /> : <Moon size={20} className="text-slate-400" />}
+            </button>
+            <button
               onClick={logout}
               className="p-1 rounded hover:bg-slate-700 transition-colors"
               title="Sign out"
@@ -216,6 +227,13 @@ export default function Sidebar() {
                 </div>
               </Link>
             )}
+            <button
+              onClick={toggleTheme}
+              className="w-full flex items-center gap-2 px-2 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
+            >
+              {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+              <span>{theme === "dark" ? "Light Mode" : "Night Mode"}</span>
+            </button>
             <button
               onClick={logout}
               className="w-full flex items-center gap-2 px-2 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"

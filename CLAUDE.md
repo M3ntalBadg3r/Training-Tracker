@@ -43,6 +43,7 @@ src/
     layout/       # Sidebar, PageHeader, AppShell
     ui/           # Modal, Badge, HelpModal
     auth/         # AuthProvider (context + useAuth hook)
+    theme/        # ThemeProvider (dark mode context + useTheme hook)
     data-table/   # Generic DataTable (search, sort, filter, paginate)
   hooks/          # useDebounce
   proxy.ts       # Route protection (auth + role checks)

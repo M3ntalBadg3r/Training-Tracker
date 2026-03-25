@@ -44,6 +44,13 @@ const helpSections: Record<string, HelpSection> = {
           </tbody>
         </table>
 
+        <h3>Night Mode</h3>
+        <p>
+          Click the <strong>Moon</strong> icon in the sidebar to switch to night
+          (dark) mode. Click the <strong>Sun</strong> icon to switch back. Your
+          preference is saved and persists across sessions.
+        </p>
+
         <h3>Theatre Filter</h3>
         <p>
           Use the <strong>Theatre</strong> dropdown in the top-right corner to filter
