@@ -406,11 +406,26 @@ Click **Upload Backup File** and select a previously created backup `.zip` file.
 
 **Important:** Restoring a backup **replaces all existing data**. Create a backup of the current system first if you need to preserve it.
 
-### Wipe Data
+### Data Clean-Up
 
-In the **Danger Zone** section of the Admin page, you can permanently delete all data in the system (students, training records, training data, and region data).
+Navigate to **Admin > Data Clean-Up** to scan for and fix data quality issues.
 
-This action requires typing `WIPE` in a confirmation dialog to proceed. **This cannot be undone.**
+#### Student Data
+
+Click **Scan for Issues** to check all student records for problems in the Full Name field:
+
+| Issue | Description | Fix Applied |
+|-------|-------------|-------------|
+| **Spaces** | Leading or trailing whitespace | Trimmed |
+| **Email as Name** | Full name is an email address | Derived from email local part (e.g. `jane.doe@co.com` → `Jane Doe`) |
+| **Numbers** | Digits in the name | Removed |
+| **Special Characters** | Non-letter/space/hyphen/apostrophe chars | Removed |
+
+Results are shown with issues highlighted inline. Use the checkboxes to select records, then click **Fix Selected** to apply corrections.
+
+#### Wipe All Data
+
+The **Danger Zone** at the bottom of the Data Clean-Up page allows you to permanently delete all students, training records, training data, and region data. Type `WIPE` to confirm. **This cannot be undone.**
 
 ---
 

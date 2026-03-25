@@ -35,7 +35,7 @@ src/
     training/     # Training catalog + [fullTitle] detail page
     reports/      # Trained-but-not-certified report
     account/      # User account page (profile, MFA setup)
-    admin/        # Admin pages (region-data, training-data, backup, import, users)
+    admin/        # Admin pages (region-data, training-data, backup, import, users, cleanup)
     login/        # Login page
     setup/        # First-run setup wizard
     layout.tsx    # Root layout with AuthProvider + AppShell

@@ -19,6 +19,7 @@ import {
   LogOut,
   User,
   UserCog,
+  Sparkles,
 } from "lucide-react";
 import { useAuth } from "@/components/auth/AuthProvider";
 
@@ -35,6 +36,7 @@ const adminSubItems = [
   { href: "/admin/training-data", label: "Training Data", icon: BookOpen },
   { href: "/admin/backup", label: "Backup", icon: HardDrive },
   { href: "/admin/users", label: "Users", icon: Users },
+  { href: "/admin/cleanup", label: "Data Clean-Up", icon: Sparkles },
 ];
 
 export default function Sidebar() {

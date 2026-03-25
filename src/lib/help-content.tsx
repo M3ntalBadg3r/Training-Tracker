@@ -324,8 +324,7 @@ const helpSections: Record<string, HelpSection> = {
     content: (
       <>
         <p>
-          The Admin page provides links to sub-pages and a Danger Zone for data
-          management.
+          The Admin page provides links to administrative sub-pages.
         </p>
         <ul>
           <li>
@@ -344,14 +343,72 @@ const helpSections: Record<string, HelpSection> = {
             <strong>User Management</strong> &mdash; Manage user accounts,
             roles, and multi-factor authentication.
           </li>
+          <li>
+            <strong>Data Clean-Up</strong> &mdash; Scan and fix data quality
+            issues, and manage the Wipe All Data function.
+          </li>
         </ul>
+      </>
+    ),
+  },
 
-        <h3>Wipe Data</h3>
+  "data-cleanup": {
+    title: "Data Clean-Up",
+    content: (
+      <>
         <p>
-          In the <strong>Danger Zone</strong> section, you can permanently delete
-          all data in the system (students, training records, training data, and
-          region data). This action requires typing <code>WIPE</code> in a
-          confirmation dialog to proceed.{" "}
+          Scan your data for quality issues and apply bulk fixes. Additional
+          clean-up categories will be added over time.
+        </p>
+
+        <h3>Student Data</h3>
+        <p>
+          Click <strong>Scan for Issues</strong> to check all student records.
+          The scanner detects the following issues in the Full Name field:
+        </p>
+        <table>
+          <thead>
+            <tr>
+              <th>Issue</th>
+              <th>Description</th>
+              <th>Fix Applied</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Spaces</strong></td>
+              <td>Leading or trailing whitespace</td>
+              <td>Trimmed</td>
+            </tr>
+            <tr>
+              <td><strong>Email as Name</strong></td>
+              <td>Full name is an email address</td>
+              <td>Derived from email local part (e.g. jane.doe@co.com &rarr; Jane Doe)</td>
+            </tr>
+            <tr>
+              <td><strong>Numbers</strong></td>
+              <td>Digits in the name</td>
+              <td>Removed</td>
+            </tr>
+            <tr>
+              <td><strong>Special Characters</strong></td>
+              <td>Characters other than letters, spaces, hyphens, apostrophes, or periods</td>
+              <td>Removed</td>
+            </tr>
+          </tbody>
+        </table>
+        <p>
+          Results are shown in a table with the issues highlighted inline. Use
+          the checkboxes to select which records to fix, then click{" "}
+          <strong>Fix Selected</strong>. A suggested fix is shown for each
+          record before you apply it.
+        </p>
+
+        <h3>Wipe All Data</h3>
+        <p>
+          The <strong>Danger Zone</strong> at the bottom of this page allows you
+          to permanently delete all students, training records, training data,
+          and region data. Type <code>WIPE</code> to confirm.{" "}
           <strong>This cannot be undone.</strong>
         </p>
       </>
