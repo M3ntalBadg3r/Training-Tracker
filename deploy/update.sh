@@ -13,11 +13,18 @@ cd ${APP_DIR}
 # Pull latest changes
 echo "[1/5] Pulling latest changes..."
 BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null) || {
-    echo "Git pull failed. If running from a non-git directory, copy files manually."
+    echo "Not a git repository. Copy files manually."
     exit 1
 }
+
+# Stash any local changes (e.g. package-lock.json from npm install)
+if ! git diff --quiet 2>/dev/null; then
+    echo "  Stashing local changes..."
+    git stash --quiet
+fi
+
 git pull origin "${BRANCH}" || {
-    echo "Git pull failed. If running from a non-git directory, copy files manually."
+    echo "Git pull failed."
     exit 1
 }
 
