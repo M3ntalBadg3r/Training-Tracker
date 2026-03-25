@@ -20,6 +20,7 @@ import {
   User,
   UserCog,
   Sparkles,
+  RefreshCw,
   Moon,
   Sun,
 } from "lucide-react";
@@ -40,6 +41,7 @@ const adminSubItems = [
   { href: "/admin/backup", label: "Backup", icon: HardDrive },
   { href: "/admin/users", label: "Users", icon: Users },
   { href: "/admin/cleanup", label: "Data Clean-Up", icon: Sparkles },
+  { href: "/admin/updates", label: "Updates", icon: RefreshCw },
 ];
 
 export default function Sidebar() {

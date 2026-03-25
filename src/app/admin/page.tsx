@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import PageHeader from "@/components/layout/PageHeader";
-import { Globe, BookOpen, HardDrive, Upload, ChevronRight, Users, Sparkles } from "lucide-react";
+import { Globe, BookOpen, HardDrive, Upload, ChevronRight, Users, Sparkles, RefreshCw } from "lucide-react";
 
 export default function AdminPage() {
   return (
@@ -85,6 +85,19 @@ export default function AdminPage() {
             <div>
               <h3 className="font-semibold">Data Clean-Up</h3>
               <p className="text-sm text-gray-500">Scan and fix data quality issues</p>
+            </div>
+          </div>
+          <ChevronRight size={20} className="text-gray-400" />
+        </Link>
+        <Link
+          href="/admin/updates"
+          className="flex items-center justify-between p-4 bg-white rounded-lg border border-gray-200 hover:border-blue-300 hover:shadow-sm transition-all"
+        >
+          <div className="flex items-center gap-3">
+            <RefreshCw size={20} className="text-blue-600" />
+            <div>
+              <h3 className="font-semibold">Updates</h3>
+              <p className="text-sm text-gray-500">Check for and apply application updates</p>
             </div>
           </div>
           <ChevronRight size={20} className="text-gray-400" />

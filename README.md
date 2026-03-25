@@ -9,6 +9,7 @@ Built with Next.js, React, PostgreSQL, and Prisma.
 ## Table of Contents
 
 - [Getting Started](#getting-started)
+  - [Quick Install (curl)](#quick-install-curl)
   - [Installation Script](#installation-script)
   - [Update Script](#update-script)
   - [Service Management](#service-management)
@@ -23,6 +24,7 @@ Built with Next.js, React, PostgreSQL, and Prisma.
   - [Training Data](#training-data)
   - [User Management](#user-management)
   - [Backup & Restore](#backup--restore)
+  - [Updates](#updates)
   - [Wipe Data](#wipe-data)
 - [Data Model](#data-model)
 - [Exporting Data](#exporting-data)
@@ -32,6 +34,16 @@ Built with Next.js, React, PostgreSQL, and Prisma.
 ## Getting Started
 
 The `deploy/` directory contains scripts for installing and updating Training Tracker on a Debian-based Linux server or LXC container. Both scripts should be run as **root**.
+
+### Quick Install (curl)
+
+Install Training Tracker on a fresh Debian-based system with a single command:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/M3ntalBadg3r/Training-Tracker/main/deploy/install-remote.sh | bash
+```
+
+This downloads the repository, installs all dependencies, sets up the database, and starts the application. Must be run as **root**.
 
 ### Installation Script
 
@@ -409,6 +421,37 @@ Click **Upload Backup File** and select a previously created backup `.zip` file.
 3. All operations run inside a single database transaction — if any step fails, no changes are made.
 
 **Important:** Restoring a backup **replaces all existing data**. Create a backup of the current system first if you need to preserve it.
+
+### Updates
+
+Navigate to **Admin > Updates** to check for and apply application updates.
+
+#### Check for Updates
+
+Click **Check for Updates** to query GitHub for the latest release. If an update is available, the new version number, release name, date, and release notes are displayed.
+
+#### Apply Update
+
+Click **Update Now** to start the update. A progress bar shows the current step:
+
+1. Checks for update availability
+2. Pulls latest code from GitHub
+3. Installs new/updated dependencies
+4. Runs database migrations
+5. Rebuilds the application
+6. Restarts the service
+
+On completion, a success message is shown with the new version. If an error occurs, the error details are displayed. Do not close the page during the update.
+
+#### Automatic Updates
+
+Enable automatic updates to have the system check for and apply updates on a schedule. Options:
+
+- **Frequency** — Daily or Weekly
+- **Day** — Day of the week (weekly only)
+- **Time** — Time of day to check and apply updates
+
+The application restarts during automatic updates.
 
 ### Data Clean-Up
 

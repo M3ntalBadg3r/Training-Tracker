@@ -669,6 +669,49 @@ const helpSections: Record<string, HelpSection> = {
     ),
   },
 
+  updates: {
+    title: "Updates",
+    content: (
+      <>
+        <p>
+          Check for application updates, apply them, and configure automatic
+          updates.
+        </p>
+
+        <h3>Current Version</h3>
+        <p>
+          Displays the currently installed version of Training Tracker. Click{" "}
+          <strong>Check for Updates</strong> to query GitHub for the latest
+          release.
+        </p>
+
+        <h3>Available Update</h3>
+        <p>
+          When an update is available, the release version, name, date, and
+          release notes are displayed. Click <strong>Update Now</strong> to
+          start the update process. The system will pull the latest code,
+          install dependencies, run database migrations, rebuild the
+          application, and restart the service.
+        </p>
+
+        <h3>Update Progress</h3>
+        <p>
+          During an update, a progress bar shows the current step. Do not close
+          the page while the update is in progress. On completion, a success
+          message is shown with the new version number. If an error occurs, the
+          error details are displayed.
+        </p>
+
+        <h3>Automatic Updates</h3>
+        <p>
+          Enable automatic updates to have the system check for and apply
+          updates on a schedule. Configure the frequency (daily or weekly) and
+          time. The application will restart during automatic updates.
+        </p>
+      </>
+    ),
+  },
+
   backup: {
     title: "Backup & Restore",
     content: (

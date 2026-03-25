@@ -35,7 +35,7 @@ src/
     training/     # Training catalog + [fullTitle] detail page
     reports/      # Trained-but-not-certified report
     account/      # User account page (profile, MFA setup)
-    admin/        # Admin pages (region-data, training-data, backup, import, users, cleanup)
+    admin/        # Admin pages (region-data, training-data, backup, import, users, cleanup, updates)
     login/        # Login page
     setup/        # First-run setup wizard
     layout.tsx    # Root layout with AuthProvider + AppShell
@@ -58,7 +58,7 @@ src/
 prisma/
   schema.prisma   # Data model
   migrations/     # Migration history
-deploy/           # install.sh, update.sh, systemd service
+deploy/           # install.sh, update.sh, install-remote.sh, perform-update.sh, check-update.sh, auto-update.sh, systemd service
 ```
 
 ## Data Model
@@ -110,6 +110,7 @@ After every change, you MUST complete these steps before considering the task do
 2. **Update README.md** — If the change affects how the system is used (new features, changed behavior, new pages, config changes), update `README.md` to reflect it.
 3. **Update the help system** — If the change affects user-facing behavior, update the relevant section in `src/lib/help-content.tsx` so the in-app help stays accurate.
 4. **Update CLAUDE.md** — If the change modifies the project structure (new/renamed/removed files or directories) or the data model (new/changed models, fields, enums, or relationships), update the relevant sections in this file.
+5. **Create a GitHub release** — After pushing, create a GitHub release with `gh release create v<version>` including friendly release notes describing what's new, changed, and fixed.
 
 ## Deployment
 
