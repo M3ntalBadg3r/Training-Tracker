@@ -45,7 +45,7 @@ src/
     auth/         # AuthProvider (context + useAuth hook)
     data-table/   # Generic DataTable (search, sort, filter, paginate)
   hooks/          # useDebounce
-  middleware.ts   # Route protection (auth + role checks)
+  proxy.ts       # Route protection (auth + role checks)
   lib/
     prisma.ts     # Prisma client singleton (PrismaPg adapter)
     auth.ts       # JWT, password hashing, TOTP/MFA utilities
@@ -78,8 +78,8 @@ deploy/           # install.sh, update.sh, systemd service
 
 - Path alias: `@/*` → `./src/*`
 - Pages are server components by default; client components use `"use client"` directive.
-- Authentication uses JWT tokens in HTTP-only cookies (via `jose` library). Middleware (`src/middleware.ts`) protects all routes. API routes have additional `requireAuth()` guards for defense-in-depth.
-- Two fixed roles: **Admin** (full access) and **User** (read-only, no admin pages). Role checked in middleware and API routes.
+- Authentication uses JWT tokens in HTTP-only cookies (via `jose` library). Proxy (`src/proxy.ts`) protects all routes. API routes have additional `requireAuth()` guards for defense-in-depth.
+- Two fixed roles: **Admin** (full access) and **User** (read-only, no admin pages). Role checked in proxy and API routes.
 - TOTP-based MFA supported via `otpauth` library. Optional per-user, managed in Admin > Users.
 - First-run setup wizard creates the initial admin account when no users exist in the database.
 - Multiple `trainingTitle`s can map to the same `fullTitle`. Deduplication by `email + fullTitle + trainingType` is applied in dashboard and training-page APIs to avoid double-counting.
