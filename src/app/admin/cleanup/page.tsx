@@ -196,6 +196,40 @@ export default function DataCleanUpPage() {
                 )}
               </div>
 
+              {scanned && results.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2 mb-4">
+                  <span className="text-sm text-gray-500">Select by issue:</span>
+                  {Object.entries(ISSUE_LABELS).map(([key, meta]) => {
+                    const emailsWithIssue = results.filter((r) => r.issues.includes(key)).map((r) => r.email);
+                    if (emailsWithIssue.length === 0) return null;
+                    const allSelected = emailsWithIssue.every((e) => selected.has(e));
+                    return (
+                      <button
+                        key={key}
+                        onClick={() => {
+                          setSelected((prev) => {
+                            const next = new Set(prev);
+                            if (allSelected) {
+                              emailsWithIssue.forEach((e) => next.delete(e));
+                            } else {
+                              emailsWithIssue.forEach((e) => next.add(e));
+                            }
+                            return next;
+                          });
+                        }}
+                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                          allSelected
+                            ? meta.color + " border-current"
+                            : "bg-white text-gray-600 border-gray-300 hover:bg-gray-50"
+                        }`}
+                      >
+                        {allSelected ? "✓ " : ""}{meta.label} ({emailsWithIssue.length})
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
               {fixResult && (
                 <div className="flex items-center gap-2 mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-800">
                   <CheckCircle size={16} />
