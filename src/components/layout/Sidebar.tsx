@@ -196,7 +196,15 @@ export default function Sidebar() {
         ) : (
           <>
             {user && (
-              <div className="flex items-center gap-2 mb-2">
+              <Link
+                href="/account"
+                className={`flex items-center gap-2 px-2 py-1.5 rounded transition-colors ${
+                  pathname === "/account"
+                    ? "bg-slate-700"
+                    : "hover:bg-slate-700"
+                }`}
+                title="My Account"
+              >
                 <User size={16} className="text-slate-400 shrink-0" />
                 <div className="min-w-0">
                   <div className="text-sm text-white truncate">
@@ -204,19 +212,8 @@ export default function Sidebar() {
                   </div>
                   <div className="text-xs text-slate-500">{user.role}</div>
                 </div>
-              </div>
+              </Link>
             )}
-            <Link
-              href="/account"
-              className={`w-full flex items-center gap-2 px-2 py-1.5 text-sm rounded transition-colors ${
-                pathname === "/account"
-                  ? "text-white bg-slate-700"
-                  : "text-slate-400 hover:text-white hover:bg-slate-700"
-              }`}
-            >
-              <UserCog size={16} />
-              <span>My Account</span>
-            </Link>
             <button
               onClick={logout}
               className="w-full flex items-center gap-2 px-2 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
