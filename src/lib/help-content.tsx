@@ -522,6 +522,35 @@ const helpSections: Record<string, HelpSection> = {
     ),
   },
 
+  account: {
+    title: "My Account",
+    content: (
+      <>
+        <p>View your account information and manage security settings.</p>
+
+        <h3>Multi-Factor Authentication (MFA)</h3>
+        <p>
+          Add an extra layer of security to your account by enabling TOTP-based
+          multi-factor authentication. When enabled, you will need to enter a
+          6-digit code from your authenticator app each time you sign in.
+        </p>
+
+        <h4>Enabling MFA</h4>
+        <ol>
+          <li>Click <strong>Enable MFA</strong> on the account page.</li>
+          <li>Scan the QR code with your authenticator app (Google Authenticator, Authy, Microsoft Authenticator, etc.).</li>
+          <li>Enter the 6-digit code shown in your app to verify and activate MFA.</li>
+        </ol>
+
+        <h4>Disabling MFA</h4>
+        <p>
+          Click <strong>Disable MFA</strong> and enter your password to confirm.
+          An admin can also disable MFA for any user from the User Management page.
+        </p>
+      </>
+    ),
+  },
+
   backup: {
     title: "Backup & Restore",
     content: (

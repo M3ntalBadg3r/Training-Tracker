@@ -34,6 +34,7 @@ src/
     students/     # Student list + [email] detail page
     training/     # Training catalog + [fullTitle] detail page
     reports/      # Trained-but-not-certified report
+    account/      # User account page (profile, MFA setup)
     admin/        # Admin pages (region-data, training-data, backup, import, users)
     login/        # Login page
     setup/        # First-run setup wizard

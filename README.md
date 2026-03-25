@@ -138,9 +138,13 @@ Training Tracker requires authentication to access. On first launch (when no use
 
 Navigate to any page and you will be redirected to the login screen. Enter your username and password. If MFA is enabled on your account, you will be prompted for a 6-digit code from your authenticator app.
 
+### My Account
+
+Click **My Account** in the sidebar to view your profile and manage MFA settings.
+
 ### Multi-Factor Authentication (MFA)
 
-Admins can enable TOTP-based MFA for any user via **Admin > Users**. When enabled, login requires a 6-digit code from an authenticator app (Google Authenticator, Authy, etc.). Admins can also disable MFA for any user.
+Any user can enable TOTP-based MFA from **My Account**. Click **Enable MFA**, scan the QR code with your authenticator app (Google Authenticator, Authy, Microsoft Authenticator, etc.), and enter the verification code. Once enabled, login requires a 6-digit code from your authenticator app. You can disable MFA from the same page (requires your password). Admins can also disable MFA for any user via **Admin > Users**.
 
 ### First-Run Setup
 

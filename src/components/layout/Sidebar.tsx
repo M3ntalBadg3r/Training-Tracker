@@ -18,6 +18,7 @@ import {
   HardDrive,
   LogOut,
   User,
+  UserCog,
 } from "lucide-react";
 import { useAuth } from "@/components/auth/AuthProvider";
 
@@ -176,13 +177,22 @@ export default function Sidebar() {
       {/* User info + logout */}
       <div className="border-t border-slate-700 p-3">
         {collapsed ? (
-          <button
-            onClick={logout}
-            className="w-full flex justify-center p-1 rounded hover:bg-slate-700 transition-colors"
-            title="Sign out"
-          >
-            <LogOut size={20} className="text-slate-400" />
-          </button>
+          <div className="flex flex-col items-center gap-1">
+            <Link
+              href="/account"
+              className="p-1 rounded hover:bg-slate-700 transition-colors"
+              title="My Account"
+            >
+              <UserCog size={20} className="text-slate-400" />
+            </Link>
+            <button
+              onClick={logout}
+              className="p-1 rounded hover:bg-slate-700 transition-colors"
+              title="Sign out"
+            >
+              <LogOut size={20} className="text-slate-400" />
+            </button>
+          </div>
         ) : (
           <>
             {user && (
@@ -196,6 +206,17 @@ export default function Sidebar() {
                 </div>
               </div>
             )}
+            <Link
+              href="/account"
+              className={`w-full flex items-center gap-2 px-2 py-1.5 text-sm rounded transition-colors ${
+                pathname === "/account"
+                  ? "text-white bg-slate-700"
+                  : "text-slate-400 hover:text-white hover:bg-slate-700"
+              }`}
+            >
+              <UserCog size={16} />
+              <span>My Account</span>
+            </Link>
             <button
               onClick={logout}
               className="w-full flex items-center gap-2 px-2 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
