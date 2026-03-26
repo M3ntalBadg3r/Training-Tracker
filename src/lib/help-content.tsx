@@ -835,6 +835,72 @@ const helpSections: Record<string, HelpSection> = {
       </>
     ),
   },
+  "scheduled-exports": {
+    title: "Scheduled Exports",
+    content: (
+      <>
+        <p>
+          Scheduled Exports let you automatically generate and deliver reports
+          on a recurring basis — daily, weekly, or monthly — without any manual
+          steps.
+        </p>
+
+        <h3>Adding a Schedule</h3>
+        <p>Click <strong>Add Schedule</strong> and configure:</p>
+        <table>
+          <thead>
+            <tr><th>Field</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><strong>Name</strong></td><td>A descriptive label for this schedule</td></tr>
+            <tr><td><strong>Report</strong></td><td>Which report to export (e.g. Expiring Soon)</td></tr>
+            <tr><td><strong>Format</strong></td><td>CSV, Excel (XLSX), or PDF</td></tr>
+            <tr><td><strong>Destination</strong></td><td>Where to send the file</td></tr>
+            <tr><td><strong>Schedule</strong></td><td>Frequency, day, and time</td></tr>
+          </tbody>
+        </table>
+
+        <h3>Destinations</h3>
+        <table>
+          <thead>
+            <tr><th>Destination</th><th>What you need</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><strong>Local Filesystem</strong></td><td>A writable path on the server</td></tr>
+            <tr><td><strong>Email</strong></td><td>SMTP credentials + recipient address</td></tr>
+            <tr><td><strong>Google Drive</strong></td><td>OAuth credentials (Client ID, Secret, Refresh Token)</td></tr>
+            <tr><td><strong>Box</strong></td><td>App credentials (Client ID, Secret, Access Token)</td></tr>
+            <tr><td><strong>OneDrive</strong></td><td>Azure app registration (Client ID, Tenant ID, Secret)</td></tr>
+          </tbody>
+        </table>
+
+        <h3>Provider Credentials</h3>
+        <p>
+          Expand the <strong>Provider Credentials</strong> section to enter
+          authentication details for cloud providers and email. Credentials are
+          stored in the database and shared by all schedules using that
+          provider.
+        </p>
+
+        <h3>Actions</h3>
+        <p>
+          Each schedule row has four action buttons: <strong>Run Now</strong>{" "}
+          (immediately trigger the export), <strong>Enable/Disable</strong>{" "}
+          (pause without deleting), <strong>Edit</strong>, and{" "}
+          <strong>Delete</strong>. The <em>Last Run</em> column shows when the
+          export last executed and whether it succeeded or failed.
+        </p>
+
+        <h3>How Scheduling Works</h3>
+        <p>
+          A cron job runs every minute on the server. It checks which enabled
+          schedules are due at the current time and executes them
+          automatically. No action is required from you once a schedule is
+          saved and enabled.
+        </p>
+      </>
+    ),
+  },
 };
 
 export function getHelpContent(slug: string): HelpSection | null {

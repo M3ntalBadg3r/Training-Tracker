@@ -25,6 +25,7 @@ Built with Next.js, React, PostgreSQL, and Prisma.
   - [User Management](#user-management)
   - [Backup & Restore](#backup--restore)
   - [Updates](#updates)
+  - [Scheduled Exports](#scheduled-exports)
   - [Wipe Data](#wipe-data)
 - [Data Model](#data-model)
 - [Exporting Data](#exporting-data)
@@ -480,6 +481,53 @@ Enable automatic updates to have the system check for and apply updates on a sch
 - **Time** — Time of day to check and apply updates
 
 The application restarts during automatic updates.
+
+### Scheduled Exports
+
+Navigate to **Admin > Scheduled Exports** to automate report delivery on a recurring schedule.
+
+#### Adding a Schedule
+
+Click **Add Schedule** and configure:
+
+| Field | Description |
+|-------|-------------|
+| **Name** | A descriptive label for this schedule |
+| **Report** | Which report to export (Trained but Not Certified, By Product Type, By Function, Expiring Soon, Achieved in Last 12 Months) |
+| **Format** | CSV, Excel (XLSX), or PDF |
+| **Destination** | Where to deliver the file |
+| **Schedule** | Daily / Weekly / Monthly at a specified time |
+
+#### Destinations
+
+| Destination | Setup Required |
+|-------------|----------------|
+| **Local Filesystem** | Output path on the server; optional retention count |
+| **Email** | Recipient address; SMTP credentials in Provider Credentials |
+| **Google Drive** | Folder ID (optional); OAuth credentials in Provider Credentials |
+| **Box** | Folder ID (optional); app credentials in Provider Credentials |
+| **OneDrive** | Folder path (optional); Azure app credentials in Provider Credentials |
+
+#### Provider Credentials
+
+Expand the **Provider Credentials** section to enter authentication details for cloud providers and email. Credentials are stored securely in the database and reused across all schedules for that provider.
+
+#### Schedule Actions
+
+Each scheduled export row supports four actions:
+
+- **Run Now** (▶) — Immediately execute the export without waiting for the next scheduled time
+- **Enable/Disable** (⏱) — Pause or resume without deleting
+- **Edit** (✏) — Modify any setting
+- **Delete** (🗑) — Permanently remove the schedule
+
+The **Last Run** column shows the date/time of the last execution and a green ✓ (success) or red ⚠ (error) status. Hover over the error indicator to see the error message.
+
+#### How Scheduling Works
+
+A cron job running every minute on the server calls the execute endpoint, which checks all enabled schedules against the current time and runs any that are due. No configuration beyond saving a schedule is required.
+
+---
 
 ### Data Clean-Up
 

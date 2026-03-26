@@ -35,7 +35,7 @@ src/
     training/     # Training catalog + [fullTitle] detail page
     reports/      # Trained-but-not-certified report
     account/      # User account page (profile, MFA setup)
-    admin/        # Admin pages (region-data, training-data, backup, import, users, cleanup, updates)
+    admin/        # Admin pages (region-data, training-data, backup, import, users, cleanup, updates, scheduled-exports)
     login/        # Login page
     setup/        # First-run setup wizard
     layout.tsx    # Root layout with AuthProvider + AppShell
@@ -51,14 +51,18 @@ src/
     prisma.ts     # Prisma client singleton (PrismaPg adapter)
     auth.ts       # JWT, password hashing, TOTP/MFA utilities
     utils.ts      # Date helpers, formatters, label mappers
-    export.ts     # CSV/Excel/PDF export utilities
+    export.ts     # CSV/Excel/PDF export utilities (browser-side, triggers download)
+    server-export.ts  # Server-side CSV/Excel/PDF generation (returns Buffer)
+    report-queries.ts # Server-side Prisma queries for each report type
+    export-destinations.ts  # Delivery logic: local file, email, Google Drive, Box, OneDrive
+    run-export.ts     # Core export execution shared by run-now and cron-based executor
     help-content.tsx
   types/
     index.ts      # Shared TypeScript interfaces
 prisma/
   schema.prisma   # Data model
   migrations/     # Migration history
-deploy/           # install.sh, update.sh, install-remote.sh, perform-update.sh, check-update.sh, auto-update.sh, auto-backup.sh, systemd service
+deploy/           # install.sh, update.sh, install-remote.sh, perform-update.sh, check-update.sh, auto-update.sh, auto-backup.sh, auto-export.sh, systemd service
 ```
 
 ## Data Model
@@ -68,6 +72,8 @@ deploy/           # install.sh, update.sh, install-remote.sh, perform-update.sh,
 - **TrainingTaken** — FK: email → Student, trainingTitle → TrainingData. Fields: completedDate, expiryDate (auto: +2 years).
 - **RegionData** — PK: `country`. Fields: region.
 - **User** — PK: `id` (auto-increment). Fields: username (unique), passwordHash, displayName, role (Admin/User), mfaEnabled, mfaSecret.
+- **ScheduledExport** — PK: `id`. Fields: name, reportType, format, destination, config (JSON), enabled, frequency, time, dayOfWeek?, dayOfMonth?, lastRunAt?, lastStatus?, lastError?.
+- **ExportCredential** — PK: `id`, unique: `provider`. Fields: provider, config (JSON). Stores SMTP/OAuth/API credentials per delivery provider.
 
 ### Enums
 - **TrainingType**: `Certification`, `Accreditation`, `InstructorLedTraining`

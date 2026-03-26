@@ -23,6 +23,7 @@ import {
   RefreshCw,
   Moon,
   Sun,
+  CalendarClock,
 } from "lucide-react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useTheme } from "@/components/theme/ThemeProvider";
@@ -42,6 +43,7 @@ const adminSubItems = [
   { href: "/admin/users", label: "Users", icon: Users },
   { href: "/admin/cleanup", label: "Data Clean-Up", icon: Sparkles },
   { href: "/admin/updates", label: "Updates", icon: RefreshCw },
+  { href: "/admin/scheduled-exports", label: "Scheduled Exports", icon: CalendarClock },
 ];
 
 export default function Sidebar() {

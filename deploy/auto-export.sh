@@ -1,0 +1,28 @@
+#!/bin/bash
+# Training Tracker - Automatic Report Export
+# Checks for scheduled exports that are due and runs them.
+# Designed to be called from cron every minute.
+
+APP_DIR="${1:-/opt/training-tracker}"
+LOG_FILE="/var/log/training-tracker-exports.log"
+
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "${LOG_FILE}"
+}
+
+log "Auto-export check started"
+
+# Call the execute endpoint
+RESPONSE=$(curl -s -X POST "http://localhost:3000/api/admin/scheduled-exports/execute" \
+    -H "X-Auto-Export: true" \
+    -H "Content-Type: application/json" \
+    2>&1)
+
+RAN=$(echo "$RESPONSE" | node -e "const d=require('fs').readFileSync('/dev/stdin','utf8');try{console.log(JSON.parse(d).ran)}catch{console.log('0')}" 2>/dev/null)
+
+if [ "$RAN" = "0" ] || [ -z "$RAN" ]; then
+    # Nothing due — don't log (runs every minute, would be noisy)
+    exit 0
+fi
+
+log "Ran ${RAN} export(s). Response: ${RESPONSE}"
