@@ -719,6 +719,14 @@ const helpSections: Record<string, HelpSection> = {
           errors encountered, and rollback details if applicable.
         </p>
 
+        <h3>Recent Releases</h3>
+        <p>
+          Shows details of the last 5 releases from GitHub. Click any release
+          to expand and view its release notes. Your currently installed version
+          is highlighted with a <strong>Current</strong> badge. A link at the
+          bottom takes you to the full releases page on GitHub.
+        </p>
+
         <h3>Automatic Updates</h3>
         <p>
           Enable automatic updates to have the system check for and apply

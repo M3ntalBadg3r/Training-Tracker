@@ -13,6 +13,8 @@ import {
   ChevronDown,
   ChevronRight,
   Undo2,
+  ExternalLink,
+  Tag,
 } from "lucide-react";
 
 interface UpdateInfo {
@@ -36,6 +38,14 @@ interface UpdateStatus {
   previousVersion?: string;
   error?: string;
   rolledBack?: boolean;
+}
+
+interface ReleaseInfo {
+  version: string;
+  name: string;
+  notes: string;
+  publishedAt: string;
+  htmlUrl: string;
 }
 
 interface ScheduleConfig {
@@ -75,11 +85,15 @@ export default function UpdatesPage() {
   const [updateLog, setUpdateLog] = useState<string | null>(null);
   const [logOpen, setLogOpen] = useState(false);
   const [loadingLog, setLoadingLog] = useState(false);
+  const [recentReleases, setRecentReleases] = useState<ReleaseInfo[]>([]);
+  const [releasesUrl, setReleasesUrl] = useState<string>("");
+  const [loadingReleases, setLoadingReleases] = useState(false);
+  const [expandedRelease, setExpandedRelease] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const currentVersion = process.env.APP_VERSION || "0.0";
 
-  // Load schedule on mount
+  // Load schedule and recent releases on mount
   useEffect(() => {
     fetch("/api/admin/updates/schedule")
       .then((r) => r.json())
@@ -87,7 +101,22 @@ export default function UpdatesPage() {
         if (data.enabled !== undefined) setSchedule(data);
       })
       .catch(() => {});
+    fetchRecentReleases();
   }, []);
+
+  const fetchRecentReleases = async () => {
+    setLoadingReleases(true);
+    try {
+      const res = await fetch("/api/admin/updates/releases");
+      const data = await res.json();
+      if (data.releases) setRecentReleases(data.releases);
+      if (data.releasesUrl) setReleasesUrl(data.releasesUrl);
+    } catch {
+      // Ignore
+    } finally {
+      setLoadingReleases(false);
+    }
+  };
 
   // Poll update status
   const stopPolling = useCallback(() => {
@@ -459,6 +488,116 @@ export default function UpdatesPage() {
             </button>
           </div>
         )}
+      </section>
+
+      {/* Recent Releases */}
+      <section className="mb-6 p-6 bg-white rounded-lg border border-gray-200">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <Tag size={20} className="text-gray-600" />
+            <h2 className="text-lg font-semibold text-gray-900">
+              Recent Releases
+            </h2>
+          </div>
+          {loadingReleases && (
+            <RefreshCw size={14} className="animate-spin text-gray-400" />
+          )}
+        </div>
+
+        {recentReleases.length > 0 ? (
+          <div className="space-y-3">
+            {recentReleases.map((release) => {
+              const isExpanded = expandedRelease === release.version;
+              const isCurrent = release.version === currentVersion;
+              return (
+                <div
+                  key={release.version}
+                  className={`border rounded-lg overflow-hidden ${
+                    isCurrent
+                      ? "border-blue-200 bg-blue-50/50"
+                      : "border-gray-200"
+                  }`}
+                >
+                  <button
+                    onClick={() =>
+                      setExpandedRelease(isExpanded ? null : release.version)
+                    }
+                    className="flex items-center gap-3 w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors"
+                  >
+                    {isExpanded ? (
+                      <ChevronDown size={16} className="text-gray-400 shrink-0" />
+                    ) : (
+                      <ChevronRight size={16} className="text-gray-400 shrink-0" />
+                    )}
+                    <span className="font-medium text-gray-900">
+                      v{release.version}
+                    </span>
+                    {isCurrent && (
+                      <span className="px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-700 rounded-full">
+                        Current
+                      </span>
+                    )}
+                    <span className="text-sm text-gray-600 truncate flex-1">
+                      {release.name
+                        .replace(/^v[\d.]+\s*[—–-]\s*/, "")
+                        .trim() || release.name}
+                    </span>
+                    {release.publishedAt && (
+                      <span className="text-xs text-gray-400 shrink-0">
+                        {new Date(release.publishedAt).toLocaleDateString(
+                          "en-GB",
+                          { day: "numeric", month: "short", year: "numeric" }
+                        )}
+                      </span>
+                    )}
+                  </button>
+
+                  {isExpanded && (
+                    <div className="px-4 pb-4 border-t border-gray-100">
+                      {release.notes ? (
+                        <div className="mt-3 text-sm text-gray-600 whitespace-pre-wrap">
+                          {release.notes}
+                        </div>
+                      ) : (
+                        <p className="mt-3 text-sm text-gray-400 italic">
+                          No release notes available.
+                        </p>
+                      )}
+                      {release.htmlUrl && (
+                        <a
+                          href={release.htmlUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 mt-3 text-sm text-blue-600 hover:underline"
+                        >
+                          View on GitHub
+                          <ExternalLink size={12} />
+                        </a>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
+            {releasesUrl && (
+              <a
+                href={releasesUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-sm text-blue-600 hover:underline mt-2"
+              >
+                View all releases on GitHub
+                <ExternalLink size={13} />
+              </a>
+            )}
+          </div>
+        ) : !loadingReleases ? (
+          <p className="text-sm text-gray-500">
+            No releases found. Click <strong>Check for Updates</strong> above to
+            verify your connection to GitHub.
+          </p>
+        ) : null}
       </section>
 
       {/* Automatic Updates */}
