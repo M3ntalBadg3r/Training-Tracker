@@ -13,12 +13,17 @@ export async function GET(request: NextRequest) {
   try {
     const currentVersion = process.env.APP_VERSION || "0.0";
 
+    const headers: Record<string, string> = {
+      Accept: "application/vnd.github.v3+json",
+    };
+    const githubToken = process.env.GITHUB_TOKEN;
+    if (githubToken) {
+      headers["Authorization"] = `Bearer ${githubToken}`;
+    }
+
     const response = await fetch(
       `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`,
-      {
-        headers: { Accept: "application/vnd.github.v3+json" },
-        next: { revalidate: 0 },
-      }
+      { headers, next: { revalidate: 0 } }
     );
 
     if (!response.ok) {

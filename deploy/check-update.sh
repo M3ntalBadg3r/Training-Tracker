@@ -18,8 +18,17 @@ if [ -z "$CURRENT" ]; then
     exit 1
 fi
 
+# Load GITHUB_TOKEN from .env if not already set
+if [ -z "$GITHUB_TOKEN" ] && [ -f "${APP_DIR}/.env" ]; then
+    GITHUB_TOKEN=$(grep -E '^GITHUB_TOKEN=' "${APP_DIR}/.env" | cut -d'=' -f2- | tr -d '"' | tr -d "'")
+fi
+
 # Query GitHub releases API
-RESPONSE=$(curl -s --max-time 10 "https://api.github.com/repos/${REPO}/releases/latest" 2>/dev/null)
+AUTH_HEADER=""
+if [ -n "$GITHUB_TOKEN" ]; then
+    AUTH_HEADER="-H \"Authorization: Bearer ${GITHUB_TOKEN}\""
+fi
+RESPONSE=$(eval curl -s --max-time 10 $AUTH_HEADER "https://api.github.com/repos/${REPO}/releases/latest" 2>/dev/null)
 
 if echo "$RESPONSE" | grep -q '"tag_name"'; then
     LATEST=$(echo "$RESPONSE" | node -e "const d=require('fs').readFileSync('/dev/stdin','utf8');const j=JSON.parse(d);console.log(j.tag_name.replace(/^v/,''))" 2>/dev/null)

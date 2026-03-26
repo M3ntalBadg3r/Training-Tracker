@@ -682,7 +682,9 @@ const helpSections: Record<string, HelpSection> = {
         <p>
           Displays the currently installed version of Training Tracker. Click{" "}
           <strong>Check for Updates</strong> to query GitHub for the latest
-          release.
+          release. For private repositories, set the <code>GITHUB_TOKEN</code>{" "}
+          environment variable in your <code>.env</code> file to allow
+          authenticated access to the GitHub API.
         </p>
 
         <h3>Available Update</h3>

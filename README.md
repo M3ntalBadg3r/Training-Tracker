@@ -171,6 +171,7 @@ The `.env` file requires:
 |----------|-------------|
 | `DATABASE_URL` | PostgreSQL connection string |
 | `JWT_SECRET` | Secret key for JWT token signing (minimum 32 characters recommended) |
+| `GITHUB_TOKEN` | *(Optional)* GitHub personal access token — required for update checks on private repositories |
 
 ---
 
