@@ -906,7 +906,9 @@ const helpSections: Record<string, HelpSection> = {
           Expand the <strong>Provider Credentials</strong> section to enter
           authentication details for cloud providers and email. Credentials are
           stored in the database and shared by all schedules using that
-          provider.
+          provider. For email (SMTP), a <strong>Test Connection</strong> button
+          appears after saving credentials — click it to verify the SMTP server
+          is reachable and the credentials are valid without sending an email.
         </p>
 
         <h3>Actions</h3>

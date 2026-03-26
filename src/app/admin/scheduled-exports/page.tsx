@@ -260,6 +260,7 @@ export default function ScheduledExportsPage() {
   // Credential forms
   const [credForms, setCredForms] = useState<Record<string, Record<string, string | boolean>>>({});
   const [savingCred, setSavingCred] = useState<string | null>(null);
+  const [testingCred, setTestingCred] = useState<string | null>(null);
   const [credResult, setCredResult] = useState<{ provider: string; type: "success" | "error"; message: string } | null>(null);
 
   const loadData = useCallback(async () => {
@@ -406,6 +407,28 @@ export default function ScheduledExportsPage() {
     await fetch(`/api/admin/scheduled-exports/credentials?provider=${provider}`, { method: "DELETE" });
     setCredResult(null);
     await loadData();
+  }
+
+  async function handleTestCred(provider: string) {
+    setTestingCred(provider);
+    setCredResult(null);
+    try {
+      const res = await fetch("/api/admin/scheduled-exports/credentials/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setCredResult({ provider, type: "success", message: "Connection successful!" });
+      } else {
+        setCredResult({ provider, type: "error", message: data.error || "Connection failed." });
+      }
+    } catch {
+      setCredResult({ provider, type: "error", message: "Connection test failed." });
+    } finally {
+      setTestingCred(null);
+    }
   }
 
   // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -642,6 +665,15 @@ export default function ScheduledExportsPage() {
                     >
                       {savingCred === provDef.provider ? "Saving..." : "Save Credentials"}
                     </button>
+                    {provDef.provider === "email" && configured && (
+                      <button
+                        onClick={() => handleTestCred(provDef.provider)}
+                        disabled={testingCred === provDef.provider}
+                        className="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50 border border-gray-300"
+                      >
+                        {testingCred === provDef.provider ? "Testing..." : "Test Connection"}
+                      </button>
+                    )}
                     {result && (
                       <span className={`flex items-center gap-1 text-xs ${result.type === "success" ? "text-green-600" : "text-red-600"}`}>
                         {result.type === "success" ? <CheckCircle size={12} /> : <AlertTriangle size={12} />}
