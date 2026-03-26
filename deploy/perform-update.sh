@@ -21,6 +21,9 @@ if [ -f "${APP_DIR}/.env" ]; then
     set +a
 fi
 
+# Unset NODE_ENV so npm install includes devDependencies (prisma, dotenv, etc.)
+unset NODE_ENV
+
 BEFORE_COMMIT=""
 MIGRATIONS_RAN=false
 

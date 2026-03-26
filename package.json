@@ -1,6 +1,6 @@
 {
   "name": "training-tracker-temp",
-  "version": "0.72",
+  "version": "0.73",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -31,7 +31,8 @@
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "recharts": "^3.8.0",
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "dotenv": "^17.3.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -41,7 +42,6 @@
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "dotenv": "^17.3.1",
     "eslint": "^9",
     "eslint-config-next": "16.1.7",
     "prisma": "^7.5.0",
