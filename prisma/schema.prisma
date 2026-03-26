@@ -100,3 +100,34 @@ model User {
 
   @@map("users")
 }
+
+model ScheduledExport {
+  id          Int       @id @default(autoincrement())
+  name        String
+  reportType  String    @map("report_type")
+  format      String
+  destination String
+  config      Json
+  enabled     Boolean   @default(true)
+  frequency   String
+  time        String
+  dayOfWeek   Int?      @map("day_of_week")
+  dayOfMonth  Int?      @map("day_of_month")
+  lastRunAt   DateTime? @map("last_run_at")
+  lastStatus  String?   @map("last_status")
+  lastError   String?   @map("last_error")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  @@map("scheduled_exports")
+}
+
+model ExportCredential {
+  id        Int      @id @default(autoincrement())
+  provider  String   @unique
+  config    Json
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("export_credentials")
+}
