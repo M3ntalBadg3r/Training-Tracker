@@ -1423,6 +1423,7 @@ export default function TrainingDataPage() {
         open={showAddTraining}
         onClose={() => setShowAddTraining(false)}
         title="Add Training"
+        size="lg"
         actions={
           <>
             <button

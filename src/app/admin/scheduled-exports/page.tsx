@@ -661,6 +661,7 @@ export default function ScheduledExportsPage() {
         open={showModal}
         onClose={() => setShowModal(false)}
         title={editingId ? "Edit Schedule" : "Add Export Schedule"}
+        size="lg"
         actions={
           <>
             <button

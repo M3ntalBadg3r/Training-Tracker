@@ -9,7 +9,15 @@ interface ModalProps {
   title: string;
   children: React.ReactNode;
   actions?: React.ReactNode;
+  size?: "sm" | "md" | "lg" | "xl";
 }
+
+const SIZE_CLASSES = {
+  sm: "max-w-sm",
+  md: "max-w-md",
+  lg: "max-w-lg",
+  xl: "max-w-xl",
+};
 
 export default function Modal({
   open,
@@ -17,6 +25,7 @@ export default function Modal({
   title,
   children,
   actions,
+  size = "md",
 }: ModalProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
 
@@ -38,7 +47,7 @@ export default function Modal({
       onClose={onClose}
       className="fixed z-50 rounded-lg p-0 shadow-xl backdrop:bg-black/50 m-auto inset-0"
     >
-      <div className="w-full max-w-md p-6">
+      <div className={`w-full ${SIZE_CLASSES[size]} p-6`}>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold">{title}</h2>
           <button
