@@ -45,9 +45,9 @@ export default function Modal({
     <dialog
       ref={dialogRef}
       onClose={onClose}
-      className="fixed z-50 rounded-lg p-0 shadow-xl backdrop:bg-black/50 m-auto inset-0"
+      className={`fixed z-50 rounded-lg p-0 shadow-xl backdrop:bg-black/50 m-auto inset-0 w-[90vw] ${SIZE_CLASSES[size]}`}
     >
-      <div className={`w-full ${SIZE_CLASSES[size]} p-6`}>
+      <div className="w-full p-6">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold">{title}</h2>
           <button
