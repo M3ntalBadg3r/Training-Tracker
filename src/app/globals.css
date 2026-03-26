@@ -54,4 +54,9 @@ body {
   --color-orange-200: oklch(0.35 0.06 55);
   --color-red-200: oklch(0.35 0.06 25);
   --color-green-200: oklch(0.32 0.05 155);
+
+  /* Preserve real white inside the sidebar (which uses bg-slate-* and needs text-white to stay white) */
+  & .sidebar-nav {
+    --color-white: oklch(1 0 0);
+  }
 }
