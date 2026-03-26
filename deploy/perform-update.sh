@@ -11,12 +11,15 @@ LOG_FILE="${APP_DIR}/.update-log"
 BACKUP_DIR="${APP_DIR}/.update-backup"
 TOTAL_STEPS=8
 
-# Database credentials from .env
+# Ensure system binaries are on PATH
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${PATH}"
+
+# Source .env so DATABASE_URL (and other vars) are available to all child processes
 if [ -f "${APP_DIR}/.env" ]; then
-    DB_URL=$(grep -oP 'DATABASE_URL="?\K[^"]+' "${APP_DIR}/.env" 2>/dev/null || true)
+    set -a
+    source "${APP_DIR}/.env"
+    set +a
 fi
-DB_NAME=$(echo "$DB_URL" | grep -oP '/\K[^?]+' 2>/dev/null || echo "training_tracker")
-DB_USER=$(echo "$DB_URL" | grep -oP '://\K[^:]+' 2>/dev/null || echo "tracker")
 
 BEFORE_COMMIT=""
 MIGRATIONS_RAN=false
@@ -65,12 +68,12 @@ rollback() {
     # Restore database if migrations ran
     if [ "$MIGRATIONS_RAN" = true ] && [ -f "${BACKUP_DIR}/db-pre-update.sql" ]; then
         log "Restoring database from backup..."
-        if command -v psql &> /dev/null; then
-            psql -U "${DB_USER}" -d "${DB_NAME}" < "${BACKUP_DIR}/db-pre-update.sql" 2>> "${LOG_FILE}" && \
+        if command -v psql &> /dev/null && [ -n "${DATABASE_URL}" ]; then
+            psql "${DATABASE_URL}" < "${BACKUP_DIR}/db-pre-update.sql" 2>> "${LOG_FILE}" && \
                 log "Database restored successfully" || \
                 log "WARNING: Database restore failed — manual intervention may be required"
         else
-            log "WARNING: psql not found — cannot restore database automatically"
+            log "WARNING: psql not found or DATABASE_URL not set — cannot restore database automatically"
         fi
     fi
 
@@ -139,9 +142,13 @@ fi
 # Backup database
 log "Backing up database..."
 if command -v pg_dump &> /dev/null; then
-    pg_dump -U "${DB_USER}" "${DB_NAME}" > "${BACKUP_DIR}/db-pre-update.sql" 2>> "${LOG_FILE}" && \
-        log "Database backup complete ($(du -sh "${BACKUP_DIR}/db-pre-update.sql" 2>/dev/null | cut -f1))" || \
-        log "WARNING: Database backup failed — continuing without DB backup"
+    if [ -n "${DATABASE_URL}" ]; then
+        pg_dump "${DATABASE_URL}" > "${BACKUP_DIR}/db-pre-update.sql" 2>> "${LOG_FILE}" && \
+            log "Database backup complete ($(du -sh "${BACKUP_DIR}/db-pre-update.sql" 2>/dev/null | cut -f1))" || \
+            log "WARNING: Database backup failed — continuing without DB backup"
+    else
+        log "WARNING: DATABASE_URL not set — continuing without DB backup"
+    fi
 else
     log "WARNING: pg_dump not found — continuing without DB backup"
 fi
