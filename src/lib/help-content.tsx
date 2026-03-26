@@ -682,10 +682,27 @@ const helpSections: Record<string, HelpSection> = {
         <p>
           Displays the currently installed version of Training Tracker. Click{" "}
           <strong>Check for Updates</strong> to query GitHub for the latest
-          release. For private repositories, set the <code>GITHUB_TOKEN</code>{" "}
-          environment variable in your <code>.env</code> file to allow
-          authenticated access to the GitHub API.
+          release.
         </p>
+        <p>
+          If your repository is <strong>private</strong>, you need to set a{" "}
+          <code>GITHUB_TOKEN</code> environment variable so the app can
+          authenticate with the GitHub API. To create one:
+        </p>
+        <ol>
+          <li>
+            Go to <strong>GitHub &gt; Settings &gt; Developer settings &gt;
+            Personal access tokens &gt; Fine-grained tokens</strong>
+          </li>
+          <li>Generate a new token scoped to your Training Tracker repository</li>
+          <li>
+            Grant <strong>Contents: Read-only</strong> permission
+          </li>
+          <li>
+            Add <code>GITHUB_TOKEN=&quot;your_token&quot;</code> to your{" "}
+            <code>.env</code> file and restart the application
+          </li>
+        </ol>
 
         <h3>Available Update</h3>
         <p>

@@ -173,6 +173,25 @@ The `.env` file requires:
 | `JWT_SECRET` | Secret key for JWT token signing (minimum 32 characters recommended) |
 | `GITHUB_TOKEN` | *(Optional)* GitHub personal access token — required for update checks on private repositories |
 
+#### Setting up GITHUB_TOKEN
+
+If your Training Tracker repository is **private**, you need a GitHub personal access token so the app can check for new releases.
+
+1. Go to [GitHub > Settings > Developer settings > Personal access tokens > Fine-grained tokens](https://github.com/settings/tokens?type=beta)
+2. Click **Generate new token**
+3. Give it a descriptive name (e.g. "Training Tracker Updates")
+4. Under **Repository access**, select **Only select repositories** and choose your Training Tracker repo
+5. Under **Permissions > Repository permissions**, set **Contents** to **Read-only**
+6. Click **Generate token** and copy the value
+
+Add it to your `.env` file:
+
+```env
+GITHUB_TOKEN="github_pat_your_token_here"
+```
+
+Then restart the application for the change to take effect. The token is used by both the admin **Updates** page and the `deploy/check-update.sh` script.
+
 ---
 
 ## Dashboard
