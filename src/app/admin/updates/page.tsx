@@ -126,13 +126,36 @@ export default function UpdatesPage() {
     }
   }, []);
 
+  const serverDownRef = useRef(false);
+  const lastStepRef = useRef(0);
+
   const startPolling = useCallback(() => {
     stopPolling();
+    serverDownRef.current = false;
+    lastStepRef.current = 0;
     pollRef.current = setInterval(async () => {
       try {
         const res = await fetch("/api/admin/updates/status");
         if (!res.ok) return;
         const data: UpdateStatus = await res.json();
+
+        // Server came back after being down during restart
+        if (serverDownRef.current && data.status === "idle") {
+          // Status file was already cleaned up — update completed successfully
+          serverDownRef.current = false;
+          stopPolling();
+          setUpdateStatus({
+            status: "complete",
+            message: "Update completed successfully",
+            step: 8,
+            totalSteps: 8,
+          });
+          fetchUpdateLog();
+          return;
+        }
+
+        serverDownRef.current = false;
+        if (data.step) lastStepRef.current = data.step;
         setUpdateStatus(data);
         if (data.status === "complete" || data.status === "error") {
           stopPolling();
@@ -142,7 +165,10 @@ export default function UpdatesPage() {
           }
         }
       } catch {
-        // Server may be restarting during update — keep polling
+        // Server is down — likely restarting during update
+        if (lastStepRef.current >= 5) {
+          serverDownRef.current = true;
+        }
       }
     }, 2000);
   }, [stopPolling]);
