@@ -113,6 +113,7 @@ deploy/           # install.sh, update.sh, install-remote.sh, perform-update.sh,
 - **Development branch**: `claude/student-certification-tracker-60g7Q` — All changes MUST be committed and pushed here first.
 - **Production branch**: `master` — After pushing to the development branch, merge to `master` and push.
 - **Releases**: After pushing to `master`, create a GitHub release via `gh api` with friendly release notes.
+- **GitHub operations**: Always use `gh api` directly for all GitHub API interactions (creating releases, tags, etc.). Do NOT use `gh release create` or other high-level `gh` subcommands, as the git remote is proxied and they may not work.
 
 ## Mandatory Post-Change Rules
 
