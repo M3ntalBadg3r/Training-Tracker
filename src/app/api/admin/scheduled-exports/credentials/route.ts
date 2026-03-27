@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Preserve existing sensitive fields if the incoming value is blank
-    const mergedConfig = { ...config } as Record<string, unknown>;
+    const mergedConfig: Record<string, string | boolean> = { ...config };
     const existing = await prisma.exportCredential.findUnique({ where: { provider } });
     if (existing) {
       const old = existing.config as Record<string, unknown>;
