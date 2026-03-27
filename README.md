@@ -41,7 +41,13 @@ The `deploy/` directory contains scripts for installing and updating Training Tr
 Install Training Tracker on a fresh Debian-based system with a single command:
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/M3ntalBadg3r/Training-Tracker/main/deploy/install-remote.sh | bash
+curl -sSL https://raw.githubusercontent.com/M3ntalBadg3r/Training-Tracker/master/deploy/install-remote.sh | bash
+```
+
+To install the **dev channel** (tracks the `dev` branch and receives pre-releases):
+
+```bash
+curl -sSL https://raw.githubusercontent.com/M3ntalBadg3r/Training-Tracker/master/deploy/install-remote.sh | bash -s -- --dev
 ```
 
 This downloads the repository, installs all dependencies, sets up the database, and starts the application. Must be run as **root**.
@@ -491,6 +497,15 @@ Before starting an update, the system creates a backup of the current build outp
 5. Restarts the service with the previous version
 
 A detailed timestamped log is available via the **Update Log** section on the Updates page.
+
+#### Update Channels
+
+The system supports two update channels, controlled by the `UPDATE_CHANNEL` variable in your `.env` file:
+
+- **`stable`** (default) — Only shows full production releases. Recommended for production systems on the `master` branch.
+- **`dev`** — Shows all releases including pre-releases. Use this for development/testing systems that track the `dev` branch.
+
+The current channel is displayed as a badge next to the version number on the Updates page. To switch channels, update `UPDATE_CHANNEL` in your `.env` file and restart the application.
 
 #### Automatic Updates
 

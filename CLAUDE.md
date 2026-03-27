@@ -110,10 +110,12 @@ deploy/           # install.sh, update.sh, install-remote.sh, perform-update.sh,
 
 ## Git Workflow
 
-- **Development branch**: `claude/student-certification-tracker-60g7Q` — All changes MUST be committed and pushed here first.
-- **Production branch**: `master` — After pushing to the development branch, merge to `master` and push.
-- **Releases**: After pushing to `master`, create a GitHub release via `gh api` with friendly release notes.
+- **Development branch**: `dev` — All changes MUST be committed and pushed here first.
+- **Production branch**: `master` — After testing on dev, merge `dev` to `master` and push.
+- **Dev releases**: After pushing to `dev`, create a GitHub **pre-release** via `gh api` (with `"prerelease": true`). Dev systems (`UPDATE_CHANNEL=dev`) will see these.
+- **Stable releases**: After pushing to `master`, create a GitHub **full release** via `gh api` (with `"prerelease": false`). Production systems (`UPDATE_CHANNEL=stable`) will see these.
 - **GitHub operations**: Always use `gh api` directly for all GitHub API interactions (creating releases, tags, etc.). Do NOT use `gh release create` or other high-level `gh` subcommands, as the git remote is proxied and they may not work.
+- **Update channels**: Systems set `UPDATE_CHANNEL` in `.env` to `"stable"` (default) or `"dev"`. The update check API and CLI scripts use this to determine whether to include pre-releases.
 
 ## Mandatory Post-Change Rules
 

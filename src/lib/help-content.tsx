@@ -736,12 +736,37 @@ const helpSections: Record<string, HelpSection> = {
           errors encountered, and rollback details if applicable.
         </p>
 
+        <h3>Update Channels</h3>
+        <p>
+          The system supports two update channels controlled by the{" "}
+          <code>UPDATE_CHANNEL</code> environment variable in your{" "}
+          <code>.env</code> file:
+        </p>
+        <ul>
+          <li>
+            <strong>stable</strong> (default) — Only shows full production
+            releases. Recommended for production systems.
+          </li>
+          <li>
+            <strong>dev</strong> — Shows all releases including pre-releases.
+            Use this for development/testing systems that track the{" "}
+            <code>dev</code> branch.
+          </li>
+        </ul>
+        <p>
+          The current channel is displayed as a badge next to the version
+          number. Pre-releases are marked with an amber{" "}
+          <strong>Pre-release</strong> badge in the releases list.
+        </p>
+
         <h3>Recent Releases</h3>
         <p>
           Shows details of the last 5 releases from GitHub. Click any release
           to expand and view its release notes. Your currently installed version
-          is highlighted with a <strong>Current</strong> badge. A link at the
-          bottom takes you to the full releases page on GitHub.
+          is highlighted with a <strong>Current</strong> badge. On the dev
+          channel, pre-releases are shown with a <strong>Pre-release</strong>{" "}
+          badge. A link at the bottom takes you to the full releases page on
+          GitHub.
         </p>
 
         <h3>Automatic Updates</h3>
@@ -749,7 +774,8 @@ const helpSections: Record<string, HelpSection> = {
           Enable automatic updates to have the system check for and apply
           updates on a schedule. Configure the frequency (daily or weekly) and
           time. If an automatic update fails, it will be rolled back
-          automatically.
+          automatically. The update channel setting determines whether
+          pre-releases are included in automatic update checks.
         </p>
       </>
     ),

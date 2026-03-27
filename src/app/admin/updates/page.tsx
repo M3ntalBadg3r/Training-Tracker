@@ -19,8 +19,10 @@ import {
 
 interface UpdateInfo {
   currentVersion: string;
+  channel?: string;
   latestVersion: string | null;
   updateAvailable: boolean;
+  prerelease?: boolean;
   releaseName?: string;
   releaseNotes?: string;
   publishedAt?: string;
@@ -46,6 +48,7 @@ interface ReleaseInfo {
   notes: string;
   publishedAt: string;
   htmlUrl: string;
+  prerelease?: boolean;
 }
 
 interface ScheduleConfig {
@@ -92,6 +95,7 @@ export default function UpdatesPage() {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const currentVersion = process.env.APP_VERSION || "0.0";
+  const channel = process.env.UPDATE_CHANNEL || "stable";
 
   // Load schedule and recent releases on mount
   useEffect(() => {
@@ -288,9 +292,20 @@ export default function UpdatesPage() {
             <h2 className="text-lg font-semibold text-gray-900">
               Current Version
             </h2>
-            <p className="text-3xl font-bold text-blue-600 mt-1">
-              v{currentVersion}
-            </p>
+            <div className="flex items-center gap-3 mt-1">
+              <p className="text-3xl font-bold text-blue-600">
+                v{currentVersion}
+              </p>
+              <span
+                className={`px-2.5 py-0.5 text-sm font-medium rounded-full ${
+                  channel === "dev"
+                    ? "bg-amber-100 text-amber-700"
+                    : "bg-green-100 text-green-700"
+                }`}
+              >
+                {channel === "dev" ? "Dev Channel" : "Stable"}
+              </span>
+            </div>
           </div>
           <button
             onClick={checkForUpdates}
@@ -324,6 +339,11 @@ export default function UpdatesPage() {
                 <span className="px-2 py-0.5 text-sm font-medium bg-green-100 text-green-700 rounded-full">
                   v{updateInfo.latestVersion}
                 </span>
+                {updateInfo.prerelease && (
+                  <span className="px-2 py-0.5 text-xs font-medium bg-amber-100 text-amber-700 rounded-full">
+                    Pre-release
+                  </span>
+                )}
               </div>
 
               {updateInfo.releaseName && (
@@ -562,6 +582,11 @@ export default function UpdatesPage() {
                     {isCurrent && (
                       <span className="px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-700 rounded-full">
                         Current
+                      </span>
+                    )}
+                    {release.prerelease && (
+                      <span className="px-2 py-0.5 text-xs font-medium bg-amber-100 text-amber-700 rounded-full">
+                        Pre-release
                       </span>
                     )}
                     <span className="text-sm text-gray-600 truncate flex-1">
