@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
     const mergedConfig: Record<string, string | boolean> = { ...config };
     const existing = await prisma.exportCredential.findUnique({ where: { provider } });
     if (existing) {
-      const old = existing.config as Record<string, unknown>;
+      const old = existing.config as Record<string, string | boolean>;
       for (const key of SENSITIVE_KEYS) {
         if (!mergedConfig[key] && old[key]) mergedConfig[key] = old[key];
       }
