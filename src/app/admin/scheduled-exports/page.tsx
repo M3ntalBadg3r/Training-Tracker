@@ -280,7 +280,7 @@ export default function ScheduledExportsPage() {
         const updated = { ...prev };
         for (const cred of credsData) {
           if (cred.config) {
-            updated[cred.provider] = { ...(prev[cred.provider] ?? {}), ...cred.config };
+            updated[cred.provider] = { ...(prev[cred.provider] ?? {}), ...cred.config } as Record<string, string | boolean>;
           }
         }
         return updated;
