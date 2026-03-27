@@ -505,7 +505,7 @@ The system supports two update channels, controlled by the `UPDATE_CHANNEL` vari
 - **`stable`** (default) — Only shows full production releases. Recommended for production systems on the `master` branch.
 - **`dev`** — Shows all releases including pre-releases. Use this for development/testing systems that track the `dev` branch.
 
-The current channel is displayed as a badge next to the version number on the Updates page. To switch channels, update `UPDATE_CHANNEL` in your `.env` file and restart the application.
+The current channel is displayed as a clickable badge next to the version number on the Updates page. Click it to switch channels — the system will check out the target branch, pull the latest code, rebuild, and restart. When switching from dev back to stable, the system verifies that the latest stable release is at or ahead of your installed version to prevent downgrades.
 
 #### Automatic Updates
 

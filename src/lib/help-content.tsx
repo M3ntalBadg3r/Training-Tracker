@@ -754,8 +754,12 @@ const helpSections: Record<string, HelpSection> = {
           </li>
         </ul>
         <p>
-          The current channel is displayed as a badge next to the version
-          number. Pre-releases are marked with an amber{" "}
+          The current channel is displayed as a clickable badge next to the
+          version number. Click it to switch channels. Switching checks out the
+          target branch, pulls the latest code, rebuilds, and restarts. When
+          switching from dev back to stable, the system verifies that the latest
+          stable release is at or ahead of your installed version to prevent
+          downgrades. Pre-releases are marked with an amber{" "}
           <strong>Pre-release</strong> badge in the releases list.
         </p>
 

@@ -138,6 +138,18 @@ if ! git diff --quiet 2>/dev/null; then
     git stash --quiet 2>/dev/null
 fi
 
+# Switch branch if TARGET_BRANCH is set (used by channel switching)
+if [ -n "$TARGET_BRANCH" ] && [ "$TARGET_BRANCH" != "$BRANCH" ]; then
+    echo "  Switching branch from ${BRANCH} to ${TARGET_BRANCH}..."
+    git fetch origin "${TARGET_BRANCH}" 2>/dev/null
+    git checkout "${TARGET_BRANCH}" 2>/dev/null || {
+        echo "  Branch checkout failed"
+        rollback 2 "Failed to switch to branch ${TARGET_BRANCH}"
+    }
+    BRANCH="${TARGET_BRANCH}"
+    echo "  Switched to branch ${BRANCH}"
+fi
+
 PULL_OUTPUT=$(git pull origin "${BRANCH}" 2>&1) || {
     echo "  Git pull failed: ${PULL_OUTPUT}"
     rollback 2 "Failed to pull latest changes"

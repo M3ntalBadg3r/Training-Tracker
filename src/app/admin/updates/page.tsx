@@ -15,6 +15,7 @@ import {
   Undo2,
   ExternalLink,
   Tag,
+  ArrowRightLeft,
 } from "lucide-react";
 
 interface UpdateInfo {
@@ -92,6 +93,11 @@ export default function UpdatesPage() {
   const [releasesUrl, setReleasesUrl] = useState<string>("");
   const [loadingReleases, setLoadingReleases] = useState(false);
   const [expandedRelease, setExpandedRelease] = useState<string | null>(null);
+  const [showChannelSwitch, setShowChannelSwitch] = useState(false);
+  const [switchingChannel, setSwitchingChannel] = useState(false);
+  const [channelSwitchError, setChannelSwitchError] = useState<string | null>(
+    null
+  );
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const currentVersion = process.env.APP_VERSION || "0.0";
@@ -230,6 +236,41 @@ export default function UpdatesPage() {
     }
   };
 
+  const switchChannel = async () => {
+    const targetChannel = channel === "stable" ? "dev" : "stable";
+    setSwitchingChannel(true);
+    setChannelSwitchError(null);
+    try {
+      const res = await fetch("/api/admin/updates/switch-channel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ channel: targetChannel }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        if (data.error === "blocked") {
+          setChannelSwitchError(data.message);
+        } else {
+          setChannelSwitchError(data.error || data.message || "Failed to switch channel");
+        }
+        return;
+      }
+      // Switch started — reuse the update progress polling
+      setShowChannelSwitch(false);
+      setUpdateStatus({
+        step: 0,
+        totalSteps: 8,
+        message: `Switching to ${targetChannel} channel...`,
+        status: "in_progress",
+      });
+      startPolling();
+    } catch {
+      setChannelSwitchError("Could not connect to server");
+    } finally {
+      setSwitchingChannel(false);
+    }
+  };
+
   const fetchUpdateLog = async () => {
     setLoadingLog(true);
     try {
@@ -285,6 +326,65 @@ export default function UpdatesPage() {
     <div>
       <PageHeader title="Updates" showBack helpSlug="updates" />
 
+      {/* Channel Switch Modal */}
+      {showChannelSwitch && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full mx-4 p-6">
+            <div className="flex items-center gap-2 mb-4">
+              <ArrowRightLeft size={20} className="text-blue-600" />
+              <h3 className="text-lg font-semibold text-gray-900">
+                Switch to {channel === "stable" ? "Dev" : "Stable"} Channel
+              </h3>
+            </div>
+
+            <p className="text-sm text-gray-600 mb-4">
+              This will check out the{" "}
+              <strong>{channel === "stable" ? "dev" : "master"}</strong> branch,
+              pull the latest code, rebuild the application, and restart the
+              service.
+            </p>
+
+            {channel === "stable" ? (
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg mb-4">
+                <p className="text-sm text-amber-700">
+                  The dev channel includes pre-release versions that may contain
+                  untested features. Only switch if this is a development or
+                  testing system.
+                </p>
+              </div>
+            ) : null}
+
+            {channelSwitchError && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-lg mb-4">
+                <p className="text-sm text-red-700">{channelSwitchError}</p>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowChannelSwitch(false);
+                  setChannelSwitchError(null);
+                }}
+                className="px-4 py-2 text-sm text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={switchChannel}
+                disabled={switchingChannel}
+                className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+              >
+                <ArrowRightLeft size={14} />
+                {switchingChannel
+                  ? "Switching..."
+                  : `Switch to ${channel === "stable" ? "Dev" : "Stable"}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Current Version */}
       <section className="mb-6 p-6 bg-white rounded-lg border border-gray-200">
         <div className="flex items-center justify-between">
@@ -296,15 +396,21 @@ export default function UpdatesPage() {
               <p className="text-3xl font-bold text-blue-600">
                 v{currentVersion}
               </p>
-              <span
-                className={`px-2.5 py-0.5 text-sm font-medium rounded-full ${
+              <button
+                onClick={() => {
+                  setChannelSwitchError(null);
+                  setShowChannelSwitch(true);
+                }}
+                disabled={updateStatus.status === "in_progress"}
+                className={`px-2.5 py-0.5 text-sm font-medium rounded-full cursor-pointer hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-50 transition-opacity ${
                   channel === "dev"
                     ? "bg-amber-100 text-amber-700"
                     : "bg-green-100 text-green-700"
                 }`}
+                title="Click to switch update channel"
               >
                 {channel === "dev" ? "Dev Channel" : "Stable"}
-              </span>
+              </button>
             </div>
           </div>
           <button
