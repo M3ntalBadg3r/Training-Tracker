@@ -108,6 +108,12 @@ deploy/           # install.sh, update.sh, install-remote.sh, perform-update.sh,
 - **Date handling**: All dates flow through `lib/utils.ts`. Use `parseDate()` for parsing, `formatDate()` for display (DD Mmm YYYY), `computeExpiryDate()` for expiry.
 - **Import column mapping**: The import API auto-maps columns with fuzzy matching and supports type aliases (e.g., `ilt` → `InstructorLedTraining`, `pre-sales` → `PreSales`).
 
+## Git Workflow
+
+- **Development branch**: `claude/student-certification-tracker-60g7Q` — All changes MUST be committed and pushed here first.
+- **Production branch**: `master` — After pushing to the development branch, merge to `master` and push.
+- **Releases**: After pushing to `master`, create a GitHub release via `gh api` with friendly release notes.
+
 ## Mandatory Post-Change Rules
 
 After every change, you MUST complete these steps before considering the task done:
