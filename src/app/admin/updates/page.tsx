@@ -159,7 +159,8 @@ export default function UpdatesPage() {
         setUpdateStatus(data);
         if (data.status === "complete" || data.status === "error") {
           stopPolling();
-          // Auto-load log on error
+          // Acknowledge so the status file gets cleaned up
+          fetch("/api/admin/updates/status?ack=1").catch(() => {});
           if (data.status === "error") {
             fetchUpdateLog();
           }

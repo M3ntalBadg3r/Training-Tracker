@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
       statusFile,
       JSON.stringify({
         step: 0,
-        totalSteps: 6,
+        totalSteps: 8,
         message: "Starting update...",
         status: "in_progress",
       })

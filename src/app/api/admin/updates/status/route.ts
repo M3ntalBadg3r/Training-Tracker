@@ -20,17 +20,10 @@ export async function GET(request: NextRequest) {
     const content = fs.readFileSync(statusFile, "utf-8");
     const status = JSON.parse(content);
 
-    // Clean up status file if update is complete or errored
-    if (status.status === "complete" || status.status === "error") {
-      // Keep the file for one more read, then mark for cleanup
-      if (!status._read) {
-        fs.writeFileSync(
-          statusFile,
-          JSON.stringify({ ...status, _read: true })
-        );
-      } else {
-        fs.unlinkSync(statusFile);
-      }
+    // Clean up status file only when explicitly requested via ?ack=1
+    const ack = request.nextUrl.searchParams.get("ack");
+    if (ack === "1" && (status.status === "complete" || status.status === "error")) {
+      fs.unlinkSync(statusFile);
     }
 
     return NextResponse.json(status);
