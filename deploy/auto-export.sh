@@ -3,6 +3,11 @@
 # Checks for scheduled exports that are due and runs them.
 # Designed to be called from cron every minute.
 
+# Ensure node/npm are on PATH (cron uses minimal PATH)
+export PATH="/usr/local/bin:/usr/bin:/bin:$PATH"
+# Source nvm if available (common Node.js install method)
+[ -s "$HOME/.nvm/nvm.sh" ] && . "$HOME/.nvm/nvm.sh"
+
 APP_DIR="${1:-/opt/training-tracker}"
 LOG_FILE="/var/log/training-tracker-exports.log"
 

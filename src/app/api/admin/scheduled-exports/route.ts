@@ -22,7 +22,7 @@ async function syncCron() {
     }
 
     const newCron = filteredLines.join("\n") + "\n";
-    execSync(`echo "${newCron}" | crontab -`, { encoding: "utf-8" });
+    execSync("crontab -", { input: newCron, encoding: "utf-8" });
   } catch {
     // Cron may not be available in all environments
   }
