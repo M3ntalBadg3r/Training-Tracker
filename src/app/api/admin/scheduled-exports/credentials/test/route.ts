@@ -42,14 +42,18 @@ export async function POST(request: NextRequest) {
         user: String(config.user ?? ""),
         pass: String(config.password ?? ""),
       },
+      tls: { rejectUnauthorized: false },
     });
 
     await transporter.verify();
 
     return NextResponse.json({ success: true });
   } catch (err) {
-    const message =
-      err instanceof Error ? err.message : "Connection test failed";
+    let message = err instanceof Error ? err.message : "Connection test failed";
+    if (message.includes("wrong version number")) {
+      message +=
+        " — SSL/TLS version mismatch. If using port 587, uncheck 'Implicit SSL/TLS (port 465)'. If using port 465, check it.";
+    }
     return NextResponse.json({ success: false, error: message });
   }
 }
