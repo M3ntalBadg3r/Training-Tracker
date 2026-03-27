@@ -62,6 +62,7 @@ export async function deliverEmail(
     port: config.port,
     secure: config.secure,
     auth: { user: config.user, pass: config.password },
+    tls: { rejectUnauthorized: false },
   });
   await transporter.sendMail({
     from: config.from,

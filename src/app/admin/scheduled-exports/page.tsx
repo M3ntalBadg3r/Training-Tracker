@@ -41,6 +41,8 @@ interface ScheduledExport {
 interface Credential {
   provider: string;
   updatedAt: string;
+  config?: Record<string, unknown>;
+  hasSecrets?: string[];
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -84,7 +86,7 @@ const CREDENTIAL_PROVIDERS = [
     fields: [
       { key: "host", label: "SMTP Host", type: "text", placeholder: "smtp.example.com" },
       { key: "port", label: "Port", type: "number", placeholder: "587" },
-      { key: "secure", label: "Use TLS", type: "checkbox" },
+      { key: "secure", label: "Implicit SSL/TLS (port 465)", type: "checkbox" },
       { key: "user", label: "Username", type: "text", placeholder: "user@example.com" },
       { key: "password", label: "Password", type: "password", placeholder: "" },
       { key: "from", label: "From Address", type: "text", placeholder: "reports@example.com" },
@@ -271,7 +273,18 @@ export default function ScheduledExportsPage() {
         fetch("/api/admin/scheduled-exports/credentials"),
       ]);
       setSchedules(await schedsRes.json());
-      setCredentials(await credsRes.json());
+      const credsData: Credential[] = await credsRes.json();
+      setCredentials(credsData);
+      // Repopulate form fields with saved non-sensitive values
+      setCredForms((prev) => {
+        const updated = { ...prev };
+        for (const cred of credsData) {
+          if (cred.config) {
+            updated[cred.provider] = { ...(prev[cred.provider] ?? {}), ...cred.config };
+          }
+        }
+        return updated;
+      });
     } catch {
       // ignore
     } finally {
@@ -594,6 +607,7 @@ export default function ScheduledExportsPage() {
 
             {CREDENTIAL_PROVIDERS.map((provDef) => {
               const configured = isCredConfigured(provDef.provider);
+              const credEntry = credentials.find((c) => c.provider === provDef.provider);
               const form = credForms[provDef.provider] ?? {};
               const result = credResult?.provider === provDef.provider ? credResult : null;
 
@@ -649,7 +663,11 @@ export default function ScheduledExportsPage() {
                                 [provDef.provider]: { ...prev[provDef.provider], [field.key]: e.target.value },
                               }))
                             }
-                            placeholder={field.placeholder}
+                            placeholder={
+                              field.type === "password" && credEntry?.hasSecrets?.includes(field.key)
+                                ? "(already configured — leave blank to keep)"
+                                : field.placeholder
+                            }
                             className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-lg"
                           />
                         )}

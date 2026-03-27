@@ -3,6 +3,7 @@ import { requireAuth, handleAuthError } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 
 const VALID_PROVIDERS = ["email", "google-drive", "box", "onedrive"];
+const SENSITIVE_KEYS = ["password", "clientSecret", "refreshToken", "accessToken"];
 
 export async function GET(request: NextRequest) {
   try {
@@ -12,8 +13,20 @@ export async function GET(request: NextRequest) {
   }
 
   const credentials = await prisma.exportCredential.findMany();
-  // Return which providers are configured (without exposing secrets)
-  const configured = credentials.map((c) => ({ provider: c.provider, updatedAt: c.updatedAt }));
+  // Return non-sensitive config fields; indicate which sensitive fields are set
+  const configured = credentials.map((c) => {
+    const cfg = c.config as Record<string, unknown>;
+    const publicConfig: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(cfg)) {
+      if (!SENSITIVE_KEYS.includes(k)) publicConfig[k] = v;
+    }
+    return {
+      provider: c.provider,
+      updatedAt: c.updatedAt,
+      config: publicConfig,
+      hasSecrets: SENSITIVE_KEYS.filter((k) => cfg[k]),
+    };
+  });
   return NextResponse.json(configured);
 }
 
@@ -35,10 +48,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Missing config" }, { status: 400 });
     }
 
+    // Preserve existing sensitive fields if the incoming value is blank
+    const mergedConfig = { ...config } as Record<string, unknown>;
+    const existing = await prisma.exportCredential.findUnique({ where: { provider } });
+    if (existing) {
+      const old = existing.config as Record<string, unknown>;
+      for (const key of SENSITIVE_KEYS) {
+        if (!mergedConfig[key] && old[key]) mergedConfig[key] = old[key];
+      }
+    }
+
     const record = await prisma.exportCredential.upsert({
       where: { provider },
-      create: { provider, config },
-      update: { config },
+      create: { provider, config: mergedConfig },
+      update: { config: mergedConfig },
     });
 
     return NextResponse.json({ success: true, provider: record.provider, updatedAt: record.updatedAt });
