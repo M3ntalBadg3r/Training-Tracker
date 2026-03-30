@@ -66,6 +66,20 @@ export async function proxy(request: NextRequest) {
     // If setup check fails, continue with auth check
   }
 
+  // Allow cron-triggered endpoints from localhost (no JWT needed)
+  const isCronRequest =
+    (pathname === "/api/admin/backup/save" &&
+      request.headers.get("x-auto-backup") === "true") ||
+    (pathname === "/api/admin/scheduled-exports/execute" &&
+      request.headers.get("x-auto-export") === "true");
+  const host = request.headers.get("host") || "";
+  const isLocalhost =
+    host.startsWith("localhost") || host.startsWith("127.0.0.1");
+
+  if (isCronRequest && isLocalhost) {
+    return NextResponse.next();
+  }
+
   // Verify JWT token
   const token = request.cookies.get(COOKIE_NAME)?.value;
 
