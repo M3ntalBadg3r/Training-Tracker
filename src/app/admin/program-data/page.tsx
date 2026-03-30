@@ -313,26 +313,26 @@ export default function ProgramDataPage() {
             <div className="relative">
               <button
                 onClick={() => setShowExport((p) => !p)}
-                className="flex items-center gap-1 px-3 py-2 text-sm bg-white dark:bg-slate-700 border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-600"
+                className="flex items-center gap-1 px-3 py-2 text-sm bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
               >
                 <Download size={16} /> Export
               </button>
               {showExport && (
-                <div className="absolute right-0 mt-1 bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 rounded-lg shadow-lg z-10 min-w-[140px]">
+                <div className="absolute right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[140px]">
                   <button
-                    className="w-full px-4 py-2 text-sm text-left hover:bg-gray-100 dark:hover:bg-slate-600"
+                    className="w-full px-4 py-2 text-sm text-left hover:bg-gray-100"
                     onClick={() => { exportToCsv(exportData as never[], exportColumns as never[], "program-data"); setShowExport(false); }}
                   >
                     Export as CSV
                   </button>
                   <button
-                    className="w-full px-4 py-2 text-sm text-left hover:bg-gray-100 dark:hover:bg-slate-600"
+                    className="w-full px-4 py-2 text-sm text-left hover:bg-gray-100"
                     onClick={() => { exportToExcel(exportData as never[], exportColumns as never[], "program-data"); setShowExport(false); }}
                   >
                     Export as Excel
                   </button>
                   <button
-                    className="w-full px-4 py-2 text-sm text-left hover:bg-gray-100 dark:hover:bg-slate-600"
+                    className="w-full px-4 py-2 text-sm text-left hover:bg-gray-100"
                     onClick={() => { exportToPdf(exportData as never[], exportColumns as never[], "program-data"); setShowExport(false); }}
                   >
                     Export as PDF
@@ -351,11 +351,11 @@ export default function ProgramDataPage() {
       />
 
       {error && (
-        <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded-lg">{error}</div>
+        <div className="mb-4 p-3 bg-red-50 text-red-700 rounded-lg">{error}</div>
       )}
 
       {/* Search & Filters */}
-      <div className="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 p-4 mb-4">
+      <div className="bg-white rounded-lg border border-gray-200 p-4 mb-4">
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative flex-1 min-w-[200px]">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -364,7 +364,7 @@ export default function ProgramDataPage() {
               placeholder="Search..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-8 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-sm"
+              className="w-full pl-9 pr-8 py-2 border border-gray-300 rounded-lg bg-white text-sm"
             />
             {searchQuery && (
               <button onClick={() => setSearchQuery("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
@@ -372,19 +372,19 @@ export default function ProgramDataPage() {
               </button>
             )}
           </div>
-          <select value={filterProgram} onChange={(e) => setFilterProgram(e.target.value)} className="px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-sm">
+          <select value={filterProgram} onChange={(e) => setFilterProgram(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm">
             <option value="">All Programs</option>
             {programNames.map((p) => <option key={p} value={p}>{p}</option>)}
           </select>
-          <select value={filterSpec} onChange={(e) => setFilterSpec(e.target.value)} className="px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-sm">
+          <select value={filterSpec} onChange={(e) => setFilterSpec(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm">
             <option value="">All Specialisations</option>
             {specNames.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
-          <select value={filterLevel} onChange={(e) => setFilterLevel(e.target.value)} className="px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-sm">
+          <select value={filterLevel} onChange={(e) => setFilterLevel(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm">
             <option value="">All Levels</option>
             {LEVELS.map((l) => <option key={l} value={l}>{LEVEL_LABELS[l]}</option>)}
           </select>
-          <select value={filterType} onChange={(e) => setFilterType(e.target.value)} className="px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-sm">
+          <select value={filterType} onChange={(e) => setFilterType(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm">
             <option value="">All Types</option>
             {TRAINING_TYPES.map((t) => <option key={t} value={t}>{TRAINING_TYPE_LABELS[t]}</option>)}
           </select>
@@ -400,10 +400,10 @@ export default function ProgramDataPage() {
       </div>
 
       {/* Data Table */}
-      <div className="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden">
+      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-gray-50 dark:bg-slate-700 text-left">
+            <thead className="bg-gray-50 text-left">
               <tr>
                 {[
                   { key: "programName", label: "Program Name" },
@@ -415,7 +415,7 @@ export default function ProgramDataPage() {
                 ].map((col) => (
                   <th
                     key={col.key}
-                    className="px-4 py-3 font-medium text-gray-600 dark:text-slate-300 cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-600 select-none"
+                    className="px-4 py-3 font-medium text-gray-600 cursor-pointer hover:bg-gray-100 select-none"
                     onClick={() => toggleSort(col.key)}
                   >
                     <span className="flex items-center gap-1">
@@ -423,7 +423,7 @@ export default function ProgramDataPage() {
                     </span>
                   </th>
                 ))}
-                <th className="px-4 py-3 font-medium text-gray-600 dark:text-slate-300">Actions</th>
+                <th className="px-4 py-3 font-medium text-gray-600">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -435,7 +435,7 @@ export default function ProgramDataPage() {
                 </tr>
               ) : (
                 pagedData.map((row) => (
-                  <tr key={row.id} className="border-t border-gray-100 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-750">
+                  <tr key={row.id} className="border-t border-gray-100 hover:bg-gray-50">
                     <td className="px-4 py-3">{row.programName}</td>
                     <td className="px-4 py-3">{row.specialisationName}</td>
                     <td className="px-4 py-3">{LEVEL_LABELS[row.level] || row.level}</td>
@@ -467,17 +467,17 @@ export default function ProgramDataPage() {
 
         {/* Pagination */}
         {sortedData.length > 0 && (
-          <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100 dark:border-slate-700">
-            <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-slate-400">
+          <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100">
+            <div className="flex items-center gap-2 text-sm text-gray-600">
               <span>Showing {(page - 1) * pageSize + 1}-{Math.min(page * pageSize, sortedData.length)} of {sortedData.length}</span>
-              <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))} className="ml-2 px-2 py-1 border border-gray-300 dark:border-slate-600 rounded bg-white dark:bg-slate-700 text-sm">
+              <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))} className="ml-2 px-2 py-1 border border-gray-300 rounded bg-white text-sm">
                 {[10, 25, 50, 100].map((s) => <option key={s} value={s}>{s} per page</option>)}
               </select>
             </div>
             <div className="flex items-center gap-1">
-              <button disabled={page <= 1} onClick={() => setPage((p) => p - 1)} className="px-3 py-1 text-sm border rounded disabled:opacity-50 hover:bg-gray-50 dark:hover:bg-slate-600 border-gray-300 dark:border-slate-600">Prev</button>
+              <button disabled={page <= 1} onClick={() => setPage((p) => p - 1)} className="px-3 py-1 text-sm border rounded disabled:opacity-50 hover:bg-gray-50 border-gray-300">Prev</button>
               <span className="px-3 py-1 text-sm">{page} / {totalPages}</span>
-              <button disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)} className="px-3 py-1 text-sm border rounded disabled:opacity-50 hover:bg-gray-50 dark:hover:bg-slate-600 border-gray-300 dark:border-slate-600">Next</button>
+              <button disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)} className="px-3 py-1 text-sm border rounded disabled:opacity-50 hover:bg-gray-50 border-gray-300">Next</button>
             </div>
           </div>
         )}
@@ -486,7 +486,7 @@ export default function ProgramDataPage() {
       {/* Add Modal */}
       <Modal open={showAdd} onClose={() => setShowAdd(false)} title="Add Program Requirement">
         <div className="space-y-4">
-          {formError && <div className="p-2 bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded text-sm">{formError}</div>}
+          {formError && <div className="p-2 bg-red-50 text-red-700 rounded text-sm">{formError}</div>}
           <div>
             <label className="block text-sm font-medium mb-1">Program Name</label>
             <input
@@ -494,7 +494,7 @@ export default function ProgramDataPage() {
               value={addForm.programName}
               onChange={(e) => setAddForm((f) => ({ ...f, programName: e.target.value }))}
               placeholder="e.g., Authorized Professional Services (APS)"
-              className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-sm"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
             />
           </div>
           <div>
@@ -503,14 +503,14 @@ export default function ProgramDataPage() {
               <select
                 value={addForm.specialisationId}
                 onChange={(e) => setAddForm((f) => ({ ...f, specialisationId: Number(e.target.value) }))}
-                className="flex-1 px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-sm"
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
               >
                 <option value={0}>Select specialisation...</option>
                 {specialisations.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
               <button
                 onClick={() => { setShowAddSpec(true); setAddSpecError(""); setNewSpecName(""); }}
-                className="px-3 py-2 text-sm bg-gray-100 dark:bg-slate-600 border border-gray-300 dark:border-slate-500 rounded-lg hover:bg-gray-200 dark:hover:bg-slate-500"
+                className="px-3 py-2 text-sm bg-gray-100 border border-gray-300 rounded-lg hover:bg-gray-200"
                 title="Add new specialisation"
               >
                 <Plus size={16} />
@@ -522,7 +522,7 @@ export default function ProgramDataPage() {
             <select
               value={addForm.level}
               onChange={(e) => setAddForm((f) => ({ ...f, level: e.target.value }))}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-sm"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
             >
               <option value="">Select level...</option>
               {LEVELS.map((l) => <option key={l} value={l}>{LEVEL_LABELS[l]}</option>)}
@@ -537,7 +537,7 @@ export default function ProgramDataPage() {
                 setAddForm((f) => ({ ...f, trainingType: type, trainingTitle: "" }));
                 fetchTrainingsByType(type);
               }}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-sm"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
             >
               <option value="">Select type...</option>
               {TRAINING_TYPES.map((t) => <option key={t} value={t}>{TRAINING_TYPE_LABELS[t]}</option>)}
@@ -549,7 +549,7 @@ export default function ProgramDataPage() {
               value={addForm.trainingTitle}
               onChange={(e) => setAddForm((f) => ({ ...f, trainingTitle: e.target.value }))}
               disabled={!addForm.trainingType}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-sm disabled:opacity-50"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm disabled:opacity-50"
             >
               <option value="">{addForm.trainingType ? "Select training..." : "Select a type first..."}</option>
               {trainingOptions.map((t) => <option key={t.trainingTitle} value={t.trainingTitle}>{t.fullTitle}</option>)}
@@ -562,16 +562,16 @@ export default function ProgramDataPage() {
               min={1}
               value={addForm.quantityRequired}
               onChange={(e) => setAddForm((f) => ({ ...f, quantityRequired: parseInt(e.target.value) || 1 }))}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-sm"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
             />
-            <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">
+            <p className="mt-1 text-xs text-gray-500">
               {addForm.level === "Global"
                 ? "Number of compliant theatres needed."
                 : "Number of people with this training needed."}
             </p>
           </div>
           <div className="flex justify-end gap-2 pt-2">
-            <button onClick={() => setShowAdd(false)} className="px-4 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-600">Cancel</button>
+            <button onClick={() => setShowAdd(false)} className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
             <button onClick={handleAdd} className="flex items-center gap-1 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">
               <Save size={16} /> Save
             </button>
@@ -583,14 +583,14 @@ export default function ProgramDataPage() {
       <Modal open={showEdit} onClose={() => setShowEdit(false)} title="Edit Program Requirement">
         {editForm && (
           <div className="space-y-4">
-            {formError && <div className="p-2 bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded text-sm">{formError}</div>}
+            {formError && <div className="p-2 bg-red-50 text-red-700 rounded text-sm">{formError}</div>}
             <div>
               <label className="block text-sm font-medium mb-1">Program Name</label>
               <input
                 type="text"
                 value={editForm.programName}
                 onChange={(e) => setEditForm((f) => f ? { ...f, programName: e.target.value } : f)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-sm"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
               />
             </div>
             <div>
@@ -598,7 +598,7 @@ export default function ProgramDataPage() {
               <select
                 value={editForm.specialisationId}
                 onChange={(e) => setEditForm((f) => f ? { ...f, specialisationId: Number(e.target.value) } : f)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-sm"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
               >
                 <option value={0}>Select specialisation...</option>
                 {specialisations.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -609,7 +609,7 @@ export default function ProgramDataPage() {
               <select
                 value={editForm.level}
                 onChange={(e) => setEditForm((f) => f ? { ...f, level: e.target.value } : f)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-sm"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
               >
                 {LEVELS.map((l) => <option key={l} value={l}>{LEVEL_LABELS[l]}</option>)}
               </select>
@@ -623,7 +623,7 @@ export default function ProgramDataPage() {
                   setEditForm((f) => f ? { ...f, trainingType: type, trainingTitle: "" } : f);
                   fetchTrainingsByType(type);
                 }}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-sm"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
               >
                 {TRAINING_TYPES.map((t) => <option key={t} value={t}>{TRAINING_TYPE_LABELS[t]}</option>)}
               </select>
@@ -633,7 +633,7 @@ export default function ProgramDataPage() {
               <select
                 value={editForm.trainingTitle}
                 onChange={(e) => setEditForm((f) => f ? { ...f, trainingTitle: e.target.value } : f)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-sm"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
               >
                 <option value="">Select training...</option>
                 {trainingOptions.map((t) => <option key={t.trainingTitle} value={t.trainingTitle}>{t.fullTitle}</option>)}
@@ -646,16 +646,16 @@ export default function ProgramDataPage() {
                 min={1}
                 value={editForm.quantityRequired}
                 onChange={(e) => setEditForm((f) => f ? { ...f, quantityRequired: parseInt(e.target.value) || 1 } : f)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-sm"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
               />
-              <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">
+              <p className="mt-1 text-xs text-gray-500">
                 {editForm.level === "Global"
                   ? "Number of compliant theatres needed."
                   : "Number of people with this training needed."}
               </p>
             </div>
             <div className="flex justify-end gap-2 pt-2">
-              <button onClick={() => setShowEdit(false)} className="px-4 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-600">Cancel</button>
+              <button onClick={() => setShowEdit(false)} className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
               <button onClick={handleEdit} className="flex items-center gap-1 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">
                 <Save size={16} /> Save
               </button>
@@ -668,13 +668,13 @@ export default function ProgramDataPage() {
       <Modal open={showDelete} onClose={() => setShowDelete(false)} title="Delete Requirement">
         {deleteTarget && (
           <div>
-            {formError && <div className="mb-3 p-2 bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded text-sm">{formError}</div>}
+            {formError && <div className="mb-3 p-2 bg-red-50 text-red-700 rounded text-sm">{formError}</div>}
             <p className="text-sm mb-4">
               Are you sure you want to delete the requirement for <strong>{deleteTarget.trainingFullTitle}</strong> under{" "}
               <strong>{deleteTarget.specialisationName}</strong> in the <strong>{deleteTarget.programName}</strong> program?
             </p>
             <div className="flex justify-end gap-2">
-              <button onClick={() => setShowDelete(false)} className="px-4 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-600">Cancel</button>
+              <button onClick={() => setShowDelete(false)} className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
               <button onClick={handleDelete} className="flex items-center gap-1 px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700">
                 <Trash2 size={16} /> Delete
               </button>
@@ -686,7 +686,7 @@ export default function ProgramDataPage() {
       {/* Add Specialisation Modal */}
       <Modal open={showAddSpec} onClose={() => setShowAddSpec(false)} title="Add Specialisation">
         <div className="space-y-4">
-          {addSpecError && <div className="p-2 bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded text-sm">{addSpecError}</div>}
+          {addSpecError && <div className="p-2 bg-red-50 text-red-700 rounded text-sm">{addSpecError}</div>}
           <div>
             <label className="block text-sm font-medium mb-1">Specialisation Name</label>
             <input
@@ -694,11 +694,11 @@ export default function ProgramDataPage() {
               value={newSpecName}
               onChange={(e) => setNewSpecName(e.target.value)}
               placeholder="e.g., Cortex XDR"
-              className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-sm"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
             />
           </div>
           <div className="flex justify-end gap-2 pt-2">
-            <button onClick={() => setShowAddSpec(false)} className="px-4 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-600">Cancel</button>
+            <button onClick={() => setShowAddSpec(false)} className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
             <button onClick={handleAddSpecialisation} className="flex items-center gap-1 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">
               <Save size={16} /> Save
             </button>

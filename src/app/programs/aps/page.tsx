@@ -199,19 +199,19 @@ export default function APSPage() {
       <section className="mb-6">
         <button
           onClick={() => setCountryOpen((p) => !p)}
-          className="w-full flex items-center gap-2 p-4 bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-750"
+          className="w-full flex items-center gap-2 p-4 bg-white rounded-lg border border-gray-200 hover:bg-gray-50"
         >
           {countryOpen ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
           <MapPin size={20} className="text-blue-600" />
           <span className="text-lg font-semibold">Country Report</span>
         </button>
         {countryOpen && (
-          <div className="mt-2 bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 p-4">
+          <div className="mt-2 bg-white rounded-lg border border-gray-200 p-4">
             <div className="flex items-center gap-3 mb-4">
               <select
                 value={selectedCountry}
                 onChange={(e) => setSelectedCountry(e.target.value)}
-                className="px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-sm min-w-[200px]"
+                className="px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm min-w-[200px]"
               >
                 <option value="">Select a country...</option>
                 {countries.map((c) => (
@@ -231,9 +231,9 @@ export default function APSPage() {
             {countryLoading ? (
               <LoadingSpinner />
             ) : !selectedCountry ? (
-              <p className="text-sm text-gray-500 dark:text-slate-400">Select a country to view compliance data.</p>
+              <p className="text-sm text-gray-500">Select a country to view compliance data.</p>
             ) : countrySpecs.length === 0 ? (
-              <p className="text-sm text-gray-500 dark:text-slate-400">No country-level requirements found for the APS program.</p>
+              <p className="text-sm text-gray-500">No country-level requirements found for the APS program.</p>
             ) : (
               <ComplianceTable
                 specialisations={countrySpecs}
@@ -251,19 +251,19 @@ export default function APSPage() {
       <section className="mb-6">
         <button
           onClick={() => setTheatreOpen((p) => !p)}
-          className="w-full flex items-center gap-2 p-4 bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-750"
+          className="w-full flex items-center gap-2 p-4 bg-white rounded-lg border border-gray-200 hover:bg-gray-50"
         >
           {theatreOpen ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
           <Building2 size={20} className="text-purple-600" />
           <span className="text-lg font-semibold">Theatre Report</span>
         </button>
         {theatreOpen && (
-          <div className="mt-2 bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 p-4">
+          <div className="mt-2 bg-white rounded-lg border border-gray-200 p-4">
             <div className="flex items-center gap-3 mb-4">
               <select
                 value={selectedTheatre}
                 onChange={(e) => setSelectedTheatre(e.target.value)}
-                className="px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-sm min-w-[200px]"
+                className="px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm min-w-[200px]"
               >
                 <option value="">Select a theatre...</option>
                 {theatres.map((t) => (
@@ -283,9 +283,9 @@ export default function APSPage() {
             {theatreLoading ? (
               <LoadingSpinner />
             ) : !selectedTheatre ? (
-              <p className="text-sm text-gray-500 dark:text-slate-400">Select a theatre to view compliance data.</p>
+              <p className="text-sm text-gray-500">Select a theatre to view compliance data.</p>
             ) : theatreSpecs.length === 0 ? (
-              <p className="text-sm text-gray-500 dark:text-slate-400">No theatre-level requirements found for the APS program.</p>
+              <p className="text-sm text-gray-500">No theatre-level requirements found for the APS program.</p>
             ) : (
               <ComplianceTable
                 specialisations={theatreSpecs}
@@ -303,14 +303,14 @@ export default function APSPage() {
       <section className="mb-6">
         <button
           onClick={() => setGlobalOpen((p) => !p)}
-          className="w-full flex items-center gap-2 p-4 bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-750"
+          className="w-full flex items-center gap-2 p-4 bg-white rounded-lg border border-gray-200 hover:bg-gray-50"
         >
           {globalOpen ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
           <Globe size={20} className="text-green-600" />
           <span className="text-lg font-semibold">Global Report</span>
         </button>
         {globalOpen && (
-          <div className="mt-2 bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 p-4">
+          <div className="mt-2 bg-white rounded-lg border border-gray-200 p-4">
             <div className="flex items-center gap-3 mb-4">
               {globalSpecs.length > 0 && (
                 <ExportMenu
@@ -325,7 +325,7 @@ export default function APSPage() {
             {globalLoading ? (
               <LoadingSpinner />
             ) : globalSpecs.length === 0 ? (
-              <p className="text-sm text-gray-500 dark:text-slate-400">No global-level requirements found for the APS program.</p>
+              <p className="text-sm text-gray-500">No global-level requirements found for the APS program.</p>
             ) : (
               <ComplianceTable
                 specialisations={globalSpecs}
@@ -344,11 +344,11 @@ export default function APSPage() {
         {studentLoading ? (
           <LoadingSpinner />
         ) : studentList.length === 0 ? (
-          <p className="text-sm text-gray-500 dark:text-slate-400">No students found.</p>
+          <p className="text-sm text-gray-500">No students found.</p>
         ) : (
           <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
             <table className="w-full text-sm">
-              <thead className="bg-gray-50 dark:bg-slate-700 sticky top-0">
+              <thead className="bg-gray-50 sticky top-0">
                 <tr>
                   <th className="px-3 py-2 text-left font-medium">Full Name</th>
                   <th className="px-3 py-2 text-left font-medium">Email</th>
@@ -360,7 +360,7 @@ export default function APSPage() {
               </thead>
               <tbody>
                 {studentList.map((s) => (
-                  <tr key={s.email} className="border-t border-gray-100 dark:border-slate-700">
+                  <tr key={s.email} className="border-t border-gray-100">
                     <td className="px-3 py-2">{s.fullName}</td>
                     <td className="px-3 py-2">{s.email}</td>
                     <td className="px-3 py-2">{s.country}</td>
@@ -398,14 +398,14 @@ function ComplianceTable({
     <div className="overflow-x-auto">
       <table className="w-full text-sm border-collapse">
         <thead>
-          <tr className="bg-gray-50 dark:bg-slate-700">
-            <th className="px-4 py-3 text-left font-semibold text-gray-700 dark:text-slate-200 border border-gray-200 dark:border-slate-600 min-w-[120px]">
+          <tr className="bg-gray-50">
+            <th className="px-4 py-3 text-left font-semibold text-gray-700 border border-gray-200 min-w-[120px]">
               &nbsp;
             </th>
             {specialisations.map((spec) => (
               <th
                 key={spec.name}
-                className="px-4 py-3 text-center font-semibold text-gray-700 dark:text-slate-200 border border-gray-200 dark:border-slate-600 min-w-[200px]"
+                className="px-4 py-3 text-center font-semibold text-gray-700 border border-gray-200 min-w-[200px]"
               >
                 {spec.name}
               </th>
@@ -448,8 +448,8 @@ function RequirementRowGroup({
   return (
     <>
       {/* Training name row */}
-      <tr className="bg-gray-50/50 dark:bg-slate-750">
-        <td className="px-4 py-2 font-medium text-gray-600 dark:text-slate-300 border border-gray-200 dark:border-slate-600">
+      <tr className="bg-gray-50/50">
+        <td className="px-4 py-2 font-medium text-gray-600 border border-gray-200">
           Training
         </td>
         {specialisations.map((spec) => {
@@ -457,17 +457,17 @@ function RequirementRowGroup({
           return (
             <td
               key={spec.name}
-              className="px-4 py-2 text-center border border-gray-200 dark:border-slate-600"
+              className="px-4 py-2 text-center border border-gray-200"
             >
               {req ? (
                 <div>
                   <div className="font-medium">{req.trainingFullTitle}</div>
-                  <div className="text-xs text-gray-500 dark:text-slate-400">
+                  <div className="text-xs text-gray-500">
                     {TRAINING_TYPE_LABELS[req.trainingType] || req.trainingType}
                   </div>
                 </div>
               ) : (
-                <span className="text-gray-300 dark:text-slate-600">—</span>
+                <span className="text-gray-300">—</span>
               )}
             </td>
           );
@@ -475,7 +475,7 @@ function RequirementRowGroup({
       </tr>
       {/* Required row */}
       <tr>
-        <td className="px-4 py-2 font-medium text-gray-600 dark:text-slate-300 border border-gray-200 dark:border-slate-600">
+        <td className="px-4 py-2 font-medium text-gray-600 border border-gray-200">
           Required
         </td>
         {specialisations.map((spec) => {
@@ -483,14 +483,14 @@ function RequirementRowGroup({
           return (
             <td
               key={spec.name}
-              className="px-4 py-2 text-center border border-gray-200 dark:border-slate-600"
+              className="px-4 py-2 text-center border border-gray-200"
             >
               {req ? (
                 <span className="font-semibold">
                   {req.quantityRequired} {unitLabel}
                 </span>
               ) : (
-                <span className="text-gray-300 dark:text-slate-600">—</span>
+                <span className="text-gray-300">—</span>
               )}
             </td>
           );
@@ -498,15 +498,15 @@ function RequirementRowGroup({
       </tr>
       {/* Attained row */}
       <tr>
-        <td className="px-4 py-2 font-medium text-gray-600 dark:text-slate-300 border border-gray-200 dark:border-slate-600">
+        <td className="px-4 py-2 font-medium text-gray-600 border border-gray-200">
           Attained
         </td>
         {specialisations.map((spec) => {
           const req = spec.requirements[reqIdx];
           if (!req) {
             return (
-              <td key={spec.name} className="px-4 py-2 text-center border border-gray-200 dark:border-slate-600">
-                <span className="text-gray-300 dark:text-slate-600">—</span>
+              <td key={spec.name} className="px-4 py-2 text-center border border-gray-200">
+                <span className="text-gray-300">—</span>
               </td>
             );
           }
@@ -514,17 +514,17 @@ function RequirementRowGroup({
           return (
             <td
               key={spec.name}
-              className={`px-4 py-2 text-center border border-gray-200 dark:border-slate-600 ${
+              className={`px-4 py-2 text-center border border-gray-200 ${
                 compliant
-                  ? "bg-green-50 dark:bg-green-900/30"
-                  : "bg-red-50 dark:bg-red-900/30"
+                  ? "bg-green-50"
+                  : "bg-red-50"
               }`}
             >
               <span
                 className={`font-bold ${
                   compliant
-                    ? "text-green-700 dark:text-green-400"
-                    : "text-red-700 dark:text-red-400"
+                    ? "text-green-700"
+                    : "text-red-700"
                 }`}
               >
                 {req.attained} {unitLabel}
@@ -532,7 +532,7 @@ function RequirementRowGroup({
               {level !== "global" && (
                 <button
                   onClick={() => onViewStudents(req.trainingTitle, req.trainingFullTitle, level, filterValue)}
-                  className="ml-2 inline-flex items-center gap-1 text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                  className="ml-2 inline-flex items-center gap-1 text-xs text-blue-600 hover:underline"
                 >
                   <Users size={12} /> View
                 </button>
@@ -545,7 +545,7 @@ function RequirementRowGroup({
       <tr>
         <td
           colSpan={specialisations.length + 1}
-          className="h-1 bg-gray-100 dark:bg-slate-700 border-0"
+          className="h-1 bg-gray-100 border-0"
         />
       </tr>
     </>
@@ -569,26 +569,26 @@ function ExportMenu({
     <div className="relative">
       <button
         onClick={() => setShow(!show)}
-        className="flex items-center gap-1 px-3 py-2 text-sm bg-white dark:bg-slate-700 border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-600"
+        className="flex items-center gap-1 px-3 py-2 text-sm bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
       >
         <Download size={16} /> Export
       </button>
       {show && (
-        <div className="absolute left-0 mt-1 bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 rounded-lg shadow-lg z-10 min-w-[140px]">
+        <div className="absolute left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[140px]">
           <button
-            className="w-full px-4 py-2 text-sm text-left hover:bg-gray-100 dark:hover:bg-slate-600"
+            className="w-full px-4 py-2 text-sm text-left hover:bg-gray-100"
             onClick={() => { exportToCsv(data as never[], columns as never[], filename); setShow(false); }}
           >
             Export as CSV
           </button>
           <button
-            className="w-full px-4 py-2 text-sm text-left hover:bg-gray-100 dark:hover:bg-slate-600"
+            className="w-full px-4 py-2 text-sm text-left hover:bg-gray-100"
             onClick={() => { exportToExcel(data as never[], columns as never[], filename); setShow(false); }}
           >
             Export as Excel
           </button>
           <button
-            className="w-full px-4 py-2 text-sm text-left hover:bg-gray-100 dark:hover:bg-slate-600"
+            className="w-full px-4 py-2 text-sm text-left hover:bg-gray-100"
             onClick={() => { exportToPdf(data as never[], columns as never[], filename); setShow(false); }}
           >
             Export as PDF
