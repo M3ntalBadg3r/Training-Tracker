@@ -108,17 +108,23 @@ export async function POST(request: NextRequest) {
     );
 
     // Spawn perform-update.sh with TARGET_BRANCH env var
+    // Use systemd-run --scope so the script survives the service
+    // restart at step 6 (systemctl restart kills the entire cgroup)
     const scriptPath = path.join(appDir, "deploy", "perform-update.sh");
     const targetBranch = channel === "dev" ? "dev" : "master";
-    const child = spawn("bash", [scriptPath, appDir], {
-      detached: true,
-      stdio: "ignore",
-      env: {
-        ...process.env,
-        PATH: process.env.PATH,
-        TARGET_BRANCH: targetBranch,
-      },
-    });
+    const child = spawn(
+      "systemd-run",
+      ["--scope", "--unit=tt-channel-switch", "bash", scriptPath, appDir],
+      {
+        detached: true,
+        stdio: "ignore",
+        env: {
+          ...process.env,
+          PATH: process.env.PATH,
+          TARGET_BRANCH: targetBranch,
+        },
+      }
+    );
     child.unref();
 
     return NextResponse.json({ status: "started", channel, targetBranch });

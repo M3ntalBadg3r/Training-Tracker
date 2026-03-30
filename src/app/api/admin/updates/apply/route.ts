@@ -34,12 +34,18 @@ export async function POST(request: NextRequest) {
       })
     );
 
-    // Spawn detached process
-    const child = spawn("bash", [scriptPath, appDir], {
-      detached: true,
-      stdio: "ignore",
-      env: { ...process.env, PATH: process.env.PATH },
-    });
+    // Spawn in a separate systemd scope so the script survives
+    // the service restart at step 6 (systemctl restart kills the
+    // entire service cgroup, which would kill a plain child process)
+    const child = spawn(
+      "systemd-run",
+      ["--scope", "--unit=tt-update", "bash", scriptPath, appDir],
+      {
+        detached: true,
+        stdio: "ignore",
+        env: { ...process.env, PATH: process.env.PATH },
+      }
+    );
     child.unref();
 
     return NextResponse.json({ status: "started" });
