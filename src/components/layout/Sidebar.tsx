@@ -247,7 +247,7 @@ export default function Sidebar() {
             </button>
             <div className="mt-2 text-center">
               <span className="text-xs text-slate-500">
-                Version {process.env.APP_VERSION}
+                Version {process.env.APP_VERSION}{process.env.UPDATE_CHANNEL === "dev" ? "-dev" : ""}
               </span>
             </div>
           </>

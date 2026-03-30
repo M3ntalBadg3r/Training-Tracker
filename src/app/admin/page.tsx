@@ -117,10 +117,6 @@ export default function AdminPage() {
         </Link>
       </section>
 
-      {/* Version */}
-      <div className="text-sm text-gray-400 text-right">
-        Version {process.env.APP_VERSION}
-      </div>
     </div>
   );
 }
