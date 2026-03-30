@@ -394,7 +394,7 @@ export default function UpdatesPage() {
             </h2>
             <div className="flex items-center gap-3 mt-1">
               <p className="text-3xl font-bold text-blue-600">
-                v{currentVersion}
+                v{currentVersion}{channel === "dev" ? "-dev" : ""}
               </p>
               <button
                 onClick={() => {
@@ -661,7 +661,7 @@ export default function UpdatesPage() {
           <div className="space-y-3">
             {recentReleases.map((release) => {
               const isExpanded = expandedRelease === release.version;
-              const isCurrent = release.version === currentVersion;
+              const isCurrent = release.version.replace(/-dev$/, "") === currentVersion;
               return (
                 <div
                   key={release.version}
