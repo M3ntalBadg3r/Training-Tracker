@@ -23,9 +23,20 @@ RESPONSE=$(curl -s -X POST "http://localhost:3000/api/admin/scheduled-exports/ex
     -H "Content-Type: application/json" \
     2>&1)
 
+# Check for API errors (auth failures, server errors, etc.)
+if echo "$RESPONSE" | grep -q '"error"'; then
+    log "API error: ${RESPONSE}"
+    exit 1
+fi
+
 RAN=$(echo "$RESPONSE" | node -e "const d=require('fs').readFileSync('/dev/stdin','utf8');try{console.log(JSON.parse(d).ran)}catch{console.log('0')}" 2>/dev/null)
 
-if [ "$RAN" = "0" ] || [ -z "$RAN" ]; then
+if [ -z "$RAN" ]; then
+    log "Unexpected response: ${RESPONSE}"
+    exit 1
+fi
+
+if [ "$RAN" = "0" ]; then
     # Nothing due — don't log (runs every minute, would be noisy)
     exit 0
 fi

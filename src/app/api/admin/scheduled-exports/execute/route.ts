@@ -12,15 +12,15 @@ function isDue(schedule: {
   const now = new Date();
   const [schedHour, schedMin] = schedule.time.split(":").map(Number);
 
-  // Only run within the target minute
-  if (now.getHours() !== schedHour || now.getMinutes() !== schedMin) return false;
+  // Schedule times are stored as UTC — compare using UTC methods
+  if (now.getUTCHours() !== schedHour || now.getUTCMinutes() !== schedMin) return false;
 
-  // Check frequency / day constraints
+  // Check frequency / day constraints (UTC)
   if (schedule.frequency === "weekly" && schedule.dayOfWeek !== null) {
-    if (now.getDay() !== schedule.dayOfWeek) return false;
+    if (now.getUTCDay() !== schedule.dayOfWeek) return false;
   }
   if (schedule.frequency === "monthly" && schedule.dayOfMonth !== null) {
-    if (now.getDate() !== schedule.dayOfMonth) return false;
+    if (now.getUTCDate() !== schedule.dayOfMonth) return false;
   }
 
   // Avoid re-running if already ran in this minute

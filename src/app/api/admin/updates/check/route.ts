@@ -22,11 +22,11 @@ export async function GET(request: NextRequest) {
       headers["Authorization"] = `Bearer ${githubToken}`;
     }
 
-    // Dev channel: fetch all releases (includes pre-releases), take the first
+    // Dev channel: fetch recent releases and find the highest version
     // Stable channel: fetch /releases/latest (excludes pre-releases)
     const url =
       channel === "dev"
-        ? `https://api.github.com/repos/${GITHUB_REPO}/releases?per_page=1`
+        ? `https://api.github.com/repos/${GITHUB_REPO}/releases?per_page=10`
         : `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`;
 
     const response = await fetch(url, { headers, next: { revalidate: 0 } });
@@ -51,7 +51,22 @@ export async function GET(request: NextRequest) {
     }
 
     const data = await response.json();
-    const release = channel === "dev" ? data[0] : data;
+    // For dev channel, find the release with the highest version number
+    // rather than relying on API ordering
+    let release;
+    if (channel === "dev" && Array.isArray(data)) {
+      release = data.reduce(
+        (best: typeof data[0] | null, r: typeof data[0]) => {
+          if (!best) return r;
+          const v = parseVersionNumber((r.tag_name || "").replace(/^v/, ""));
+          const bestV = parseVersionNumber((best.tag_name || "").replace(/^v/, ""));
+          return v > bestV ? r : best;
+        },
+        null
+      );
+    } else {
+      release = channel === "dev" ? data[0] : data;
+    }
 
     if (!release) {
       return NextResponse.json({
@@ -89,7 +104,8 @@ export async function GET(request: NextRequest) {
 }
 
 function parseVersionNumber(version: string): number {
-  const parts = version.split(".");
+  const clean = version.replace(/-dev$/, "");
+  const parts = clean.split(".");
   const major = parseInt(parts[0] || "0", 10);
   const minor = parseInt(parts[1] || "0", 10);
   return major * 1000 + minor;
