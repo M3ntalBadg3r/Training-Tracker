@@ -59,6 +59,30 @@ interface ScheduleConfig {
   dayOfWeek?: number;
 }
 
+// ─── Timezone Helpers ────────────────────────────────────────────────────────
+
+function utcToLocal(utcTime: string): string {
+  const [h, m] = utcTime.split(":").map(Number);
+  const d = new Date();
+  d.setUTCHours(h, m, 0, 0);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+function localToUtc(localTime: string): string {
+  const [h, m] = localTime.split(":").map(Number);
+  const d = new Date();
+  d.setHours(h, m, 0, 0);
+  return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
+}
+
+function browserTimezone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone;
+  } catch {
+    return "local time";
+  }
+}
+
 const DAYS_OF_WEEK = [
   "Sunday",
   "Monday",
@@ -108,7 +132,9 @@ export default function UpdatesPage() {
     fetch("/api/admin/updates/schedule")
       .then((r) => r.json())
       .then((data) => {
-        if (data.enabled !== undefined) setSchedule(data);
+        if (data.enabled !== undefined) {
+          setSchedule({ ...data, time: utcToLocal(data.time) });
+        }
       })
       .catch(() => {});
     fetchRecentReleases();
@@ -294,7 +320,7 @@ export default function UpdatesPage() {
       const res = await fetch("/api/admin/updates/schedule", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(schedule),
+        body: JSON.stringify({ ...schedule, time: localToUtc(schedule.time) }),
       });
       if (res.ok) {
         setScheduleResult({
@@ -830,7 +856,7 @@ export default function UpdatesPage() {
 
               {/* Time */}
               <div className="flex items-center gap-3">
-                <label className="text-sm text-gray-600 w-20">Time:</label>
+                <label className="text-sm text-gray-600 w-20">Time <span className="text-xs text-gray-400">({browserTimezone()})</span>:</label>
                 <div className="flex items-center gap-1">
                   <Clock size={14} className="text-gray-400" />
                   <input

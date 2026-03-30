@@ -77,6 +77,32 @@ const FREQUENCIES = [
 
 const DAYS_OF_WEEK = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
+// ─── Timezone Helpers ────────────────────────────────────────────────────────
+// Schedule times are stored as UTC in the database.
+// The UI displays and accepts times in the browser's local timezone.
+
+function utcToLocal(utcTime: string): string {
+  const [h, m] = utcTime.split(":").map(Number);
+  const d = new Date();
+  d.setUTCHours(h, m, 0, 0);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+function localToUtc(localTime: string): string {
+  const [h, m] = localTime.split(":").map(Number);
+  const d = new Date();
+  d.setHours(h, m, 0, 0);
+  return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
+}
+
+function browserTimezone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone;
+  } catch {
+    return "local time";
+  }
+}
+
 const DAYS_OF_MONTH = Array.from({ length: 31 }, (_, i) => i + 1);
 
 const CREDENTIAL_PROVIDERS = [
@@ -315,7 +341,7 @@ export default function ScheduledExportsPage() {
       config: { ...s.config },
       enabled: s.enabled,
       frequency: s.frequency,
-      time: s.time,
+      time: utcToLocal(s.time),
       dayOfWeek: s.dayOfWeek ?? 1,
       dayOfMonth: s.dayOfMonth ?? 1,
     });
@@ -330,6 +356,7 @@ export default function ScheduledExportsPage() {
     try {
       const payload = {
         ...form,
+        time: localToUtc(form.time),
         dayOfWeek: form.frequency === "weekly" ? form.dayOfWeek : null,
         dayOfMonth: form.frequency === "monthly" ? form.dayOfMonth : null,
       };
@@ -451,11 +478,12 @@ export default function ScheduledExportsPage() {
   }
 
   function frequencyLabel(s: ScheduledExport) {
+    const localTime = utcToLocal(s.time);
     if (s.frequency === "weekly" && s.dayOfWeek !== null)
-      return `Weekly (${DAYS_OF_WEEK[s.dayOfWeek]}) at ${s.time}`;
+      return `Weekly (${DAYS_OF_WEEK[s.dayOfWeek]}) at ${localTime}`;
     if (s.frequency === "monthly" && s.dayOfMonth !== null)
-      return `Monthly (day ${s.dayOfMonth}) at ${s.time}`;
-    return `Daily at ${s.time}`;
+      return `Monthly (day ${s.dayOfMonth}) at ${localTime}`;
+    return `Daily at ${localTime}`;
   }
 
   function isCredConfigured(provider: string) {
@@ -825,7 +853,9 @@ export default function ScheduledExportsPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Time</label>
+                <label className="block text-xs text-gray-500 mb-1">
+                  Time <span className="text-gray-400">({browserTimezone()})</span>
+                </label>
                 <input
                   type="time"
                   value={form.time}
