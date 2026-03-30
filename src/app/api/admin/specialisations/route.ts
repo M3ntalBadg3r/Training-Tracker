@@ -1,0 +1,41 @@
+import { NextRequest, NextResponse } from "next/server";
+import prisma from "@/lib/prisma";
+import { requireAuth, handleAuthError } from "@/lib/auth";
+
+export async function GET(request: NextRequest) {
+  try {
+    await requireAuth(request, "Admin");
+  } catch (error) {
+    return handleAuthError(error);
+  }
+
+  const specialisations = await prisma.specialisation.findMany({
+    orderBy: { name: "asc" },
+  });
+
+  return NextResponse.json(specialisations);
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    await requireAuth(request, "Admin");
+  } catch (error) {
+    return handleAuthError(error);
+  }
+
+  const { name } = await request.json();
+  if (!name || !name.trim()) {
+    return NextResponse.json({ error: "Name is required" }, { status: 400 });
+  }
+
+  const existing = await prisma.specialisation.findUnique({ where: { name: name.trim() } });
+  if (existing) {
+    return NextResponse.json({ error: "Specialisation already exists" }, { status: 409 });
+  }
+
+  const specialisation = await prisma.specialisation.create({
+    data: { name: name.trim() },
+  });
+
+  return NextResponse.json(specialisation, { status: 201 });
+}

@@ -62,6 +62,7 @@ model TrainingData {
   certification String[]      @default([]) @map("certification")
 
   trainingsTaken TrainingTaken[]
+  programData    ProgramData[]
 
   @@index([fullTitle])
   @@map("training_data")
@@ -85,6 +86,38 @@ model ImportMetadata {
 enum Role {
   Admin
   User
+}
+
+enum ProgramLevel {
+  Country
+  Theatre
+  Global
+}
+
+model Specialisation {
+  id   Int    @id @default(autoincrement())
+  name String @unique
+
+  programData ProgramData[]
+
+  @@map("specialisations")
+}
+
+model ProgramData {
+  id               Int          @id @default(autoincrement())
+  programName      String       @map("program_name")
+  specialisationId Int          @map("specialisation_id")
+  level            ProgramLevel
+  trainingType     TrainingType @map("training_type")
+  trainingTitle    String       @map("training_title")
+  quantityRequired Int          @map("quantity_required")
+  createdAt        DateTime     @default(now()) @map("created_at")
+  updatedAt        DateTime     @updatedAt @map("updated_at")
+
+  specialisation Specialisation @relation(fields: [specialisationId], references: [id])
+  trainingData   TrainingData   @relation(fields: [trainingTitle], references: [trainingTitle], onDelete: Cascade)
+
+  @@map("program_data")
 }
 
 model User {

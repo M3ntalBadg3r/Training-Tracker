@@ -35,7 +35,9 @@ src/
     training/     # Training catalog + [fullTitle] detail page
     reports/      # Trained-but-not-certified report
     account/      # User account page (profile, MFA setup)
-    admin/        # Admin pages (region-data, training-data, backup, import, users, cleanup, updates, scheduled-exports)
+    admin/        # Admin pages (region-data, training-data, backup, import, users, cleanup, updates, scheduled-exports, program-data)
+    programs/     # Partner program compliance dashboards
+      aps/        # Authorized Professional Services (APS) compliance dashboard
     login/        # Login page
     setup/        # First-run setup wizard
     layout.tsx    # Root layout with AuthProvider + AppShell
@@ -74,12 +76,15 @@ deploy/           # install.sh, update.sh, install-remote.sh, perform-update.sh,
 - **User** — PK: `id` (auto-increment). Fields: username (unique), passwordHash, displayName, role (Admin/User), mfaEnabled, mfaSecret.
 - **ScheduledExport** — PK: `id`. Fields: name, reportType, format, destination, config (JSON), enabled, frequency, time, dayOfWeek?, dayOfMonth?, lastRunAt?, lastStatus?, lastError?.
 - **ExportCredential** — PK: `id`, unique: `provider`. Fields: provider, config (JSON). Stores SMTP/OAuth/API credentials per delivery provider.
+- **Specialisation** — PK: `id` (auto-increment). Fields: name (unique). Admin-managed list of product specialisations for partner programs.
+- **ProgramData** — PK: `id` (auto-increment). FK: specialisationId → Specialisation, trainingTitle → TrainingData. Fields: programName, level (ProgramLevel enum), trainingType, quantityRequired.
 
 ### Enums
 - **TrainingType**: `Certification`, `Accreditation`, `InstructorLedTraining`
 - **ProductType**: `Cortex`, `SASE`, `Cloud`, `Strata`, `Foundation`
 - **FunctionType**: `Sales`, `PreSales`, `Deployments`
 - **Role**: `Admin`, `User`
+- **ProgramLevel**: `Country`, `Theatre`, `Global`
 
 ## Architecture Notes
 

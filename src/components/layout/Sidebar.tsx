@@ -24,6 +24,9 @@ import {
   Moon,
   Sun,
   CalendarClock,
+  ClipboardList,
+  ShieldCheck,
+  Award,
 } from "lucide-react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useTheme } from "@/components/theme/ThemeProvider";
@@ -44,6 +47,11 @@ const adminSubItems = [
   { href: "/admin/cleanup", label: "Data Clean-Up", icon: Sparkles },
   { href: "/admin/updates", label: "Updates", icon: RefreshCw },
   { href: "/admin/scheduled-exports", label: "Scheduled Exports", icon: CalendarClock },
+  { href: "/admin/program-data", label: "Program Data", icon: ClipboardList },
+];
+
+const programSubItems = [
+  { href: "/programs/aps", label: "APS", icon: Award },
 ];
 
 export default function Sidebar() {
@@ -52,8 +60,10 @@ export default function Sidebar() {
   const { theme, toggleTheme } = useTheme();
   const [collapsed, setCollapsed] = useState(true);
   const [adminOpen, setAdminOpen] = useState(false);
+  const [programsOpen, setProgramsOpen] = useState(false);
 
   const isAdminActive = pathname.startsWith("/admin");
+  const isProgramsActive = pathname.startsWith("/programs");
 
   useEffect(() => {
     const stored = localStorage.getItem("sidebar-collapsed");
@@ -64,6 +74,11 @@ export default function Sidebar() {
   useEffect(() => {
     if (isAdminActive) setAdminOpen(true);
   }, [isAdminActive]);
+
+  // Auto-expand programs submenu when on a programs page
+  useEffect(() => {
+    if (isProgramsActive) setProgramsOpen(true);
+  }, [isProgramsActive]);
 
   const toggle = () => {
     setCollapsed((prev) => {
@@ -113,6 +128,63 @@ export default function Sidebar() {
             </Link>
           );
         })}
+
+        {/* Programs with sub-items */}
+        <div>
+          {collapsed ? (
+            <Link
+              href="/programs/aps"
+              className={`flex items-center gap-3 px-4 py-3 transition-colors ${
+                isProgramsActive
+                  ? "bg-slate-700 text-white border-l-4 border-blue-400"
+                  : "text-slate-300 hover:bg-slate-800 hover:text-white border-l-4 border-transparent"
+              }`}
+              title="Programs"
+            >
+              <ShieldCheck size={20} className="shrink-0" />
+            </Link>
+          ) : (
+            <>
+              <button
+                onClick={() => setProgramsOpen((prev) => !prev)}
+                className={`w-full flex items-center gap-3 px-4 py-3 transition-colors ${
+                  isProgramsActive
+                    ? "bg-slate-700 text-white border-l-4 border-blue-400"
+                    : "text-slate-300 hover:bg-slate-800 hover:text-white border-l-4 border-transparent"
+                }`}
+              >
+                <ShieldCheck size={20} className="shrink-0" />
+                <span className="flex-1 text-left">Programs</span>
+                <ChevronDown
+                  size={16}
+                  className={`transition-transform ${programsOpen ? "rotate-0" : "-rotate-90"}`}
+                />
+              </button>
+              {programsOpen && (
+                <div className="ml-4 border-l border-slate-700">
+                  {programSubItems.map((item) => {
+                    const isActive = pathname === item.href;
+                    const Icon = item.icon;
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        className={`flex items-center gap-3 px-4 py-2 text-sm transition-colors ${
+                          isActive
+                            ? "text-white bg-slate-700"
+                            : "text-slate-400 hover:text-white hover:bg-slate-800"
+                        }`}
+                      >
+                        <Icon size={16} className="shrink-0" />
+                        <span>{item.label}</span>
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          )}
+        </div>
 
         {/* Admin with sub-items — only visible to Admin role */}
         {isAdmin && (

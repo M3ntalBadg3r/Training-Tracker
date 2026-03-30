@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import PageHeader from "@/components/layout/PageHeader";
-import { Globe, BookOpen, HardDrive, Upload, ChevronRight, Users, Sparkles, RefreshCw, CalendarClock } from "lucide-react";
+import { Globe, BookOpen, HardDrive, Upload, ChevronRight, Users, Sparkles, RefreshCw, CalendarClock, ClipboardList } from "lucide-react";
 
 export default function AdminPage() {
   return (
@@ -111,6 +111,19 @@ export default function AdminPage() {
             <div>
               <h3 className="font-semibold">Scheduled Exports</h3>
               <p className="text-sm text-gray-500">Automate report delivery on a schedule</p>
+            </div>
+          </div>
+          <ChevronRight size={20} className="text-gray-400" />
+        </Link>
+        <Link
+          href="/admin/program-data"
+          className="flex items-center justify-between p-4 bg-white rounded-lg border border-gray-200 hover:border-blue-300 hover:shadow-sm transition-all"
+        >
+          <div className="flex items-center gap-3">
+            <ClipboardList size={20} className="text-blue-600" />
+            <div>
+              <h3 className="font-semibold">Program Data</h3>
+              <p className="text-sm text-gray-500">Manage partner program compliance requirements</p>
             </div>
           </div>
           <ChevronRight size={20} className="text-gray-400" />

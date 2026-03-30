@@ -960,6 +960,101 @@ const helpSections: Record<string, HelpSection> = {
       </>
     ),
   },
+  "admin-program-data": {
+    title: "Program Data",
+    content: (
+      <>
+        <p>
+          The Program Data page lets you define the requirements for partner
+          compliance programs such as Authorized Professional Services (APS).
+        </p>
+
+        <h3>Fields</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Field</th>
+              <th>Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Program Name</strong></td>
+              <td>The name of the partner program (e.g., &quot;Authorized Professional Services (APS)&quot;).</td>
+            </tr>
+            <tr>
+              <td><strong>Specialisation</strong></td>
+              <td>The product specialisation (e.g., &quot;Cortex XDR&quot;, &quot;Prisma Access&quot;). Managed via a controlled list — click + to add new ones.</td>
+            </tr>
+            <tr>
+              <td><strong>Level</strong></td>
+              <td>Whether this requirement applies at Country, Theatre, or Global level.</td>
+            </tr>
+            <tr>
+              <td><strong>Type</strong></td>
+              <td>Certification, Accreditation, or Instructor-Led Training.</td>
+            </tr>
+            <tr>
+              <td><strong>Training</strong></td>
+              <td>The specific training required, filtered by the selected Type.</td>
+            </tr>
+            <tr>
+              <td><strong>Quantity Required</strong></td>
+              <td>For Country/Theatre: number of people needed. For Global: number of compliant theatres needed.</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3>Actions</h3>
+        <p>
+          Use <strong>Add Requirement</strong> to create a new entry. Click
+          <strong> Edit</strong> on any row to modify it, or the trash icon to
+          delete. Use the <strong>Export</strong> button to download the data as
+          CSV, Excel, or PDF.
+        </p>
+      </>
+    ),
+  },
+  "programs-aps": {
+    title: "APS — Authorized Professional Services",
+    content: (
+      <>
+        <p>
+          The APS dashboard shows compliance status for the Authorized
+          Professional Services partner program. It provides three report views.
+        </p>
+
+        <h3>Country Report</h3>
+        <p>
+          Select a country to see whether it meets each specialisation&apos;s
+          requirements. Each column represents a specialisation, with rows
+          showing the training name, required count, and attained count.
+          Green means the requirement is met; red means it is not. Click
+          <strong> View</strong> to see the list of qualifying students.
+        </p>
+
+        <h3>Theatre Report</h3>
+        <p>
+          Same as the Country Report but aggregated at the theatre level.
+          Select a theatre to view compliance.
+        </p>
+
+        <h3>Global Report</h3>
+        <p>
+          Shows how many theatres are fully compliant for each specialisation.
+          A theatre is considered compliant if it meets <em>all</em> theatre-level
+          requirements for that specialisation. The &quot;Required&quot; number
+          is the target number of compliant theatres.
+        </p>
+
+        <h3>Exports</h3>
+        <p>
+          Each report section has an Export button to download the compliance
+          data as CSV, Excel, or PDF.
+        </p>
+      </>
+    ),
+  },
 };
 
 export function getHelpContent(slug: string): HelpSection | null {

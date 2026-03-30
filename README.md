@@ -26,7 +26,10 @@ Built with Next.js, React, PostgreSQL, and Prisma.
   - [Backup & Restore](#backup--restore)
   - [Updates](#updates)
   - [Scheduled Exports](#scheduled-exports)
+  - [Program Data](#program-data)
   - [Wipe Data](#wipe-data)
+- [Partner Programs](#partner-programs)
+  - [APS Dashboard](#aps-dashboard)
 - [Data Model](#data-model)
 - [Exporting Data](#exporting-data)
 
@@ -584,6 +587,43 @@ Results are shown with issues highlighted inline. Use the checkboxes to select r
 #### Wipe All Data
 
 The **Danger Zone** at the bottom of the Data Clean-Up page allows you to permanently delete all students, training records, training data, and region data. Type `WIPE` to confirm. **This cannot be undone.**
+
+---
+
+### Program Data
+
+Navigate to **Admin > Program Data** to define partner program compliance requirements.
+
+Each entry specifies a requirement within a program:
+
+| Field | Description |
+|-------|-------------|
+| **Program Name** | The partner program (e.g., "Authorized Professional Services (APS)") |
+| **Specialisation** | The product specialisation (e.g., "Cortex XDR", "Prisma Access"). Managed via a controlled dropdown — click **+** to add new specialisations. |
+| **Level** | Whether the requirement applies at Country, Theatre, or Global level |
+| **Type** | Certification, Accreditation, or Instructor-Led Training |
+| **Training** | The specific training required (filtered by the selected Type) |
+| **Quantity Required** | For Country/Theatre: number of people needed. For Global: number of compliant theatres needed. |
+
+The page includes search, filtering by all fields, sorting, and export to CSV/Excel/PDF.
+
+---
+
+## Partner Programs
+
+### APS Dashboard
+
+Navigate to **Programs > APS** to view compliance for the Authorized Professional Services program.
+
+Three report views are available:
+
+| Report | Filter | Shows |
+|--------|--------|-------|
+| **Country Report** | Country dropdown | Number of people per country with each required training vs. the requirement |
+| **Theatre Report** | Theatre dropdown | Number of people per theatre with each required training vs. the requirement |
+| **Global Report** | None | Number of compliant theatres vs. the global requirement |
+
+Each report displays specialisations as columns with grouped rows showing the training name, required count, and attained count. Attained values are colour-coded: **green** if the requirement is met, **red** if not. In the Country and Theatre reports, click **View** on any attained cell to see the list of qualifying students. All reports support export to CSV, Excel, and PDF.
 
 ---
 
