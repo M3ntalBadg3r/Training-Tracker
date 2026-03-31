@@ -67,6 +67,7 @@ export default function ProgramDataPage() {
   const [showDelete, setShowDelete] = useState(false);
   const [showExport, setShowExport] = useState(false);
   const [showAddSpec, setShowAddSpec] = useState(false);
+  const [showAddProgram, setShowAddProgram] = useState(false);
 
   // Form
   const emptyForm = {
@@ -83,6 +84,11 @@ export default function ProgramDataPage() {
   const [formError, setFormError] = useState("");
   const [newSpecName, setNewSpecName] = useState("");
   const [addSpecError, setAddSpecError] = useState("");
+  const [newProgramName, setNewProgramName] = useState("");
+  const [addProgramError, setAddProgramError] = useState("");
+
+  // Which form triggered the add-program modal
+  const [addProgramContext, setAddProgramContext] = useState<"add" | "edit">("add");
 
   // Training options for dropdown
   const [trainingOptions, setTrainingOptions] = useState<TrainingOption[]>([]);
@@ -115,7 +121,7 @@ export default function ProgramDataPage() {
     fetchSpecialisations();
   }, []);
 
-  // Fetch trainings when type changes (for add form)
+  // Fetch trainings when type changes
   const fetchTrainingsByType = async (type: string) => {
     if (!type) {
       setTrainingOptions([]);
@@ -141,9 +147,9 @@ export default function ProgramDataPage() {
         !q ||
         row.programName.toLowerCase().includes(q) ||
         row.specialisationName.toLowerCase().includes(q) ||
-        row.trainingFullTitle.toLowerCase().includes(q) ||
+        (row.trainingFullTitle || "").toLowerCase().includes(q) ||
         row.level.toLowerCase().includes(q) ||
-        (TRAINING_TYPE_LABELS[row.trainingType] || row.trainingType).toLowerCase().includes(q);
+        (row.trainingType ? (TRAINING_TYPE_LABELS[row.trainingType] || row.trainingType).toLowerCase().includes(q) : false);
       const matchesProgram = !filterProgram || row.programName === filterProgram;
       const matchesSpec = !filterSpec || row.specialisationName === filterSpec;
       const matchesLevel = !filterLevel || row.level === filterLevel;
@@ -160,8 +166,8 @@ export default function ProgramDataPage() {
         case "programName": aVal = a.programName; bVal = b.programName; break;
         case "specialisationName": aVal = a.specialisationName; bVal = b.specialisationName; break;
         case "level": aVal = a.level; bVal = b.level; break;
-        case "trainingType": aVal = a.trainingType; bVal = b.trainingType; break;
-        case "trainingFullTitle": aVal = a.trainingFullTitle; bVal = b.trainingFullTitle; break;
+        case "trainingType": aVal = a.trainingType || ""; bVal = b.trainingType || ""; break;
+        case "trainingFullTitle": aVal = a.trainingFullTitle || ""; bVal = b.trainingFullTitle || ""; break;
         case "quantityRequired": return sortDir === "asc" ? a.quantityRequired - b.quantityRequired : b.quantityRequired - a.quantityRequired;
       }
       return sortDir === "asc" ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
@@ -259,14 +265,27 @@ export default function ProgramDataPage() {
     setShowAddSpec(false);
     setNewSpecName("");
     fetchSpecialisations();
-    // Auto-select the new specialisation
     setAddForm((f) => ({ ...f, specialisationId: result.id }));
+  };
+
+  const handleAddProgram = () => {
+    setAddProgramError("");
+    const trimmed = newProgramName.trim();
+    if (!trimmed) { setAddProgramError("Program name is required"); return; }
+    if (programNames.includes(trimmed)) { setAddProgramError("A program with this name already exists"); return; }
+    if (addProgramContext === "add") {
+      setAddForm((f) => ({ ...f, programName: trimmed }));
+    } else {
+      setEditForm((f) => f ? { ...f, programName: trimmed } : f);
+    }
+    setShowAddProgram(false);
+    setNewProgramName("");
   };
 
   const openEditModal = (row: ProgramDataRow) => {
     setEditForm({ ...row });
     setFormError("");
-    fetchTrainingsByType(row.trainingType);
+    if (row.trainingType) fetchTrainingsByType(row.trainingType);
     setShowEdit(true);
   };
 
@@ -284,8 +303,8 @@ export default function ProgramDataPage() {
     programName: r.programName,
     specialisationName: r.specialisationName,
     level: r.level,
-    trainingType: TRAINING_TYPE_LABELS[r.trainingType] || r.trainingType,
-    trainingFullTitle: r.trainingFullTitle,
+    trainingType: r.trainingType ? (TRAINING_TYPE_LABELS[r.trainingType] || r.trainingType) : "—",
+    trainingFullTitle: r.trainingFullTitle || "—",
     quantityRequired: r.quantityRequired,
   }));
 
@@ -439,8 +458,8 @@ export default function ProgramDataPage() {
                     <td className="px-4 py-3">{row.programName}</td>
                     <td className="px-4 py-3">{row.specialisationName}</td>
                     <td className="px-4 py-3">{LEVEL_LABELS[row.level] || row.level}</td>
-                    <td className="px-4 py-3">{TRAINING_TYPE_LABELS[row.trainingType] || row.trainingType}</td>
-                    <td className="px-4 py-3">{row.trainingFullTitle}</td>
+                    <td className="px-4 py-3">{row.trainingType ? (TRAINING_TYPE_LABELS[row.trainingType] || row.trainingType) : "—"}</td>
+                    <td className="px-4 py-3">{row.trainingFullTitle || "—"}</td>
                     <td className="px-4 py-3">{row.quantityRequired}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
@@ -489,13 +508,23 @@ export default function ProgramDataPage() {
           {formError && <div className="p-2 bg-red-50 text-red-700 rounded text-sm">{formError}</div>}
           <div>
             <label className="block text-sm font-medium mb-1">Program Name</label>
-            <input
-              type="text"
-              value={addForm.programName}
-              onChange={(e) => setAddForm((f) => ({ ...f, programName: e.target.value }))}
-              placeholder="e.g., Authorized Professional Services (APS)"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
-            />
+            <div className="flex gap-2">
+              <select
+                value={addForm.programName}
+                onChange={(e) => setAddForm((f) => ({ ...f, programName: e.target.value }))}
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
+              >
+                <option value="">Select program...</option>
+                {programNames.map((p) => <option key={p} value={p}>{p}</option>)}
+              </select>
+              <button
+                onClick={() => { setAddProgramContext("add"); setShowAddProgram(true); setAddProgramError(""); setNewProgramName(""); }}
+                className="px-3 py-2 text-sm bg-gray-100 border border-gray-300 rounded-lg hover:bg-gray-200"
+                title="Add new program"
+              >
+                <Plus size={16} />
+              </button>
+            </div>
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">Specialisation</label>
@@ -521,40 +550,53 @@ export default function ProgramDataPage() {
             <label className="block text-sm font-medium mb-1">Level</label>
             <select
               value={addForm.level}
-              onChange={(e) => setAddForm((f) => ({ ...f, level: e.target.value }))}
+              onChange={(e) => {
+                const lvl = e.target.value;
+                setAddForm((f) => ({
+                  ...f,
+                  level: lvl,
+                  ...(lvl === "Global" ? { trainingType: "", trainingTitle: "" } : {}),
+                }));
+                if (lvl !== "Global") fetchTrainingsByType(addForm.trainingType);
+                else setTrainingOptions([]);
+              }}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
             >
               <option value="">Select level...</option>
               {LEVELS.map((l) => <option key={l} value={l}>{LEVEL_LABELS[l]}</option>)}
             </select>
           </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Type</label>
-            <select
-              value={addForm.trainingType}
-              onChange={(e) => {
-                const type = e.target.value;
-                setAddForm((f) => ({ ...f, trainingType: type, trainingTitle: "" }));
-                fetchTrainingsByType(type);
-              }}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
-            >
-              <option value="">Select type...</option>
-              {TRAINING_TYPES.map((t) => <option key={t} value={t}>{TRAINING_TYPE_LABELS[t]}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Training</label>
-            <select
-              value={addForm.trainingTitle}
-              onChange={(e) => setAddForm((f) => ({ ...f, trainingTitle: e.target.value }))}
-              disabled={!addForm.trainingType}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm disabled:opacity-50"
-            >
-              <option value="">{addForm.trainingType ? "Select training..." : "Select a type first..."}</option>
-              {trainingOptions.map((t) => <option key={t.trainingTitle} value={t.trainingTitle}>{t.fullTitle}</option>)}
-            </select>
-          </div>
+          {addForm.level !== "Global" && (
+            <>
+              <div>
+                <label className="block text-sm font-medium mb-1">Type</label>
+                <select
+                  value={addForm.trainingType}
+                  onChange={(e) => {
+                    const type = e.target.value;
+                    setAddForm((f) => ({ ...f, trainingType: type, trainingTitle: "" }));
+                    fetchTrainingsByType(type);
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
+                >
+                  <option value="">Select type...</option>
+                  {TRAINING_TYPES.map((t) => <option key={t} value={t}>{TRAINING_TYPE_LABELS[t]}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Training</label>
+                <select
+                  value={addForm.trainingTitle}
+                  onChange={(e) => setAddForm((f) => ({ ...f, trainingTitle: e.target.value }))}
+                  disabled={!addForm.trainingType}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm disabled:opacity-50"
+                >
+                  <option value="">{addForm.trainingType ? "Select training..." : "Select a type first..."}</option>
+                  {trainingOptions.map((t) => <option key={t.trainingTitle} value={t.trainingTitle}>{t.fullTitle}</option>)}
+                </select>
+              </div>
+            </>
+          )}
           <div>
             <label className="block text-sm font-medium mb-1">Quantity Required</label>
             <input
@@ -586,12 +628,27 @@ export default function ProgramDataPage() {
             {formError && <div className="p-2 bg-red-50 text-red-700 rounded text-sm">{formError}</div>}
             <div>
               <label className="block text-sm font-medium mb-1">Program Name</label>
-              <input
-                type="text"
-                value={editForm.programName}
-                onChange={(e) => setEditForm((f) => f ? { ...f, programName: e.target.value } : f)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
-              />
+              <div className="flex gap-2">
+                <select
+                  value={editForm.programName}
+                  onChange={(e) => setEditForm((f) => f ? { ...f, programName: e.target.value } : f)}
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
+                >
+                  <option value="">Select program...</option>
+                  {programNames.map((p) => <option key={p} value={p}>{p}</option>)}
+                  {/* Include current value even if not in programNames (shouldn't happen, but safe) */}
+                  {editForm.programName && !programNames.includes(editForm.programName) && (
+                    <option value={editForm.programName}>{editForm.programName}</option>
+                  )}
+                </select>
+                <button
+                  onClick={() => { setAddProgramContext("edit"); setShowAddProgram(true); setAddProgramError(""); setNewProgramName(""); }}
+                  className="px-3 py-2 text-sm bg-gray-100 border border-gray-300 rounded-lg hover:bg-gray-200"
+                  title="Add new program"
+                >
+                  <Plus size={16} />
+                </button>
+              </div>
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">Specialisation</label>
@@ -608,37 +665,51 @@ export default function ProgramDataPage() {
               <label className="block text-sm font-medium mb-1">Level</label>
               <select
                 value={editForm.level}
-                onChange={(e) => setEditForm((f) => f ? { ...f, level: e.target.value } : f)}
+                onChange={(e) => {
+                  const lvl = e.target.value;
+                  setEditForm((f) => f ? {
+                    ...f,
+                    level: lvl,
+                    ...(lvl === "Global" ? { trainingType: null, trainingTitle: null } : {}),
+                  } : f);
+                  if (lvl !== "Global") fetchTrainingsByType(editForm.trainingType || "");
+                  else setTrainingOptions([]);
+                }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
               >
                 {LEVELS.map((l) => <option key={l} value={l}>{LEVEL_LABELS[l]}</option>)}
               </select>
             </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Type</label>
-              <select
-                value={editForm.trainingType}
-                onChange={(e) => {
-                  const type = e.target.value;
-                  setEditForm((f) => f ? { ...f, trainingType: type, trainingTitle: "" } : f);
-                  fetchTrainingsByType(type);
-                }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
-              >
-                {TRAINING_TYPES.map((t) => <option key={t} value={t}>{TRAINING_TYPE_LABELS[t]}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Training</label>
-              <select
-                value={editForm.trainingTitle}
-                onChange={(e) => setEditForm((f) => f ? { ...f, trainingTitle: e.target.value } : f)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
-              >
-                <option value="">Select training...</option>
-                {trainingOptions.map((t) => <option key={t.trainingTitle} value={t.trainingTitle}>{t.fullTitle}</option>)}
-              </select>
-            </div>
+            {editForm.level !== "Global" && (
+              <>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Type</label>
+                  <select
+                    value={editForm.trainingType || ""}
+                    onChange={(e) => {
+                      const type = e.target.value;
+                      setEditForm((f) => f ? { ...f, trainingType: type, trainingTitle: null } : f);
+                      fetchTrainingsByType(type);
+                    }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
+                  >
+                    <option value="">Select type...</option>
+                    {TRAINING_TYPES.map((t) => <option key={t} value={t}>{TRAINING_TYPE_LABELS[t]}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Training</label>
+                  <select
+                    value={editForm.trainingTitle || ""}
+                    onChange={(e) => setEditForm((f) => f ? { ...f, trainingTitle: e.target.value } : f)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
+                  >
+                    <option value="">Select training...</option>
+                    {trainingOptions.map((t) => <option key={t.trainingTitle} value={t.trainingTitle}>{t.fullTitle}</option>)}
+                  </select>
+                </div>
+              </>
+            )}
             <div>
               <label className="block text-sm font-medium mb-1">Quantity Required</label>
               <input
@@ -670,7 +741,8 @@ export default function ProgramDataPage() {
           <div>
             {formError && <div className="mb-3 p-2 bg-red-50 text-red-700 rounded text-sm">{formError}</div>}
             <p className="text-sm mb-4">
-              Are you sure you want to delete the requirement for <strong>{deleteTarget.trainingFullTitle}</strong> under{" "}
+              Are you sure you want to delete the requirement for{" "}
+              <strong>{deleteTarget.trainingFullTitle || "this global requirement"}</strong> under{" "}
               <strong>{deleteTarget.specialisationName}</strong> in the <strong>{deleteTarget.programName}</strong> program?
             </p>
             <div className="flex justify-end gap-2">
@@ -701,6 +773,29 @@ export default function ProgramDataPage() {
             <button onClick={() => setShowAddSpec(false)} className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
             <button onClick={handleAddSpecialisation} className="flex items-center gap-1 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">
               <Save size={16} /> Save
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Add Program Modal */}
+      <Modal open={showAddProgram} onClose={() => setShowAddProgram(false)} title="Add Program">
+        <div className="space-y-4">
+          {addProgramError && <div className="p-2 bg-red-50 text-red-700 rounded text-sm">{addProgramError}</div>}
+          <div>
+            <label className="block text-sm font-medium mb-1">Program Name</label>
+            <input
+              type="text"
+              value={newProgramName}
+              onChange={(e) => setNewProgramName(e.target.value)}
+              placeholder="e.g., Authorized Professional Services (APS)"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
+            />
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <button onClick={() => setShowAddProgram(false)} className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
+            <button onClick={handleAddProgram} className="flex items-center gap-1 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+              <Save size={16} /> Add
             </button>
           </div>
         </div>

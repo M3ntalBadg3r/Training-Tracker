@@ -76,9 +76,9 @@ export interface ProgramDataRow {
   specialisationId: number;
   specialisationName: string;
   level: string;
-  trainingType: string;
-  trainingTitle: string;
-  trainingFullTitle: string;
+  trainingType: string | null;
+  trainingTitle: string | null;
+  trainingFullTitle: string | null;
   quantityRequired: number;
 }
 

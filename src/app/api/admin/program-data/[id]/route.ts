@@ -27,11 +27,13 @@ export async function PUT(
   if (!level || !["Country", "Theatre", "Global"].includes(level)) {
     return NextResponse.json({ error: "Valid level is required" }, { status: 400 });
   }
-  if (!trainingType || !["Certification", "Accreditation", "InstructorLedTraining"].includes(trainingType)) {
-    return NextResponse.json({ error: "Valid training type is required" }, { status: 400 });
-  }
-  if (!trainingTitle?.trim()) {
-    return NextResponse.json({ error: "Training is required" }, { status: 400 });
+  if (level !== "Global") {
+    if (!trainingType || !["Certification", "Accreditation", "InstructorLedTraining"].includes(trainingType)) {
+      return NextResponse.json({ error: "Valid training type is required" }, { status: 400 });
+    }
+    if (!trainingTitle?.trim()) {
+      return NextResponse.json({ error: "Training is required" }, { status: 400 });
+    }
   }
   if (!quantityRequired || quantityRequired < 1) {
     return NextResponse.json({ error: "Quantity must be at least 1" }, { status: 400 });
@@ -43,8 +45,8 @@ export async function PUT(
       programName: programName.trim(),
       specialisationId,
       level,
-      trainingType,
-      trainingTitle,
+      trainingType: level === "Global" ? null : trainingType,
+      trainingTitle: level === "Global" ? null : trainingTitle,
       quantityRequired,
     },
     include: {
@@ -59,9 +61,9 @@ export async function PUT(
     specialisationId: record.specialisationId,
     specialisationName: record.specialisation.name,
     level: record.level,
-    trainingType: record.trainingType,
-    trainingTitle: record.trainingTitle,
-    trainingFullTitle: record.trainingData.fullTitle,
+    trainingType: record.trainingType ?? null,
+    trainingTitle: record.trainingTitle ?? null,
+    trainingFullTitle: record.trainingData?.fullTitle ?? "—",
     quantityRequired: record.quantityRequired,
   });
 }

@@ -23,9 +23,9 @@ export async function GET(request: NextRequest) {
     specialisationId: d.specialisationId,
     specialisationName: d.specialisation.name,
     level: d.level,
-    trainingType: d.trainingType,
-    trainingTitle: d.trainingTitle,
-    trainingFullTitle: d.trainingData.fullTitle,
+    trainingType: d.trainingType ?? null,
+    trainingTitle: d.trainingTitle ?? null,
+    trainingFullTitle: d.trainingData?.fullTitle ?? "—",
     quantityRequired: d.quantityRequired,
   }));
 
@@ -51,11 +51,13 @@ export async function POST(request: NextRequest) {
   if (!level || !["Country", "Theatre", "Global"].includes(level)) {
     return NextResponse.json({ error: "Valid level is required" }, { status: 400 });
   }
-  if (!trainingType || !["Certification", "Accreditation", "InstructorLedTraining"].includes(trainingType)) {
-    return NextResponse.json({ error: "Valid training type is required" }, { status: 400 });
-  }
-  if (!trainingTitle?.trim()) {
-    return NextResponse.json({ error: "Training is required" }, { status: 400 });
+  if (level !== "Global") {
+    if (!trainingType || !["Certification", "Accreditation", "InstructorLedTraining"].includes(trainingType)) {
+      return NextResponse.json({ error: "Valid training type is required" }, { status: 400 });
+    }
+    if (!trainingTitle?.trim()) {
+      return NextResponse.json({ error: "Training is required" }, { status: 400 });
+    }
   }
   if (!quantityRequired || quantityRequired < 1) {
     return NextResponse.json({ error: "Quantity must be at least 1" }, { status: 400 });
@@ -66,9 +68,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Specialisation not found" }, { status: 404 });
   }
 
-  const training = await prisma.trainingData.findUnique({ where: { trainingTitle } });
-  if (!training) {
-    return NextResponse.json({ error: "Training not found" }, { status: 404 });
+  if (level !== "Global" && trainingTitle) {
+    const training = await prisma.trainingData.findUnique({ where: { trainingTitle } });
+    if (!training) {
+      return NextResponse.json({ error: "Training not found" }, { status: 404 });
+    }
   }
 
   const record = await prisma.programData.create({
@@ -76,8 +80,8 @@ export async function POST(request: NextRequest) {
       programName: programName.trim(),
       specialisationId,
       level,
-      trainingType,
-      trainingTitle,
+      trainingType: level === "Global" ? null : trainingType,
+      trainingTitle: level === "Global" ? null : trainingTitle,
       quantityRequired,
     },
     include: {
@@ -92,9 +96,9 @@ export async function POST(request: NextRequest) {
     specialisationId: record.specialisationId,
     specialisationName: record.specialisation.name,
     level: record.level,
-    trainingType: record.trainingType,
-    trainingTitle: record.trainingTitle,
-    trainingFullTitle: record.trainingData.fullTitle,
+    trainingType: record.trainingType ?? null,
+    trainingTitle: record.trainingTitle ?? null,
+    trainingFullTitle: record.trainingData?.fullTitle ?? "—",
     quantityRequired: record.quantityRequired,
   }, { status: 201 });
 }
