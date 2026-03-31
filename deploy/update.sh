@@ -35,7 +35,8 @@ rollback() {
         echo "  Restoring git to commit ${BEFORE_COMMIT}..."
         cd "${APP_DIR}"
         git checkout "${BEFORE_COMMIT}" -- . 2>/dev/null
-        git checkout "${BEFORE_COMMIT}" 2>/dev/null
+        git checkout "${BRANCH}" 2>/dev/null
+        git reset --hard "${BEFORE_COMMIT}" 2>/dev/null
         echo "  Git restored."
     fi
 
@@ -96,6 +97,22 @@ BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null) || {
     echo "ERROR: Not a git repository. Cannot update."
     exit 1
 }
+
+# Recover from detached HEAD (can occur after a previous failed rollback)
+if [ "$BRANCH" = "HEAD" ]; then
+    _CHANNEL=$(grep -E "^UPDATE_CHANNEL=" "${APP_DIR}/.env" 2>/dev/null | cut -d= -f2 | tr -d '"' | tr -d "'" | tr -d ' ')
+    if [ "$_CHANNEL" = "dev" ]; then
+        BRANCH="dev"
+    else
+        BRANCH="master"
+    fi
+    echo "  Detected detached HEAD — restoring to branch ${BRANCH}"
+    git checkout "${BRANCH}" 2>/dev/null || {
+        echo "ERROR: Git is in detached HEAD state and could not checkout branch ${BRANCH}."
+        echo "       Run manually: cd ${APP_DIR} && git checkout ${BRANCH}"
+        exit 1
+    }
+fi
 
 BEFORE_COMMIT=$(git rev-parse HEAD 2>/dev/null)
 OLD_VERSION=$(node -e "console.log(require('./package.json').version)" 2>/dev/null || echo "unknown")
