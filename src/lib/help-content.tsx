@@ -1055,6 +1055,63 @@ const helpSections: Record<string, HelpSection> = {
       </>
     ),
   },
+  "programs-global-diamond": {
+    title: "Global Diamond",
+    content: (
+      <>
+        <p>
+          The Global Diamond dashboard shows compliance status for the Global
+          Diamond partner program. All requirements are evaluated at the global
+          level — there are no country or theatre selectors.
+        </p>
+
+        <h3>Specialisations</h3>
+        <p>
+          Each specialisation appears as a card with a <strong>Compliant</strong>{" "}
+          or <strong>Not Compliant</strong> badge. A specialisation is compliant
+          only when <em>all</em> of its requirements are met.
+        </p>
+
+        <h3>Requirements Table</h3>
+        <p>
+          Each row shows a specific training requirement with:
+        </p>
+        <ul>
+          <li><strong>Training</strong> — the training title and type</li>
+          <li><strong>Required (Global)</strong> — total number of certified people needed globally</li>
+          <li><strong>Attained</strong> — distinct active certifications held globally</li>
+          <li><strong>Min/Theatre</strong> — minimum required per theatre (if applicable)</li>
+          <li><strong>Status</strong> — Met or Not Met</li>
+        </ul>
+
+        <h3>Theatre Breakdown</h3>
+        <p>
+          When a requirement has a per-theatre minimum, a chevron icon appears
+          on the left of the row. Click it to expand a breakdown showing each
+          theatre&apos;s count and whether it meets the minimum.
+        </p>
+        <p>
+          A requirement is only <strong>Met</strong> if the global total is
+          reached <em>and</em> all theatres meet their per-theatre minimum.
+        </p>
+
+        <h3>Export</h3>
+        <p>
+          Use the Export button to download all compliance data (including
+          theatre breakdowns) as CSV, Excel, or PDF.
+        </p>
+
+        <h3>Configuration</h3>
+        <p>
+          Requirements are managed in{" "}
+          <strong>Admin &rsaquo; Program Data</strong>. Add entries with the
+          program name <strong>Global Diamond</strong>, set the level to{" "}
+          <strong>Global</strong>, select the training, set the global quantity
+          required, and optionally set a &quot;Minimum per Theatre&quot; value.
+        </p>
+      </>
+    ),
+  },
 };
 
 export function getHelpContent(slug: string): HelpSection | null {

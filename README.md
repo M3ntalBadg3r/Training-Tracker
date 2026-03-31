@@ -30,6 +30,7 @@ Built with Next.js, React, PostgreSQL, and Prisma.
   - [Wipe Data](#wipe-data)
 - [Partner Programs](#partner-programs)
   - [APS Dashboard](#aps-dashboard)
+  - [Global Diamond Dashboard](#global-diamond-dashboard)
 - [Data Model](#data-model)
 - [Exporting Data](#exporting-data)
 
@@ -624,6 +625,26 @@ Three report views are available:
 | **Global Report** | None | Number of compliant theatres vs. the global requirement |
 
 Each report displays specialisations as columns with grouped rows showing the training name, required count, and attained count. Attained values are colour-coded: **green** if the requirement is met, **red** if not. In the Country and Theatre reports, click **View** on any attained cell to see the list of qualifying students. All reports support export to CSV, Excel, and PDF.
+
+### Global Diamond Dashboard
+
+Navigate to **Programs > Global Diamond** to view compliance for the Global Diamond partner program.
+
+All requirements are evaluated globally — there are no country or theatre selectors. Each specialisation is displayed as a card with a **Compliant** / **Not Compliant** badge. Inside each card, a table lists the training requirements with:
+
+| Column | Description |
+|--------|-------------|
+| **Training** | Training title and type |
+| **Required (Global)** | Total number of certified people needed globally |
+| **Attained** | Distinct active certifications held globally |
+| **Min/Theatre** | Minimum required per theatre (if applicable) |
+| **Status** | Met or Not Met |
+
+When a requirement has a per-theatre minimum, click the chevron icon to expand a per-theatre breakdown showing each theatre's count and compliance. A requirement is only **Met** if the global total is reached **and** all theatres meet their per-theatre minimum.
+
+Export the full compliance data (including theatre breakdowns) as CSV, Excel, or PDF using the Export button.
+
+Requirements are configured in **Admin > Program Data** using program name **Global Diamond**, level **Global**, with an optional **Minimum per Theatre** value.
 
 ---
 

@@ -110,8 +110,9 @@ model ProgramData {
   level            ProgramLevel
   trainingType     TrainingType? @map("training_type")
   trainingTitle    String?       @map("training_title")
-  quantityRequired Int           @map("quantity_required")
-  createdAt        DateTime      @default(now()) @map("created_at")
+  quantityRequired   Int           @map("quantity_required")
+  minimumPerTheatre  Int?          @map("minimum_per_theatre")
+  createdAt          DateTime      @default(now()) @map("created_at")
   updatedAt        DateTime      @updatedAt @map("updated_at")
 
   specialisation Specialisation @relation(fields: [specialisationId], references: [id])

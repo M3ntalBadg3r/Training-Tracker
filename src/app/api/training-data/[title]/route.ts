@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import prisma from "@/lib/prisma";
+import prisma, { type PrismaTransactionClient } from "@/lib/prisma";
 import { TrainingType, ProductType, FunctionType } from "@prisma/client";
 import { requireAuth, handleAuthError } from "@/lib/auth";
 
@@ -48,7 +48,7 @@ export async function PUT(
       );
     }
 
-    const training = await prisma.$transaction(async (tx) => {
+    const training = await prisma.$transaction(async (tx: PrismaTransactionClient) => {
       // Update all references in training_taken
       await tx.trainingTaken.updateMany({
         where: { trainingTitle: decodedTitle },

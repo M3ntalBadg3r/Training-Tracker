@@ -80,6 +80,7 @@ export interface ProgramDataRow {
   trainingTitle: string | null;
   trainingFullTitle: string | null;
   quantityRequired: number;
+  minimumPerTheatre: number | null;
 }
 
 export interface APSRequirement {
@@ -108,6 +109,33 @@ export interface APSReportData {
   globalCompliance: Record<string, number>;
   countries: string[];
   theatres: string[];
+}
+
+export interface GlobalDiamondTheatreBreakdown {
+  theatre: string;
+  count: number;
+  compliant: boolean;
+}
+
+export interface GlobalDiamondRequirement {
+  trainingType: string | null;
+  trainingTitle: string | null;
+  trainingFullTitle: string;
+  quantityRequired: number;
+  globalAttained: number;
+  minimumPerTheatre: number | null;
+  theatreBreakdown: GlobalDiamondTheatreBreakdown[] | null;
+  compliant: boolean;
+}
+
+export interface GlobalDiamondSpecialisation {
+  name: string;
+  compliant: boolean;
+  requirements: GlobalDiamondRequirement[];
+}
+
+export interface GlobalDiamondReportData {
+  specialisations: GlobalDiamondSpecialisation[];
 }
 
 export interface ColumnDef<T> {
