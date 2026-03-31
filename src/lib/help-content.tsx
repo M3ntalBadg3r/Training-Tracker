@@ -1021,7 +1021,7 @@ const helpSections: Record<string, HelpSection> = {
       <>
         <p>
           The APS dashboard shows compliance status for the Authorized
-          Professional Services partner program. It provides three report views.
+          Professional Services partner program. It provides four report views.
         </p>
 
         <h3>Country Report</h3>
@@ -1031,6 +1031,13 @@ const helpSections: Record<string, HelpSection> = {
           showing the training name, required count, and attained count.
           Green means the requirement is met; red means it is not. Click
           <strong> View</strong> to see the list of qualifying students.
+        </p>
+
+        <h3>Region Report</h3>
+        <p>
+          Same as the Country Report but aggregated across all countries in a
+          region. Select a region to see combined compliance data for every
+          country that belongs to it.
         </p>
 
         <h3>Theatre Report</h3>
