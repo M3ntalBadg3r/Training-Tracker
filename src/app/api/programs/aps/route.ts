@@ -61,76 +61,66 @@ export async function GET(request: NextRequest) {
   const now = new Date();
 
   if (level === "country" && country) {
-    // Country report: count students in the specified country per training
     const countryReqs = programData.filter((pd) => pd.level === "Country");
-    const trainingTitles = [...new Set(countryReqs.map((pd) => pd.trainingTitle))];
+    // Filter out null trainingTitles (shouldn't occur for Country level, but be safe)
+    const trainingTitles = [...new Set(countryReqs.map((pd) => pd.trainingTitle).filter((t): t is string => t !== null))];
 
     const attainedMap = await getAttainedByCountry(trainingTitles, country, now);
-
     const specialisations = buildSpecialisations(specMap, "Country", attainedMap);
 
     return NextResponse.json({ specialisations, countries, theatres: theatreList });
   }
 
   if (level === "theatre" && theatre) {
-    // Theatre report: count students in the specified theatre per training
     const theatreReqs = programData.filter((pd) => pd.level === "Theatre");
-    const trainingTitles = [...new Set(theatreReqs.map((pd) => pd.trainingTitle))];
+    const trainingTitles = [...new Set(theatreReqs.map((pd) => pd.trainingTitle).filter((t): t is string => t !== null))];
 
     const attainedMap = await getAttainedByTheatre(trainingTitles, theatre, now);
-
     const specialisations = buildSpecialisations(specMap, "Theatre", attainedMap);
 
     return NextResponse.json({ specialisations, countries, theatres: theatreList });
   }
 
   if (level === "global") {
-    // Global report: count compliant theatres per specialisation
-    // A theatre is compliant for a specialisation if it meets ALL theatre-level requirements
+    // Global report: count compliant theatres per specialisation.
+    // A theatre is compliant if it meets ALL theatre-level requirements for the specialisation.
 
-    // Get all distinct theatres from students
     const allTheatres = await prisma.student.findMany({
       select: { theatre: true },
       distinct: ["theatre"],
     });
     const distinctTheatres = allTheatres.map((s) => s.theatre);
 
-    // For each specialisation, check theatre compliance
     const globalSpecialisations = [];
 
     for (const [specName, reqs] of specMap) {
-      const theatreReqs = reqs.filter((r) => r.level === "Theatre");
+      const theatreReqs = reqs.filter((r) => r.level === "Theatre" && r.trainingTitle !== null);
       const globalReqs = reqs.filter((r) => r.level === "Global");
 
       if (globalReqs.length === 0) continue;
 
-      // For each theatre, check if it meets ALL theatre-level requirements for this specialisation
+      // Count theatres that meet all theatre-level requirements
       let compliantTheatreCount = 0;
 
       if (theatreReqs.length > 0) {
-        const theatreTrainingTitles = [...new Set(theatreReqs.map((r) => r.trainingTitle))];
+        const theatreTrainingTitles = [...new Set(theatreReqs.map((r) => r.trainingTitle).filter((t): t is string => t !== null))];
 
         for (const t of distinctTheatres) {
           const attainedMap = await getAttainedByTheatre(theatreTrainingTitles, t, now);
           const allMet = theatreReqs.every(
-            (req) => (attainedMap.get(req.trainingTitle) || 0) >= req.quantityRequired
+            (req) => req.trainingTitle !== null && (attainedMap.get(req.trainingTitle) || 0) >= req.quantityRequired
           );
           if (allMet) compliantTheatreCount++;
         }
       }
 
-      const attainedMap = new Map<string, number>();
-      // For global requirements, the "attained" is the count of compliant theatres
-      for (const gr of globalReqs) {
-        attainedMap.set(gr.trainingTitle, compliantTheatreCount);
-      }
-
       const specReqs = globalReqs.map((req) => ({
-        trainingType: req.trainingType,
-        trainingTitle: req.trainingTitle,
-        trainingFullTitle: req.trainingData.fullTitle,
+        trainingType: req.trainingType ?? null,
+        trainingTitle: req.trainingTitle ?? null,
+        // Global requirements have no associated training; show a descriptive label
+        trainingFullTitle: req.trainingData?.fullTitle ?? "Theatre Compliance",
         quantityRequired: req.quantityRequired,
-        attained: attainedMap.get(req.trainingTitle) || 0,
+        attained: compliantTheatreCount,
       }));
 
       globalSpecialisations.push({ name: specName, requirements: specReqs });
@@ -143,19 +133,8 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  // Default: return structure with empty attained (for initial load)
-  const specialisations = Array.from(specMap.entries()).map(([name, reqs]) => ({
-    name,
-    requirements: reqs
-      .filter((r) => r.level === "Country")
-      .map((req) => ({
-        trainingType: req.trainingType,
-        trainingTitle: req.trainingTitle,
-        trainingFullTitle: req.trainingData.fullTitle,
-        quantityRequired: req.quantityRequired,
-        attained: 0,
-      })),
-  }));
+  // Default: return structure for initial load
+  const specialisations = buildSpecialisations(specMap, "Country", new Map());
 
   return NextResponse.json({ specialisations, countries, theatres: theatreList });
 }
@@ -176,7 +155,6 @@ async function getAttainedByCountry(
     select: { trainingTitle: true, email: true },
   });
 
-  // Count distinct emails per trainingTitle
   const map = new Map<string, Set<string>>();
   for (const r of results) {
     if (!map.has(r.trainingTitle)) map.set(r.trainingTitle, new Set());
@@ -222,9 +200,9 @@ async function getAttainedByTheatre(
 function buildSpecialisations(
   specMap: Map<string, Array<{
     level: string;
-    trainingType: string;
-    trainingTitle: string;
-    trainingData: { fullTitle: string };
+    trainingType: string | null;
+    trainingTitle: string | null;
+    trainingData: { fullTitle: string } | null;
     quantityRequired: number;
   }>>,
   level: string,
@@ -238,11 +216,11 @@ function buildSpecialisations(
     result.push({
       name,
       requirements: levelReqs.map((req) => ({
-        trainingType: req.trainingType,
-        trainingTitle: req.trainingTitle,
-        trainingFullTitle: req.trainingData.fullTitle,
+        trainingType: req.trainingType ?? null,
+        trainingTitle: req.trainingTitle ?? null,
+        trainingFullTitle: req.trainingData?.fullTitle ?? "—",
         quantityRequired: req.quantityRequired,
-        attained: attainedMap.get(req.trainingTitle) || 0,
+        attained: req.trainingTitle ? (attainedMap.get(req.trainingTitle) || 0) : 0,
       })),
     });
   }
