@@ -150,9 +150,19 @@ export default function ProgramDataPage() {
     } catch { /* ignore */ }
   };
 
+  const [lastImport, setLastImport] = useState<string | null>(null);
+
+  const fetchLastImport = () => {
+    fetch("/api/import-metadata?key=program-data")
+      .then((res) => res.json())
+      .then((d) => { if (d?.timestamp) setLastImport(d.timestamp); })
+      .catch(() => {});
+  };
+
   useEffect(() => {
     fetchData();
     fetchSpecialisations();
+    fetchLastImport();
   }, []);
 
   // Fetch trainings when type changes
@@ -484,6 +494,7 @@ export default function ProgramDataPage() {
       setImportStep("result");
       fetchData();
       fetchSpecialisations();
+      fetchLastImport();
     } catch {
       setImportResult({ created: 0, skipped: importRows.length, errors: [{ row: 0, message: "Import request failed" }] });
       setImportStep("result");
@@ -553,52 +564,61 @@ export default function ProgramDataPage() {
         showBack
         helpSlug="admin-program-data"
         rightContent={
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => { resetImport(); setShowImport(true); }}
-              className="flex items-center gap-1 px-3 py-2 text-sm bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
-            >
-              <Upload size={16} /> Import
-            </button>
-            <div className="relative">
-              <button
-                onClick={() => setShowExport((p) => !p)}
-                className="flex items-center gap-1 px-3 py-2 text-sm bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
-              >
-                <Download size={16} /> Export
-              </button>
-              {showExport && (
-                <div className="absolute right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[140px]">
-                  <button
-                    className="w-full px-4 py-2 text-sm text-left hover:bg-gray-100"
-                    onClick={() => { exportToCsv(exportData as never[], exportColumns as never[], "program-data"); setShowExport(false); }}
-                  >
-                    Export as CSV
-                  </button>
-                  <button
-                    className="w-full px-4 py-2 text-sm text-left hover:bg-gray-100"
-                    onClick={() => { exportToExcel(exportData as never[], exportColumns as never[], "program-data"); setShowExport(false); }}
-                  >
-                    Export as Excel
-                  </button>
-                  <button
-                    className="w-full px-4 py-2 text-sm text-left hover:bg-gray-100"
-                    onClick={() => { exportToPdf(exportData as never[], exportColumns as never[], "program-data"); setShowExport(false); }}
-                  >
-                    Export as PDF
-                  </button>
-                </div>
-              )}
-            </div>
-            <button
-              onClick={() => { setShowAdd(true); setFormError(""); setAddForm(emptyForm); setAddNoTraining(false); setTrainingOptions([]); }}
-              className="flex items-center gap-1 px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-            >
-              <Plus size={16} /> Add Requirement
-            </button>
-          </div>
+          lastImport && (
+            <span className="text-sm text-gray-500">
+              Last imported: {new Date(lastImport).toLocaleString()}
+            </span>
+          )
         }
       />
+
+      {/* Import / Export / Add buttons */}
+      <section className="mb-4">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => { resetImport(); setShowImport(true); }}
+            className="flex items-center gap-2 px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300"
+          >
+            <Upload size={16} /> Import
+          </button>
+          <div className="relative">
+            <button
+              onClick={() => setShowExport((p) => !p)}
+              className="flex items-center gap-2 px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300"
+            >
+              <Download size={16} /> Export
+            </button>
+            {showExport && (
+              <div className="absolute left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[140px]">
+                <button
+                  className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-t-lg"
+                  onClick={() => { exportToCsv(exportData as never[], exportColumns as never[], "program-data"); setShowExport(false); }}
+                >
+                  Export as CSV
+                </button>
+                <button
+                  className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100"
+                  onClick={() => { exportToExcel(exportData as never[], exportColumns as never[], "program-data"); setShowExport(false); }}
+                >
+                  Export as Excel
+                </button>
+                <button
+                  className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-b-lg"
+                  onClick={() => { exportToPdf(exportData as never[], exportColumns as never[], "program-data"); setShowExport(false); }}
+                >
+                  Export as PDF
+                </button>
+              </div>
+            )}
+          </div>
+          <button
+            onClick={() => { setShowAdd(true); setFormError(""); setAddForm(emptyForm); setAddNoTraining(false); setTrainingOptions([]); }}
+            className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          >
+            <Plus size={16} /> Add Requirement
+          </button>
+        </div>
+      </section>
 
       {error && (
         <div className="mb-4 p-3 bg-red-50 text-red-700 rounded-lg">{error}</div>
@@ -666,7 +686,7 @@ export default function ProgramDataPage() {
                 ].map((col) => (
                   <th
                     key={col.key}
-                    className="px-4 py-3 font-medium text-gray-600 cursor-pointer hover:bg-gray-100 select-none"
+                    className="px-4 py-3 font-semibold text-gray-700 cursor-pointer hover:bg-gray-100 select-none"
                     onClick={() => toggleSort(col.key)}
                   >
                     <span className="flex items-center gap-1">
@@ -674,7 +694,7 @@ export default function ProgramDataPage() {
                     </span>
                   </th>
                 ))}
-                <th className="px-4 py-3 font-medium text-gray-600">Actions</th>
+                <th className="px-4 py-3 font-semibold text-gray-700">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -695,16 +715,16 @@ export default function ProgramDataPage() {
                     <td className="px-4 py-3">{row.quantityRequired}</td>
                     <td className="px-4 py-3">{row.minimumPerTheatre ?? "—"}</td>
                     <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
+                      <div className="flex gap-2">
                         <button
                           onClick={() => openEditModal(row)}
-                          className="text-blue-600 hover:text-blue-800 text-xs font-medium"
+                          className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
                         >
                           Edit
                         </button>
                         <button
                           onClick={() => { setDeleteTarget(row); setShowDelete(true); setFormError(""); }}
-                          className="text-red-600 hover:text-red-800"
+                          className="px-2 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200"
                         >
                           <Trash2 size={14} />
                         </button>
