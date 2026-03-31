@@ -35,19 +35,18 @@ const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/students", label: "Students", icon: Users },
   { href: "/training", label: "Training", icon: GraduationCap },
-  { href: "/reports", label: "Reports", icon: FileBarChart },
 ];
 
 const adminSubItems = [
-  { href: "/admin/import", label: "Import", icon: Upload },
-  { href: "/admin/region-data", label: "Region Data", icon: Globe },
-  { href: "/admin/training-data", label: "Training Data", icon: BookOpen },
-  { href: "/admin/backup", label: "Backup", icon: HardDrive },
   { href: "/admin/users", label: "Users", icon: Users },
-  { href: "/admin/cleanup", label: "Data Clean-Up", icon: Sparkles },
-  { href: "/admin/updates", label: "Updates", icon: RefreshCw },
-  { href: "/admin/scheduled-exports", label: "Scheduled Exports", icon: CalendarClock },
   { href: "/admin/program-data", label: "Program Data", icon: ClipboardList },
+  { href: "/admin/training-data", label: "Training Data", icon: BookOpen },
+  { href: "/admin/region-data", label: "Region Data", icon: Globe },
+  { href: "/admin/cleanup", label: "Data Clean-Up", icon: Sparkles },
+  { href: "/admin/backup", label: "Backup", icon: HardDrive },
+  { href: "/admin/import", label: "Import", icon: Upload },
+  { href: "/admin/scheduled-exports", label: "Export", icon: CalendarClock },
+  { href: "/admin/updates", label: "Updates", icon: RefreshCw },
 ];
 
 const programSubItems = [
@@ -186,6 +185,25 @@ export default function Sidebar() {
           )}
         </div>
 
+        {/* Reports */}
+        {(() => {
+          const isActive = pathname === "/reports" || pathname.startsWith("/reports/");
+          return (
+            <Link
+              href="/reports"
+              className={`flex items-center gap-3 px-4 py-3 transition-colors ${
+                isActive
+                  ? "bg-slate-700 text-white border-l-4 border-blue-400"
+                  : "text-slate-300 hover:bg-slate-800 hover:text-white border-l-4 border-transparent"
+              }`}
+              title="Reports"
+            >
+              <FileBarChart size={20} className="shrink-0" />
+              {!collapsed && <span>Reports</span>}
+            </Link>
+          );
+        })()}
+
         {/* Admin with sub-items — only visible to Admin role */}
         {isAdmin && (
           <div>
@@ -319,7 +337,7 @@ export default function Sidebar() {
             </button>
             <div className="mt-2 text-center">
               <span className="text-xs text-slate-500">
-                Version {process.env.APP_VERSION}{process.env.UPDATE_CHANNEL === "dev" ? "-dev" : ""}
+                Version {process.env.APP_VERSION}
               </span>
             </div>
           </>
