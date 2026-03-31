@@ -290,7 +290,7 @@ export default function RegionDataPage() {
           <div className="flex items-center gap-3">
             <button
               onClick={() => setShowImport(true)}
-              className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              className="flex items-center gap-2 px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300"
             >
               <Upload size={16} /> Import Region Data
             </button>

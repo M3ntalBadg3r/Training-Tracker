@@ -605,15 +605,9 @@ export default function TrainingDataPage() {
           <div className="flex items-center gap-3">
             <button
               onClick={() => setShowImport(true)}
-              className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              className="flex items-center gap-2 px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300"
             >
               <Upload size={16} /> Import Training Data
-            </button>
-            <button
-              onClick={() => setShowAddTraining(true)}
-              className="flex items-center gap-1 px-3 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300"
-            >
-              <Plus size={16} /> Add Training
             </button>
             <div className="relative">
               <button
@@ -678,6 +672,12 @@ export default function TrainingDataPage() {
                 </div>
               )}
             </div>
+            <button
+              onClick={() => setShowAddTraining(true)}
+              className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              <Plus size={16} /> Add Training
+            </button>
           </div>
         ) : (
           <div className="bg-white rounded-lg border border-gray-200 p-6">
