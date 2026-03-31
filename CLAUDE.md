@@ -119,7 +119,16 @@ deploy/           # install.sh, update.sh, install-remote.sh, perform-update.sh,
 - **Production branch**: `master` — After testing on dev, merge `dev` to `master` and push.
 - **Dev releases**: After pushing to `dev`, create a GitHub **pre-release** via `gh api` (with `"prerelease": true`). Dev systems (`UPDATE_CHANNEL=dev`) will see these.
 - **Stable releases**: After pushing to `master`, create a GitHub **full release** via `gh api` (with `"prerelease": false`). Production systems (`UPDATE_CHANNEL=stable`) will see these.
-- **GitHub operations**: Always use `gh api` directly for all GitHub API interactions (creating releases, tags, etc.). Do NOT use `gh release create` or other high-level `gh` subcommands, as the git remote is proxied and they may not work.
+- **GitHub operations**: Always use `gh api` directly for all GitHub API interactions (creating releases, tags, etc.). Do NOT use `gh release create`, MCP tools, or `git tag && git push` — the git remote is proxied and they will fail. The `gh` CLI is always available and authenticated.
+- **Creating a release** (example):
+  ```bash
+  gh api repos/M3ntalBadg3r/Training-Tracker/releases \
+    -f tag_name="v<version>" \
+    -f target_commitish="$(git rev-parse HEAD)" \
+    -f name="v<version>" \
+    -f body="Release notes here" \
+    -F prerelease=true   # false for stable releases
+  ```
 - **Update channels**: Systems set `UPDATE_CHANNEL` in `.env` to `"stable"` (default) or `"dev"`. The update check API and CLI scripts use this to determine whether to include pre-releases.
 
 ## Mandatory Post-Change Rules
@@ -130,7 +139,7 @@ After every change, you MUST complete these steps before considering the task do
 2. **Update README.md** — If the change affects how the system is used (new features, changed behavior, new pages, config changes), update `README.md` to reflect it.
 3. **Update the help system** — If the change affects user-facing behavior, update the relevant section in `src/lib/help-content.tsx` so the in-app help stays accurate.
 4. **Update CLAUDE.md** — If the change modifies the project structure (new/renamed/removed files or directories) or the data model (new/changed models, fields, enums, or relationships), update the relevant sections in this file.
-5. **Create a GitHub release** — After pushing, create a GitHub release with `gh release create v<version>` including friendly release notes describing what's new, changed, and fixed.
+5. **Create a GitHub release** — After pushing, create a GitHub release via `gh api` (see example in Git Workflow section above) with friendly release notes describing what's new, changed, and fixed.
 
 ## Deployment
 
