@@ -12,6 +12,7 @@ import {
   Building2,
   MapPin,
   Map,
+  ExternalLink,
 } from "lucide-react";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 
@@ -419,7 +420,7 @@ export default function APSPage() {
       </section>
 
       {/* Student Modal */}
-      <Modal open={showStudents} onClose={() => setShowStudents(false)} title={`Students — ${studentTitle}`}>
+      <Modal open={showStudents} onClose={() => setShowStudents(false)} title={`Students — ${studentTitle}`} size="4xl">
         {studentLoading ? (
           <LoadingSpinner />
         ) : studentList.length === 0 ? (
@@ -435,6 +436,7 @@ export default function APSPage() {
                   <th className="px-3 py-2 text-left font-medium">Theatre</th>
                   <th className="px-3 py-2 text-left font-medium">Completed</th>
                   <th className="px-3 py-2 text-left font-medium">Expires</th>
+                  <th className="px-3 py-2 text-center font-medium"></th>
                 </tr>
               </thead>
               <tbody>
@@ -446,6 +448,14 @@ export default function APSPage() {
                     <td className="px-3 py-2">{s.theatre}</td>
                     <td className="px-3 py-2">{s.completedDate}</td>
                     <td className="px-3 py-2">{s.expiryDate}</td>
+                    <td className="px-3 py-2 text-center">
+                      <a
+                        href={`/students/${encodeURIComponent(s.email)}`}
+                        className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline"
+                      >
+                        <ExternalLink size={12} /> View
+                      </a>
+                    </td>
                   </tr>
                 ))}
               </tbody>
