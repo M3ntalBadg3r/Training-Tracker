@@ -1000,16 +1000,43 @@ const helpSections: Record<string, HelpSection> = {
             </tr>
             <tr>
               <td><strong>Quantity Required</strong></td>
-              <td>For Country/Theatre: number of people needed. For Global: number of compliant theatres needed.</td>
+              <td>For Country/Theatre: number of people needed. For Global with training: number of people globally. For Global without training: number of compliant theatres needed.</td>
+            </tr>
+            <tr>
+              <td><strong>Minimum per Theatre</strong></td>
+              <td>Optional. For Global-level requirements with training — the minimum number of certified people required per theatre (used by Global Diamond).</td>
             </tr>
           </tbody>
         </table>
 
-        <h3>Actions</h3>
+        <h3>Adding Requirements</h3>
         <p>
-          Use <strong>Add Requirement</strong> to create a new entry. Click
-          <strong> Edit</strong> on any row to modify it, or the trash icon to
-          delete. Use the <strong>Export</strong> button to download the data as
+          Use <strong>Add Requirement</strong> to create a single entry. For Global-level
+          requirements, check <strong>No specific training</strong> if the entry counts
+          compliant theatres (APS-style), or leave unchecked to specify a training title
+          (Global Diamond-style).
+        </p>
+
+        <h3>Bulk Import</h3>
+        <p>
+          Use the <strong>Import</strong> button to upload a CSV or Excel file containing
+          multiple requirements at once. Click <strong>Download Template</strong> in the
+          import dialog to get a CSV template with example rows.
+        </p>
+        <p>
+          Expected columns: Program Name, Specialisation, Level, Training Type, Training,
+          Quantity Required, Minimum per Theatre. Column names are matched
+          case-insensitively. Specialisations are auto-created if they don&apos;t exist.
+          Training is matched by display name against the training catalog.
+        </p>
+        <p>
+          Use <strong>Validate</strong> to check all rows for errors before committing,
+          then <strong>Import</strong> to write the data.
+        </p>
+
+        <h3>Export</h3>
+        <p>
+          Use the <strong>Export</strong> button to download the current data as
           CSV, Excel, or PDF.
         </p>
       </>
