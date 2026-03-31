@@ -43,7 +43,12 @@ export async function GET(request: NextRequest) {
   // Get distinct countries and theatres
   const regions = await prisma.regionData.findMany({ orderBy: { country: "asc" } });
   const countries = regions.map((r) => r.country);
-  const theatreList = [...new Set(regions.map((r) => r.region))].sort();
+  const theatreStudents = await prisma.student.findMany({
+    select: { theatre: true },
+    distinct: ["theatre"],
+    orderBy: { theatre: "asc" },
+  });
+  const theatreList = theatreStudents.map((s) => s.theatre).filter(Boolean);
 
   // Group by specialisation
   const specMap = new Map<string, typeof programData>();
