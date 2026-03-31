@@ -420,7 +420,7 @@ export default function UpdatesPage() {
             </h2>
             <div className="flex items-center gap-3 mt-1">
               <p className="text-3xl font-bold text-blue-600">
-                v{currentVersion}{channel === "dev" ? "-dev" : ""}
+                v{currentVersion}
               </p>
               <button
                 onClick={() => {
