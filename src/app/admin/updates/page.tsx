@@ -127,7 +127,7 @@ export default function UpdatesPage() {
   const currentVersion = process.env.APP_VERSION || "0.0";
   const channel = process.env.UPDATE_CHANNEL || "stable";
 
-  // Load schedule and recent releases on mount
+  // Load schedule, recent releases, and check for updates on mount
   useEffect(() => {
     fetch("/api/admin/updates/schedule")
       .then((r) => r.json())
@@ -138,6 +138,8 @@ export default function UpdatesPage() {
       })
       .catch(() => {});
     fetchRecentReleases();
+    checkForUpdates();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fetchRecentReleases = async () => {
