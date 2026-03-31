@@ -77,9 +77,12 @@ export default function ProgramDataPage() {
     trainingType: "",
     trainingTitle: "",
     quantityRequired: 1,
+    minimumPerTheatre: null as number | null,
   };
   const [addForm, setAddForm] = useState(emptyForm);
+  const [addNoTraining, setAddNoTraining] = useState(false);
   const [editForm, setEditForm] = useState<ProgramDataRow | null>(null);
+  const [editNoTraining, setEditNoTraining] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ProgramDataRow | null>(null);
   const [formError, setFormError] = useState("");
   const [newSpecName, setNewSpecName] = useState("");
@@ -195,10 +198,16 @@ export default function ProgramDataPage() {
   // CRUD handlers
   const handleAdd = async () => {
     setFormError("");
+    const payload = {
+      ...addForm,
+      trainingType: addNoTraining ? null : addForm.trainingType,
+      trainingTitle: addNoTraining ? null : addForm.trainingTitle,
+      minimumPerTheatre: addNoTraining ? null : (addForm.minimumPerTheatre ?? null),
+    };
     const res = await fetch("/api/admin/program-data", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(addForm),
+      body: JSON.stringify(payload),
     });
     const result = await res.json();
     if (!res.ok) {
@@ -207,6 +216,7 @@ export default function ProgramDataPage() {
     }
     setShowAdd(false);
     setAddForm(emptyForm);
+    setAddNoTraining(false);
     setTrainingOptions([]);
     fetchData();
   };
@@ -221,9 +231,10 @@ export default function ProgramDataPage() {
         programName: editForm.programName,
         specialisationId: editForm.specialisationId,
         level: editForm.level,
-        trainingType: editForm.trainingType,
-        trainingTitle: editForm.trainingTitle,
+        trainingType: editNoTraining ? null : editForm.trainingType,
+        trainingTitle: editNoTraining ? null : editForm.trainingTitle,
         quantityRequired: editForm.quantityRequired,
+        minimumPerTheatre: editNoTraining ? null : (editForm.minimumPerTheatre ?? null),
       }),
     });
     const result = await res.json();
@@ -284,6 +295,7 @@ export default function ProgramDataPage() {
 
   const openEditModal = (row: ProgramDataRow) => {
     setEditForm({ ...row });
+    setEditNoTraining(row.level === "Global" && row.trainingTitle === null);
     setFormError("");
     if (row.trainingType) fetchTrainingsByType(row.trainingType);
     setShowEdit(true);
@@ -297,6 +309,7 @@ export default function ProgramDataPage() {
     { key: "trainingType" as const, header: "Type" },
     { key: "trainingFullTitle" as const, header: "Training" },
     { key: "quantityRequired" as const, header: "Quantity Required" },
+    { key: "minimumPerTheatre" as const, header: "Min per Theatre" },
   ];
 
   const exportData = sortedData.map((r) => ({
@@ -306,6 +319,7 @@ export default function ProgramDataPage() {
     trainingType: r.trainingType ? (TRAINING_TYPE_LABELS[r.trainingType] || r.trainingType) : "—",
     trainingFullTitle: r.trainingFullTitle || "—",
     quantityRequired: r.quantityRequired,
+    minimumPerTheatre: r.minimumPerTheatre ?? "—",
   }));
 
   const hasFilters = !!searchQuery || !!filterProgram || !!filterSpec || !!filterLevel || !!filterType;
@@ -360,7 +374,7 @@ export default function ProgramDataPage() {
               )}
             </div>
             <button
-              onClick={() => { setShowAdd(true); setFormError(""); setAddForm(emptyForm); setTrainingOptions([]); }}
+              onClick={() => { setShowAdd(true); setFormError(""); setAddForm(emptyForm); setAddNoTraining(false); setTrainingOptions([]); }}
               className="flex items-center gap-1 px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
             >
               <Plus size={16} /> Add Requirement
@@ -431,6 +445,7 @@ export default function ProgramDataPage() {
                   { key: "trainingType", label: "Type" },
                   { key: "trainingFullTitle", label: "Training" },
                   { key: "quantityRequired", label: "Qty Required" },
+                  { key: "minimumPerTheatre", label: "Min/Theatre" },
                 ].map((col) => (
                   <th
                     key={col.key}
@@ -448,7 +463,7 @@ export default function ProgramDataPage() {
             <tbody>
               {pagedData.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
+                  <td colSpan={8} className="px-4 py-8 text-center text-gray-500">
                     {data.length === 0 ? "No program data yet. Click \"Add Requirement\" to get started." : "No results match your filters."}
                   </td>
                 </tr>
@@ -461,6 +476,7 @@ export default function ProgramDataPage() {
                     <td className="px-4 py-3">{row.trainingType ? (TRAINING_TYPE_LABELS[row.trainingType] || row.trainingType) : "—"}</td>
                     <td className="px-4 py-3">{row.trainingFullTitle || "—"}</td>
                     <td className="px-4 py-3">{row.quantityRequired}</td>
+                    <td className="px-4 py-3">{row.minimumPerTheatre ?? "—"}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <button
@@ -516,6 +532,9 @@ export default function ProgramDataPage() {
               >
                 <option value="">Select program...</option>
                 {programNames.map((p) => <option key={p} value={p}>{p}</option>)}
+                {addForm.programName && !programNames.includes(addForm.programName) && (
+                  <option value={addForm.programName}>{addForm.programName}</option>
+                )}
               </select>
               <button
                 onClick={() => { setAddProgramContext("add"); setShowAddProgram(true); setAddProgramError(""); setNewProgramName(""); }}
@@ -552,13 +571,9 @@ export default function ProgramDataPage() {
               value={addForm.level}
               onChange={(e) => {
                 const lvl = e.target.value;
-                setAddForm((f) => ({
-                  ...f,
-                  level: lvl,
-                  ...(lvl === "Global" ? { trainingType: "", trainingTitle: "" } : {}),
-                }));
+                setAddForm((f) => ({ ...f, level: lvl }));
+                setAddNoTraining(false);
                 if (lvl !== "Global") fetchTrainingsByType(addForm.trainingType);
-                else setTrainingOptions([]);
               }}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
             >
@@ -566,7 +581,24 @@ export default function ProgramDataPage() {
               {LEVELS.map((l) => <option key={l} value={l}>{LEVEL_LABELS[l]}</option>)}
             </select>
           </div>
-          {addForm.level !== "Global" && (
+          {addForm.level === "Global" && (
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="add-no-training"
+                checked={addNoTraining}
+                onChange={(e) => {
+                  setAddNoTraining(e.target.checked);
+                  if (e.target.checked) setTrainingOptions([]);
+                }}
+                className="w-4 h-4"
+              />
+              <label htmlFor="add-no-training" className="text-sm">
+                No specific training (count compliant theatres)
+              </label>
+            </div>
+          )}
+          {(addForm.level !== "Global" || !addNoTraining) && (
             <>
               <div>
                 <label className="block text-sm font-medium mb-1">Type</label>
@@ -595,6 +627,20 @@ export default function ProgramDataPage() {
                   {trainingOptions.map((t) => <option key={t.trainingTitle} value={t.trainingTitle}>{t.fullTitle}</option>)}
                 </select>
               </div>
+              {addForm.level === "Global" && (
+                <div>
+                  <label className="block text-sm font-medium mb-1">Minimum per Theatre (optional)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={addForm.minimumPerTheatre ?? ""}
+                    onChange={(e) => setAddForm((f) => ({ ...f, minimumPerTheatre: e.target.value ? parseInt(e.target.value) : null }))}
+                    placeholder="Leave blank if no per-theatre minimum"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
+                  />
+                  <p className="mt-1 text-xs text-gray-500">Leave blank if no per-theatre minimum applies.</p>
+                </div>
+              )}
             </>
           )}
           <div>
@@ -607,7 +653,7 @@ export default function ProgramDataPage() {
               className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
             />
             <p className="mt-1 text-xs text-gray-500">
-              {addForm.level === "Global"
+              {addForm.level === "Global" && addNoTraining
                 ? "Number of compliant theatres needed."
                 : "Number of people with this training needed."}
             </p>
@@ -667,20 +713,33 @@ export default function ProgramDataPage() {
                 value={editForm.level}
                 onChange={(e) => {
                   const lvl = e.target.value;
-                  setEditForm((f) => f ? {
-                    ...f,
-                    level: lvl,
-                    ...(lvl === "Global" ? { trainingType: null, trainingTitle: null } : {}),
-                  } : f);
+                  setEditForm((f) => f ? { ...f, level: lvl } : f);
+                  setEditNoTraining(false);
                   if (lvl !== "Global") fetchTrainingsByType(editForm.trainingType || "");
-                  else setTrainingOptions([]);
                 }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
               >
                 {LEVELS.map((l) => <option key={l} value={l}>{LEVEL_LABELS[l]}</option>)}
               </select>
             </div>
-            {editForm.level !== "Global" && (
+            {editForm.level === "Global" && (
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="edit-no-training"
+                  checked={editNoTraining}
+                  onChange={(e) => {
+                    setEditNoTraining(e.target.checked);
+                    if (e.target.checked) setTrainingOptions([]);
+                  }}
+                  className="w-4 h-4"
+                />
+                <label htmlFor="edit-no-training" className="text-sm">
+                  No specific training (count compliant theatres)
+                </label>
+              </div>
+            )}
+            {(editForm.level !== "Global" || !editNoTraining) && (
               <>
                 <div>
                   <label className="block text-sm font-medium mb-1">Type</label>
@@ -708,6 +767,20 @@ export default function ProgramDataPage() {
                     {trainingOptions.map((t) => <option key={t.trainingTitle} value={t.trainingTitle}>{t.fullTitle}</option>)}
                   </select>
                 </div>
+                {editForm.level === "Global" && (
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Minimum per Theatre (optional)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={editForm.minimumPerTheatre ?? ""}
+                      onChange={(e) => setEditForm((f) => f ? { ...f, minimumPerTheatre: e.target.value ? parseInt(e.target.value) : null } : f)}
+                      placeholder="Leave blank if no per-theatre minimum"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
+                    />
+                    <p className="mt-1 text-xs text-gray-500">Leave blank if no per-theatre minimum applies.</p>
+                  </div>
+                )}
               </>
             )}
             <div>
@@ -720,7 +793,7 @@ export default function ProgramDataPage() {
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
               />
               <p className="mt-1 text-xs text-gray-500">
-                {editForm.level === "Global"
+                {editForm.level === "Global" && editNoTraining
                   ? "Number of compliant theatres needed."
                   : "Number of people with this training needed."}
               </p>

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import prisma from "@/lib/prisma";
+import prisma, { type PrismaTransactionClient } from "@/lib/prisma";
 import { requireAuth, handleAuthError } from "@/lib/auth";
 
 export async function PUT(
@@ -36,7 +36,7 @@ export async function PUT(
     }
 
     // Use a transaction: update students to new country, delete old, create new
-    const regionData = await prisma.$transaction(async (tx) => {
+    const regionData = await prisma.$transaction(async (tx: PrismaTransactionClient) => {
       await tx.student.updateMany({
         where: { country: decodedCountry },
         data: { country: newCountry },

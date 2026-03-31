@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import prisma from "@/lib/prisma";
+import prisma, { type PrismaTransactionClient } from "@/lib/prisma";
 import JSZip from "jszip";
 import { requireAuth, handleAuthError } from "@/lib/auth";
 import path from "path";
@@ -80,7 +80,7 @@ export async function POST(request: NextRequest) {
     const usersFile = zip.file("users.json");
     const users = usersFile ? await readJson("users.json") : [];
 
-    await prisma.$transaction(async (tx) => {
+    await prisma.$transaction(async (tx: PrismaTransactionClient) => {
       await tx.trainingTaken.deleteMany({});
       await tx.student.deleteMany({});
       await tx.trainingData.deleteMany({});

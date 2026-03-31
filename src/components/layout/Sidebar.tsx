@@ -27,6 +27,7 @@ import {
   ClipboardList,
   ShieldCheck,
   Award,
+  Gem,
 } from "lucide-react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useTheme } from "@/components/theme/ThemeProvider";
@@ -51,6 +52,7 @@ const adminSubItems = [
 
 const programSubItems = [
   { href: "/programs/aps", label: "APS", icon: Award },
+  { href: "/programs/global-diamond", label: "Global Diamond", icon: Gem },
 ];
 
 export default function Sidebar() {

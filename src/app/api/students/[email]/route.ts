@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import prisma from "@/lib/prisma";
+import prisma, { type PrismaTransactionClient } from "@/lib/prisma";
 import { isActive, formatDate, trainingTypeLabel, functionTypeLabel } from "@/lib/utils";
 import { requireAuth, handleAuthError } from "@/lib/auth";
 
@@ -75,7 +75,7 @@ export async function PUT(
   // If email is changing, we need to update the primary key
   if (newEmail && newEmail !== decodedEmail) {
     // Use a transaction to update email across related records
-    await prisma.$transaction(async (tx) => {
+    await prisma.$transaction(async (tx: PrismaTransactionClient) => {
       // Update training_taken records first
       await tx.trainingTaken.updateMany({
         where: { email: decodedEmail },

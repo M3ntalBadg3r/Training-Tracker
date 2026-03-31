@@ -27,6 +27,7 @@ export async function GET(request: NextRequest) {
     trainingTitle: d.trainingTitle ?? null,
     trainingFullTitle: d.trainingData?.fullTitle ?? "—",
     quantityRequired: d.quantityRequired,
+    minimumPerTheatre: d.minimumPerTheatre ?? null,
   }));
 
   return NextResponse.json(rows);
@@ -40,7 +41,7 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json();
-  const { programName, specialisationId, level, trainingType, trainingTitle, quantityRequired } = body;
+  const { programName, specialisationId, level, trainingType, trainingTitle, quantityRequired, minimumPerTheatre } = body;
 
   if (!programName?.trim()) {
     return NextResponse.json({ error: "Program name is required" }, { status: 400 });
@@ -51,7 +52,9 @@ export async function POST(request: NextRequest) {
   if (!level || !["Country", "Theatre", "Global"].includes(level)) {
     return NextResponse.json({ error: "Valid level is required" }, { status: 400 });
   }
-  if (level !== "Global") {
+  // Training required for non-Global, or for Global when trainingTitle is explicitly provided
+  const hasTraining = trainingTitle != null && trainingTitle !== "";
+  if (level !== "Global" || hasTraining) {
     if (!trainingType || !["Certification", "Accreditation", "InstructorLedTraining"].includes(trainingType)) {
       return NextResponse.json({ error: "Valid training type is required" }, { status: 400 });
     }
@@ -68,7 +71,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Specialisation not found" }, { status: 404 });
   }
 
-  if (level !== "Global" && trainingTitle) {
+  if (trainingTitle) {
     const training = await prisma.trainingData.findUnique({ where: { trainingTitle } });
     if (!training) {
       return NextResponse.json({ error: "Training not found" }, { status: 404 });
@@ -80,9 +83,10 @@ export async function POST(request: NextRequest) {
       programName: programName.trim(),
       specialisationId,
       level,
-      trainingType: level === "Global" ? null : trainingType,
-      trainingTitle: level === "Global" ? null : trainingTitle,
+      trainingType: hasTraining ? trainingType : null,
+      trainingTitle: hasTraining ? trainingTitle : null,
       quantityRequired,
+      minimumPerTheatre: minimumPerTheatre ?? null,
     },
     include: {
       specialisation: true,
@@ -100,5 +104,6 @@ export async function POST(request: NextRequest) {
     trainingTitle: record.trainingTitle ?? null,
     trainingFullTitle: record.trainingData?.fullTitle ?? "—",
     quantityRequired: record.quantityRequired,
+    minimumPerTheatre: record.minimumPerTheatre ?? null,
   }, { status: 201 });
 }

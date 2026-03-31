@@ -38,6 +38,7 @@ src/
     admin/        # Admin pages (region-data, training-data, backup, import, users, cleanup, updates, scheduled-exports, program-data)
     programs/     # Partner program compliance dashboards
       aps/        # Authorized Professional Services (APS) compliance dashboard
+      global-diamond/  # Global Diamond compliance dashboard
     login/        # Login page
     setup/        # First-run setup wizard
     layout.tsx    # Root layout with AuthProvider + AppShell
@@ -77,7 +78,7 @@ deploy/           # install.sh, update.sh, install-remote.sh, perform-update.sh,
 - **ScheduledExport** — PK: `id`. Fields: name, reportType, format, destination, config (JSON), enabled, frequency, time, dayOfWeek?, dayOfMonth?, lastRunAt?, lastStatus?, lastError?.
 - **ExportCredential** — PK: `id`, unique: `provider`. Fields: provider, config (JSON). Stores SMTP/OAuth/API credentials per delivery provider.
 - **Specialisation** — PK: `id` (auto-increment). Fields: name (unique). Admin-managed list of product specialisations for partner programs.
-- **ProgramData** — PK: `id` (auto-increment). FK: specialisationId → Specialisation, trainingTitle → TrainingData. Fields: programName, level (ProgramLevel enum), trainingType, quantityRequired.
+- **ProgramData** — PK: `id` (auto-increment). FK: specialisationId → Specialisation, trainingTitle → TrainingData. Fields: programName, level (ProgramLevel enum), trainingType?, trainingTitle?, quantityRequired, minimumPerTheatre?. Training fields are nullable (null = "count compliant theatres" mode for APS-style Global entries). minimumPerTheatre is used by Global Diamond for per-theatre minimum enforcement.
 
 ### Enums
 - **TrainingType**: `Certification`, `Accreditation`, `InstructorLedTraining`

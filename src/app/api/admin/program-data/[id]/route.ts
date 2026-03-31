@@ -19,7 +19,7 @@ export async function PUT(
   }
 
   const body = await request.json();
-  const { programName, specialisationId, level, trainingType, trainingTitle, quantityRequired } = body;
+  const { programName, specialisationId, level, trainingType, trainingTitle, quantityRequired, minimumPerTheatre } = body;
 
   if (!programName?.trim()) {
     return NextResponse.json({ error: "Program name is required" }, { status: 400 });
@@ -27,7 +27,8 @@ export async function PUT(
   if (!level || !["Country", "Theatre", "Global"].includes(level)) {
     return NextResponse.json({ error: "Valid level is required" }, { status: 400 });
   }
-  if (level !== "Global") {
+  const hasTraining = trainingTitle != null && trainingTitle !== "";
+  if (level !== "Global" || hasTraining) {
     if (!trainingType || !["Certification", "Accreditation", "InstructorLedTraining"].includes(trainingType)) {
       return NextResponse.json({ error: "Valid training type is required" }, { status: 400 });
     }
@@ -45,9 +46,10 @@ export async function PUT(
       programName: programName.trim(),
       specialisationId,
       level,
-      trainingType: level === "Global" ? null : trainingType,
-      trainingTitle: level === "Global" ? null : trainingTitle,
+      trainingType: hasTraining ? trainingType : null,
+      trainingTitle: hasTraining ? trainingTitle : null,
       quantityRequired,
+      minimumPerTheatre: minimumPerTheatre ?? null,
     },
     include: {
       specialisation: true,
@@ -65,6 +67,7 @@ export async function PUT(
     trainingTitle: record.trainingTitle ?? null,
     trainingFullTitle: record.trainingData?.fullTitle ?? "—",
     quantityRequired: record.quantityRequired,
+    minimumPerTheatre: record.minimumPerTheatre ?? null,
   });
 }
 
