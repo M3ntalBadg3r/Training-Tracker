@@ -11,6 +11,7 @@ import {
   Globe,
   Building2,
   MapPin,
+  Map,
 } from "lucide-react";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 
@@ -44,6 +45,7 @@ interface StudentEntry {
 
 export default function APSPage() {
   const [countries, setCountries] = useState<string[]>([]);
+  const [regions, setRegions] = useState<string[]>([]);
   const [theatres, setTheatres] = useState<string[]>([]);
 
   // Country report
@@ -51,6 +53,12 @@ export default function APSPage() {
   const [selectedCountry, setSelectedCountry] = useState("");
   const [countrySpecs, setCountrySpecs] = useState<Specialisation[]>([]);
   const [countryLoading, setCountryLoading] = useState(false);
+
+  // Region report
+  const [regionOpen, setRegionOpen] = useState(false);
+  const [selectedRegion, setSelectedRegion] = useState("");
+  const [regionSpecs, setRegionSpecs] = useState<Specialisation[]>([]);
+  const [regionLoading, setRegionLoading] = useState(false);
 
   // Theatre report
   const [theatreOpen, setTheatreOpen] = useState(false);
@@ -71,6 +79,7 @@ export default function APSPage() {
 
   // Export menus
   const [showExportCountry, setShowExportCountry] = useState(false);
+  const [showExportRegion, setShowExportRegion] = useState(false);
   const [showExportTheatre, setShowExportTheatre] = useState(false);
   const [showExportGlobal, setShowExportGlobal] = useState(false);
 
@@ -80,6 +89,7 @@ export default function APSPage() {
       .then((r) => r.json())
       .then((data) => {
         setCountries(data.countries || []);
+        setRegions(data.regions || []);
         setTheatres(data.theatres || []);
       })
       .catch(() => {});
@@ -100,6 +110,22 @@ export default function APSPage() {
       .catch(() => {})
       .finally(() => setCountryLoading(false));
   }, [selectedCountry]);
+
+  // Fetch region report
+  useEffect(() => {
+    if (!selectedRegion) {
+      setRegionSpecs([]);
+      return;
+    }
+    setRegionLoading(true);
+    fetch(`/api/programs/aps?level=region&region=${encodeURIComponent(selectedRegion)}`)
+      .then((r) => r.json())
+      .then((data) => {
+        setRegionSpecs(data.specialisations || []);
+      })
+      .catch(() => {})
+      .finally(() => setRegionLoading(false));
+  }, [selectedRegion]);
 
   // Fetch theatre report
   useEffect(() => {
@@ -147,6 +173,7 @@ export default function APSPage() {
       level,
     });
     if (level === "country") params.set("country", filterValue);
+    if (level === "region") params.set("region", filterValue);
     if (level === "theatre") params.set("theatre", filterValue);
 
     try {
@@ -239,6 +266,58 @@ export default function APSPage() {
                 specialisations={countrySpecs}
                 level="country"
                 filterValue={selectedCountry}
+                onViewStudents={viewStudents}
+                unitLabel="people"
+              />
+            )}
+          </div>
+        )}
+      </section>
+
+      {/* Region Report */}
+      <section className="mb-6">
+        <button
+          onClick={() => setRegionOpen((p) => !p)}
+          className="w-full flex items-center gap-2 p-4 bg-white rounded-lg border border-gray-200 hover:bg-gray-50"
+        >
+          {regionOpen ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
+          <Map size={20} className="text-teal-600" />
+          <span className="text-lg font-semibold">Region Report</span>
+        </button>
+        {regionOpen && (
+          <div className="mt-2 bg-white rounded-lg border border-gray-200 p-4">
+            <div className="flex items-center gap-3 mb-4">
+              <select
+                value={selectedRegion}
+                onChange={(e) => setSelectedRegion(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm min-w-[200px]"
+              >
+                <option value="">Select a region...</option>
+                {regions.map((r) => (
+                  <option key={r} value={r}>{r}</option>
+                ))}
+              </select>
+              {selectedRegion && regionSpecs.length > 0 && (
+                <ExportMenu
+                  show={showExportRegion}
+                  setShow={setShowExportRegion}
+                  data={buildExportData(regionSpecs, "Region", selectedRegion)}
+                  columns={exportCols}
+                  filename={`aps-region-${selectedRegion}`}
+                />
+              )}
+            </div>
+            {regionLoading ? (
+              <LoadingSpinner />
+            ) : !selectedRegion ? (
+              <p className="text-sm text-gray-500">Select a region to view compliance data across all countries in that region.</p>
+            ) : regionSpecs.length === 0 ? (
+              <p className="text-sm text-gray-500">No country-level requirements found for the APS program.</p>
+            ) : (
+              <ComplianceTable
+                specialisations={regionSpecs}
+                level="region"
+                filterValue={selectedRegion}
                 onViewStudents={viewStudents}
                 unitLabel="people"
               />
