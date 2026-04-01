@@ -43,13 +43,8 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Allow public paths
-  if (isPublicPath(pathname)) {
-    return NextResponse.next();
-  }
-
   // Check if setup is needed (no users exist)
-  // We call the setup API internally to check
+  // Must run before public paths check so /login redirects to /setup on fresh installs
   try {
     const setupUrl = new URL("/api/auth/setup", request.url);
     const setupRes = await fetch(setupUrl.toString(), {
@@ -64,6 +59,11 @@ export async function proxy(request: NextRequest) {
     }
   } catch {
     // If setup check fails, continue with auth check
+  }
+
+  // Allow public paths
+  if (isPublicPath(pathname)) {
+    return NextResponse.next();
   }
 
   // Allow cron-triggered endpoints from localhost (no JWT needed)
