@@ -17,9 +17,26 @@ log() {
 
 log "Auto-export check started"
 
+# Load CRON_SECRET from .env for HMAC signature
+ENV_FILE="${APP_DIR}/.env"
+CRON_SECRET=""
+if [ -f "$ENV_FILE" ]; then
+    CRON_SECRET=$(grep -oP '^CRON_SECRET=["'"'"']?\K[^"'"'"']*' "$ENV_FILE" 2>/dev/null || true)
+fi
+
+if [ -z "$CRON_SECRET" ]; then
+    log "CRON_SECRET not set in .env. Aborting (required for cron authentication)."
+    exit 1
+fi
+
+# Compute HMAC-SHA256 signature of today's date (UTC)
+TODAY=$(date -u '+%Y-%m-%d')
+CRON_SIGNATURE=$(echo -n "$TODAY" | openssl dgst -sha256 -hmac "$CRON_SECRET" | awk '{print $NF}')
+
 # Call the execute endpoint
 RESPONSE=$(curl -s -X POST "http://localhost:3000/api/admin/scheduled-exports/execute" \
     -H "X-Auto-Export: true" \
+    -H "X-Cron-Signature: ${CRON_SIGNATURE}" \
     -H "Content-Type: application/json" \
     2>&1)
 

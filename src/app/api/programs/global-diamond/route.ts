@@ -33,16 +33,16 @@ export async function GET(request: NextRequest) {
     distinct: ["theatre"],
     orderBy: { theatre: "asc" },
   });
-  const theatres = theatreStudents.map((s) => s.theatre).filter(Boolean);
+  const theatres = theatreStudents.map((s: typeof theatreStudents[number]) => s.theatre).filter(Boolean);
 
   // Collect all training titles that have minimumPerTheatre set
   const titlesWithTheatreMin = programData
-    .filter((pd) => pd.trainingTitle !== null && (pd.minimumPerTheatre ?? 0) > 0)
-    .map((pd) => pd.trainingTitle as string);
+    .filter((pd: typeof programData[number]) => pd.trainingTitle !== null && (pd.minimumPerTheatre ?? 0) > 0)
+    .map((pd: typeof programData[number]) => pd.trainingTitle as string);
 
   // Fetch all active training records for all relevant training titles
   const allTrainingTitles = [...new Set(
-    programData.filter((pd) => pd.trainingTitle !== null).map((pd) => pd.trainingTitle as string)
+    programData.filter((pd: typeof programData[number]) => pd.trainingTitle !== null).map((pd: typeof programData[number]) => pd.trainingTitle as string)
   )];
 
   // Global count: distinct emails per trainingTitle with active training
@@ -87,7 +87,7 @@ export async function GET(request: NextRequest) {
   const specialisations = [];
 
   for (const [specName, reqs] of specMap) {
-    const requirements = reqs.map((req) => {
+    const requirements = reqs.map((req: typeof programData[number]) => {
       const title = req.trainingTitle;
       const globalAttained = title ? (globalAttainedMap.get(title)?.size ?? 0) : 0;
       const minimumPerTheatre = req.minimumPerTheatre ?? null;
@@ -96,7 +96,7 @@ export async function GET(request: NextRequest) {
       let theatreBreakdown: { theatre: string; count: number; compliant: boolean }[] | null = null;
       if (title && minimumPerTheatre !== null && minimumPerTheatre > 0) {
         const byTheatre = theatreAttainedMap.get(title);
-        theatreBreakdown = theatres.map((t) => {
+        theatreBreakdown = theatres.map((t: typeof theatres[number]) => {
           const count = byTheatre?.get(t)?.size ?? 0;
           return { theatre: t, count, compliant: count >= minimumPerTheatre };
         });
@@ -120,7 +120,7 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    const specCompliant = requirements.every((r) => r.compliant);
+    const specCompliant = requirements.every((r: typeof requirements[number]) => r.compliant);
     specialisations.push({ name: specName, compliant: specCompliant, requirements });
   }
 

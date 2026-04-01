@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
     orderBy: [{ programName: "asc" }, { specialisationId: "asc" }, { trainingType: "asc" }],
   });
 
-  const rows = data.map((d) => ({
+  const rows = data.map((d: typeof data[number]) => ({
     id: d.id,
     programName: d.programName,
     specialisationId: d.specialisationId,

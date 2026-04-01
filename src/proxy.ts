@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jwtVerify } from "jose";
+import { verifyCronSignature } from "@/lib/cron-auth";
 
 const COOKIE_NAME = "tt-auth";
 
@@ -66,18 +67,19 @@ export async function proxy(request: NextRequest) {
     // If setup check fails, continue with auth check
   }
 
-  // Allow cron-triggered endpoints from localhost (no JWT needed)
+  // Allow cron-triggered endpoints with valid HMAC signature
   const isCronRequest =
     (pathname === "/api/admin/backup/save" &&
       request.headers.get("x-auto-backup") === "true") ||
     (pathname === "/api/admin/scheduled-exports/execute" &&
       request.headers.get("x-auto-export") === "true");
-  const host = request.headers.get("host") || "";
-  const isLocalhost =
-    host.startsWith("localhost") || host.startsWith("127.0.0.1");
 
-  if (isCronRequest && isLocalhost) {
-    return NextResponse.next();
+  if (isCronRequest) {
+    const signature = request.headers.get("x-cron-signature");
+    if (verifyCronSignature(signature)) {
+      return NextResponse.next();
+    }
+    // Fall through to normal JWT auth if signature is invalid
   }
 
   // Verify JWT token

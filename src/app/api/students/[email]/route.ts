@@ -4,9 +4,15 @@ import { isActive, formatDate, trainingTypeLabel, functionTypeLabel } from "@/li
 import { requireAuth, handleAuthError } from "@/lib/auth";
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ email: string }> }
 ) {
+  try {
+    await requireAuth(request);
+  } catch (error) {
+    return handleAuthError(error);
+  }
+
   const { email } = await params;
   const decodedEmail = decodeURIComponent(email);
 
@@ -71,6 +77,17 @@ export async function PUT(
   const body = await request.json();
 
   const { fullName, theatre, country, newEmail } = body;
+
+  // Validate field types and lengths
+  if ((fullName && (typeof fullName !== "string" || fullName.length > 255)) ||
+      (theatre && (typeof theatre !== "string" || theatre.length > 100)) ||
+      (country && (typeof country !== "string" || country.length > 100))) {
+    return NextResponse.json({ error: "Invalid field value" }, { status: 400 });
+  }
+  if (newEmail && (typeof newEmail !== "string" || newEmail.length > 255 ||
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail))) {
+    return NextResponse.json({ error: "Invalid email format" }, { status: 400 });
+  }
 
   // If email is changing, we need to update the primary key
   if (newEmail && newEmail !== decodedEmail) {

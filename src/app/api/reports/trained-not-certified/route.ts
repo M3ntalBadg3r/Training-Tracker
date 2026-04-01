@@ -1,7 +1,14 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
+import { requireAuth, handleAuthError } from "@/lib/auth";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  try {
+    await requireAuth(request);
+  } catch (error) {
+    return handleAuthError(error);
+  }
+
   // Find all ILT trainings that have at least one certification mapping
   const iltWithCert = await prisma.trainingData.findMany({
     where: {
@@ -26,7 +33,7 @@ export async function GET() {
   const certData = await prisma.trainingData.findMany({
     where: { trainingTitle: { in: Array.from(certTitles) } },
   });
-  const certFullTitleMap = new Map(certData.map((c) => [c.trainingTitle, c.fullTitle]));
+  const certFullTitleMap = new Map(certData.map((c: typeof certData[number]) => [c.trainingTitle, c.fullTitle]));
 
   // For each ILT + certification pair, find students who completed
   // the ILT but NOT that specific certification
@@ -78,7 +85,7 @@ export async function GET() {
         distinct: ["email"],
       });
 
-      const certifiedEmails = new Set(certStudents.map((s) => s.email));
+      const certifiedEmails = new Set(certStudents.map((s: typeof certStudents[number]) => s.email));
       const uncertifiedEmails = iltEmails.filter((e) => !certifiedEmails.has(e));
 
       if (uncertifiedEmails.length === 0) continue;

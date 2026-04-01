@@ -17,6 +17,22 @@ log() {
 
 log "Auto-backup started"
 
+# Load CRON_SECRET from .env for HMAC signature
+ENV_FILE="${APP_DIR}/.env"
+CRON_SECRET=""
+if [ -f "$ENV_FILE" ]; then
+    CRON_SECRET=$(grep -oP '^CRON_SECRET=["'"'"']?\K[^"'"'"']*' "$ENV_FILE" 2>/dev/null || true)
+fi
+
+if [ -z "$CRON_SECRET" ]; then
+    log "CRON_SECRET not set in .env. Aborting (required for cron authentication)."
+    exit 1
+fi
+
+# Compute HMAC-SHA256 signature of today's date (UTC)
+TODAY=$(date -u '+%Y-%m-%d')
+CRON_SIGNATURE=$(echo -n "$TODAY" | openssl dgst -sha256 -hmac "$CRON_SECRET" | awk '{print $NF}')
+
 # Check config
 CONFIG_FILE="${APP_DIR}/.auto-backup.json"
 if [ ! -f "$CONFIG_FILE" ]; then
@@ -33,6 +49,7 @@ fi
 # Call the save-to-disk API endpoint
 RESPONSE=$(curl -s -X POST "http://localhost:3000/api/admin/backup/save" \
     -H "X-Auto-Backup: true" \
+    -H "X-Cron-Signature: ${CRON_SIGNATURE}" \
     -H "Content-Type: application/json" \
     2>&1)
 

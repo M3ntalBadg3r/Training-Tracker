@@ -61,12 +61,33 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
+
+    // Validate time format (HH:MM, 24-hour)
+    const time = body.time || "02:00";
+    if (!/^\d{1,2}:\d{2}$/.test(time)) {
+      return NextResponse.json({ error: "Invalid time format. Use HH:MM." }, { status: 400 });
+    }
+    const [h, m] = time.split(":").map(Number);
+    if (h < 0 || h > 23 || m < 0 || m > 59) {
+      return NextResponse.json({ error: "Invalid time value." }, { status: 400 });
+    }
+
+    // Validate backupPath is under an allowed base directory
+    const backupPath = body.backupPath || "/opt/training-tracker/backups";
+    const resolvedPath = path.resolve(backupPath);
+    if (!resolvedPath.startsWith("/opt/training-tracker/")) {
+      return NextResponse.json(
+        { error: "Backup path must be under /opt/training-tracker/" },
+        { status: 400 }
+      );
+    }
+
     const config: AutoBackupConfig = {
       enabled: !!body.enabled,
       frequency: body.frequency === "weekly" ? "weekly" : "daily",
-      time: body.time || "02:00",
+      time,
       dayOfWeek: body.dayOfWeek !== undefined ? Number(body.dayOfWeek) : 0,
-      backupPath: body.backupPath || "/opt/training-tracker/backups",
+      backupPath: resolvedPath,
       retentionCount: Math.max(1, Number(body.retentionCount) || 5),
     };
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { hashPassword, validatePassword } from "@/lib/auth";
+import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 
 // GET: Check if setup is needed (0 users in DB)
 export async function GET() {
@@ -10,6 +11,15 @@ export async function GET() {
 
 // POST: Create the first admin user (only works when 0 users exist)
 export async function POST(request: NextRequest) {
+  // Rate limit: 5 setup attempts per 15 minutes per IP
+  const ip = getClientIp(request);
+  if (!checkRateLimit(`setup:${ip}`, 5, 15 * 60 * 1000)) {
+    return NextResponse.json(
+      { error: "Too many attempts. Please try again later." },
+      { status: 429 }
+    );
+  }
+
   const userCount = await prisma.user.count();
   if (userCount > 0) {
     return NextResponse.json(

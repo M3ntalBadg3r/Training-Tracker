@@ -49,11 +49,11 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true });
   } catch (err) {
-    let message = err instanceof Error ? err.message : "Connection test failed";
-    if (message.includes("wrong version number")) {
-      message +=
-        " — SSL/TLS version mismatch. If using port 587, uncheck 'Implicit SSL/TLS (port 465)'. If using port 465, check it.";
-    }
+    console.error("SMTP credential test failed:", err);
+    const isSSLError = err instanceof Error && err.message.includes("wrong version number");
+    const message = isSSLError
+      ? "SSL/TLS configuration error. Check your port and security settings."
+      : "Connection test failed. Please verify your configuration.";
     return NextResponse.json({ success: false, error: message });
   }
 }

@@ -2,8 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { TrainingType } from "@prisma/client";
 import { isActive, formatDate } from "@/lib/utils";
+import { requireAuth, handleAuthError } from "@/lib/auth";
 
 export async function GET(request: NextRequest) {
+  try {
+    await requireAuth(request);
+  } catch (error) {
+    return handleAuthError(error);
+  }
+
   const { searchParams } = new URL(request.url);
   const fullTitle = searchParams.get("fullTitle");
   const trainingType = searchParams.get("trainingType");
@@ -26,7 +33,7 @@ export async function GET(request: NextRequest) {
     select: { trainingTitle: true },
   });
 
-  const trainingTitles = trainingDataRecords.map((td) => td.trainingTitle);
+  const trainingTitles = trainingDataRecords.map((td: typeof trainingDataRecords[number]) => td.trainingTitle);
 
   // Optional location filters
   const theatre = searchParams.get("theatre");

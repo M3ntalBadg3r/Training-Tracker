@@ -31,7 +31,10 @@ export async function generateBackupZip(): Promise<{
   zip.file("students.json", JSON.stringify(students, null, 2));
   zip.file("training_taken.json", JSON.stringify(trainingTaken, null, 2));
   zip.file("import_metadata.json", JSON.stringify(importMetadata, null, 2));
-  zip.file("users.json", JSON.stringify(users, null, 2));
+  // Exclude sensitive fields (password hashes, MFA secrets) from backup
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const safeUsers = users.map(({ passwordHash: _ph, mfaSecret: _ms, ...rest }: typeof users[number]) => rest);
+  zip.file("users.json", JSON.stringify(safeUsers, null, 2));
 
   const buffer = await zip.generateAsync({ type: "arraybuffer" });
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
@@ -154,8 +157,13 @@ export async function POST(request: NextRequest) {
       );
       await tx.importMetadata.createMany({ data: rows });
     }
-    if (users.length > 0) {
-      const userRows = users.map(
+    // Only restore users that have passwordHash (security-sanitized backups omit it)
+    const usersWithCredentials = users.filter(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (u: any) => u.passwordHash
+    );
+    if (usersWithCredentials.length > 0) {
+      const userRows = usersWithCredentials.map(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         ({ id: _id, ...rest }: any) => ({
           ...rest,

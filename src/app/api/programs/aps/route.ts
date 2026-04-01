@@ -33,6 +33,8 @@ export async function GET(request: NextRequest) {
     orderBy: [{ specialisationId: "asc" }, { trainingType: "asc" }],
   });
 
+  type ProgramDataRow = typeof programData[number];
+
   if (programData.length === 0) {
     return NextResponse.json({
       specialisations: [],
@@ -43,17 +45,17 @@ export async function GET(request: NextRequest) {
 
   // Get distinct countries, regions, and theatres
   const regionData = await prisma.regionData.findMany({ orderBy: { country: "asc" } });
-  const countries = regionData.map((r) => r.country);
-  const regionList = [...new Set(regionData.map((r) => r.region))].filter(Boolean).sort();
+  const countries = regionData.map((r: typeof regionData[number]) => r.country);
+  const regionList = [...new Set(regionData.map((r: typeof regionData[number]) => r.region))].filter(Boolean).sort();
   const theatreStudents = await prisma.student.findMany({
     select: { theatre: true },
     distinct: ["theatre"],
     orderBy: { theatre: "asc" },
   });
-  const theatreList = theatreStudents.map((s) => s.theatre).filter(Boolean);
+  const theatreList = theatreStudents.map((s: typeof theatreStudents[number]) => s.theatre).filter(Boolean);
 
   // Group by specialisation
-  const specMap = new Map<string, typeof programData>();
+  const specMap = new Map<string, ProgramDataRow[]>();
   for (const pd of programData) {
     const key = pd.specialisation.name;
     if (!specMap.has(key)) specMap.set(key, []);
@@ -62,10 +64,17 @@ export async function GET(request: NextRequest) {
 
   const now = new Date();
 
+  /** Extract unique non-null training titles from a list of program data rows */
+  function extractTrainingTitles(rows: ProgramDataRow[]): string[] {
+    const titles = rows
+      .map((pd: ProgramDataRow) => pd.trainingTitle)
+      .filter((t: string | null): t is string => t !== null);
+    return [...new Set(titles)];
+  }
+
   if (level === "country" && country) {
-    const countryReqs = programData.filter((pd) => pd.level === "Country");
-    // Filter out null trainingTitles (shouldn't occur for Country level, but be safe)
-    const trainingTitles = [...new Set(countryReqs.map((pd) => pd.trainingTitle).filter((t): t is string => t !== null))];
+    const countryReqs = programData.filter((pd: ProgramDataRow) => pd.level === "Country");
+    const trainingTitles = extractTrainingTitles(countryReqs);
 
     const attainedMap = await getAttainedByCountry(trainingTitles, country, now);
     const specialisations = buildSpecialisations(specMap, "Country", attainedMap);
@@ -74,8 +83,8 @@ export async function GET(request: NextRequest) {
   }
 
   if (level === "region" && region) {
-    const countryReqs = programData.filter((pd) => pd.level === "Country");
-    const trainingTitles = [...new Set(countryReqs.map((pd) => pd.trainingTitle).filter((t): t is string => t !== null))];
+    const countryReqs = programData.filter((pd: ProgramDataRow) => pd.level === "Country");
+    const trainingTitles = extractTrainingTitles(countryReqs);
 
     const attainedMap = await getAttainedByRegion(trainingTitles, region, now);
     const specialisations = buildSpecialisations(specMap, "Country", attainedMap);
@@ -84,8 +93,8 @@ export async function GET(request: NextRequest) {
   }
 
   if (level === "theatre" && theatre) {
-    const theatreReqs = programData.filter((pd) => pd.level === "Theatre");
-    const trainingTitles = [...new Set(theatreReqs.map((pd) => pd.trainingTitle).filter((t): t is string => t !== null))];
+    const theatreReqs = programData.filter((pd: ProgramDataRow) => pd.level === "Theatre");
+    const trainingTitles = extractTrainingTitles(theatreReqs);
 
     const attainedMap = await getAttainedByTheatre(trainingTitles, theatre, now);
     const specialisations = buildSpecialisations(specMap, "Theatre", attainedMap);
@@ -101,13 +110,13 @@ export async function GET(request: NextRequest) {
       select: { theatre: true },
       distinct: ["theatre"],
     });
-    const distinctTheatres = allTheatres.map((s) => s.theatre);
+    const distinctTheatres = allTheatres.map((s: typeof allTheatres[number]) => s.theatre);
 
     const globalSpecialisations = [];
 
     for (const [specName, reqs] of specMap) {
-      const theatreReqs = reqs.filter((r) => r.level === "Theatre" && r.trainingTitle !== null);
-      const globalReqs = reqs.filter((r) => r.level === "Global");
+      const theatreReqs = reqs.filter((r: ProgramDataRow) => r.level === "Theatre" && r.trainingTitle !== null);
+      const globalReqs = reqs.filter((r: ProgramDataRow) => r.level === "Global");
 
       if (globalReqs.length === 0) continue;
 
@@ -115,18 +124,18 @@ export async function GET(request: NextRequest) {
       let compliantTheatreCount = 0;
 
       if (theatreReqs.length > 0) {
-        const theatreTrainingTitles = [...new Set(theatreReqs.map((r) => r.trainingTitle).filter((t): t is string => t !== null))];
+        const theatreTrainingTitles = extractTrainingTitles(theatreReqs);
 
         for (const t of distinctTheatres) {
           const attainedMap = await getAttainedByTheatre(theatreTrainingTitles, t, now);
           const allMet = theatreReqs.every(
-            (req) => req.trainingTitle !== null && (attainedMap.get(req.trainingTitle) || 0) >= req.quantityRequired
+            (req: ProgramDataRow) => req.trainingTitle !== null && (attainedMap.get(req.trainingTitle) || 0) >= req.quantityRequired
           );
           if (allMet) compliantTheatreCount++;
         }
       }
 
-      const specReqs = globalReqs.map((req) => ({
+      const specReqs = globalReqs.map((req: ProgramDataRow) => ({
         trainingType: req.trainingType ?? null,
         trainingTitle: req.trainingTitle ?? null,
         // Global requirements have no associated training; show a descriptive label
@@ -164,7 +173,7 @@ async function getAttainedByRegion(
     where: { region: regionName },
     select: { country: true },
   });
-  const countryList = regionCountries.map((r) => r.country);
+  const countryList = regionCountries.map((r: typeof regionCountries[number]) => r.country);
   if (countryList.length === 0) return new Map();
 
   const results = await prisma.trainingTaken.findMany({
@@ -298,7 +307,7 @@ async function getStudents(
       where: { region },
       select: { country: true },
     });
-    whereClause.student = { country: { in: regionCountries.map((r) => r.country) } };
+    whereClause.student = { country: { in: regionCountries.map((r: typeof regionCountries[number]) => r.country) } };
   } else if (level === "theatre" && theatre) {
     whereClause.student = { theatre };
   }

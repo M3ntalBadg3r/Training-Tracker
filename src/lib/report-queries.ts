@@ -107,7 +107,7 @@ export async function fetchTrainedNotCertified(): Promise<TrainedNotCertifiedRow
   const certData = await prisma.trainingData.findMany({
     where: { trainingTitle: { in: Array.from(certTitles) } },
   });
-  const certFullTitleMap = new Map(certData.map((c) => [c.trainingTitle, c.fullTitle]));
+  const certFullTitleMap = new Map(certData.map((c: typeof certData[number]) => [c.trainingTitle, c.fullTitle]));
 
   const results: TrainedNotCertifiedRow[] = [];
   const now = new Date();
@@ -138,7 +138,7 @@ export async function fetchTrainedNotCertified(): Promise<TrainedNotCertifiedRow
         distinct: ["email"],
       });
 
-      const certifiedEmails = new Set(certStudents.map((s) => s.email));
+      const certifiedEmails = new Set(certStudents.map((s: typeof certStudents[number]) => s.email));
       const uncertifiedEmails = iltEmails.filter((e) => !certifiedEmails.has(e));
       if (uncertifiedEmails.length === 0) continue;
 

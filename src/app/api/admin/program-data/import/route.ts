@@ -189,7 +189,7 @@ export async function POST(request: NextRequest) {
         spec = await prisma.specialisation.create({ data: { name: specialisationName } });
       }
       specId = spec.id;
-      specCache.set(specialisationName.toLowerCase(), specId);
+      specCache.set(specialisationName.toLowerCase(), specId!);
     }
 
     // --- Create ProgramData record ---

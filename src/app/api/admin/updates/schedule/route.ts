@@ -53,10 +53,21 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
+
+    // Validate time format (HH:MM, 24-hour)
+    const time = body.time || "03:00";
+    if (!/^\d{1,2}:\d{2}$/.test(time)) {
+      return NextResponse.json({ error: "Invalid time format. Use HH:MM." }, { status: 400 });
+    }
+    const [h, m] = time.split(":").map(Number);
+    if (h < 0 || h > 23 || m < 0 || m > 59) {
+      return NextResponse.json({ error: "Invalid time value." }, { status: 400 });
+    }
+
     const config: ScheduleConfig = {
       enabled: !!body.enabled,
       frequency: body.frequency === "weekly" ? "weekly" : "daily",
-      time: body.time || "03:00",
+      time,
       dayOfWeek: body.dayOfWeek !== undefined ? Number(body.dayOfWeek) : 0,
     };
 
@@ -84,7 +95,7 @@ export async function POST(request: NextRequest) {
       }
 
       const newCron = filteredLines.join("\n") + "\n";
-      execSync(`echo "${newCron}" | crontab -`, { encoding: "utf-8" });
+      execSync("crontab -", { input: newCron, encoding: "utf-8" });
     } catch {
       // Cron may not be available in all environments
     }

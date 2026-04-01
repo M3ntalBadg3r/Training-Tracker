@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { requireAuth, handleAuthError, hashPassword, validatePassword } from "@/lib/auth";
+import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 
 // POST: Reset a user's password (admin only)
 export async function POST(
@@ -11,6 +12,15 @@ export async function POST(
     await requireAuth(request, "Admin");
   } catch (error) {
     return handleAuthError(error);
+  }
+
+  // Rate limit: 10 password resets per 15 minutes per IP
+  const ip = getClientIp(request);
+  if (!checkRateLimit(`reset-pw:${ip}`, 10, 15 * 60 * 1000)) {
+    return NextResponse.json(
+      { error: "Too many attempts. Please try again later." },
+      { status: 429 }
+    );
   }
 
   const { id } = await params;

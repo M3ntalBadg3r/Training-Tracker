@@ -173,8 +173,11 @@ export async function POST(request: NextRequest) {
       });
       summary.trainingsCreated++;
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      summary.errors.push(`Row ${rowNum}: ${message}`);
+      console.error(`Import row ${rowNum} error:`, error);
+      const safeMessage = error instanceof Error && error.message.includes("Unique constraint")
+        ? "Duplicate entry"
+        : "Failed to process";
+      summary.errors.push(`Row ${rowNum}: ${safeMessage}`);
     }
   }
 

@@ -53,6 +53,8 @@ src/
   lib/
     prisma.ts     # Prisma client singleton (PrismaPg adapter)
     auth.ts       # JWT, password hashing, TOTP/MFA utilities
+    cron-auth.ts  # HMAC-SHA256 signature verification for cron endpoints
+    rate-limit.ts # In-memory sliding-window rate limiter for auth endpoints
     utils.ts      # Date helpers, formatters, label mappers
     export.ts     # CSV/Excel/PDF export utilities (browser-side, triggers download)
     server-export.ts  # Server-side CSV/Excel/PDF generation (returns Buffer)
@@ -98,6 +100,10 @@ deploy/           # install.sh, update.sh, install-remote.sh, perform-update.sh,
 - Multiple `trainingTitle`s can map to the same `fullTitle`. Deduplication by `email + fullTitle + trainingType` is applied in dashboard and training-page APIs to avoid double-counting.
 - Expiry is always completedDate + 2 years (computed in `lib/utils.ts:computeExpiryDate`).
 - Sidebar collapse state is persisted to `localStorage`.
+- Rate limiting is applied to auth endpoints (login, MFA verify, setup, password reset) via `lib/rate-limit.ts`.
+- Cron endpoints (auto-backup, scheduled-exports) authenticate via HMAC-SHA256 signatures using `CRON_SECRET` env var (`lib/cron-auth.ts`).
+- Security headers (HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy) are configured in `next.config.ts`.
+- Backup exports exclude sensitive user fields (passwordHash, mfaSecret) for security.
 
 ## Coding Conventions
 

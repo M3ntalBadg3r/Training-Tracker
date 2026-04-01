@@ -8,6 +8,7 @@ const JWT_EXPIRY = "8h";
 function getJwtSecret(): Uint8Array {
   const secret = process.env.JWT_SECRET;
   if (!secret) throw new Error("JWT_SECRET environment variable is required");
+  if (secret.length < 32) throw new Error("JWT_SECRET must be at least 32 characters for adequate security");
   return new TextEncoder().encode(secret);
 }
 
@@ -72,7 +73,7 @@ export function setAuthCookie(response: NextResponse, token: string): void {
   response.cookies.set(COOKIE_NAME, token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
+    sameSite: "strict",
     path: "/",
     maxAge: 8 * 60 * 60, // 8 hours
   });
@@ -82,7 +83,7 @@ export function clearAuthCookie(response: NextResponse): void {
   response.cookies.set(COOKIE_NAME, "", {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
+    sameSite: "strict",
     path: "/",
     maxAge: 0,
   });

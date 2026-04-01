@@ -1,12 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getAuthFromRequest, verifyMfaToken } from "@/lib/auth";
+import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 
 // POST: Verify a TOTP code and enable MFA
 export async function POST(request: NextRequest) {
   const authUser = await getAuthFromRequest(request);
   if (!authUser) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // Rate limit: 5 MFA attempts per 15 minutes per user+IP
+  const ip = getClientIp(request);
+  if (!checkRateLimit(`mfa:${authUser.sub}:${ip}`, 5, 15 * 60 * 1000)) {
+    return NextResponse.json(
+      { error: "Too many attempts. Please try again later." },
+      { status: 429 }
+    );
   }
 
   const body = await request.json();

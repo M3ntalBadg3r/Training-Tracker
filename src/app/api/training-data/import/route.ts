@@ -171,8 +171,12 @@ export async function POST(request: NextRequest) {
         imported++;
       }
     } catch (err) {
+      console.error(`Training data import row ${rowNum} error:`, err);
+      const safeMessage = err instanceof Error && err.message.includes("Unique constraint")
+        ? "Duplicate entry"
+        : "Failed to process";
       errors.push(
-        `Row ${rowNum}: Failed to import "${trainingTitle}" - ${err instanceof Error ? err.message : String(err)}`
+        `Row ${rowNum}: Failed to import "${trainingTitle}" - ${safeMessage}`
       );
       skipped++;
     }

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
+import { requireAuth, handleAuthError } from "@/lib/auth";
 
 type TrainingRecord = {
   email: string;
@@ -108,6 +109,12 @@ function computeChartData(allTrainingTaken: TrainingRecord[]) {
 }
 
 export async function GET(request: NextRequest) {
+  try {
+    await requireAuth(request);
+  } catch (error) {
+    return handleAuthError(error);
+  }
+
   const theatre = request.nextUrl.searchParams.get("theatre");
   const filterByTheatre = theatre && theatre !== "Global";
 
@@ -117,7 +124,7 @@ export async function GET(request: NextRequest) {
     distinct: ["theatre"],
     orderBy: { theatre: "asc" },
   });
-  const theatres = distinctTheatres.map((s) => s.theatre);
+  const theatres = distinctTheatres.map((s: typeof distinctTheatres[number]) => s.theatre);
 
   // Theatre filter for Prisma queries
   const studentWhere = filterByTheatre ? { theatre } : {};

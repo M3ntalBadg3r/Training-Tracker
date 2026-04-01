@@ -4,6 +4,12 @@ import { TrainingType, ProductType, FunctionType } from "@prisma/client";
 import { requireAuth, handleAuthError } from "@/lib/auth";
 
 export async function GET(request: NextRequest) {
+  try {
+    await requireAuth(request);
+  } catch (error) {
+    return handleAuthError(error);
+  }
+
   const { searchParams } = request.nextUrl;
   const theatre = searchParams.get("theatre");
   const region = searchParams.get("region");
@@ -69,7 +75,7 @@ export async function GET(request: NextRequest) {
       existing.studentsTaken = allEmails.size;
     } else {
       const filteredEmails = new Set(
-        td.trainingsTaken.filter(matchesFilter).map((t) => t.email)
+        td.trainingsTaken.filter(matchesFilter).map((t: typeof trainingData[number]["trainingsTaken"][number]) => t.email)
       );
       grouped.set(groupKey, {
         fullTitle: td.fullTitle,

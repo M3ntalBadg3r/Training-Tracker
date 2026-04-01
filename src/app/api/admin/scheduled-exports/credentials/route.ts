@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
 
   const credentials = await prisma.exportCredential.findMany();
   // Return non-sensitive config fields; indicate which sensitive fields are set
-  const configured = credentials.map((c) => {
+  const configured = credentials.map((c: typeof credentials[number]) => {
     const cfg = c.config as Record<string, unknown>;
     const publicConfig: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(cfg)) {
