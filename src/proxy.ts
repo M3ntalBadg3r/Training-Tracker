@@ -43,6 +43,11 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // Allow setup paths through before the setup check to prevent recursive fetch loop
+  if (pathname === "/setup" || pathname === "/api/auth/setup") {
+    return NextResponse.next();
+  }
+
   // Check if setup is needed (no users exist)
   // Must run before public paths check so /login redirects to /setup on fresh installs
   try {
@@ -52,9 +57,6 @@ export async function proxy(request: NextRequest) {
     });
     const setupData = await setupRes.json();
     if (setupData.needsSetup) {
-      if (pathname === "/setup" || pathname === "/api/auth/setup") {
-        return NextResponse.next();
-      }
       return NextResponse.redirect(new URL("/setup", request.url));
     }
   } catch {
