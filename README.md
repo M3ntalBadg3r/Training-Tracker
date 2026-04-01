@@ -71,7 +71,7 @@ bash deploy/install.sh
 3. **Installs PostgreSQL** (if not already installed) and starts the service.
 4. **Creates the database and user** — database `training_tracker`, user `tracker`.
 5. **Copies application files** to `/opt/training-tracker` (skipped if already running from that directory).
-6. **Creates the `.env` file** with the database connection string (only if `.env` doesn't already exist).
+6. **Configures the `.env` file** — creates it with `DATABASE_URL` and `JWT_SECRET` if missing, or appends any missing required variables to an existing `.env` file.
 7. **Installs npm dependencies**, runs Prisma migrations, generates the Prisma client, and builds the application.
 8. **Installs a systemd service** (`training-tracker.service`) so the application starts automatically on boot. Falls back to an init.d script if systemd is not available.
 9. **Prints the URL** where the application is accessible (port 3000).

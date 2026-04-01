@@ -80,10 +80,36 @@ fi
 
 # 6. Configure environment
 echo "[6/9] Configuring environment..."
+
+# Generate a random JWT secret
+generate_secret() {
+    openssl rand -hex 32 2>/dev/null || node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+}
+
+# URL-encode a password so special characters (#$&@etc.) don't break the connection string
+url_encode_password() {
+    node -e "console.log(encodeURIComponent(process.argv[1]))" "$1"
+}
+
+DB_PASS_ENCODED=$(url_encode_password "${DB_PASS}")
+
 if [ ! -f "${APP_DIR}/.env" ]; then
     cat > ${APP_DIR}/.env << EOF
-DATABASE_URL="postgresql://${DB_USER}:${DB_PASS}@localhost:5432/${DB_NAME}"
+DATABASE_URL="postgresql://${DB_USER}:${DB_PASS_ENCODED}@localhost:5432/${DB_NAME}"
+JWT_SECRET="$(generate_secret)"
 EOF
+else
+    # Ensure DATABASE_URL is present
+    if ! grep -q "^DATABASE_URL=" "${APP_DIR}/.env"; then
+        echo "" >> "${APP_DIR}/.env"
+        echo "DATABASE_URL=\"postgresql://${DB_USER}:${DB_PASS_ENCODED}@localhost:5432/${DB_NAME}\"" >> "${APP_DIR}/.env"
+        echo "Added DATABASE_URL to existing .env"
+    fi
+    # Ensure JWT_SECRET is present
+    if ! grep -q "^JWT_SECRET=" "${APP_DIR}/.env"; then
+        echo "JWT_SECRET=\"$(generate_secret)\"" >> "${APP_DIR}/.env"
+        echo "Added JWT_SECRET to existing .env"
+    fi
 fi
 chmod 600 ${APP_DIR}/.env
 
