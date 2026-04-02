@@ -31,9 +31,13 @@ export default function GlobalDiamondPage() {
     const rows: Record<string, string | number>[] = [];
     for (const spec of data.specialisations) {
       for (const req of spec.requirements) {
+        let trainingLabel = req.trainingFullTitle;
+        if (req.alternatives && req.alternatives.length > 0) {
+          trainingLabel += " (or " + req.alternatives.map((a: { trainingFullTitle: string }) => a.trainingFullTitle).join(", ") + ")";
+        }
         const baseRow = {
           specialisation: spec.name,
-          training: req.trainingFullTitle,
+          training: trainingLabel,
           type: req.trainingType ? (TRAINING_TYPE_LABELS[req.trainingType] || req.trainingType) : "—",
           required: req.quantityRequired,
           attained: req.globalAttained,
@@ -203,7 +207,19 @@ function RequirementRows({ req }: { req: GlobalDiamondRequirement }) {
             </button>
           ) : null}
         </td>
-        <td className="px-4 py-3 font-medium">{req.trainingFullTitle}</td>
+        <td className="px-4 py-3">
+          <div className="font-medium">{req.trainingFullTitle}</div>
+          {req.alternatives && req.alternatives.length > 0 && (
+            <div className="text-xs text-blue-600 mt-0.5">
+              {req.alternatives.map((a, i) => (
+                <span key={i}>
+                  {i === 0 ? "or " : ", "}<span className="font-medium">{a.trainingFullTitle}</span>
+                  <span className="text-gray-400"> ({TRAINING_TYPE_LABELS[a.trainingType] || a.trainingType})</span>
+                </span>
+              ))}
+            </div>
+          )}
+        </td>
         <td className="px-4 py-3 text-gray-600">
           {req.trainingType ? (TRAINING_TYPE_LABELS[req.trainingType] || req.trainingType) : "—"}
         </td>

@@ -17,6 +17,9 @@ export async function GET(request: NextRequest) {
     include: {
       specialisation: true,
       trainingData: { select: { fullTitle: true } },
+      alternatives: {
+        include: { trainingData: { select: { fullTitle: true } } },
+      },
     },
     orderBy: [{ specialisationId: "asc" }, { trainingType: "asc" }],
   });
@@ -35,45 +38,43 @@ export async function GET(request: NextRequest) {
   });
   const theatres = theatreStudents.map((s: typeof theatreStudents[number]) => s.theatre).filter(Boolean);
 
-  // Collect all training titles that have minimumPerTheatre set
-  const titlesWithTheatreMin = programData
-    .filter((pd: typeof programData[number]) => pd.trainingTitle !== null && (pd.minimumPerTheatre ?? 0) > 0)
-    .map((pd: typeof programData[number]) => pd.trainingTitle as string);
+  // Collect ALL training titles (primary + alternatives) across all requirements
+  const allTrainingTitles = new Set<string>();
+  for (const pd of programData) {
+    if (pd.trainingTitle) allTrainingTitles.add(pd.trainingTitle);
+    for (const alt of pd.alternatives) {
+      allTrainingTitles.add(alt.trainingTitle);
+    }
+  }
+  const allTitlesArray = [...allTrainingTitles];
 
   // Fetch all active training records for all relevant training titles
-  const allTrainingTitles = [...new Set(
-    programData.filter((pd: typeof programData[number]) => pd.trainingTitle !== null).map((pd: typeof programData[number]) => pd.trainingTitle as string)
-  )];
-
-  // Global count: distinct emails per trainingTitle with active training
-  const globalResults = allTrainingTitles.length > 0
+  const globalResults = allTitlesArray.length > 0
     ? await prisma.trainingTaken.findMany({
         where: {
-          trainingTitle: { in: allTrainingTitles },
+          trainingTitle: { in: allTitlesArray },
           expiryDate: { gt: now },
         },
         select: { trainingTitle: true, email: true, student: { select: { theatre: true } } },
       })
     : [];
 
-  // Build global attained map: trainingTitle -> Set<email>
-  const globalAttainedMap = new Map<string, Set<string>>();
-  for (const r of globalResults) {
-    if (!globalAttainedMap.has(r.trainingTitle)) globalAttainedMap.set(r.trainingTitle, new Set());
-    globalAttainedMap.get(r.trainingTitle)!.add(r.email);
-  }
+  // Build per-trainingTitle email sets (for global count)
+  const titleEmailMap = new Map<string, Set<string>>();
+  // Build per-trainingTitle per-theatre email sets (for theatre breakdown)
+  const titleTheatreEmailMap = new Map<string, Map<string, Set<string>>>();
 
-  // Build per-theatre attained map: trainingTitle -> theatre -> Set<email>
-  const theatreAttainedMap = new Map<string, Map<string, Set<string>>>();
-  if (titlesWithTheatreMin.length > 0) {
-    for (const r of globalResults) {
-      if (!titlesWithTheatreMin.includes(r.trainingTitle)) continue;
-      if (!theatreAttainedMap.has(r.trainingTitle)) theatreAttainedMap.set(r.trainingTitle, new Map());
-      const byTheatre = theatreAttainedMap.get(r.trainingTitle)!;
-      const theatre = r.student.theatre;
-      if (!byTheatre.has(theatre)) byTheatre.set(theatre, new Set());
-      byTheatre.get(theatre)!.add(r.email);
-    }
+  for (const r of globalResults) {
+    // Global email set
+    if (!titleEmailMap.has(r.trainingTitle)) titleEmailMap.set(r.trainingTitle, new Set());
+    titleEmailMap.get(r.trainingTitle)!.add(r.email);
+
+    // Theatre email set
+    if (!titleTheatreEmailMap.has(r.trainingTitle)) titleTheatreEmailMap.set(r.trainingTitle, new Map());
+    const byTheatre = titleTheatreEmailMap.get(r.trainingTitle)!;
+    const theatre = r.student.theatre;
+    if (!byTheatre.has(theatre)) byTheatre.set(theatre, new Set());
+    byTheatre.get(theatre)!.add(r.email);
   }
 
   // Group by specialisation
@@ -89,15 +90,32 @@ export async function GET(request: NextRequest) {
   for (const [specName, reqs] of specMap) {
     const requirements = reqs.map((req: typeof programData[number]) => {
       const title = req.trainingTitle;
-      const globalAttained = title ? (globalAttainedMap.get(title)?.size ?? 0) : 0;
+
+      // Collect all titles for this requirement (primary + alternatives)
+      const allReqTitles = [title, ...req.alternatives.map((a) => a.trainingTitle)].filter(Boolean) as string[];
+
+      // Union unique students across all titles for global count
+      const globalUnion = new Set<string>();
+      for (const t of allReqTitles) {
+        const set = titleEmailMap.get(t);
+        if (set) for (const email of set) globalUnion.add(email);
+      }
+      const globalAttained = globalUnion.size;
+
       const minimumPerTheatre = req.minimumPerTheatre ?? null;
 
       // Theatre breakdown (only if minimumPerTheatre is set)
       let theatreBreakdown: { theatre: string; count: number; compliant: boolean }[] | null = null;
-      if (title && minimumPerTheatre !== null && minimumPerTheatre > 0) {
-        const byTheatre = theatreAttainedMap.get(title);
+      if (minimumPerTheatre !== null && minimumPerTheatre > 0) {
         theatreBreakdown = theatres.map((t: typeof theatres[number]) => {
-          const count = byTheatre?.get(t)?.size ?? 0;
+          // Union unique students across all titles for this theatre
+          const theatreUnion = new Set<string>();
+          for (const reqTitle of allReqTitles) {
+            const byTheatre = titleTheatreEmailMap.get(reqTitle);
+            const set = byTheatre?.get(t);
+            if (set) for (const email of set) theatreUnion.add(email);
+          }
+          const count = theatreUnion.size;
           return { theatre: t, count, compliant: count >= minimumPerTheatre };
         });
       }
@@ -117,6 +135,11 @@ export async function GET(request: NextRequest) {
         minimumPerTheatre,
         theatreBreakdown,
         compliant,
+        alternatives: req.alternatives.map((a: typeof req.alternatives[number]) => ({
+          trainingType: a.trainingType,
+          trainingTitle: a.trainingTitle,
+          trainingFullTitle: a.trainingData?.fullTitle ?? "—",
+        })),
       };
     });
 

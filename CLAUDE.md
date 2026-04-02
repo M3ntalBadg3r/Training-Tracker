@@ -80,7 +80,8 @@ deploy/           # install.sh, update.sh, install-remote.sh, perform-update.sh,
 - **ScheduledExport** — PK: `id`. Fields: name, reportType, format, destination, config (JSON), enabled, frequency, time, dayOfWeek?, dayOfMonth?, lastRunAt?, lastStatus?, lastError?.
 - **ExportCredential** — PK: `id`, unique: `provider`. Fields: provider, config (JSON). Stores SMTP/OAuth/API credentials per delivery provider.
 - **Specialisation** — PK: `id` (auto-increment). Fields: name (unique). Admin-managed list of product specialisations for partner programs.
-- **ProgramData** — PK: `id` (auto-increment). FK: specialisationId → Specialisation, trainingTitle → TrainingData. Fields: programName, level (ProgramLevel enum), trainingType?, trainingTitle?, quantityRequired, minimumPerTheatre?. Training fields are nullable (null = "count compliant theatres" mode for APS-style Global entries). minimumPerTheatre is used by Global Diamond for per-theatre minimum enforcement.
+- **ProgramData** — PK: `id` (auto-increment). FK: specialisationId → Specialisation, trainingTitle → TrainingData. Fields: programName, level (ProgramLevel enum), trainingType?, trainingTitle?, quantityRequired, minimumPerTheatre?. Training fields are nullable (null = "count compliant theatres" mode for APS-style Global entries). minimumPerTheatre is used by Global Diamond for per-theatre minimum enforcement. Has many ProgramDataAlternative (OR logic alternatives).
+- **ProgramDataAlternative** — PK: `id` (auto-increment). FK: programDataId → ProgramData (cascade delete), trainingTitle → TrainingData (cascade delete). Fields: trainingType, trainingTitle. Stores alternative trainings that also satisfy a ProgramData requirement (OR logic). Students with any alternative training count toward the requirement's quantity.
 
 ### Enums
 - **TrainingType**: `Certification`, `Accreditation`, `InstructorLedTraining`

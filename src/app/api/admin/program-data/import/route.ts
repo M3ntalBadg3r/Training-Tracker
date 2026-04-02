@@ -10,6 +10,7 @@ interface RawRow {
   trainingFullTitle?: string;
   quantityRequired?: string | number;
   minimumPerTheatre?: string | number | null;
+  alternatives?: string;
 }
 
 const LEVEL_MAP: Record<string, string> = {
@@ -104,6 +105,7 @@ export async function POST(request: NextRequest) {
     const rawTrainingFullTitle = isNullMarker(raw.trainingFullTitle?.trim() ?? "") ? "" : (raw.trainingFullTitle?.trim() ?? "");
     const rawQty = raw.quantityRequired;
     const rawMinPerTheatre = raw.minimumPerTheatre;
+    const rawAlternatives = raw.alternatives?.trim() ?? "";
 
     if (!programName) {
       errors.push({ row: rowNum, message: "Program Name is required" });
@@ -182,6 +184,25 @@ export async function POST(request: NextRequest) {
     }
     // Global + no training = APS-style "count compliant theatres" mode (allowed)
 
+    // --- Resolve alternatives (pipe-separated training names) ---
+    const altData: { trainingType: string; trainingTitle: string }[] = [];
+    if (rawAlternatives && !isNullMarker(rawAlternatives)) {
+      const altNames = rawAlternatives.split("|").map((s: string) => s.trim()).filter(Boolean);
+      for (const altName of altNames) {
+        const altMatch = fullTitleMap.get(normalise(altName));
+        if (!altMatch) {
+          errors.push({ row: rowNum, message: `Alternative training "${altName}" not found in the training catalog` });
+          skipped++;
+          break;
+        }
+        altData.push({ trainingType: altMatch.trainingType, trainingTitle: altMatch.trainingTitle });
+      }
+      // If we broke out of the loop due to an error, skip this row
+      if (altData.length < rawAlternatives.split("|").map((s: string) => s.trim()).filter(Boolean).length) {
+        continue;
+      }
+    }
+
     if (dryRun) {
       // Validation passed — don't write
       continue;
@@ -198,7 +219,7 @@ export async function POST(request: NextRequest) {
       specCache.set(specialisationName.toLowerCase(), specId!);
     }
 
-    // --- Create ProgramData record ---
+    // --- Create ProgramData record with alternatives ---
     await prisma.programData.create({
       data: {
         programName,
@@ -208,6 +229,12 @@ export async function POST(request: NextRequest) {
         trainingTitle: resolvedTrainingTitle,
         quantityRequired,
         minimumPerTheatre,
+        alternatives: altData.length > 0 ? {
+          create: altData.map((a) => ({
+            trainingType: a.trainingType as "Certification" | "Accreditation" | "InstructorLedTraining",
+            trainingTitle: a.trainingTitle,
+          })),
+        } : undefined,
       },
     });
     created++;

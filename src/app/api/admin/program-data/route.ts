@@ -13,6 +13,9 @@ export async function GET(request: NextRequest) {
     include: {
       specialisation: true,
       trainingData: { select: { fullTitle: true } },
+      alternatives: {
+        include: { trainingData: { select: { fullTitle: true } } },
+      },
     },
     orderBy: [{ programName: "asc" }, { specialisationId: "asc" }, { trainingType: "asc" }],
   });
@@ -28,6 +31,11 @@ export async function GET(request: NextRequest) {
     trainingFullTitle: d.trainingData?.fullTitle ?? "—",
     quantityRequired: d.quantityRequired,
     minimumPerTheatre: d.minimumPerTheatre ?? null,
+    alternatives: d.alternatives.map((a: typeof d.alternatives[number]) => ({
+      trainingType: a.trainingType,
+      trainingTitle: a.trainingTitle,
+      trainingFullTitle: a.trainingData?.fullTitle ?? "—",
+    })),
   }));
 
   return NextResponse.json(rows);
@@ -41,7 +49,7 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json();
-  const { programName, specialisationId, level, trainingType, trainingTitle, quantityRequired, minimumPerTheatre } = body;
+  const { programName, specialisationId, level, trainingType, trainingTitle, quantityRequired, minimumPerTheatre, alternatives } = body;
 
   if (!programName?.trim()) {
     return NextResponse.json({ error: "Program name is required" }, { status: 400 });
@@ -78,6 +86,24 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // Validate alternatives
+  const altData: { trainingType: string; trainingTitle: string }[] = [];
+  if (Array.isArray(alternatives) && alternatives.length > 0) {
+    for (const alt of alternatives) {
+      if (!alt.trainingType || !["Certification", "Accreditation", "InstructorLedTraining"].includes(alt.trainingType)) {
+        return NextResponse.json({ error: "Each alternative must have a valid training type" }, { status: 400 });
+      }
+      if (!alt.trainingTitle?.trim()) {
+        return NextResponse.json({ error: "Each alternative must have a training selected" }, { status: 400 });
+      }
+      const altTraining = await prisma.trainingData.findUnique({ where: { trainingTitle: alt.trainingTitle } });
+      if (!altTraining) {
+        return NextResponse.json({ error: `Alternative training "${alt.trainingTitle}" not found` }, { status: 404 });
+      }
+      altData.push({ trainingType: alt.trainingType, trainingTitle: alt.trainingTitle });
+    }
+  }
+
   const record = await prisma.programData.create({
     data: {
       programName: programName.trim(),
@@ -87,10 +113,19 @@ export async function POST(request: NextRequest) {
       trainingTitle: hasTraining ? trainingTitle : null,
       quantityRequired,
       minimumPerTheatre: minimumPerTheatre ?? null,
+      alternatives: altData.length > 0 ? {
+        create: altData.map((a) => ({
+          trainingType: a.trainingType as "Certification" | "Accreditation" | "InstructorLedTraining",
+          trainingTitle: a.trainingTitle,
+        })),
+      } : undefined,
     },
     include: {
       specialisation: true,
       trainingData: { select: { fullTitle: true } },
+      alternatives: {
+        include: { trainingData: { select: { fullTitle: true } } },
+      },
     },
   });
 
@@ -105,5 +140,10 @@ export async function POST(request: NextRequest) {
     trainingFullTitle: record.trainingData?.fullTitle ?? "—",
     quantityRequired: record.quantityRequired,
     minimumPerTheatre: record.minimumPerTheatre ?? null,
+    alternatives: record.alternatives.map((a: typeof record.alternatives[number]) => ({
+      trainingType: a.trainingType,
+      trainingTitle: a.trainingTitle,
+      trainingFullTitle: a.trainingData?.fullTitle ?? "—",
+    })),
   }, { status: 201 });
 }

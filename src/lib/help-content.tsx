@@ -1017,6 +1017,20 @@ const helpSections: Record<string, HelpSection> = {
           (Global Diamond-style).
         </p>
 
+        <h3>Alternative Trainings (OR Logic)</h3>
+        <p>
+          Check <strong>Accept alternative trainings</strong> to specify other
+          certifications, accreditations, or trainings that also satisfy a requirement.
+          For example, if a requirement needs 5 people with &quot;XSIAM Engineer&quot;
+          certification, you can add &quot;XSIAM Select&quot; as an alternative — students
+          with either training (or a mix of both) count toward the 5.
+        </p>
+        <p>
+          Each alternative has its own Type and Training selection. Students are
+          deduplicated — a student with both the primary and an alternative training
+          counts only once.
+        </p>
+
         <h3>Bulk Import</h3>
         <p>
           Use the <strong>Import</strong> button to upload a CSV or Excel file containing
@@ -1025,9 +1039,10 @@ const helpSections: Record<string, HelpSection> = {
         </p>
         <p>
           Expected columns: Program Name, Specialisation, Level, Training Type, Training,
-          Quantity Required, Minimum per Theatre. Column names are matched
+          Quantity Required, Minimum per Theatre, Alternatives. Column names are matched
           case-insensitively. Specialisations are auto-created if they don&apos;t exist.
-          Training is matched by display name against the training catalog.
+          Training is matched by display name against the training catalog. Alternatives
+          are specified as pipe-separated training names (e.g., &quot;XSIAM Select|Another Training&quot;).
         </p>
         <p>
           Use <strong>Validate</strong> to check all rows for errors before committing,
@@ -1081,6 +1096,14 @@ const helpSections: Record<string, HelpSection> = {
           is the target number of compliant theatres.
         </p>
 
+        <h3>Alternative Trainings</h3>
+        <p>
+          If a requirement has alternative trainings configured (OR logic), they
+          appear below the primary training name in blue text. The attained count
+          reflects students with <em>any</em> of the accepted trainings
+          (primary or alternatives), deduplicated by student.
+        </p>
+
         <h3>Exports</h3>
         <p>
           Each report section has an Export button to download the compliance
@@ -1127,6 +1150,14 @@ const helpSections: Record<string, HelpSection> = {
         <p>
           A requirement is only <strong>Met</strong> if the global total is
           reached <em>and</em> all theatres meet their per-theatre minimum.
+        </p>
+
+        <h3>Alternative Trainings</h3>
+        <p>
+          If a requirement has alternative trainings (OR logic), they appear
+          below the primary training name in blue text. Attained counts and
+          theatre breakdowns reflect students with <em>any</em> accepted
+          training (primary or alternatives), deduplicated by student.
         </p>
 
         <h3>Export</h3>
