@@ -18,6 +18,12 @@ const LEVEL_MAP: Record<string, string> = {
   global: "Global",
 };
 
+const NULL_MARKERS = new Set(["—", "-", "–", "n/a", "none", ""]);
+
+function isNullMarker(val: string): boolean {
+  return NULL_MARKERS.has(val.trim().toLowerCase());
+}
+
 const TRAINING_TYPE_MAP: Record<string, string> = {
   certification: "Certification",
   cert: "Certification",
@@ -94,8 +100,8 @@ export async function POST(request: NextRequest) {
     const programName = raw.programName?.trim() ?? "";
     const specialisationName = raw.specialisationName?.trim() ?? "";
     const rawLevel = raw.level?.trim() ?? "";
-    const rawTrainingType = raw.trainingType?.trim() ?? "";
-    const rawTrainingFullTitle = raw.trainingFullTitle?.trim() ?? "";
+    const rawTrainingType = isNullMarker(raw.trainingType?.trim() ?? "") ? "" : (raw.trainingType?.trim() ?? "");
+    const rawTrainingFullTitle = isNullMarker(raw.trainingFullTitle?.trim() ?? "") ? "" : (raw.trainingFullTitle?.trim() ?? "");
     const rawQty = raw.quantityRequired;
     const rawMinPerTheatre = raw.minimumPerTheatre;
 
@@ -133,7 +139,7 @@ export async function POST(request: NextRequest) {
 
     // --- Minimum per Theatre ---
     let minimumPerTheatre: number | null = null;
-    if (rawMinPerTheatre !== null && rawMinPerTheatre !== undefined && String(rawMinPerTheatre).trim() !== "") {
+    if (rawMinPerTheatre !== null && rawMinPerTheatre !== undefined && String(rawMinPerTheatre).trim() !== "" && !isNullMarker(String(rawMinPerTheatre))) {
       const parsed = typeof rawMinPerTheatre === "number" ? rawMinPerTheatre : parseInt(String(rawMinPerTheatre), 10);
       if (!isNaN(parsed) && parsed >= 0) {
         minimumPerTheatre = parsed;
