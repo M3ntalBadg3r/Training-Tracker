@@ -70,6 +70,12 @@ export interface SpecialisationRow {
   name: string;
 }
 
+export interface ProgramDataAlternativeRow {
+  trainingType: string;
+  trainingTitle: string;
+  trainingFullTitle: string;
+}
+
 export interface ProgramDataRow {
   id: number;
   programName: string;
@@ -81,6 +87,7 @@ export interface ProgramDataRow {
   trainingFullTitle: string | null;
   quantityRequired: number;
   minimumPerTheatre: number | null;
+  alternatives: ProgramDataAlternativeRow[];
 }
 
 export interface APSRequirement {
@@ -89,6 +96,7 @@ export interface APSRequirement {
   trainingFullTitle: string;
   quantityRequired: number;
   level: string;
+  alternatives: ProgramDataAlternativeRow[];
 }
 
 export interface APSSpecialisation {
@@ -126,6 +134,7 @@ export interface GlobalDiamondRequirement {
   minimumPerTheatre: number | null;
   theatreBreakdown: GlobalDiamondTheatreBreakdown[] | null;
   compliant: boolean;
+  alternatives: ProgramDataAlternativeRow[];
 }
 
 export interface GlobalDiamondSpecialisation {

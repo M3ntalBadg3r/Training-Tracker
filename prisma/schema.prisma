@@ -61,8 +61,9 @@ model TrainingData {
   link          String?
   certification String[]      @default([]) @map("certification")
 
-  trainingsTaken TrainingTaken[]
-  programData    ProgramData[]
+  trainingsTaken          TrainingTaken[]
+  programData             ProgramData[]
+  programDataAlternatives ProgramDataAlternative[]
 
   @@index([fullTitle])
   @@map("training_data")
@@ -117,8 +118,21 @@ model ProgramData {
 
   specialisation Specialisation @relation(fields: [specialisationId], references: [id])
   trainingData   TrainingData?  @relation(fields: [trainingTitle], references: [trainingTitle], onDelete: Cascade)
+  alternatives   ProgramDataAlternative[]
 
   @@map("program_data")
+}
+
+model ProgramDataAlternative {
+  id              Int          @id @default(autoincrement())
+  programDataId   Int          @map("program_data_id")
+  trainingType    TrainingType @map("training_type")
+  trainingTitle   String       @map("training_title")
+
+  programData  ProgramData  @relation(fields: [programDataId], references: [id], onDelete: Cascade)
+  trainingData TrainingData @relation(fields: [trainingTitle], references: [trainingTitle], onDelete: Cascade)
+
+  @@map("program_data_alternatives")
 }
 
 model User {

@@ -19,8 +19,10 @@ export async function GET(request: NextRequest) {
   const studentsMode = request.nextUrl.searchParams.get("students") === "true";
 
   // If students mode, return the list of students for a specific training/country/theatre
+  // trainingTitle can be comma-separated for OR logic (primary + alternatives)
   if (studentsMode && trainingTitleParam) {
-    return getStudents(trainingTitleParam, level, country, theatre, region);
+    const titles = trainingTitleParam.split(",").map((t) => t.trim()).filter(Boolean);
+    return getStudents(titles, level, country, theatre, region);
   }
 
   // Get all APS program data
@@ -29,6 +31,9 @@ export async function GET(request: NextRequest) {
     include: {
       specialisation: true,
       trainingData: { select: { fullTitle: true } },
+      alternatives: {
+        include: { trainingData: { select: { fullTitle: true } } },
+      },
     },
     orderBy: [{ specialisationId: "asc" }, { trainingType: "asc" }],
   });
@@ -64,20 +69,24 @@ export async function GET(request: NextRequest) {
 
   const now = new Date();
 
-  /** Extract unique non-null training titles from a list of program data rows */
+  /** Extract unique non-null training titles from program data rows (including alternatives) */
   function extractTrainingTitles(rows: ProgramDataRow[]): string[] {
-    const titles = rows
-      .map((pd: ProgramDataRow) => pd.trainingTitle)
-      .filter((t: string | null): t is string => t !== null);
-    return [...new Set(titles)];
+    const titles = new Set<string>();
+    for (const pd of rows) {
+      if (pd.trainingTitle) titles.add(pd.trainingTitle);
+      for (const alt of pd.alternatives) {
+        titles.add(alt.trainingTitle);
+      }
+    }
+    return [...titles];
   }
 
   if (level === "country" && country) {
     const countryReqs = programData.filter((pd: ProgramDataRow) => pd.level === "Country");
     const trainingTitles = extractTrainingTitles(countryReqs);
 
-    const attainedMap = await getAttainedByCountry(trainingTitles, country, now);
-    const specialisations = buildSpecialisations(specMap, "Country", attainedMap);
+    const emailSets = await getEmailSetsByCountry(trainingTitles, country, now);
+    const specialisations = buildSpecialisations(specMap, "Country", emailSets);
 
     return NextResponse.json({ specialisations, countries, regions: regionList, theatres: theatreList });
   }
@@ -86,8 +95,8 @@ export async function GET(request: NextRequest) {
     const countryReqs = programData.filter((pd: ProgramDataRow) => pd.level === "Country");
     const trainingTitles = extractTrainingTitles(countryReqs);
 
-    const attainedMap = await getAttainedByRegion(trainingTitles, region, now);
-    const specialisations = buildSpecialisations(specMap, "Country", attainedMap);
+    const emailSets = await getEmailSetsByRegion(trainingTitles, region, now);
+    const specialisations = buildSpecialisations(specMap, "Country", emailSets);
 
     return NextResponse.json({ specialisations, countries, regions: regionList, theatres: theatreList });
   }
@@ -96,8 +105,8 @@ export async function GET(request: NextRequest) {
     const theatreReqs = programData.filter((pd: ProgramDataRow) => pd.level === "Theatre");
     const trainingTitles = extractTrainingTitles(theatreReqs);
 
-    const attainedMap = await getAttainedByTheatre(trainingTitles, theatre, now);
-    const specialisations = buildSpecialisations(specMap, "Theatre", attainedMap);
+    const emailSets = await getEmailSetsByTheatre(trainingTitles, theatre, now);
+    const specialisations = buildSpecialisations(specMap, "Theatre", emailSets);
 
     return NextResponse.json({ specialisations, countries, regions: regionList, theatres: theatreList });
   }
@@ -127,10 +136,18 @@ export async function GET(request: NextRequest) {
         const theatreTrainingTitles = extractTrainingTitles(theatreReqs);
 
         for (const t of distinctTheatres) {
-          const attainedMap = await getAttainedByTheatre(theatreTrainingTitles, t, now);
-          const allMet = theatreReqs.every(
-            (req: ProgramDataRow) => req.trainingTitle !== null && (attainedMap.get(req.trainingTitle) || 0) >= req.quantityRequired
-          );
+          const emailSets = await getEmailSetsByTheatre(theatreTrainingTitles, t, now);
+          // Check each requirement individually (union primary + alternatives)
+          const allMet = theatreReqs.every((req: ProgramDataRow) => {
+            if (!req.trainingTitle) return false;
+            const allTitles = [req.trainingTitle, ...req.alternatives.map((a) => a.trainingTitle)];
+            const union = new Set<string>();
+            for (const title of allTitles) {
+              const set = emailSets.get(title);
+              if (set) for (const email of set) union.add(email);
+            }
+            return union.size >= req.quantityRequired;
+          });
           if (allMet) compliantTheatreCount++;
         }
       }
@@ -142,6 +159,11 @@ export async function GET(request: NextRequest) {
         trainingFullTitle: req.trainingData?.fullTitle ?? "Theatre Compliance",
         quantityRequired: req.quantityRequired,
         attained: compliantTheatreCount,
+        alternatives: req.alternatives.map((a) => ({
+          trainingType: a.trainingType,
+          trainingTitle: a.trainingTitle,
+          trainingFullTitle: a.trainingData?.fullTitle ?? "—",
+        })),
       }));
 
       globalSpecialisations.push({ name: specName, requirements: specReqs });
@@ -161,11 +183,11 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({ specialisations, countries, regions: regionList, theatres: theatreList });
 }
 
-async function getAttainedByRegion(
+async function getEmailSetsByRegion(
   trainingTitles: string[],
   regionName: string,
   now: Date
-): Promise<Map<string, number>> {
+): Promise<Map<string, Set<string>>> {
   if (trainingTitles.length === 0) return new Map();
 
   // Find all countries in this region
@@ -190,19 +212,14 @@ async function getAttainedByRegion(
     if (!map.has(r.trainingTitle)) map.set(r.trainingTitle, new Set());
     map.get(r.trainingTitle)!.add(r.email);
   }
-
-  const countMap = new Map<string, number>();
-  for (const [title, emails] of map) {
-    countMap.set(title, emails.size);
-  }
-  return countMap;
+  return map;
 }
 
-async function getAttainedByCountry(
+async function getEmailSetsByCountry(
   trainingTitles: string[],
   country: string,
   now: Date
-): Promise<Map<string, number>> {
+): Promise<Map<string, Set<string>>> {
   if (trainingTitles.length === 0) return new Map();
 
   const results = await prisma.trainingTaken.findMany({
@@ -219,19 +236,14 @@ async function getAttainedByCountry(
     if (!map.has(r.trainingTitle)) map.set(r.trainingTitle, new Set());
     map.get(r.trainingTitle)!.add(r.email);
   }
-
-  const countMap = new Map<string, number>();
-  for (const [title, emails] of map) {
-    countMap.set(title, emails.size);
-  }
-  return countMap;
+  return map;
 }
 
-async function getAttainedByTheatre(
+async function getEmailSetsByTheatre(
   trainingTitles: string[],
   theatre: string,
   now: Date
-): Promise<Map<string, number>> {
+): Promise<Map<string, Set<string>>> {
   if (trainingTitles.length === 0) return new Map();
 
   const results = await prisma.trainingTaken.findMany({
@@ -248,12 +260,7 @@ async function getAttainedByTheatre(
     if (!map.has(r.trainingTitle)) map.set(r.trainingTitle, new Set());
     map.get(r.trainingTitle)!.add(r.email);
   }
-
-  const countMap = new Map<string, number>();
-  for (const [title, emails] of map) {
-    countMap.set(title, emails.size);
-  }
-  return countMap;
+  return map;
 }
 
 function buildSpecialisations(
@@ -263,9 +270,14 @@ function buildSpecialisations(
     trainingTitle: string | null;
     trainingData: { fullTitle: string } | null;
     quantityRequired: number;
+    alternatives: Array<{
+      trainingType: string;
+      trainingTitle: string;
+      trainingData: { fullTitle: string } | null;
+    }>;
   }>>,
   level: string,
-  attainedMap: Map<string, number>
+  emailSets: Map<string, Set<string>>
 ) {
   const result = [];
   for (const [name, reqs] of specMap) {
@@ -274,20 +286,35 @@ function buildSpecialisations(
 
     result.push({
       name,
-      requirements: levelReqs.map((req) => ({
-        trainingType: req.trainingType ?? null,
-        trainingTitle: req.trainingTitle ?? null,
-        trainingFullTitle: req.trainingData?.fullTitle ?? "—",
-        quantityRequired: req.quantityRequired,
-        attained: req.trainingTitle ? (attainedMap.get(req.trainingTitle) || 0) : 0,
-      })),
+      requirements: levelReqs.map((req) => {
+        // Union unique students across primary + alternatives
+        const allTitles = [req.trainingTitle, ...req.alternatives.map((a) => a.trainingTitle)].filter(Boolean) as string[];
+        const union = new Set<string>();
+        for (const title of allTitles) {
+          const set = emailSets.get(title);
+          if (set) for (const email of set) union.add(email);
+        }
+
+        return {
+          trainingType: req.trainingType ?? null,
+          trainingTitle: req.trainingTitle ?? null,
+          trainingFullTitle: req.trainingData?.fullTitle ?? "—",
+          quantityRequired: req.quantityRequired,
+          attained: req.trainingTitle ? union.size : 0,
+          alternatives: req.alternatives.map((a) => ({
+            trainingType: a.trainingType,
+            trainingTitle: a.trainingTitle,
+            trainingFullTitle: a.trainingData?.fullTitle ?? "—",
+          })),
+        };
+      }),
     });
   }
   return result;
 }
 
 async function getStudents(
-  trainingTitle: string,
+  trainingTitles: string[],
   level: string,
   country: string,
   theatre: string,
@@ -296,7 +323,7 @@ async function getStudents(
   const now = new Date();
 
   const whereClause: Record<string, unknown> = {
-    trainingTitle,
+    trainingTitle: { in: trainingTitles },
     expiryDate: { gt: now },
   };
 
@@ -316,6 +343,7 @@ async function getStudents(
     where: whereClause,
     include: {
       student: { select: { fullName: true, email: true, country: true, theatre: true } },
+      trainingData: { select: { fullTitle: true } },
     },
     orderBy: { student: { fullName: "asc" } },
   });
@@ -336,6 +364,7 @@ async function getStudents(
     theatre: r.student.theatre,
     completedDate: r.completedDate.toISOString().split("T")[0],
     expiryDate: r.expiryDate.toISOString().split("T")[0],
+    training: r.trainingData?.fullTitle ?? r.trainingTitle,
   }));
 
   return NextResponse.json({ students });

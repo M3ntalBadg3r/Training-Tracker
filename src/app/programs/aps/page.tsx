@@ -22,12 +22,19 @@ const TRAINING_TYPE_LABELS: Record<string, string> = {
   InstructorLedTraining: "Instructor-Led Training",
 };
 
+interface AlternativeEntry {
+  trainingType: string;
+  trainingTitle: string;
+  trainingFullTitle: string;
+}
+
 interface Requirement {
   trainingType: string;
   trainingTitle: string;
   trainingFullTitle: string;
   quantityRequired: number;
   attained: number;
+  alternatives: AlternativeEntry[];
 }
 
 interface Specialisation {
@@ -161,16 +168,19 @@ export default function APSPage() {
     trainingTitle: string,
     trainingFullTitle: string,
     level: string,
-    filterValue: string
+    filterValue: string,
+    alternatives?: AlternativeEntry[]
   ) => {
     setStudentTitle(trainingFullTitle);
     setStudentLoading(true);
     setShowStudents(true);
     setStudentList([]);
 
+    // Pass all titles (primary + alternatives) as comma-separated
+    const allTitles = [trainingTitle, ...(alternatives || []).map((a) => a.trainingTitle)].filter(Boolean);
     const params = new URLSearchParams({
       students: "true",
-      trainingTitle,
+      trainingTitle: allTitles.join(","),
       level,
     });
     if (level === "country") params.set("country", filterValue);
@@ -193,9 +203,13 @@ export default function APSPage() {
     const rows: Record<string, string | number>[] = [];
     for (const spec of specs) {
       for (const req of spec.requirements) {
+        let trainingLabel = req.trainingFullTitle;
+        if (req.alternatives && req.alternatives.length > 0) {
+          trainingLabel += " (or " + req.alternatives.map((a) => a.trainingFullTitle).join(", ") + ")";
+        }
         rows.push({
           specialisation: spec.name,
-          training: req.trainingFullTitle,
+          training: trainingLabel,
           type: TRAINING_TYPE_LABELS[req.trainingType] || req.trainingType,
           required: req.quantityRequired,
           attained: req.attained,
@@ -477,7 +491,7 @@ function ComplianceTable({
   specialisations: Specialisation[];
   level: string;
   filterValue: string;
-  onViewStudents: (trainingTitle: string, trainingFullTitle: string, level: string, filterValue: string) => void;
+  onViewStudents: (trainingTitle: string, trainingFullTitle: string, level: string, filterValue: string, alternatives?: AlternativeEntry[]) => void;
   unitLabel: string;
 }) {
   // Find the max number of requirements across specialisations to determine row count
@@ -531,7 +545,7 @@ function RequirementRowGroup({
   specialisations: Specialisation[];
   level: string;
   filterValue: string;
-  onViewStudents: (trainingTitle: string, trainingFullTitle: string, level: string, filterValue: string) => void;
+  onViewStudents: (trainingTitle: string, trainingFullTitle: string, level: string, filterValue: string, alternatives?: AlternativeEntry[]) => void;
   unitLabel: string;
 }) {
   return (
@@ -554,6 +568,16 @@ function RequirementRowGroup({
                   <div className="text-xs text-gray-500">
                     {TRAINING_TYPE_LABELS[req.trainingType] || req.trainingType}
                   </div>
+                  {req.alternatives && req.alternatives.length > 0 && (
+                    <div className="text-xs text-blue-600 mt-1">
+                      {req.alternatives.map((a, i) => (
+                        <span key={i}>
+                          {i === 0 ? "or " : ", "}<span className="font-medium">{a.trainingFullTitle}</span>
+                          <span className="text-gray-400"> ({TRAINING_TYPE_LABELS[a.trainingType] || a.trainingType})</span>
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ) : (
                 <span className="text-gray-300">—</span>
@@ -620,7 +644,7 @@ function RequirementRowGroup({
               </span>
               {level !== "global" && (
                 <button
-                  onClick={() => onViewStudents(req.trainingTitle, req.trainingFullTitle, level, filterValue)}
+                  onClick={() => onViewStudents(req.trainingTitle, req.trainingFullTitle, level, filterValue, req.alternatives)}
                   className="ml-2 inline-flex items-center gap-1 text-xs text-blue-600 hover:underline"
                 >
                   <Users size={12} /> View

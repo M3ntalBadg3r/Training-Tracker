@@ -85,6 +85,7 @@ export default function ProgramDataPage() {
     trainingFullTitle?: string;
     quantityRequired?: string | number;
     minimumPerTheatre?: string | number | null;
+    alternatives?: string;
   }
   interface ImportResult {
     created: number;
@@ -126,6 +127,25 @@ export default function ProgramDataPage() {
 
   // Training options for dropdown
   const [trainingOptions, setTrainingOptions] = useState<TrainingOption[]>([]);
+
+  // Alternatives state
+  interface AlternativeEntry { trainingType: string; trainingTitle: string; trainingFullTitle: string }
+  const [addAlternatives, setAddAlternatives] = useState<AlternativeEntry[]>([]);
+  const [editAlternatives, setEditAlternatives] = useState<AlternativeEntry[]>([]);
+  const [showAddAlts, setShowAddAlts] = useState(false);
+  const [showEditAlts, setShowEditAlts] = useState(false);
+  const [altTrainingOptions, setAltTrainingOptions] = useState<Record<string, TrainingOption[]>>({});
+
+  const fetchAltTrainingsByType = async (key: string, type: string) => {
+    if (!type) return;
+    try {
+      const res = await fetch(`/api/training-data/by-type?type=${type}`);
+      if (res.ok) {
+        const options = await res.json();
+        setAltTrainingOptions((prev) => ({ ...prev, [key]: options }));
+      }
+    } catch { /* ignore */ }
+  };
 
   const fetchData = async () => {
     try {
@@ -244,6 +264,7 @@ export default function ProgramDataPage() {
       trainingType: addNoTraining ? null : addForm.trainingType,
       trainingTitle: addNoTraining ? null : addForm.trainingTitle,
       minimumPerTheatre: addNoTraining ? null : (addForm.minimumPerTheatre ?? null),
+      alternatives: showAddAlts ? addAlternatives.filter((a) => a.trainingTitle) : [],
     };
     const res = await fetch("/api/admin/program-data", {
       method: "POST",
@@ -258,7 +279,10 @@ export default function ProgramDataPage() {
     setShowAdd(false);
     setAddForm(emptyForm);
     setAddNoTraining(false);
+    setAddAlternatives([]);
+    setShowAddAlts(false);
     setTrainingOptions([]);
+    setAltTrainingOptions({});
     fetchData();
   };
 
@@ -276,6 +300,7 @@ export default function ProgramDataPage() {
         trainingTitle: editNoTraining ? null : editForm.trainingTitle,
         quantityRequired: editForm.quantityRequired,
         minimumPerTheatre: editNoTraining ? null : (editForm.minimumPerTheatre ?? null),
+        alternatives: showEditAlts ? editAlternatives.filter((a) => a.trainingTitle) : [],
       }),
     });
     const result = await res.json();
@@ -285,7 +310,10 @@ export default function ProgramDataPage() {
     }
     setShowEdit(false);
     setEditForm(null);
+    setEditAlternatives([]);
+    setShowEditAlts(false);
     setTrainingOptions([]);
+    setAltTrainingOptions({});
     fetchData();
   };
 
@@ -339,6 +367,16 @@ export default function ProgramDataPage() {
     setEditNoTraining(row.level === "Global" && row.trainingTitle === null);
     setFormError("");
     if (row.trainingType) fetchTrainingsByType(row.trainingType);
+    // Populate alternatives
+    const alts = row.alternatives || [];
+    setEditAlternatives(alts.map((a) => ({ ...a })));
+    setShowEditAlts(alts.length > 0);
+    // Pre-fetch training options for each alternative's type
+    const newAltOptions: Record<string, TrainingOption[]> = {};
+    setAltTrainingOptions(newAltOptions);
+    alts.forEach((a, i) => {
+      if (a.trainingType) fetchAltTrainingsByType(`edit-${i}`, a.trainingType);
+    });
     setShowEdit(true);
   };
 
@@ -353,15 +391,21 @@ export default function ProgramDataPage() {
     { key: "minimumPerTheatre" as const, header: "Min per Theatre" },
   ];
 
-  const exportData = sortedData.map((r) => ({
-    programName: r.programName,
-    specialisationName: r.specialisationName,
-    level: r.level,
-    trainingType: r.trainingType ? (TRAINING_TYPE_LABELS[r.trainingType] || r.trainingType) : "—",
-    trainingFullTitle: r.trainingFullTitle || "—",
-    quantityRequired: r.quantityRequired,
-    minimumPerTheatre: r.minimumPerTheatre ?? "—",
-  }));
+  const exportData = sortedData.map((r) => {
+    let trainingLabel = r.trainingFullTitle || "—";
+    if (r.alternatives && r.alternatives.length > 0) {
+      trainingLabel += " (or " + r.alternatives.map((a) => a.trainingFullTitle).join(", ") + ")";
+    }
+    return {
+      programName: r.programName,
+      specialisationName: r.specialisationName,
+      level: r.level,
+      trainingType: r.trainingType ? (TRAINING_TYPE_LABELS[r.trainingType] || r.trainingType) : "—",
+      trainingFullTitle: trainingLabel,
+      quantityRequired: r.quantityRequired,
+      minimumPerTheatre: r.minimumPerTheatre ?? "—",
+    };
+  });
 
   const hasFilters = !!searchQuery || !!filterProgram || !!filterSpec || !!filterLevel || !!filterType;
 
@@ -386,6 +430,10 @@ export default function ProgramDataPage() {
     mintheatre: "minimumPerTheatre",
     minimum: "minimumPerTheatre",
     mintheatremin: "minimumPerTheatre",
+    alternatives: "alternatives",
+    alternative: "alternatives",
+    alts: "alternatives",
+    oralternatives: "alternatives",
   };
 
   const normaliseHeader = (h: string) => h.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -513,6 +561,7 @@ export default function ProgramDataPage() {
         "Training": "Business Consultant - XDR",
         "Quantity Required": 30,
         "Minimum per Theatre": 6,
+        "Alternatives": "",
       },
       {
         "Program Name": "APS",
@@ -522,6 +571,7 @@ export default function ProgramDataPage() {
         "Training": "Business Consultant - XDR",
         "Quantity Required": 2,
         "Minimum per Theatre": "",
+        "Alternatives": "XSIAM Select|Another Training",
       },
     ];
     const templateCols = [
@@ -532,6 +582,7 @@ export default function ProgramDataPage() {
       { key: "Training", header: "Training" },
       { key: "Quantity Required", header: "Quantity Required" },
       { key: "Minimum per Theatre", header: "Minimum per Theatre" },
+      { key: "Alternatives", header: "Alternatives" },
     ];
     exportToCsv(templateData as never[], templateCols as never[], "program-data-import-template");
   };
@@ -612,7 +663,7 @@ export default function ProgramDataPage() {
             )}
           </div>
           <button
-            onClick={() => { setShowAdd(true); setFormError(""); setAddForm(emptyForm); setAddNoTraining(false); setTrainingOptions([]); }}
+            onClick={() => { setShowAdd(true); setFormError(""); setAddForm(emptyForm); setAddNoTraining(false); setTrainingOptions([]); setAddAlternatives([]); setShowAddAlts(false); setAltTrainingOptions({}); }}
             className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
           >
             <Plus size={16} /> Add Requirement
@@ -711,7 +762,14 @@ export default function ProgramDataPage() {
                     <td className="px-4 py-3">{row.specialisationName}</td>
                     <td className="px-4 py-3">{LEVEL_LABELS[row.level] || row.level}</td>
                     <td className="px-4 py-3">{row.trainingType ? (TRAINING_TYPE_LABELS[row.trainingType] || row.trainingType) : "—"}</td>
-                    <td className="px-4 py-3">{row.trainingFullTitle || "—"}</td>
+                    <td className="px-4 py-3">
+                      {row.trainingFullTitle || "—"}
+                      {row.alternatives && row.alternatives.length > 0 && (
+                        <div className="text-xs text-gray-500 mt-0.5">
+                          or {row.alternatives.map((a) => a.trainingFullTitle).join(", ")}
+                        </div>
+                      )}
+                    </td>
                     <td className="px-4 py-3">{row.quantityRequired}</td>
                     <td className="px-4 py-3">{row.minimumPerTheatre ?? "—"}</td>
                     <td className="px-4 py-3">
@@ -878,6 +936,75 @@ export default function ProgramDataPage() {
                   <p className="mt-1 text-xs text-gray-500">Leave blank if no per-theatre minimum applies.</p>
                 </div>
               )}
+              {/* Accept alternative trainings */}
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="add-alts"
+                  checked={showAddAlts}
+                  onChange={(e) => {
+                    setShowAddAlts(e.target.checked);
+                    if (!e.target.checked) { setAddAlternatives([]); setAltTrainingOptions({}); }
+                  }}
+                  className="w-4 h-4"
+                />
+                <label htmlFor="add-alts" className="text-sm">
+                  Accept alternative trainings
+                </label>
+              </div>
+              {showAddAlts && (
+                <div className="border border-gray-200 rounded-lg p-3 space-y-3 bg-gray-50">
+                  <p className="text-xs text-gray-500">Students with any of these alternative trainings will also count toward the requirement.</p>
+                  {addAlternatives.map((alt, idx) => (
+                    <div key={idx} className="flex items-end gap-2">
+                      <div className="flex-1">
+                        <label className="block text-xs font-medium mb-1 text-gray-600">Type</label>
+                        <select
+                          value={alt.trainingType}
+                          onChange={(e) => {
+                            const type = e.target.value;
+                            setAddAlternatives((prev) => prev.map((a, i) => i === idx ? { ...a, trainingType: type, trainingTitle: "", trainingFullTitle: "" } : a));
+                            fetchAltTrainingsByType(`add-${idx}`, type);
+                          }}
+                          className="w-full px-2 py-1.5 border border-gray-300 rounded bg-white text-sm"
+                        >
+                          <option value="">Select type...</option>
+                          {TRAINING_TYPES.map((t) => <option key={t} value={t}>{TRAINING_TYPE_LABELS[t]}</option>)}
+                        </select>
+                      </div>
+                      <div className="flex-[2]">
+                        <label className="block text-xs font-medium mb-1 text-gray-600">Training</label>
+                        <select
+                          value={alt.trainingTitle}
+                          onChange={(e) => {
+                            const title = e.target.value;
+                            const opt = (altTrainingOptions[`add-${idx}`] || []).find((o) => o.trainingTitle === title);
+                            setAddAlternatives((prev) => prev.map((a, i) => i === idx ? { ...a, trainingTitle: title, trainingFullTitle: opt?.fullTitle ?? "" } : a));
+                          }}
+                          disabled={!alt.trainingType}
+                          className="w-full px-2 py-1.5 border border-gray-300 rounded bg-white text-sm disabled:opacity-50"
+                        >
+                          <option value="">{alt.trainingType ? "Select training..." : "Select type first..."}</option>
+                          {(altTrainingOptions[`add-${idx}`] || []).map((t) => <option key={t.trainingTitle} value={t.trainingTitle}>{t.fullTitle}</option>)}
+                        </select>
+                      </div>
+                      <button
+                        onClick={() => setAddAlternatives((prev) => prev.filter((_, i) => i !== idx))}
+                        className="px-2 py-1.5 text-red-600 hover:bg-red-50 rounded"
+                        title="Remove alternative"
+                      >
+                        <X size={16} />
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    onClick={() => setAddAlternatives((prev) => [...prev, { trainingType: "", trainingTitle: "", trainingFullTitle: "" }])}
+                    className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800"
+                  >
+                    <Plus size={14} /> Add Alternative
+                  </button>
+                </div>
+              )}
             </>
           )}
           <div>
@@ -1016,6 +1143,75 @@ export default function ProgramDataPage() {
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
                     />
                     <p className="mt-1 text-xs text-gray-500">Leave blank if no per-theatre minimum applies.</p>
+                  </div>
+                )}
+                {/* Accept alternative trainings */}
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="edit-alts"
+                    checked={showEditAlts}
+                    onChange={(e) => {
+                      setShowEditAlts(e.target.checked);
+                      if (!e.target.checked) { setEditAlternatives([]); setAltTrainingOptions({}); }
+                    }}
+                    className="w-4 h-4"
+                  />
+                  <label htmlFor="edit-alts" className="text-sm">
+                    Accept alternative trainings
+                  </label>
+                </div>
+                {showEditAlts && (
+                  <div className="border border-gray-200 rounded-lg p-3 space-y-3 bg-gray-50">
+                    <p className="text-xs text-gray-500">Students with any of these alternative trainings will also count toward the requirement.</p>
+                    {editAlternatives.map((alt, idx) => (
+                      <div key={idx} className="flex items-end gap-2">
+                        <div className="flex-1">
+                          <label className="block text-xs font-medium mb-1 text-gray-600">Type</label>
+                          <select
+                            value={alt.trainingType}
+                            onChange={(e) => {
+                              const type = e.target.value;
+                              setEditAlternatives((prev) => prev.map((a, i) => i === idx ? { ...a, trainingType: type, trainingTitle: "", trainingFullTitle: "" } : a));
+                              fetchAltTrainingsByType(`edit-${idx}`, type);
+                            }}
+                            className="w-full px-2 py-1.5 border border-gray-300 rounded bg-white text-sm"
+                          >
+                            <option value="">Select type...</option>
+                            {TRAINING_TYPES.map((t) => <option key={t} value={t}>{TRAINING_TYPE_LABELS[t]}</option>)}
+                          </select>
+                        </div>
+                        <div className="flex-[2]">
+                          <label className="block text-xs font-medium mb-1 text-gray-600">Training</label>
+                          <select
+                            value={alt.trainingTitle}
+                            onChange={(e) => {
+                              const title = e.target.value;
+                              const opt = (altTrainingOptions[`edit-${idx}`] || []).find((o) => o.trainingTitle === title);
+                              setEditAlternatives((prev) => prev.map((a, i) => i === idx ? { ...a, trainingTitle: title, trainingFullTitle: opt?.fullTitle ?? "" } : a));
+                            }}
+                            disabled={!alt.trainingType}
+                            className="w-full px-2 py-1.5 border border-gray-300 rounded bg-white text-sm disabled:opacity-50"
+                          >
+                            <option value="">{alt.trainingType ? "Select training..." : "Select type first..."}</option>
+                            {(altTrainingOptions[`edit-${idx}`] || []).map((t) => <option key={t.trainingTitle} value={t.trainingTitle}>{t.fullTitle}</option>)}
+                          </select>
+                        </div>
+                        <button
+                          onClick={() => setEditAlternatives((prev) => prev.filter((_, i) => i !== idx))}
+                          className="px-2 py-1.5 text-red-600 hover:bg-red-50 rounded"
+                          title="Remove alternative"
+                        >
+                          <X size={16} />
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      onClick={() => setEditAlternatives((prev) => [...prev, { trainingType: "", trainingTitle: "", trainingFullTitle: "" }])}
+                      className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800"
+                    >
+                      <Plus size={14} /> Add Alternative
+                    </button>
                   </div>
                 )}
               </>
