@@ -181,11 +181,13 @@ The `.env` file requires:
 |----------|-------------|
 | `DATABASE_URL` | PostgreSQL connection string |
 | `JWT_SECRET` | Secret key for JWT token signing (minimum 32 characters recommended) |
-| `GITHUB_TOKEN` | *(Optional)* GitHub personal access token — required for update checks on private repositories |
+| `GITHUB_TOKEN` | *(Optional)* GitHub personal access token — required for update checks **and git pulls** on private repositories |
 
 #### Setting up GITHUB_TOKEN
 
-If your Training Tracker repository is **private**, you need a GitHub personal access token so the app can check for new releases.
+If your Training Tracker repository is **private**, you need a GitHub personal access token. It is used for:
+- Checking for new releases (admin **Updates** page and `deploy/check-update.sh`)
+- Authenticating `git pull` during updates (`deploy/perform-update.sh` and `deploy/update.sh`)
 
 1. Go to [GitHub > Settings > Developer settings > Personal access tokens > Fine-grained tokens](https://github.com/settings/tokens?type=beta)
 2. Click **Generate new token**
@@ -200,7 +202,23 @@ Add it to your `.env` file:
 GITHUB_TOKEN="github_pat_your_token_here"
 ```
 
-Then restart the application for the change to take effect. The token is used by both the admin **Updates** page and the `deploy/check-update.sh` script.
+Then restart the application for the change to take effect.
+
+**Fresh install on a private repo:** Pass `GITHUB_TOKEN` as an environment variable when running the install script and it will be used for the initial clone and persisted to `.env` automatically:
+
+```bash
+GITHUB_TOKEN="github_pat_your_token_here" bash -s -- [--dev] < install-remote.sh
+```
+
+**Existing install with a broken git remote URL:** If updates are failing with `could not read Password for 'https://ghp_…@github.com'`, the git remote was set with a malformed URL (token in the username slot). Fix it once with:
+
+```bash
+source /opt/training-tracker/.env
+git -C /opt/training-tracker remote set-url origin \
+  "https://x-access-token:${GITHUB_TOKEN}@github.com/M3ntalBadg3r/Training-Tracker.git"
+```
+
+After that first successful update, the update scripts will automatically keep the remote URL in sync with the `GITHUB_TOKEN` value in `.env`, so you never need to set it manually again.
 
 ---
 
