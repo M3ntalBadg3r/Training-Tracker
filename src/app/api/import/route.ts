@@ -51,6 +51,7 @@ export async function POST(request: NextRequest) {
     studentsUpdated: 0,
     trainingsCreated: 0,
     trainingsSkipped: 0,
+    trainingsAutoCreated: 0,
     errors: [] as string[],
   };
 
@@ -135,16 +136,25 @@ export async function POST(request: NextRequest) {
         summary.studentsCreated++;
       }
 
-      // Check if training title exists in training_data
+      // Check if training title exists in training_data; auto-create a placeholder if not
       const trainingExists = await prisma.trainingData.findUnique({
         where: { trainingTitle: row.title },
       });
 
       if (!trainingExists) {
-        summary.errors.push(
-          `Row ${rowNum}: Training title "${row.title}" not found in training data for ${row.email}`
-        );
-        continue;
+        await prisma.trainingData.upsert({
+          where: { trainingTitle: row.title },
+          update: {},
+          create: {
+            trainingTitle: row.title,
+            fullTitle: row.title,
+            trainingType: "Certification",
+            productType: "Cortex",
+            function: "Sales",
+            isIncomplete: true,
+          },
+        });
+        summary.trainingsAutoCreated++;
       }
 
       // Check for duplicate training taken

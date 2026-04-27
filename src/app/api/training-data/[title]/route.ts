@@ -93,6 +93,26 @@ export async function PUT(
   return NextResponse.json(training);
 }
 
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ title: string }> }
+) {
+  try {
+    await requireAuth(request, "Admin");
+  } catch (error) {
+    return handleAuthError(error);
+  }
+  const { title } = await params;
+  const decodedTitle = decodeURIComponent(title);
+
+  const training = await prisma.trainingData.update({
+    where: { trainingTitle: decodedTitle },
+    data: { isIncomplete: false },
+  });
+
+  return NextResponse.json(training);
+}
+
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ title: string }> }
