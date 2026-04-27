@@ -11,6 +11,8 @@ export async function POST(request: NextRequest) {
   await prisma.$transaction(async (tx: PrismaTransactionClient) => {
     await tx.trainingTaken.deleteMany({});
     await tx.student.deleteMany({});
+    await tx.programData.deleteMany({});
+    await tx.specialisation.deleteMany({});
     await tx.trainingData.deleteMany({});
     await tx.regionData.deleteMany({});
   });

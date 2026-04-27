@@ -385,25 +385,26 @@ export default function ProgramDataPage() {
     { key: "programName" as const, header: "Program Name" },
     { key: "specialisationName" as const, header: "Specialisation" },
     { key: "level" as const, header: "Level" },
-    { key: "trainingType" as const, header: "Type" },
+    { key: "trainingType" as const, header: "Training Type" },
     { key: "trainingFullTitle" as const, header: "Training" },
     { key: "quantityRequired" as const, header: "Quantity Required" },
     { key: "minimumPerTheatre" as const, header: "Min per Theatre" },
+    { key: "alternatives" as const, header: "Alternatives" },
   ];
 
   const exportData = sortedData.map((r) => {
-    let trainingLabel = r.trainingFullTitle || "—";
-    if (r.alternatives && r.alternatives.length > 0) {
-      trainingLabel += " (or " + r.alternatives.map((a) => a.trainingFullTitle).join(", ") + ")";
-    }
+    const altsLabel = r.alternatives && r.alternatives.length > 0
+      ? r.alternatives.map((a) => a.trainingFullTitle).join("|")
+      : "";
     return {
       programName: r.programName,
       specialisationName: r.specialisationName,
       level: r.level,
       trainingType: r.trainingType ? (TRAINING_TYPE_LABELS[r.trainingType] || r.trainingType) : "—",
-      trainingFullTitle: trainingLabel,
+      trainingFullTitle: r.trainingFullTitle || "—",
       quantityRequired: r.quantityRequired,
       minimumPerTheatre: r.minimumPerTheatre ?? "—",
+      alternatives: altsLabel,
     };
   });
 
