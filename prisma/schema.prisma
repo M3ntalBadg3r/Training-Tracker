@@ -60,6 +60,7 @@ model TrainingData {
   function      FunctionType
   link          String?
   certification String[]      @default([]) @map("certification")
+  isIncomplete  Boolean      @default(false) @map("is_incomplete")
 
   trainingsTaken          TrainingTaken[]
   programData             ProgramData[]

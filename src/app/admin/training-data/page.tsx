@@ -151,7 +151,7 @@ export default function TrainingDataPage() {
   };
 
   const filteredTrainingList = useMemo(() => {
-    let result = [...trainingList];
+    let result = trainingList.filter((t) => !t.isIncomplete);
 
     // Free-form search
     if (debouncedSearch) {
@@ -221,6 +221,17 @@ export default function TrainingDataPage() {
     link: "",
     certification: [] as string[],
   });
+
+  // Incomplete entries
+  const incompleteData = useMemo(() => trainingList.filter((t) => t.isIncomplete), [trainingList]);
+  const [markingComplete, setMarkingComplete] = useState<string | null>(null);
+
+  const handleMarkComplete = async (trainingTitle: string) => {
+    setMarkingComplete(trainingTitle);
+    await fetch(`/api/training-data/${encodeURIComponent(trainingTitle)}`, { method: "PATCH" });
+    setMarkingComplete(null);
+    fetchRawTrainingData();
+  };
 
   // Import state
   const [showImport, setShowImport] = useState(false);
@@ -1175,6 +1186,129 @@ export default function TrainingDataPage() {
           ))}
         </select>
       </section>
+
+      {/* Incomplete Training Entries */}
+      {incompleteData.length > 0 && (
+        <section className="mb-6">
+          <div className="rounded-lg border border-amber-300 overflow-hidden">
+            <div className="bg-amber-50 border-b border-amber-300 px-4 py-3 flex items-center gap-2">
+              <AlertCircle size={18} className="text-amber-600 shrink-0" />
+              <div>
+                <p className="text-sm font-semibold text-amber-800">
+                  {incompleteData.length} training {incompleteData.length === 1 ? "entry" : "entries"} need attention
+                </p>
+                <p className="text-xs text-amber-700">
+                  These were auto-created during import. Fill in the details and click &quot;Mark as Complete&quot; for each.
+                </p>
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-amber-50 border-b border-amber-200">
+                    <th className="px-4 py-3 text-left font-semibold text-amber-800">Full Title</th>
+                    <th className="px-4 py-3 text-left font-semibold text-amber-800">Training Title</th>
+                    <th className="px-4 py-3 text-left font-semibold text-amber-800">Type</th>
+                    <th className="px-4 py-3 text-left font-semibold text-amber-800">Link</th>
+                    <th className="px-4 py-3 text-left font-semibold text-amber-800">Product</th>
+                    <th className="px-4 py-3 text-left font-semibold text-amber-800">Function</th>
+                    <th className="px-4 py-3 text-left font-semibold text-amber-800">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {incompleteData.map((t) => (
+                    <tr key={t.trainingTitle} className="border-b border-amber-100 bg-amber-50/30 hover:bg-amber-50 transition-colors">
+                      {/* Full Title */}
+                      <td className="px-4 py-3">
+                        {editingTitle === t.trainingTitle ? (
+                          <input type="text" value={editValues.fullTitle}
+                            onChange={(e) => setEditValues((prev) => ({ ...prev, fullTitle: e.target.value }))}
+                            className="border border-gray-300 rounded px-2 py-1 text-sm w-full" />
+                        ) : t.fullTitle}
+                      </td>
+                      {/* Training Title */}
+                      <td className="px-4 py-3">
+                        {editingTitle === t.trainingTitle ? (
+                          <input type="text" value={editValues.trainingTitle}
+                            onChange={(e) => setEditValues((prev) => ({ ...prev, trainingTitle: e.target.value }))}
+                            className="border border-gray-300 rounded px-2 py-1 text-sm w-full" />
+                        ) : t.trainingTitle}
+                      </td>
+                      {/* Type */}
+                      <td className="px-4 py-3">
+                        {editingTitle === t.trainingTitle ? (
+                          <select value={editValues.trainingType}
+                            onChange={(e) => { const val = e.target.value; setEditValues((prev) => ({ ...prev, trainingType: val, certification: val === "InstructorLedTraining" ? prev.certification : [] })); }}
+                            className="border border-gray-300 rounded px-2 py-1 text-sm">
+                            {TRAINING_TYPES.map((tt) => <option key={tt} value={tt}>{TRAINING_TYPE_LABELS[tt]}</option>)}
+                          </select>
+                        ) : (TRAINING_TYPE_LABELS[t.trainingType] || t.trainingType)}
+                      </td>
+                      {/* Link */}
+                      <td className="px-4 py-3">
+                        {editingTitle === t.trainingTitle ? (
+                          <input type="url" value={editValues.link}
+                            onChange={(e) => setEditValues((prev) => ({ ...prev, link: e.target.value }))}
+                            className="border border-gray-300 rounded px-2 py-1 text-sm w-full" placeholder="https://..." />
+                        ) : t.link ? (
+                          <a href={t.link} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Link</a>
+                        ) : "-"}
+                      </td>
+                      {/* Product */}
+                      <td className="px-4 py-3">
+                        {editingTitle === t.trainingTitle ? (
+                          <select value={editValues.productType}
+                            onChange={(e) => setEditValues((prev) => ({ ...prev, productType: e.target.value }))}
+                            className="border border-gray-300 rounded px-2 py-1 text-sm">
+                            {PRODUCT_TYPES.map((pt) => <option key={pt} value={pt}>{pt}</option>)}
+                          </select>
+                        ) : t.productType}
+                      </td>
+                      {/* Function */}
+                      <td className="px-4 py-3">
+                        {editingTitle === t.trainingTitle ? (
+                          <select value={editValues.function}
+                            onChange={(e) => setEditValues((prev) => ({ ...prev, function: e.target.value }))}
+                            className="border border-gray-300 rounded px-2 py-1 text-sm">
+                            {FUNCTION_TYPES.map((ft) => <option key={ft} value={ft}>{FUNCTION_TYPE_LABELS[ft]}</option>)}
+                          </select>
+                        ) : (FUNCTION_TYPE_LABELS[t.function] || t.function)}
+                      </td>
+                      {/* Actions */}
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          {editingTitle === t.trainingTitle ? (
+                            <>
+                              <button onClick={() => handleUpdateTraining(t.trainingTitle)}
+                                className="px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700">Save</button>
+                              <button onClick={() => setEditingTitle(null)}
+                                className="px-2 py-1 text-xs bg-gray-200 text-gray-700 rounded hover:bg-gray-300">Cancel</button>
+                            </>
+                          ) : (
+                            <>
+                              <button onClick={() => { setEditingTitle(t.trainingTitle); setEditValues({ trainingTitle: t.trainingTitle, fullTitle: t.fullTitle, trainingType: t.trainingType, productType: t.productType, function: t.function, link: t.link || "", certification: t.certification || [] }); }}
+                                className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200">Edit</button>
+                              <button onClick={() => handleMarkComplete(t.trainingTitle)}
+                                disabled={markingComplete === t.trainingTitle}
+                                className="px-2 py-1 text-xs bg-amber-500 text-white rounded hover:bg-amber-600 disabled:opacity-50">
+                                {markingComplete === t.trainingTitle ? "..." : "Mark as Complete"}
+                              </button>
+                              <button onClick={() => handleDeleteTraining(t.trainingTitle)}
+                                className="px-2 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200">
+                                <Trash2 size={14} />
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Training Data Table */}
       <section className="mb-8">

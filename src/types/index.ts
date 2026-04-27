@@ -55,6 +55,7 @@ export interface TrainingDataRow {
   function: string;
   link: string | null;
   certification: string[];
+  isIncomplete: boolean;
 }
 
 export interface ImportSummary {
@@ -62,6 +63,7 @@ export interface ImportSummary {
   studentsUpdated: number;
   trainingsCreated: number;
   trainingsSkipped: number;
+  trainingsAutoCreated: number;
   errors: string[];
 }
 

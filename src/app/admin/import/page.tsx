@@ -346,6 +346,26 @@ export default function ImportPage() {
               </div>
             </div>
 
+            {(summary.trainingsAutoCreated ?? 0) > 0 && (
+              <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-lg p-4">
+                <div className="shrink-0 mt-0.5">
+                  <svg className="w-5 h-5 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" /></svg>
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-amber-800">
+                    {summary.trainingsAutoCreated} new placeholder training {summary.trainingsAutoCreated === 1 ? "entry" : "entries"} created
+                  </p>
+                  <p className="text-sm text-amber-700">
+                    Visit{" "}
+                    <a href="/admin/training-data" className="underline font-medium hover:text-amber-900">
+                      Training Data
+                    </a>{" "}
+                    to fill in the details and mark each one complete.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {summary.errors.length > 0 && (
               <div>
                 <h4 className="text-sm font-semibold text-red-700 mb-2">
