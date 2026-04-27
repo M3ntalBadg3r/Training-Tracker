@@ -7,7 +7,13 @@ set -e
 #   curl -sSL https://raw.githubusercontent.com/M3ntalBadg3r/Training-Tracker/master/deploy/install-remote.sh | bash -s -- --dev
 # Run as root on a Debian-based system or LXC container.
 
-REPO="https://github.com/M3ntalBadg3r/Training-Tracker.git"
+REPO_BASE="https://github.com/M3ntalBadg3r/Training-Tracker.git"
+# If GITHUB_TOKEN is set (required for private repos), embed it in the correct format.
+if [ -n "${GITHUB_TOKEN}" ]; then
+    REPO="https://x-access-token:${GITHUB_TOKEN}@github.com/M3ntalBadg3r/Training-Tracker.git"
+else
+    REPO="${REPO_BASE}"
+fi
 APP_DIR="/opt/training-tracker"
 BRANCH="master"
 UPDATE_CHANNEL="stable"
@@ -60,4 +66,9 @@ bash deploy/install.sh
 # Append UPDATE_CHANNEL to .env if not already present
 if [ -f "${APP_DIR}/.env" ] && ! grep -q '^UPDATE_CHANNEL=' "${APP_DIR}/.env"; then
     echo "UPDATE_CHANNEL=\"${UPDATE_CHANNEL}\"" >> "${APP_DIR}/.env"
+fi
+
+# Append GITHUB_TOKEN to .env if provided and not already present
+if [ -n "${GITHUB_TOKEN}" ] && [ -f "${APP_DIR}/.env" ] && ! grep -q '^GITHUB_TOKEN=' "${APP_DIR}/.env"; then
+    echo "GITHUB_TOKEN=\"${GITHUB_TOKEN}\"" >> "${APP_DIR}/.env"
 fi

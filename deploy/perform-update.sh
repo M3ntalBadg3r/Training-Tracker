@@ -198,6 +198,19 @@ if [ -n "$TARGET_BRANCH" ] && [ "$TARGET_BRANCH" != "$BRANCH" ]; then
     log "Switched to branch ${BRANCH}"
 fi
 
+# Ensure the git remote URL uses the correct auth format for private repos.
+# If GITHUB_TOKEN is set, the URL must be https://x-access-token:TOKEN@github.com/...
+# A common misconfiguration is https://TOKEN@github.com/... (token as username only),
+# which causes git to prompt for a password and fail in non-interactive contexts.
+if [ -n "${GITHUB_TOKEN}" ]; then
+    DESIRED_REMOTE="https://x-access-token:${GITHUB_TOKEN}@github.com/M3ntalBadg3r/Training-Tracker.git"
+    CURRENT_REMOTE=$(git remote get-url origin 2>/dev/null || echo "")
+    if [ "${CURRENT_REMOTE}" != "${DESIRED_REMOTE}" ]; then
+        log "Updating git remote URL to use x-access-token auth format..."
+        git remote set-url origin "${DESIRED_REMOTE}"
+    fi
+fi
+
 PULL_OUTPUT=$(git pull origin "${BRANCH}" 2>&1) || {
     log "Git pull failed: ${PULL_OUTPUT}"
     rollback 2 "Failed to pull latest changes"
