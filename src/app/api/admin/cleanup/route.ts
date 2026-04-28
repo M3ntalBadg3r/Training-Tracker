@@ -13,6 +13,7 @@ function detectIssues(fullName: string): string[] {
   if (fullName !== fullName.trim()) issues.push("leading_trailing_spaces");
   if (EMAIL_REGEX.test(fullName.trim())) issues.push("email_as_name");
   if (QUESTION_MARKS_REGEX.test(fullName.trim())) issues.push("question_marks");
+  if (hasDuplicateWord(fullName)) issues.push("duplicate_name");
   if (NUMBERS_REGEX.test(fullName)) issues.push("numbers");
   if (SPECIAL_CHARS_REGEX.test(fullName) && !EMAIL_REGEX.test(fullName.trim())) {
     issues.push("special_characters");
@@ -31,10 +32,17 @@ function titleCase(str: string): string {
 function deriveNameFromEmail(email: string): string {
   const local = email.split("@")[0];
   const parts = local.split(/[._-]/);
-  if (parts.length >= 2) {
-    return titleCase(parts.join(" "));
+  return titleCase(parts.join(" "));
+}
+
+function hasDuplicateWord(fullName: string): boolean {
+  const words = fullName.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const seen = new Set<string>();
+  for (const w of words) {
+    if (seen.has(w)) return true;
+    seen.add(w);
   }
-  return email;
+  return false;
 }
 
 function fixName(fullName: string, email: string): string {
@@ -64,6 +72,16 @@ function fixName(fullName: string, email: string): string {
 
   // Title-case the result
   name = titleCase(name);
+
+  // Remove duplicate words (e.g. "Artem Artem Zaytsev" → "Artem Zaytsev")
+  const words = name.split(/\s+/).filter(Boolean);
+  const seen = new Set<string>();
+  name = words.filter((w) => {
+    const key = w.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).join(" ");
 
   return name;
 }

@@ -22,13 +22,35 @@ const ISSUE_LABELS: Record<string, { label: string; color: string }> = {
   leading_trailing_spaces: { label: "Spaces", color: "bg-yellow-100 text-yellow-800" },
   email_as_name: { label: "Email as Name", color: "bg-purple-100 text-purple-800" },
   question_marks: { label: "Question Marks", color: "bg-violet-100 text-violet-800" },
+  duplicate_name: { label: "Duplicate Name", color: "bg-cyan-100 text-cyan-800" },
   numbers: { label: "Numbers", color: "bg-orange-100 text-orange-800" },
   special_characters: { label: "Special Characters", color: "bg-red-100 text-red-800" },
 };
 
+// Issue types that require manual review — not auto-selected after scan
+const MANUAL_REVIEW_ISSUES = new Set(["email_as_name", "duplicate_name"]);
+
 function HighlightedName({ fullName, issues }: { fullName: string; issues: string[] }) {
   if (issues.includes("email_as_name")) {
     return <span className="bg-purple-100 text-purple-800 px-1 rounded">{fullName}</span>;
+  }
+
+  if (issues.includes("duplicate_name")) {
+    const words = fullName.split(/(\s+)/);
+    const seen = new Set<string>();
+    return (
+      <span>
+        {words.map((token, i) => {
+          if (/^\s+$/.test(token)) return <span key={i}>{token}</span>;
+          const key = token.toLowerCase();
+          if (seen.has(key)) {
+            return <span key={i} className="bg-cyan-200 text-cyan-900 px-0.5 rounded font-bold" title="Duplicate word">{token}</span>;
+          }
+          seen.add(key);
+          return <span key={i}>{token}</span>;
+        })}
+      </span>
+    );
   }
 
   // Build highlighted characters
@@ -79,7 +101,11 @@ export default function DataCleanUpPage() {
       if (res.ok) {
         const data: StudentIssue[] = await res.json();
         setResults(data);
-        setSelected(new Set(data.map((r) => r.email)));
+        setSelected(new Set(
+          data
+            .filter((r) => !r.issues.some((issue) => MANUAL_REVIEW_ISSUES.has(issue)))
+            .map((r) => r.email)
+        ));
         setScanned(true);
       }
     } finally {
