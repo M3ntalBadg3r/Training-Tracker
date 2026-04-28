@@ -656,6 +656,9 @@ export default function ScheduledExportsPage() {
             <p className="text-sm text-gray-500">
               Configure credentials for each delivery provider. Credentials are stored in the database and shared across all schedules using that provider. Cloud providers use guided OAuth — Training Tracker never sees your password.
             </p>
+            <p className="text-sm font-bold text-red-600">
+              Cloud providers such as Google, Box, &amp; OneDrive require a business account and will not work with consumer accounts. You will also be required to expose the instance to the internet so that the OAuth process can complete.
+            </p>
 
             {/* Cloud providers: OAuth wizard */}
             {CLOUD_PROVIDERS.map((cp) => {

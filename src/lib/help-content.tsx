@@ -936,6 +936,12 @@ const helpSections: Record<string, HelpSection> = {
         </table>
 
         <h3>Connecting cloud providers (wizard)</h3>
+        <p style={{ color: "#dc2626", fontWeight: "bold" }}>
+          Cloud providers such as Google, Box, &amp; OneDrive require a business
+          account and will not work with consumer accounts. You will also be
+          required to expose the instance to the internet so that the OAuth
+          process can complete.
+        </p>
         <p>
           Each cloud destination has a <strong>Connect with …</strong> button
           that opens a guided OAuth wizard. The wizard:

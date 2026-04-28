@@ -567,6 +567,8 @@ Click **Add Schedule** and configure:
 
 #### Provider Credentials
 
+> **⚠ Cloud providers such as Google, Box, & OneDrive require a business account and will not work with consumer accounts. You will also be required to expose the instance to the internet so that the OAuth process can complete.**
+
 Expand the **Provider Credentials** section to manage authentication for each delivery provider.
 
 - **Email (SMTP)** keeps an inline form (host, port, username, password, from address) plus a **Test Connection** button.
