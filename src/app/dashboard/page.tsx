@@ -209,7 +209,7 @@ export default function DashboardPage() {
       {/* Charts Row 1: By Product Type & By Function */}
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
         <div
-          onClick={() => router.push("/reports?report=by-product-type")}
+          onClick={() => router.push("/reports/by-product-type")}
           className="bg-white rounded-lg border border-gray-200 p-5 cursor-pointer hover:border-blue-300 hover:shadow-md transition-all"
           title="Click to view full report"
         >
@@ -229,7 +229,7 @@ export default function DashboardPage() {
         </div>
 
         <div
-          onClick={() => router.push("/reports?report=by-function")}
+          onClick={() => router.push("/reports/by-function")}
           className="bg-white rounded-lg border border-gray-200 p-5 cursor-pointer hover:border-blue-300 hover:shadow-md transition-all"
           title="Click to view full report"
         >
@@ -252,7 +252,7 @@ export default function DashboardPage() {
       {/* Charts Row 2: Expiring & Monthly Achieved */}
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
         <div
-          onClick={() => router.push("/reports?report=expiring")}
+          onClick={() => router.push("/reports/expiring-soon")}
           className="bg-white rounded-lg border border-gray-200 p-5 cursor-pointer hover:border-blue-300 hover:shadow-md transition-all"
           title="Click to view full report"
         >
@@ -272,7 +272,7 @@ export default function DashboardPage() {
         </div>
 
         <div
-          onClick={() => router.push("/reports?report=achieved")}
+          onClick={() => router.push("/reports/last-12-months")}
           className="bg-white rounded-lg border border-gray-200 p-5 cursor-pointer hover:border-blue-300 hover:shadow-md transition-all"
           title="Click to view full report"
         >

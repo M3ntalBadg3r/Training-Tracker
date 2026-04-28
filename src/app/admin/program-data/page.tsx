@@ -53,6 +53,7 @@ export default function ProgramDataPage() {
 
   // Search & filter
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchColumn, setSearchColumn] = useState("all");
   const debouncedSearch = useDebounce(searchQuery, 300);
   const [filterProgram, setFilterProgram] = useState("");
   const [filterSpec, setFilterSpec] = useState("");
@@ -207,20 +208,34 @@ export default function ProgramDataPage() {
   const filteredData = useMemo(() => {
     const q = debouncedSearch.toLowerCase();
     return data.filter((row) => {
-      const matchesSearch =
-        !q ||
-        row.programName.toLowerCase().includes(q) ||
-        row.specialisationName.toLowerCase().includes(q) ||
-        (row.trainingFullTitle || "").toLowerCase().includes(q) ||
-        row.level.toLowerCase().includes(q) ||
-        (row.trainingType ? (TRAINING_TYPE_LABELS[row.trainingType] || row.trainingType).toLowerCase().includes(q) : false);
+      let matchesSearch = true;
+      if (q) {
+        if (searchColumn === "programName") {
+          matchesSearch = row.programName.toLowerCase().includes(q);
+        } else if (searchColumn === "specialisationName") {
+          matchesSearch = row.specialisationName.toLowerCase().includes(q);
+        } else if (searchColumn === "trainingFullTitle") {
+          matchesSearch = (row.trainingFullTitle || "").toLowerCase().includes(q);
+        } else if (searchColumn === "level") {
+          matchesSearch = row.level.toLowerCase().includes(q);
+        } else if (searchColumn === "trainingType") {
+          matchesSearch = (TRAINING_TYPE_LABELS[row.trainingType || ""] || row.trainingType || "").toLowerCase().includes(q);
+        } else {
+          matchesSearch =
+            row.programName.toLowerCase().includes(q) ||
+            row.specialisationName.toLowerCase().includes(q) ||
+            (row.trainingFullTitle || "").toLowerCase().includes(q) ||
+            row.level.toLowerCase().includes(q) ||
+            (row.trainingType ? (TRAINING_TYPE_LABELS[row.trainingType] || row.trainingType).toLowerCase().includes(q) : false);
+        }
+      }
       const matchesProgram = !filterProgram || row.programName === filterProgram;
       const matchesSpec = !filterSpec || row.specialisationName === filterSpec;
       const matchesLevel = !filterLevel || row.level === filterLevel;
       const matchesType = !filterType || row.trainingType === filterType;
       return matchesSearch && matchesProgram && matchesSpec && matchesLevel && matchesType;
     });
-  }, [data, debouncedSearch, filterProgram, filterSpec, filterLevel, filterType]);
+  }, [data, debouncedSearch, searchColumn, filterProgram, filterSpec, filterLevel, filterType]);
 
   const sortedData = useMemo(() => {
     const sorted = [...filteredData];
@@ -242,7 +257,7 @@ export default function ProgramDataPage() {
   const totalPages = Math.max(1, Math.ceil(sortedData.length / pageSize));
   const pagedData = sortedData.slice((page - 1) * pageSize, page * pageSize);
 
-  useEffect(() => { setPage(1); }, [debouncedSearch, filterProgram, filterSpec, filterLevel, filterType, pageSize]);
+  useEffect(() => { setPage(1); }, [debouncedSearch, searchColumn, filterProgram, filterSpec, filterLevel, filterType, pageSize]);
 
   const toggleSort = (col: string) => {
     if (sortCol === col) {
@@ -408,7 +423,7 @@ export default function ProgramDataPage() {
     };
   });
 
-  const hasFilters = !!searchQuery || !!filterProgram || !!filterSpec || !!filterLevel || !!filterType;
+  const hasFilters = !!searchQuery || searchColumn !== "all" || !!filterProgram || !!filterSpec || !!filterLevel || !!filterType;
 
   // --- Import helpers ---
   const IMPORT_COLUMN_MAP: Record<string, keyof ImportRow> = {
@@ -676,50 +691,39 @@ export default function ProgramDataPage() {
         <div className="mb-4 p-3 bg-red-50 text-red-700 rounded-lg">{error}</div>
       )}
 
-      {/* Search & Filters */}
-      <div className="bg-white rounded-lg border border-gray-200 p-4 mb-4">
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="relative flex-1 min-w-[200px]">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-8 py-2 border border-gray-300 rounded-lg bg-white text-sm"
-            />
-            {searchQuery && (
-              <button onClick={() => setSearchQuery("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-                <X size={16} />
-              </button>
-            )}
-          </div>
-          <select value={filterProgram} onChange={(e) => setFilterProgram(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm">
-            <option value="">All Programs</option>
-            {programNames.map((p) => <option key={p} value={p}>{p}</option>)}
-          </select>
-          <select value={filterSpec} onChange={(e) => setFilterSpec(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm">
-            <option value="">All Specialisations</option>
-            {specNames.map((s) => <option key={s} value={s}>{s}</option>)}
-          </select>
-          <select value={filterLevel} onChange={(e) => setFilterLevel(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm">
-            <option value="">All Levels</option>
-            {LEVELS.map((l) => <option key={l} value={l}>{LEVEL_LABELS[l]}</option>)}
-          </select>
-          <select value={filterType} onChange={(e) => setFilterType(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm">
-            <option value="">All Types</option>
-            {TRAINING_TYPES.map((t) => <option key={t} value={t}>{TRAINING_TYPE_LABELS[t]}</option>)}
-          </select>
-          {hasFilters && (
-            <button
-              onClick={() => { setSearchQuery(""); setFilterProgram(""); setFilterSpec(""); setFilterLevel(""); setFilterType(""); }}
-              className="text-sm text-blue-600 hover:text-blue-800"
-            >
-              Clear filters
-            </button>
-          )}
+      {/* Search bar */}
+      <section className="mb-4 flex items-center gap-3">
+        <div className="relative flex-1 max-w-md">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Search..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          />
         </div>
-      </div>
+        <select
+          value={searchColumn}
+          onChange={(e) => setSearchColumn(e.target.value)}
+          className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="all">All columns</option>
+          <option value="programName">Program</option>
+          <option value="specialisationName">Specialisation</option>
+          <option value="level">Level</option>
+          <option value="trainingType">Training Type</option>
+          <option value="trainingFullTitle">Training</option>
+        </select>
+        {hasFilters && (
+          <button
+            onClick={() => { setSearchQuery(""); setSearchColumn("all"); setFilterProgram(""); setFilterSpec(""); setFilterLevel(""); setFilterType(""); }}
+            className="text-sm text-blue-600 hover:text-blue-800 whitespace-nowrap"
+          >
+            Clear Filters
+          </button>
+        )}
+      </section>
 
       {/* Data Table */}
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
@@ -727,25 +731,61 @@ export default function ProgramDataPage() {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 text-left">
               <tr>
-                {[
-                  { key: "programName", label: "Program Name" },
-                  { key: "specialisationName", label: "Specialisation" },
-                  { key: "level", label: "Level" },
-                  { key: "trainingType", label: "Type" },
-                  { key: "trainingFullTitle", label: "Training" },
-                  { key: "quantityRequired", label: "Qty Required" },
-                  { key: "minimumPerTheatre", label: "Min/Theatre" },
-                ].map((col) => (
-                  <th
-                    key={col.key}
-                    className="px-4 py-3 font-semibold text-gray-700 cursor-pointer hover:bg-gray-100 select-none"
-                    onClick={() => toggleSort(col.key)}
-                  >
-                    <span className="flex items-center gap-1">
-                      {col.label} <SortIcon col={col.key} />
-                    </span>
-                  </th>
-                ))}
+                <th className="px-4 py-3 text-left">
+                  <div className="space-y-1">
+                    <button onClick={() => toggleSort("programName")} className="flex items-center gap-1 font-semibold text-gray-700 hover:text-gray-900">
+                      Program Name <SortIcon col="programName" />
+                    </button>
+                    <select value={filterProgram} onChange={(e) => setFilterProgram(e.target.value)} className="w-full text-xs border border-gray-200 rounded px-1 py-0.5 font-normal">
+                      <option value="">All</option>
+                      {programNames.map((p) => <option key={p} value={p}>{p}</option>)}
+                    </select>
+                  </div>
+                </th>
+                <th className="px-4 py-3 text-left">
+                  <div className="space-y-1">
+                    <button onClick={() => toggleSort("specialisationName")} className="flex items-center gap-1 font-semibold text-gray-700 hover:text-gray-900">
+                      Specialisation <SortIcon col="specialisationName" />
+                    </button>
+                    <select value={filterSpec} onChange={(e) => setFilterSpec(e.target.value)} className="w-full text-xs border border-gray-200 rounded px-1 py-0.5 font-normal">
+                      <option value="">All</option>
+                      {specNames.map((s) => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </div>
+                </th>
+                <th className="px-4 py-3 text-left">
+                  <div className="space-y-1">
+                    <button onClick={() => toggleSort("level")} className="flex items-center gap-1 font-semibold text-gray-700 hover:text-gray-900">
+                      Level <SortIcon col="level" />
+                    </button>
+                    <select value={filterLevel} onChange={(e) => setFilterLevel(e.target.value)} className="w-full text-xs border border-gray-200 rounded px-1 py-0.5 font-normal">
+                      <option value="">All</option>
+                      {LEVELS.map((l) => <option key={l} value={l}>{LEVEL_LABELS[l]}</option>)}
+                    </select>
+                  </div>
+                </th>
+                <th className="px-4 py-3 text-left">
+                  <div className="space-y-1">
+                    <button onClick={() => toggleSort("trainingType")} className="flex items-center gap-1 font-semibold text-gray-700 hover:text-gray-900">
+                      Type <SortIcon col="trainingType" />
+                    </button>
+                    <select value={filterType} onChange={(e) => setFilterType(e.target.value)} className="w-full text-xs border border-gray-200 rounded px-1 py-0.5 font-normal">
+                      <option value="">All</option>
+                      {TRAINING_TYPES.map((t) => <option key={t} value={t}>{TRAINING_TYPE_LABELS[t]}</option>)}
+                    </select>
+                  </div>
+                </th>
+                <th className="px-4 py-3 text-left">
+                  <button onClick={() => toggleSort("trainingFullTitle")} className="flex items-center gap-1 font-semibold text-gray-700 hover:text-gray-900">
+                    Training <SortIcon col="trainingFullTitle" />
+                  </button>
+                </th>
+                <th className="px-4 py-3 text-left">
+                  <button onClick={() => toggleSort("quantityRequired")} className="flex items-center gap-1 font-semibold text-gray-700 hover:text-gray-900">
+                    Qty Required <SortIcon col="quantityRequired" />
+                  </button>
+                </th>
+                <th className="px-4 py-3 font-semibold text-gray-700">Min/Theatre</th>
                 <th className="px-4 py-3 font-semibold text-gray-700">Actions</th>
               </tr>
             </thead>
