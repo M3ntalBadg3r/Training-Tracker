@@ -6,6 +6,7 @@ import prisma from "@/lib/prisma";
 import { fetchReportData, type ReportType } from "@/lib/report-queries";
 import { generateExportBuffer, getFileExtension, getMimeType } from "@/lib/server-export";
 import { deliverLocal, deliverEmail, deliverGoogleDrive, deliverBox, deliverOneDrive } from "@/lib/export-destinations";
+import { markCredentialSuccess, markCredentialFailure } from "@/lib/credential-health";
 import type { ScheduledExport } from "@prisma/client";
 
 function buildFilename(schedule: ScheduledExport): string {
@@ -21,7 +22,16 @@ async function getCredential(provider: string): Promise<Record<string, unknown> 
   return cred ? (cred.config as Record<string, unknown>) : null;
 }
 
+function requireRefreshToken(provider: string, cred: Record<string, unknown>): string {
+  const token = typeof cred.refreshToken === "string" ? cred.refreshToken : "";
+  if (!token) {
+    throw new Error(`${provider} credential is missing a refresh token — please reconnect from Admin > Scheduled Exports.`);
+  }
+  return token;
+}
+
 export async function runExport(schedule: ScheduledExport): Promise<{ status: string; error?: string }> {
+  let credentialProvider: string | null = null;
   try {
     const reportResult = await fetchReportData(schedule.reportType as ReportType);
     const buffer = generateExportBuffer(reportResult.data, reportResult.columns, schedule.format, reportResult.title);
@@ -39,6 +49,7 @@ export async function runExport(schedule: ScheduledExport): Promise<{ status: st
       }
 
       case "email": {
+        credentialProvider = "email";
         const cred = await getCredential("email");
         if (!cred) throw new Error("Email credentials not configured");
         await deliverEmail(buffer, filename, mimeType, `Scheduled Report: ${schedule.name}`, {
@@ -54,37 +65,41 @@ export async function runExport(schedule: ScheduledExport): Promise<{ status: st
       }
 
       case "google-drive": {
+        credentialProvider = "google-drive";
         const cred = await getCredential("google-drive");
         if (!cred) throw new Error("Google Drive credentials not configured");
         await deliverGoogleDrive(buffer, filename, mimeType, {
           clientId: String(cred.clientId),
           clientSecret: String(cred.clientSecret),
-          refreshToken: String(cred.refreshToken),
+          refreshToken: requireRefreshToken("google-drive", cred),
           folderId: config.folderId ? String(config.folderId) : (cred.folderId ? String(cred.folderId) : undefined),
         });
         break;
       }
 
       case "box": {
+        credentialProvider = "box";
         const cred = await getCredential("box");
         if (!cred) throw new Error("Box credentials not configured");
         await deliverBox(buffer, filename, {
           clientId: String(cred.clientId),
           clientSecret: String(cred.clientSecret),
-          accessToken: String(cred.accessToken),
+          refreshToken: requireRefreshToken("box", cred),
           folderId: config.folderId ? String(config.folderId) : (cred.folderId ? String(cred.folderId) : undefined),
         });
         break;
       }
 
       case "onedrive": {
+        credentialProvider = "onedrive";
         const cred = await getCredential("onedrive");
         if (!cred) throw new Error("OneDrive credentials not configured");
         await deliverOneDrive(buffer, filename, {
           clientId: String(cred.clientId),
-          tenantId: String(cred.tenantId),
           clientSecret: String(cred.clientSecret),
-          folderPath: config.folderPath ? String(config.folderPath) : undefined,
+          refreshToken: requireRefreshToken("onedrive", cred),
+          tenantId: cred.tenantId ? String(cred.tenantId) : undefined,
+          folderPath: config.folderPath ? String(config.folderPath) : (cred.folderPath ? String(cred.folderPath) : undefined),
         });
         break;
       }
@@ -98,6 +113,10 @@ export async function runExport(schedule: ScheduledExport): Promise<{ status: st
       data: { lastRunAt: new Date(), lastStatus: "success", lastError: null },
     });
 
+    if (credentialProvider) {
+      await markCredentialSuccess(credentialProvider);
+    }
+
     return { status: "success" };
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
@@ -105,6 +124,11 @@ export async function runExport(schedule: ScheduledExport): Promise<{ status: st
       where: { id: schedule.id },
       data: { lastRunAt: new Date(), lastStatus: "error", lastError: message },
     });
+
+    if (credentialProvider) {
+      await markCredentialFailure(credentialProvider, message);
+    }
+
     return { status: "error", error: message };
   }
 }

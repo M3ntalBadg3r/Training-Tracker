@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback } from "react";
 import PageHeader from "@/components/layout/PageHeader";
 import Modal from "@/components/ui/Modal";
+import CredentialHealthBanner from "@/components/admin/CredentialHealthBanner";
+import ProviderCredentialWizard, { type WizardProvider } from "@/components/admin/ProviderCredentialWizard";
 import {
   Plus,
   Pencil,
@@ -10,12 +12,15 @@ import {
   Play,
   CheckCircle,
   AlertTriangle,
+  AlertCircle,
   Clock,
   ChevronDown,
   ChevronUp,
   Mail,
   HardDrive,
   Cloud,
+  Link2,
+  RefreshCw,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -118,36 +123,39 @@ const CREDENTIAL_PROVIDERS = [
       { key: "from", label: "From Address", type: "text", placeholder: "reports@example.com" },
     ],
   },
+];
+
+// Cloud providers handled by the OAuth wizard (no inline form).
+const CLOUD_PROVIDERS: { provider: WizardProvider; label: string; description: string }[] = [
   {
     provider: "google-drive",
     label: "Google Drive",
-    fields: [
-      { key: "clientId", label: "Client ID", type: "text", placeholder: "" },
-      { key: "clientSecret", label: "Client Secret", type: "password", placeholder: "" },
-      { key: "refreshToken", label: "Refresh Token", type: "password", placeholder: "" },
-      { key: "folderId", label: "Default Folder ID (optional)", type: "text", placeholder: "" },
-    ],
+    description: "Upload reports to a Google Drive folder via OAuth.",
   },
   {
     provider: "box",
     label: "Box",
-    fields: [
-      { key: "clientId", label: "Client ID", type: "text", placeholder: "" },
-      { key: "clientSecret", label: "Client Secret", type: "password", placeholder: "" },
-      { key: "accessToken", label: "Access Token", type: "password", placeholder: "" },
-      { key: "folderId", label: "Default Folder ID (optional)", type: "text", placeholder: "0" },
-    ],
+    description: "Upload reports to a Box folder via OAuth.",
   },
   {
     provider: "onedrive",
     label: "OneDrive",
-    fields: [
-      { key: "clientId", label: "Azure App Client ID", type: "text", placeholder: "" },
-      { key: "tenantId", label: "Tenant ID", type: "text", placeholder: "" },
-      { key: "clientSecret", label: "Client Secret", type: "password", placeholder: "" },
-    ],
+    description: "Upload reports to your OneDrive via Microsoft delegated OAuth.",
   },
 ];
+
+interface HealthEntry {
+  provider: string;
+  label: string;
+  configured: boolean;
+  status: "ok" | "expiring" | "expired" | "failed" | "unknown";
+  daysIdle: number | null;
+  daysUntilExpiry: number | null;
+  message: string;
+  lastCheckedAt: string | null;
+  lastSuccessAt: string | null;
+  lastCheckError: string | null;
+}
 
 // ─── Destination config fields ────────────────────────────────────────────────
 
@@ -290,13 +298,16 @@ export default function ScheduledExportsPage() {
   const [savingCred, setSavingCred] = useState<string | null>(null);
   const [testingCred, setTestingCred] = useState<string | null>(null);
   const [credResult, setCredResult] = useState<{ provider: string; type: "success" | "error"; message: string } | null>(null);
+  const [healthByProvider, setHealthByProvider] = useState<Record<string, HealthEntry>>({});
+  const [wizardProvider, setWizardProvider] = useState<WizardProvider | null>(null);
 
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [schedsRes, credsRes] = await Promise.all([
+      const [schedsRes, credsRes, healthRes] = await Promise.all([
         fetch("/api/admin/scheduled-exports"),
         fetch("/api/admin/scheduled-exports/credentials"),
+        fetch("/api/admin/scheduled-exports/credentials/health"),
       ]);
       setSchedules(await schedsRes.json());
       const credsData: Credential[] = await credsRes.json();
@@ -311,6 +322,10 @@ export default function ScheduledExportsPage() {
         }
         return updated;
       });
+      if (healthRes.ok) {
+        const healthData = (await healthRes.json()) as HealthEntry[];
+        setHealthByProvider(Object.fromEntries(healthData.map((h) => [h.provider, h])));
+      }
     } catch {
       // ignore
     } finally {
@@ -460,10 +475,17 @@ export default function ScheduledExportsPage() {
       });
       const data = await res.json();
       if (data.success) {
-        setCredResult({ provider, type: "success", message: "Connection successful!" });
+        const who = data.info?.email || data.info?.user;
+        setCredResult({
+          provider,
+          type: "success",
+          message: who ? `Connected as ${who}.` : "Connection successful!",
+        });
       } else {
         setCredResult({ provider, type: "error", message: data.error || "Connection failed." });
       }
+      // The test endpoint also updates the health columns — refresh them.
+      await loadData();
     } catch {
       setCredResult({ provider, type: "error", message: "Connection test failed." });
     } finally {
@@ -495,6 +517,8 @@ export default function ScheduledExportsPage() {
   return (
     <div>
       <PageHeader title="Scheduled Exports" showBack helpSlug="scheduled-exports" />
+
+      <CredentialHealthBanner />
 
       {/* Run result banner */}
       {runResult && (
@@ -630,8 +654,102 @@ export default function ScheduledExportsPage() {
         {credsOpen && (
           <div className="border-t border-gray-100 px-6 py-4 space-y-6">
             <p className="text-sm text-gray-500">
-              Configure credentials for each delivery provider. Credentials are stored securely in the database and shared across all schedules using that provider.
+              Configure credentials for each delivery provider. Credentials are stored in the database and shared across all schedules using that provider. Cloud providers use guided OAuth — Training Tracker never sees your password.
             </p>
+            <p className="text-sm font-bold text-red-600">
+              Cloud providers such as Google, Box, &amp; OneDrive require a business account and will not work with consumer accounts. You will also be required to expose the instance to the internet so that the OAuth process can complete.
+            </p>
+
+            {/* Cloud providers: OAuth wizard */}
+            {CLOUD_PROVIDERS.map((cp) => {
+              const health = healthByProvider[cp.provider];
+              const configured = !!health?.configured;
+              const result = credResult?.provider === cp.provider ? credResult : null;
+              const status = health?.status ?? "unknown";
+              const badgeColour =
+                status === "ok"
+                  ? "bg-green-50 text-green-700 border-green-200"
+                  : status === "expiring"
+                  ? "bg-amber-50 text-amber-800 border-amber-200"
+                  : status === "expired" || status === "failed"
+                  ? "bg-red-50 text-red-800 border-red-200"
+                  : "bg-gray-100 text-gray-600 border-gray-200";
+              const badgeLabel =
+                !configured
+                  ? "Not configured"
+                  : status === "ok"
+                  ? "Healthy"
+                  : status === "expiring"
+                  ? `Expires in ${health?.daysUntilExpiry ?? 0}d`
+                  : status === "expired"
+                  ? "Expired"
+                  : status === "failed"
+                  ? "Auth failed"
+                  : "Not yet checked";
+
+              return (
+                <div
+                  key={cp.provider}
+                  id={`credentials-${cp.provider}`}
+                  className="border border-gray-200 rounded-lg p-4"
+                >
+                  <div className="flex items-start justify-between mb-2 gap-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-medium text-gray-800">{cp.label}</h3>
+                        <span className={`text-xs px-2 py-0.5 rounded-full border ${badgeColour}`}>{badgeLabel}</span>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1">{cp.description}</p>
+                      {configured && health?.lastSuccessAt && (
+                        <p className="text-xs text-gray-400 mt-1">
+                          Last successful authentication: {new Date(health.lastSuccessAt).toLocaleString()}
+                        </p>
+                      )}
+                      {(status === "expired" || status === "failed") && health?.message && (
+                        <p className="text-xs text-red-700 mt-1 flex items-start gap-1">
+                          <AlertCircle size={12} className="mt-0.5 shrink-0" />
+                          <span>{health.message}</span>
+                        </p>
+                      )}
+                    </div>
+                    {configured && (
+                      <button
+                        onClick={() => handleDeleteCred(cp.provider)}
+                        className="text-xs text-red-500 hover:text-red-700"
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2 mt-3">
+                    <button
+                      onClick={() => setWizardProvider(cp.provider)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                    >
+                      <Link2 size={14} />
+                      {configured ? "Reconnect" : `Connect with ${cp.label}`}
+                    </button>
+                    {configured && (
+                      <button
+                        onClick={() => handleTestCred(cp.provider)}
+                        disabled={testingCred === cp.provider}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50 border border-gray-300"
+                      >
+                        <RefreshCw size={14} />
+                        {testingCred === cp.provider ? "Testing…" : "Test Connection"}
+                      </button>
+                    )}
+                    {result && (
+                      <span className={`flex items-center gap-1 text-xs ${result.type === "success" ? "text-green-600" : "text-red-600"}`}>
+                        {result.type === "success" ? <CheckCircle size={12} /> : <AlertTriangle size={12} />}
+                        {result.message}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
 
             {CREDENTIAL_PROVIDERS.map((provDef) => {
               const configured = isCredConfigured(provDef.provider);
@@ -934,6 +1052,15 @@ export default function ScheduledExportsPage() {
           Are you sure you want to delete this export schedule? This action cannot be undone.
         </p>
       </Modal>
+
+      {wizardProvider && (
+        <ProviderCredentialWizard
+          open={wizardProvider !== null}
+          provider={wizardProvider}
+          onClose={() => setWizardProvider(null)}
+          onSuccess={() => loadData()}
+        />
+      )}
     </div>
   );
 }

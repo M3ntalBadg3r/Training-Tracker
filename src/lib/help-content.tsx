@@ -929,20 +929,59 @@ const helpSections: Record<string, HelpSection> = {
           <tbody>
             <tr><td><strong>Local Filesystem</strong></td><td>A writable path on the server</td></tr>
             <tr><td><strong>Email</strong></td><td>SMTP credentials + recipient address</td></tr>
-            <tr><td><strong>Google Drive</strong></td><td>OAuth credentials (Client ID, Secret, Refresh Token)</td></tr>
-            <tr><td><strong>Box</strong></td><td>App credentials (Client ID, Secret, Access Token)</td></tr>
-            <tr><td><strong>OneDrive</strong></td><td>Azure app registration (Client ID, Tenant ID, Secret)</td></tr>
+            <tr><td><strong>Google Drive</strong></td><td>An OAuth Client ID + Secret. Connect via the wizard — Training Tracker captures the refresh token automatically.</td></tr>
+            <tr><td><strong>Box</strong></td><td>A Custom App Client ID + Secret (User Authentication OAuth 2.0). Connect via the wizard — Training Tracker captures the refresh token automatically.</td></tr>
+            <tr><td><strong>OneDrive</strong></td><td>An Entra (Azure AD) Web app Client ID + Secret. Connect via the wizard — Training Tracker captures a delegated refresh token; uploads land in your own OneDrive.</td></tr>
           </tbody>
         </table>
 
-        <h3>Provider Credentials</h3>
+        <h3>Connecting cloud providers (wizard)</h3>
+        <p style={{ color: "#dc2626", fontWeight: "bold" }}>
+          Cloud providers such as Google, Box, &amp; OneDrive require a business
+          account and will not work with consumer accounts. You will also be
+          required to expose the instance to the internet so that the OAuth
+          process can complete.
+        </p>
         <p>
-          Expand the <strong>Provider Credentials</strong> section to enter
-          authentication details for cloud providers and email. Credentials are
-          stored in the database and shared by all schedules using that
-          provider. For email (SMTP), a <strong>Test Connection</strong> button
-          appears after saving credentials — click it to verify the SMTP server
-          is reachable and the credentials are valid without sending an email.
+          Each cloud destination has a <strong>Connect with …</strong> button
+          that opens a guided OAuth wizard. The wizard:
+        </p>
+        <ol>
+          <li>Shows the exact <strong>redirect URI</strong> to register in the provider&rsquo;s developer console (with a Copy button).</li>
+          <li>Walks you through registering an OAuth app and grabbing the Client ID and Secret.</li>
+          <li>Opens a popup to the provider&rsquo;s consent screen — sign in and approve.</li>
+          <li>Captures the refresh token automatically and runs a Test Connection so you can see who you&rsquo;re connected as.</li>
+        </ol>
+        <p>
+          If your install is behind a reverse proxy, make sure
+          <code>X-Forwarded-Proto</code> and <code>X-Forwarded-Host</code> are
+          forwarded — the wizard derives the redirect URI from those headers.
+        </p>
+
+        <h3>Provider credentials section</h3>
+        <p>
+          The <strong>Provider Credentials</strong> section lists every
+          provider with a status badge: <em>Healthy</em>,
+          <em>Expires in N days</em>, <em>Expired</em>, <em>Auth failed</em>,
+          or <em>Not configured</em>. Cloud cards offer{" "}
+          <strong>Connect/Reconnect</strong>, <strong>Test Connection</strong>,
+          and <strong>Remove</strong>. Email keeps the inline SMTP form with
+          its own <strong>Test Connection</strong> button.
+        </p>
+
+        <h3>Credential health monitoring</h3>
+        <p>
+          Cloud refresh tokens have a finite lifetime — Box tokens expire
+          after 60 days unused, OneDrive after about 90. A red/amber banner
+          appears at the top of the Dashboard and this page if any credential
+          has expired or is approaching expiry, with a one-click{" "}
+          <strong>Reconnect</strong> link.
+        </p>
+        <p>
+          A daily cron script (<code>deploy/auto-credential-check.sh</code>)
+          probes each credential and updates its health status. Add it to
+          cron or systemd to ensure the banner stays accurate even when no
+          schedule runs that day.
         </p>
 
         <h3>Actions</h3>

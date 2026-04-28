@@ -561,13 +561,41 @@ Click **Add Schedule** and configure:
 |-------------|----------------|
 | **Local Filesystem** | Output path on the server; optional retention count |
 | **Email** | Recipient address; SMTP credentials in Provider Credentials |
-| **Google Drive** | Folder ID (optional); OAuth credentials in Provider Credentials |
-| **Box** | Folder ID (optional); app credentials in Provider Credentials |
-| **OneDrive** | Folder path (optional); Azure app credentials in Provider Credentials |
+| **Google Drive** | Folder ID (optional); OAuth credentials connected via the wizard |
+| **Box** | Folder ID (optional); OAuth credentials connected via the wizard |
+| **OneDrive** | Folder path (optional); Azure app + delegated OAuth connected via the wizard |
 
 #### Provider Credentials
 
-Expand the **Provider Credentials** section to enter authentication details for cloud providers and email. Credentials are stored securely in the database and reused across all schedules for that provider.
+> **⚠ Cloud providers such as Google, Box, & OneDrive require a business account and will not work with consumer accounts. You will also be required to expose the instance to the internet so that the OAuth process can complete.**
+
+Expand the **Provider Credentials** section to manage authentication for each delivery provider.
+
+- **Email (SMTP)** keeps an inline form (host, port, username, password, from address) plus a **Test Connection** button.
+- **Google Drive**, **Box**, and **OneDrive** each have a **Connect with…** button that launches a guided OAuth wizard. Training Tracker:
+  1. Shows the redirect URI you must register in the provider's developer console (with a Copy button).
+  2. Walks you through registering an OAuth app in Google Cloud Console / Box Developer Console / Microsoft Entra.
+  3. Opens a popup to the provider's consent screen and captures the resulting refresh token automatically.
+  4. Runs a Test Connection so you can see who you're connected as.
+
+The redirect URI is `https://<your-host>/api/admin/scheduled-exports/credentials/oauth/<provider>/callback`. If your install is behind a reverse proxy, ensure `X-Forwarded-Proto` and `X-Forwarded-Host` are forwarded to the app.
+
+OneDrive uses the **delegated** OAuth flow: files are uploaded to the signed-in user's own OneDrive (`/me/drive`). For org-wide automation prefer a service account to sign in.
+
+#### Credential Health Monitoring
+
+Cloud refresh tokens have a finite lifetime — Box tokens expire 60 days after issue, OneDrive after about 90. A red/amber banner appears at the top of the **Dashboard** and the **Scheduled Exports** page when any credential has expired or is approaching expiry, with a one-click **Reconnect** link. The banner only shows for admins.
+
+Each provider card also displays a status badge (`Healthy`, `Expires in N days`, `Expired`, `Auth failed`, `Not configured`) with the date of the last successful authentication.
+
+A daily cron script keeps health status fresh:
+
+```bash
+# /etc/cron.d/training-tracker-credentials  (runs at 04:30 each day)
+30 4 * * * www-data /opt/training-tracker/deploy/auto-credential-check.sh /opt/training-tracker
+```
+
+The script reads `CRON_SECRET` from `.env` and POSTs an HMAC-signed request to the credentials/check endpoint. Without it, health updates only happen when admins click Test Connection or when scheduled exports run.
 
 #### Schedule Actions
 

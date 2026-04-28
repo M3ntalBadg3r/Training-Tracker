@@ -1,11 +1,17 @@
 /**
  * Delivery logic for scheduled export destinations.
  * Handles: local filesystem, email (SMTP), Google Drive, Box, OneDrive.
+ *
+ * All cloud providers use OAuth 2.0 refresh-token grants. Box rotates its
+ * refresh token on every grant, so callers must persist the rotated token
+ * via persistRefreshToken() after every successful delivery.
  */
 
 import fs from "fs";
 import path from "path";
 import { Readable } from "stream";
+import { refreshTokens } from "@/lib/oauth-providers";
+import { persistRefreshToken } from "@/lib/credential-health";
 
 // ─── Local filesystem ────────────────────────────────────────────────────────────
 
@@ -21,7 +27,6 @@ export async function deliverLocal(buffer: Buffer, filename: string, config: Loc
   }
   fs.writeFileSync(path.join(dir, filename), buffer);
 
-  // Retention: prune oldest files with same base name pattern if retentionCount set
   const retention = config.retentionCount ?? 0;
   if (retention > 0) {
     const ext = path.extname(filename);
@@ -109,7 +114,7 @@ export async function deliverGoogleDrive(
 export interface BoxConfig {
   clientId: string;
   clientSecret: string;
-  accessToken: string;
+  refreshToken: string;
   folderId?: string;
 }
 
@@ -118,20 +123,37 @@ export async function deliverBox(
   filename: string,
   config: BoxConfig
 ): Promise<void> {
+  const refreshed = await refreshTokens({
+    provider: "box",
+    clientId: config.clientId,
+    clientSecret: config.clientSecret,
+    refreshToken: config.refreshToken,
+  });
+
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const BoxSDK = require("box-node-sdk");
   const sdk = new BoxSDK({ clientID: config.clientId, clientSecret: config.clientSecret });
-  const client = sdk.getBasicClient(config.accessToken);
+  const client = sdk.getBasicClient(refreshed.accessToken);
   const folderId = config.folderId ?? "0";
   await client.files.uploadFile(folderId, filename, buffer);
+
+  // Box rotates refresh tokens on every grant — persist the new one or the
+  // next run will fail. Best-effort: swallow persist errors so the upload
+  // (which already succeeded) isn't reported as a failure.
+  try {
+    await persistRefreshToken("box", refreshed.refreshToken);
+  } catch (err) {
+    console.error("Failed to persist rotated Box refresh token:", err);
+  }
 }
 
 // ─── OneDrive ────────────────────────────────────────────────────────────────────
 
 export interface OneDriveConfig {
   clientId: string;
-  tenantId: string;
   clientSecret: string;
+  refreshToken: string;
+  tenantId?: string;
   folderPath?: string;
 }
 
@@ -140,34 +162,40 @@ export async function deliverOneDrive(
   filename: string,
   config: OneDriveConfig
 ): Promise<void> {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const msal = require("@azure/msal-node");
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { Client } = require("@microsoft/microsoft-graph-client");
-
-  const msalApp = new msal.ConfidentialClientApplication({
-    auth: {
-      clientId: config.clientId,
-      authority: `https://login.microsoftonline.com/${config.tenantId}`,
-      clientSecret: config.clientSecret,
-    },
-  });
-
-  const tokenResponse = await msalApp.acquireTokenByClientCredential({
-    scopes: ["https://graph.microsoft.com/.default"],
-  });
-
-  const graphClient = Client.init({
-    authProvider: (done: (err: null, token: string) => void) => {
-      done(null, tokenResponse.accessToken);
-    },
+  const refreshed = await refreshTokens({
+    provider: "onedrive",
+    clientId: config.clientId,
+    clientSecret: config.clientSecret,
+    refreshToken: config.refreshToken,
+    tenantId: config.tenantId,
   });
 
   const uploadPath = config.folderPath
-    ? `${config.folderPath.replace(/\/$/, "")}/${filename}`
+    ? `${config.folderPath.replace(/^\/|\/$/g, "")}/${filename}`
     : filename;
 
-  await graphClient
-    .api(`/me/drive/root:/${uploadPath}:/content`)
-    .put(buffer);
+  const response = await fetch(
+    `https://graph.microsoft.com/v1.0/me/drive/root:/${encodeURI(uploadPath)}:/content`,
+    {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${refreshed.accessToken}`,
+        "Content-Type": "application/octet-stream",
+      },
+      body: new Uint8Array(buffer),
+    },
+  );
+
+  if (!response.ok) {
+    const errorBody = await response.text().catch(() => "");
+    throw new Error(`OneDrive upload failed (HTTP ${response.status}): ${errorBody}`);
+  }
+
+  if (refreshed.refreshToken !== config.refreshToken) {
+    try {
+      await persistRefreshToken("onedrive", refreshed.refreshToken);
+    } catch (err) {
+      console.error("Failed to persist rotated OneDrive refresh token:", err);
+    }
+  }
 }
