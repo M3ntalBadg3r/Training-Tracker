@@ -16,7 +16,6 @@ import {
   AlertCircle,
   AlertTriangle,
   Search,
-  X,
   ChevronUp,
   ChevronDown,
 } from "lucide-react";
@@ -612,8 +611,7 @@ export default function TrainingDataPage() {
 
       {/* Import Section */}
       <section className="mb-6">
-        {!showImport ? (
-          <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3">
             <button
               onClick={() => setShowImport(true)}
               className="flex items-center gap-2 px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300"
@@ -690,24 +688,34 @@ export default function TrainingDataPage() {
               <Plus size={16} /> Add Training
             </button>
           </div>
-        ) : (
-          <div className="bg-white rounded-lg border border-gray-200 p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold">Import Training Data</h3>
-              <button
-                onClick={closeImport}
-                className="p-1 rounded hover:bg-gray-100"
-              >
-                <X size={18} />
-              </button>
-            </div>
+      </section>
 
-            {importError && (
-              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
-                <AlertCircle size={18} className="text-red-500 mt-0.5 shrink-0" />
-                <span className="text-red-700 text-sm">{importError}</span>
-              </div>
-            )}
+      {/* Import Modal */}
+      <Modal open={showImport} onClose={closeImport} title="Import Training Data" size="2xl">
+        <div>
+          <div className="flex justify-end mb-3">
+            <button
+              onClick={() => {
+                const csv = "Training Title,Full Title,Training Type,Product Type,Function,Link,Certification\nMY-CERT-001,My Certification Name,Certification,Cortex,Sales,,";
+                const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = "training-data-template.csv";
+                a.click();
+                URL.revokeObjectURL(url);
+              }}
+              className="flex items-center gap-2 px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50"
+            >
+              <Download size={14} /> Download Template
+            </button>
+          </div>
+
+          {importError && (
+            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
+              <AlertCircle size={18} className="text-red-500 mt-0.5 shrink-0" />
+              <span className="text-red-700 text-sm">{importError}</span>
+            </div>
+          )}
 
             {/* Step 1: Upload */}
             {importStep === "upload" && (
@@ -1157,9 +1165,8 @@ export default function TrainingDataPage() {
                 </div>
               </div>
             )}
-          </div>
-        )}
-      </section>
+        </div>
+      </Modal>
 
       {/* Search bar */}
       <section className="mb-4 flex items-center gap-3">

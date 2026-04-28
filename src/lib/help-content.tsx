@@ -260,68 +260,60 @@ const helpSections: Record<string, HelpSection> = {
     content: (
       <>
         <p>
-          Reports are presented as collapsible sections, each with their own
-          filters and export options.
+          The Reports section contains five individual report pages, each
+          accessible from the sidebar or the Reports landing page. Dashboard
+          chart cards link directly to the relevant report page. Every report
+          has its own filters and export options (CSV, Excel, PDF).
         </p>
 
         <h3>By Product Type</h3>
         <p>
           Detailed listing of all training records, filterable by product type,
-          training type, and theatre. This is the report behind the{" "}
-          <strong>By Product Type</strong> dashboard chart.
+          training type, and theatre. Clicking the <strong>By Product
+          Type</strong> chart on the dashboard opens this report.
         </p>
 
         <h3>By Function</h3>
         <p>
           Detailed listing of all training records, filterable by function,
-          training type, and theatre. This is the report behind the{" "}
-          <strong>By Function</strong> dashboard chart.
+          training type, and theatre. Clicking the <strong>By Function</strong>{" "}
+          chart on the dashboard opens this report.
         </p>
 
         <h3>Expiring Soon</h3>
         <p>
           Shows training records expiring within a selectable time window (1, 3,
-          or 6 months). Filterable by training type and theatre. This is the
-          report behind the <strong>Expiring Soon</strong> dashboard chart.
+          or 6 months). Filterable by training type and theatre. Clicking the{" "}
+          <strong>Expiring Soon</strong> chart on the dashboard opens this
+          report.
         </p>
 
-        <h3>Achieved Over Last 12 Months</h3>
+        <h3>Last 12 Months</h3>
         <p>
           Shows all training records completed in the last 12 months, filterable
-          by training type and theatre. This is the report behind the{" "}
-          <strong>Achieved Over Last 12 Months</strong> dashboard chart.
+          by training type and theatre. Clicking the{" "}
+          <strong>Achieved Over Last 12 Months</strong> chart on the dashboard
+          opens this report.
         </p>
 
         <h3>Trained But Not Certified</h3>
         <p>
-          This report identifies students who have completed an{" "}
+          Identifies students who completed an{" "}
           <strong>Instructor-Led Training</strong> but have <strong>not</strong>{" "}
-          obtained the associated <strong>Certification</strong>.
+          obtained the associated <strong>Certification</strong>. The
+          association is determined by the certification mapping configured in{" "}
+          <strong>Admin &gt; Training Data</strong>.
         </p>
+
+        <h4>Navigation</h4>
         <p>
-          The association is determined by the certification mapping configured
-          in <strong>Admin &gt; Training Data</strong>.
+          In the sidebar, <strong>Reports</strong> expands to show all five
+          sub-pages. In collapsed sidebar mode, clicking the Reports icon
+          navigates to the Reports landing page.
         </p>
-
-        <h4>Columns displayed</h4>
-        <ul>
-          <li>Full Name</li>
-          <li>Email Address</li>
-          <li>Theatre</li>
-          <li>Region</li>
-          <li>Country</li>
-          <li>Instructor-Led Training (shown as Full Title)</li>
-          <li>Certification Not Obtained (shown as Full Title)</li>
-        </ul>
-
-        <h4>Filtering</h4>
-        <ul>
-          <li>Search by name or email</li>
-          <li>Filter by Theatre, Region, Country, Training, or Certification</li>
-        </ul>
 
         <h4>Export</h4>
-        <p>Export filtered results as CSV, Excel, or PDF.</p>
+        <p>Each report page has an Export button to download results as CSV, Excel, or PDF.</p>
       </>
     ),
   },

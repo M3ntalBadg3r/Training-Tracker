@@ -21,14 +21,38 @@ interface StudentIssue {
 const ISSUE_LABELS: Record<string, { label: string; color: string }> = {
   leading_trailing_spaces: { label: "Spaces", color: "bg-yellow-100 text-yellow-800" },
   email_as_name: { label: "Email as Name", color: "bg-purple-100 text-purple-800" },
+  question_marks: { label: "Question Marks", color: "bg-violet-100 text-violet-800" },
+  duplicate_name: { label: "Duplicate Name", color: "bg-cyan-100 text-cyan-800" },
   numbers: { label: "Numbers", color: "bg-orange-100 text-orange-800" },
   special_characters: { label: "Special Characters", color: "bg-red-100 text-red-800" },
 };
+
+// Issue types that require manual review — not auto-selected after scan
+const MANUAL_REVIEW_ISSUES = new Set(["email_as_name", "duplicate_name"]);
 
 function HighlightedName({ fullName, issues }: { fullName: string; issues: string[] }) {
   if (issues.includes("email_as_name")) {
     return <span className="bg-purple-100 text-purple-800 px-1 rounded">{fullName}</span>;
   }
+
+  // Compute character index ranges that belong to duplicate words (letter-run based,
+  // matching backend normalisation that ignores periods/digits/special chars).
+  const duplicateRanges: Array<[number, number]> = [];
+  if (issues.includes("duplicate_name")) {
+    const seen = new Set<string>();
+    for (const match of fullName.matchAll(/\p{L}+/gu)) {
+      const word = match[0].toLowerCase();
+      const start = match.index ?? 0;
+      const end = start + match[0].length;
+      if (seen.has(word)) {
+        duplicateRanges.push([start, end]);
+      } else {
+        seen.add(word);
+      }
+    }
+  }
+  const isInDuplicateRange = (idx: number) =>
+    duplicateRanges.some(([s, e]) => idx >= s && idx < e);
 
   // Build highlighted characters
   const chars = fullName.split("");
@@ -38,7 +62,8 @@ function HighlightedName({ fullName, issues }: { fullName: string; issues: strin
         const isLeadingSpace = issues.includes("leading_trailing_spaces") && i < fullName.length - fullName.trimStart().length;
         const isTrailingSpace = issues.includes("leading_trailing_spaces") && i >= fullName.trimEnd().length;
         const isNumber = issues.includes("numbers") && /[0-9]/.test(ch);
-        const isSpecial = issues.includes("special_characters") && /[^\p{L}\s\-'.]/u.test(ch);
+        const isSpecial = issues.includes("special_characters") && /[^\p{L}\s\-'\d]/u.test(ch);
+        const isDup = isInDuplicateRange(i);
 
         if (isLeadingSpace || isTrailingSpace) {
           return <span key={i} className="bg-yellow-200 text-yellow-900 px-0.5 rounded" title="Leading/trailing space">&middot;</span>;
@@ -48,6 +73,9 @@ function HighlightedName({ fullName, issues }: { fullName: string; issues: strin
         }
         if (isSpecial) {
           return <span key={i} className="bg-red-200 text-red-900 px-0.5 rounded font-bold">{ch}</span>;
+        }
+        if (isDup) {
+          return <span key={i} className="bg-cyan-200 text-cyan-900 px-0.5 rounded font-bold" title="Duplicate word">{ch}</span>;
         }
         return <span key={i}>{ch}</span>;
       })}
@@ -78,7 +106,11 @@ export default function DataCleanUpPage() {
       if (res.ok) {
         const data: StudentIssue[] = await res.json();
         setResults(data);
-        setSelected(new Set(data.map((r) => r.email)));
+        setSelected(new Set(
+          data
+            .filter((r) => !r.issues.some((issue) => MANUAL_REVIEW_ISSUES.has(issue)))
+            .map((r) => r.email)
+        ));
         setScanned(true);
       }
     } finally {
