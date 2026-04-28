@@ -6,7 +6,8 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const NUMBERS_REGEX = /[0-9]/;
 // Allow letters (any script), spaces, hyphens, and apostrophes — periods are flagged; digits excluded (covered by NUMBERS_REGEX)
 const SPECIAL_CHARS_REGEX = /[^\p{L}\s\-'\d]/u;
-const QUESTION_MARKS_REGEX = /^\?+$/;
+// Matches a name composed solely of question marks and whitespace, with at least one '?'
+const QUESTION_MARKS_REGEX = /^[\s?]*\?[\s?]*$/;
 
 function detectIssues(fullName: string): string[] {
   const issues: string[] = [];
@@ -84,12 +85,22 @@ function fixName(fullName: string, email: string): string {
   // Remove duplicate words (e.g. "Artem Artem Zaytsev" → "Artem Zaytsev")
   const words = name.split(/\s+/).filter(Boolean);
   const seen = new Set<string>();
-  name = words.filter((w) => {
+  const deduped = words.filter((w) => {
     const key = w.toLowerCase();
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
-  }).join(" ");
+  });
+  name = deduped.join(" ");
+
+  // If de-duplication left only a single word (e.g. "Karol Karol" → "Karol"),
+  // try to recover a fuller name from the email's local part.
+  if (deduped.length < 2) {
+    const fromEmail = deriveNameFromEmail(email);
+    if (fromEmail.split(/\s+/).filter(Boolean).length >= 2) {
+      name = fromEmail;
+    }
+  }
 
   return name;
 }
@@ -129,26 +140,49 @@ export async function POST(request: NextRequest) {
     return handleAuthError(error);
   }
 
-  const { emails } = await request.json();
-  if (!Array.isArray(emails) || emails.length === 0) {
-    return NextResponse.json({ error: "No emails provided" }, { status: 400 });
+  const body: unknown = await request.json();
+
+  type Update = { email: string; fullName: string };
+  let updates: Update[] = [];
+  const rawUpdates = (body as { updates?: unknown })?.updates;
+  if (Array.isArray(rawUpdates)) {
+    updates = rawUpdates
+      .filter((u): u is { email: string; fullName: string } =>
+        !!u
+        && typeof u === "object"
+        && typeof (u as { email?: unknown }).email === "string"
+        && typeof (u as { fullName?: unknown }).fullName === "string"
+      )
+      .map((u) => ({ email: u.email, fullName: u.fullName }));
   }
 
+  if (updates.length === 0) {
+    return NextResponse.json({ error: "No updates provided" }, { status: 400 });
+  }
+
+  const emails = updates.map((u) => u.email);
   const students = await prisma.student.findMany({
     where: { email: { in: emails } },
     select: { email: true, fullName: true },
   });
+  const studentByEmail = new Map<string, { email: string; fullName: string }>(
+    students.map((s: { email: string; fullName: string }) => [s.email, s])
+  );
 
   let fixedCount = 0;
-  for (const s of students) {
-    const newName = fixName(s.fullName, s.email);
-    if (newName !== s.fullName) {
-      await prisma.student.update({
-        where: { email: s.email },
-        data: { fullName: newName },
-      });
-      fixedCount++;
-    }
+  for (const u of updates) {
+    const s = studentByEmail.get(u.email);
+    if (!s) continue;
+
+    const newName = u.fullName.trim();
+    if (newName.length === 0) continue;
+    if (newName === s.fullName) continue;
+
+    await prisma.student.update({
+      where: { email: s.email },
+      data: { fullName: newName },
+    });
+    fixedCount++;
   }
 
   return NextResponse.json({ success: true, fixedCount });

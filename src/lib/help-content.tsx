@@ -385,6 +385,16 @@ const helpSections: Record<string, HelpSection> = {
               <td>Derived from email local part (e.g. jane.doe@co.com &rarr; Jane Doe)</td>
             </tr>
             <tr>
+              <td><strong>Question Marks</strong></td>
+              <td>Full name contains only question marks and whitespace (e.g. <code>?</code>, <code>? ??</code>, <code>??? ??</code>)</td>
+              <td>Derived from email local part (e.g. karol.postol@co.com &rarr; Karol Postol)</td>
+            </tr>
+            <tr>
+              <td><strong>Duplicate Name</strong></td>
+              <td>Full name repeats the same word (e.g. <code>Karol Karol</code>)</td>
+              <td>Duplicates removed; if only one word remains, the name is derived from the email local part instead</td>
+            </tr>
+            <tr>
               <td><strong>Numbers</strong></td>
               <td>Digits in the name</td>
               <td>Removed</td>
@@ -397,10 +407,12 @@ const helpSections: Record<string, HelpSection> = {
           </tbody>
         </table>
         <p>
-          Results are shown in a table with the issues highlighted inline. Use
-          the checkboxes to select which records to fix, then click{" "}
-          <strong>Fix Selected</strong>. A suggested fix is shown for each
-          record before you apply it.
+          Results are shown in a table with the issues highlighted inline. The
+          <strong> Suggested Fix</strong> for each row is shown in an editable
+          field, so you can override the suggested name before applying it. By
+          default no rows are selected after a scan &mdash; tick the rows you
+          want to fix (or use the issue filter chips to bulk-select), then
+          click <strong>Fix Selected</strong>.
         </p>
 
         <h3>Wipe All Data</h3>

@@ -598,10 +598,12 @@ Click **Scan for Issues** to check all student records for problems in the Full 
 |-------|-------------|-------------|
 | **Spaces** | Leading or trailing whitespace | Trimmed |
 | **Email as Name** | Full name is an email address | Derived from email local part (e.g. `jane.doe@co.com` → `Jane Doe`) |
+| **Question Marks** | Full name contains only question marks and whitespace (e.g. `?`, `? ??`, `??? ??`) | Derived from email local part (e.g. `karol.postol@co.com` → `Karol Postol`) |
+| **Duplicate Name** | Full name repeats the same word (e.g. `Karol Karol`) | Duplicates removed; if only one word remains, the name is derived from the email local part instead |
 | **Numbers** | Digits in the name | Removed |
 | **Special Characters** | Non-letter/space/hyphen/apostrophe chars | Removed |
 
-Results are shown with issues highlighted inline. Use the checkboxes to select records, then click **Fix Selected** to apply corrections.
+Results are shown with issues highlighted inline. The **Suggested Fix** column is an editable field, so you can override the suggested name before applying it. By default no rows are selected after a scan — tick the rows you want to fix (or use the issue filter chips to bulk-select), then click **Fix Selected**.
 
 #### Wipe All Data
 

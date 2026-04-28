@@ -27,9 +27,6 @@ const ISSUE_LABELS: Record<string, { label: string; color: string }> = {
   special_characters: { label: "Special Characters", color: "bg-red-100 text-red-800" },
 };
 
-// Issue types that require manual review — not auto-selected after scan
-const MANUAL_REVIEW_ISSUES = new Set(["email_as_name", "duplicate_name"]);
-
 function HighlightedName({ fullName, issues }: { fullName: string; issues: string[] }) {
   if (issues.includes("email_as_name")) {
     return <span className="bg-purple-100 text-purple-800 px-1 rounded">{fullName}</span>;
@@ -106,11 +103,7 @@ export default function DataCleanUpPage() {
       if (res.ok) {
         const data: StudentIssue[] = await res.json();
         setResults(data);
-        setSelected(new Set(
-          data
-            .filter((r) => !r.issues.some((issue) => MANUAL_REVIEW_ISSUES.has(issue)))
-            .map((r) => r.email)
-        ));
+        setSelected(new Set());
         setScanned(true);
       }
     } finally {
@@ -122,10 +115,13 @@ export default function DataCleanUpPage() {
     if (selected.size === 0) return;
     setFixing(true);
     try {
+      const updates = results
+        .filter((r) => selected.has(r.email))
+        .map((r) => ({ email: r.email, fullName: r.suggestedName }));
       const res = await fetch("/api/admin/cleanup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ emails: Array.from(selected) }),
+        body: JSON.stringify({ updates }),
       });
       if (res.ok) {
         const data = await res.json();
@@ -136,6 +132,12 @@ export default function DataCleanUpPage() {
     } finally {
       setFixing(false);
     }
+  };
+
+  const updateSuggestedName = (email: string, value: string) => {
+    setResults((prev) =>
+      prev.map((r) => (r.email === email ? { ...r, suggestedName: value } : r))
+    );
   };
 
   const toggleAll = () => {
@@ -310,7 +312,15 @@ export default function DataCleanUpPage() {
                               })}
                             </div>
                           </td>
-                          <td className="px-4 py-3 text-green-700 font-medium">{row.suggestedName}</td>
+                          <td className="px-4 py-3">
+                            <input
+                              type="text"
+                              value={row.suggestedName}
+                              onChange={(e) => updateSuggestedName(row.email, e.target.value)}
+                              className="w-full px-2 py-1 text-sm font-medium text-green-700 bg-green-50 border border-green-200 rounded focus:bg-white focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                              aria-label={`Suggested name for ${row.email}`}
+                            />
+                          </td>
                           <td className="px-4 py-3 text-center">
                             <input
                               type="checkbox"
