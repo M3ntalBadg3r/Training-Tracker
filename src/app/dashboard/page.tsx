@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import PageHeader from "@/components/layout/PageHeader";
+import CredentialHealthBanner from "@/components/admin/CredentialHealthBanner";
 import {
   Users,
   Award,
@@ -184,6 +185,8 @@ export default function DashboardPage() {
           </div>
         }
       />
+
+      <CredentialHealthBanner />
 
       {/* Metric Cards */}
       <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">

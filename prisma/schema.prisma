@@ -172,11 +172,15 @@ model ScheduledExport {
 }
 
 model ExportCredential {
-  id        Int      @id @default(autoincrement())
-  provider  String   @unique
-  config    Json
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id              Int       @id @default(autoincrement())
+  provider        String    @unique
+  config          Json
+  lastCheckedAt   DateTime? @map("last_checked_at")
+  lastCheckStatus String?   @map("last_check_status")
+  lastCheckError  String?   @map("last_check_error")
+  lastSuccessAt   DateTime? @map("last_success_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
 
   @@map("export_credentials")
 }

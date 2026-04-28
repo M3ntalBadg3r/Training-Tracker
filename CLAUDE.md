@@ -48,6 +48,7 @@ src/
     auth/         # AuthProvider (context + useAuth hook)
     theme/        # ThemeProvider (dark mode context + useTheme hook)
     data-table/   # Generic DataTable (search, sort, filter, paginate)
+    admin/        # Admin-only widgets: ProviderCredentialWizard, CredentialHealthBanner
   hooks/          # useDebounce
   proxy.ts       # Route protection (auth + role checks)
   lib/
@@ -61,13 +62,16 @@ src/
     report-queries.ts # Server-side Prisma queries for each report type
     export-destinations.ts  # Delivery logic: local file, email, Google Drive, Box, OneDrive
     run-export.ts     # Core export execution shared by run-now and cron-based executor
+    oauth-state.ts    # Signed state-cookie + redirect-URI helpers for credential OAuth wizard
+    oauth-providers.ts # Per-provider OAuth metadata (URLs, scopes, expiry thresholds) + exchange/refresh helpers
+    credential-health.ts # Probe + persist health for ExportCredential rows; powers banner + daily cron
     help-content.tsx
   types/
     index.ts      # Shared TypeScript interfaces
 prisma/
   schema.prisma   # Data model
   migrations/     # Migration history
-deploy/           # install.sh, update.sh, install-remote.sh, perform-update.sh, check-update.sh, auto-update.sh, auto-backup.sh, auto-export.sh, systemd service
+deploy/           # install.sh, update.sh, install-remote.sh, perform-update.sh, check-update.sh, auto-update.sh, auto-backup.sh, auto-export.sh, auto-credential-check.sh, systemd service
 ```
 
 ## Data Model
@@ -78,7 +82,7 @@ deploy/           # install.sh, update.sh, install-remote.sh, perform-update.sh,
 - **RegionData** — PK: `country`. Fields: region.
 - **User** — PK: `id` (auto-increment). Fields: username (unique), passwordHash, displayName, role (Admin/User), mfaEnabled, mfaSecret.
 - **ScheduledExport** — PK: `id`. Fields: name, reportType, format, destination, config (JSON), enabled, frequency, time, dayOfWeek?, dayOfMonth?, lastRunAt?, lastStatus?, lastError?.
-- **ExportCredential** — PK: `id`, unique: `provider`. Fields: provider, config (JSON). Stores SMTP/OAuth/API credentials per delivery provider.
+- **ExportCredential** — PK: `id`, unique: `provider`. Fields: provider, config (JSON), lastCheckedAt?, lastCheckStatus? (`"ok"` | `"expired"` | `"failed"`), lastCheckError?, lastSuccessAt?. Stores SMTP/OAuth credentials per delivery provider; the health columns drive the dashboard banner and per-card status badge. Cloud providers (`google-drive`, `box`, `onedrive`) all use OAuth refresh-token flows captured by the wizard at `/admin/scheduled-exports`; OneDrive is delegated (uploads to the connecting user's `/me/drive`).
 - **Specialisation** — PK: `id` (auto-increment). Fields: name (unique). Admin-managed list of product specialisations for partner programs.
 - **ProgramData** — PK: `id` (auto-increment). FK: specialisationId → Specialisation, trainingTitle → TrainingData. Fields: programName, level (ProgramLevel enum), trainingType?, trainingTitle?, quantityRequired, minimumPerTheatre?. Training fields are nullable (null = "count compliant theatres" mode for APS-style Global entries). minimumPerTheatre is used by Global Diamond for per-theatre minimum enforcement. Has many ProgramDataAlternative (OR logic alternatives).
 - **ProgramDataAlternative** — PK: `id` (auto-increment). FK: programDataId → ProgramData (cascade delete), trainingTitle → TrainingData (cascade delete). Fields: trainingType, trainingTitle. Stores alternative trainings that also satisfy a ProgramData requirement (OR logic). Students with any alternative training count toward the requirement's quantity.
