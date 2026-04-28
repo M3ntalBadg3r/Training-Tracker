@@ -183,6 +183,17 @@ export default function Sidebar() {
               </button>
               {programsOpen && (
                 <div className="ml-4 border-l border-slate-700">
+                  <Link
+                    href="/programs"
+                    className={`flex items-center gap-3 px-4 py-2 text-sm transition-colors ${
+                      pathname === "/programs"
+                        ? "text-white bg-slate-700"
+                        : "text-slate-400 hover:text-white hover:bg-slate-800"
+                    }`}
+                  >
+                    <ShieldCheck size={16} className="shrink-0" />
+                    <span>Overview</span>
+                  </Link>
                   {programSubItems.map((item) => {
                     const isActive = pathname === item.href;
                     const Icon = item.icon;
@@ -318,7 +329,7 @@ export default function Sidebar() {
                       }`}
                     >
                       <Settings size={16} className="shrink-0" />
-                      <span>General</span>
+                      <span>Overview</span>
                     </Link>
                     {adminSubItems.map((item) => {
                       const isActive = pathname === item.href;
