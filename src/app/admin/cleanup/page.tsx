@@ -21,6 +21,7 @@ interface StudentIssue {
 const ISSUE_LABELS: Record<string, { label: string; color: string }> = {
   leading_trailing_spaces: { label: "Spaces", color: "bg-yellow-100 text-yellow-800" },
   email_as_name: { label: "Email as Name", color: "bg-purple-100 text-purple-800" },
+  question_marks: { label: "Question Marks", color: "bg-violet-100 text-violet-800" },
   numbers: { label: "Numbers", color: "bg-orange-100 text-orange-800" },
   special_characters: { label: "Special Characters", color: "bg-red-100 text-red-800" },
 };
@@ -38,7 +39,7 @@ function HighlightedName({ fullName, issues }: { fullName: string; issues: strin
         const isLeadingSpace = issues.includes("leading_trailing_spaces") && i < fullName.length - fullName.trimStart().length;
         const isTrailingSpace = issues.includes("leading_trailing_spaces") && i >= fullName.trimEnd().length;
         const isNumber = issues.includes("numbers") && /[0-9]/.test(ch);
-        const isSpecial = issues.includes("special_characters") && /[^\p{L}\s\-'.]/u.test(ch);
+        const isSpecial = issues.includes("special_characters") && /[^\p{L}\s\-'\d]/u.test(ch);
 
         if (isLeadingSpace || isTrailingSpace) {
           return <span key={i} className="bg-yellow-200 text-yellow-900 px-0.5 rounded" title="Leading/trailing space">&middot;</span>;
