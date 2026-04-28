@@ -36,7 +36,15 @@ function deriveNameFromEmail(email: string): string {
 }
 
 function hasDuplicateWord(fullName: string): boolean {
-  const words = fullName.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  // Normalize the way fixName does so duplicates emerging after cleanup are also detected
+  // (e.g. "Artem Artem.zaytsev" — the dot is later replaced with a space, exposing the duplicate)
+  const normalized = fullName
+    .trim()
+    .toLowerCase()
+    .replace(/[0-9]/g, "")
+    .replace(/\./g, " ")
+    .replace(/[^\p{L}\s\-']/gu, "");
+  const words = normalized.split(/\s+/).filter(Boolean);
   const seen = new Set<string>();
   for (const w of words) {
     if (seen.has(w)) return true;

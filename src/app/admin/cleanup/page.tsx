@@ -35,23 +35,24 @@ function HighlightedName({ fullName, issues }: { fullName: string; issues: strin
     return <span className="bg-purple-100 text-purple-800 px-1 rounded">{fullName}</span>;
   }
 
+  // Compute character index ranges that belong to duplicate words (letter-run based,
+  // matching backend normalisation that ignores periods/digits/special chars).
+  const duplicateRanges: Array<[number, number]> = [];
   if (issues.includes("duplicate_name")) {
-    const words = fullName.split(/(\s+)/);
     const seen = new Set<string>();
-    return (
-      <span>
-        {words.map((token, i) => {
-          if (/^\s+$/.test(token)) return <span key={i}>{token}</span>;
-          const key = token.toLowerCase();
-          if (seen.has(key)) {
-            return <span key={i} className="bg-cyan-200 text-cyan-900 px-0.5 rounded font-bold" title="Duplicate word">{token}</span>;
-          }
-          seen.add(key);
-          return <span key={i}>{token}</span>;
-        })}
-      </span>
-    );
+    for (const match of fullName.matchAll(/\p{L}+/gu)) {
+      const word = match[0].toLowerCase();
+      const start = match.index ?? 0;
+      const end = start + match[0].length;
+      if (seen.has(word)) {
+        duplicateRanges.push([start, end]);
+      } else {
+        seen.add(word);
+      }
+    }
   }
+  const isInDuplicateRange = (idx: number) =>
+    duplicateRanges.some(([s, e]) => idx >= s && idx < e);
 
   // Build highlighted characters
   const chars = fullName.split("");
@@ -62,6 +63,7 @@ function HighlightedName({ fullName, issues }: { fullName: string; issues: strin
         const isTrailingSpace = issues.includes("leading_trailing_spaces") && i >= fullName.trimEnd().length;
         const isNumber = issues.includes("numbers") && /[0-9]/.test(ch);
         const isSpecial = issues.includes("special_characters") && /[^\p{L}\s\-'\d]/u.test(ch);
+        const isDup = isInDuplicateRange(i);
 
         if (isLeadingSpace || isTrailingSpace) {
           return <span key={i} className="bg-yellow-200 text-yellow-900 px-0.5 rounded" title="Leading/trailing space">&middot;</span>;
@@ -71,6 +73,9 @@ function HighlightedName({ fullName, issues }: { fullName: string; issues: strin
         }
         if (isSpecial) {
           return <span key={i} className="bg-red-200 text-red-900 px-0.5 rounded font-bold">{ch}</span>;
+        }
+        if (isDup) {
+          return <span key={i} className="bg-cyan-200 text-cyan-900 px-0.5 rounded font-bold" title="Duplicate word">{ch}</span>;
         }
         return <span key={i}>{ch}</span>;
       })}
