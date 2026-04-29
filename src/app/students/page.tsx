@@ -13,7 +13,13 @@ const columns: ColumnDef<StudentRow>[] = [
   { key: "fullName", header: "Full Name" },
   { key: "email", header: "Email Address" },
   { key: "theatre", header: "Theatre" },
-  { key: "region", header: "Region", accessor: (row) => row.region || "N/A" },
+  { key: "region", header: "Region", accessor: (row) => {
+    const r = (row.region ?? "").trim();
+    if (!r) return "N/A";
+    const lower = r.toLowerCase();
+    if (lower === "unknown" || lower === "not applicable") return "";
+    return r;
+  } },
   { key: "country", header: "Country" },
 ];
 
