@@ -154,8 +154,13 @@ Training Tracker requires authentication to access. On first launch (when no use
 
 | Role | Access |
 |------|--------|
-| **Admin** | Full access to all pages and features, including admin functions (import, backup, wipe, user management) |
-| **User** | Read-only access to Dashboard, Students, Training, and Reports. No access to admin pages or edit/delete actions. |
+| **SuperAdmin** | Full system access — companies, users, training/region catalogs, backup, cleanup, updates. Sees data for every company. The first user created during setup is a SuperAdmin. |
+| **Admin** | Scoped to one or more assigned companies. Can edit students, training records, run imports, and manage scheduled exports for those companies, but cannot manage users, companies, or system-level catalogs. |
+| **User** | Read-only access to Dashboard, Students, Training, Reports, and Programs — limited to their assigned companies. No edit/delete actions. |
+
+### Companies
+
+Training Tracker is multi-company: every student belongs to exactly one company, and Admin/User accounts see only the companies they have been granted access to. SuperAdmins manage the company list at **Admin → Companies** and assign companies to users via **Admin → Users**. A global **Company** dropdown in the page header filters the dashboard, students list, training, reports, and programs to the selected company; SuperAdmins also have an **All companies** option. The selection is remembered in your browser. Imports require a Company column or a per-import default company; SuperAdmins can auto-create new companies on the fly during import.
 
 ### Login
 

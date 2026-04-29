@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { requireAuth, handleAuthError, hashPassword, validatePassword } from "@/lib/auth";
+import { handleAuthError, hashPassword, requireSuperAdmin, validatePassword } from "@/lib/auth";
 
-// GET: List all users
+const VALID_ROLES = new Set(["SuperAdmin", "Admin", "User"]);
+
+// GET: list all users, including their company assignments
 export async function GET(request: NextRequest) {
   try {
-    await requireAuth(request, "Admin");
+    await requireSuperAdmin(request);
   } catch (error) {
     return handleAuthError(error);
   }
@@ -19,22 +21,39 @@ export async function GET(request: NextRequest) {
       role: true,
       mfaEnabled: true,
       createdAt: true,
+      companies: { select: { companyId: true, company: { select: { id: true, name: true } } } },
     },
   });
 
-  return NextResponse.json(users);
+  return NextResponse.json(
+    users.map((u) => ({
+      id: u.id,
+      username: u.username,
+      displayName: u.displayName,
+      role: u.role,
+      mfaEnabled: u.mfaEnabled,
+      createdAt: u.createdAt,
+      companies: u.companies.map((uc) => ({ id: uc.company.id, name: uc.company.name })),
+    }))
+  );
 }
 
-// POST: Create a new user
+// POST: create a new user
 export async function POST(request: NextRequest) {
   try {
-    await requireAuth(request, "Admin");
+    await requireSuperAdmin(request);
   } catch (error) {
     return handleAuthError(error);
   }
 
   const body = await request.json();
-  const { username, displayName, password, role } = body;
+  const { username, displayName, password, role, companyIds } = body as {
+    username?: string;
+    displayName?: string;
+    password?: string;
+    role?: string;
+    companyIds?: number[];
+  };
 
   if (!username || !displayName || !password) {
     return NextResponse.json(
@@ -44,23 +63,29 @@ export async function POST(request: NextRequest) {
   }
 
   const passwordError = validatePassword(password);
-  if (passwordError) {
-    return NextResponse.json({ error: passwordError }, { status: 400 });
-  }
+  if (passwordError) return NextResponse.json({ error: passwordError }, { status: 400 });
 
-  if (role && !["Admin", "User"].includes(role)) {
-    return NextResponse.json(
-      { error: "Role must be Admin or User" },
-      { status: 400 }
-    );
+  const effectiveRole = role && VALID_ROLES.has(role) ? role : "User";
+  if (role && !VALID_ROLES.has(role)) {
+    return NextResponse.json({ error: "Role must be SuperAdmin, Admin, or User" }, { status: 400 });
   }
 
   const existing = await prisma.user.findUnique({ where: { username } });
-  if (existing) {
-    return NextResponse.json(
-      { error: "Username already exists" },
-      { status: 409 }
-    );
+  if (existing) return NextResponse.json({ error: "Username already exists" }, { status: 409 });
+
+  const ids = Array.isArray(companyIds) ? companyIds.filter((n) => Number.isInteger(n)) : [];
+
+  // SuperAdmin sees everything; per-company assignments are ignored for that role
+  const linkIds = effectiveRole === "SuperAdmin" ? [] : ids;
+
+  if (linkIds.length > 0) {
+    const found = await prisma.company.findMany({
+      where: { id: { in: linkIds } },
+      select: { id: true },
+    });
+    if (found.length !== linkIds.length) {
+      return NextResponse.json({ error: "One or more companies not found" }, { status: 400 });
+    }
   }
 
   const passwordHash = await hashPassword(password);
@@ -69,7 +94,8 @@ export async function POST(request: NextRequest) {
       username,
       displayName,
       passwordHash,
-      role: role || "User",
+      role: effectiveRole as "SuperAdmin" | "Admin" | "User",
+      companies: { create: linkIds.map((cid) => ({ companyId: cid })) },
     },
     select: {
       id: true,
@@ -78,8 +104,15 @@ export async function POST(request: NextRequest) {
       role: true,
       mfaEnabled: true,
       createdAt: true,
+      companies: { select: { company: { select: { id: true, name: true } } } },
     },
   });
 
-  return NextResponse.json(user, { status: 201 });
+  return NextResponse.json(
+    {
+      ...user,
+      companies: user.companies.map((c) => c.company),
+    },
+    { status: 201 }
+  );
 }

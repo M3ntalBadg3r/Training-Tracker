@@ -12,9 +12,9 @@ export async function POST(request: NextRequest) {
   const body = await request.json();
   const { userId, password } = body;
 
-  // Admin disabling MFA for another user
+  // SuperAdmin disabling MFA for another user
   if (userId && userId !== authUser.sub) {
-    if (authUser.role !== "Admin") {
+    if (authUser.role !== "SuperAdmin") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
     await prisma.user.update({

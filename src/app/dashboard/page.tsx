@@ -4,6 +4,7 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import PageHeader from "@/components/layout/PageHeader";
 import CredentialHealthBanner from "@/components/admin/CredentialHealthBanner";
+import { useCompanyScope } from "@/components/company/CompanyScopeProvider";
 import {
   Users,
   Award,
@@ -66,6 +67,7 @@ const COLORS = {
 
 export default function DashboardPage() {
   const router = useRouter();
+  const companyScope = useCompanyScope();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedTheatre, setSelectedTheatre] = useState("Global");
@@ -73,30 +75,35 @@ export default function DashboardPage() {
   const cache = useRef<Record<string, DashboardData>>({});
 
   const fetchDashboard = useCallback(async (theatre: string) => {
-    const params = theatre !== "Global" ? `?theatre=${encodeURIComponent(theatre)}` : "";
-    const res = await fetch(`/api/dashboard${params}`);
+    const params = new URLSearchParams();
+    if (theatre !== "Global") params.set("theatre", theatre);
+    if (companyScope.selected !== "all") params.set("companyId", String(companyScope.selected));
+    const qs = params.toString() ? `?${params.toString()}` : "";
+    const res = await fetch(`/api/dashboard${qs}`);
     if (!res.ok) throw new Error("Failed to fetch");
     const d: DashboardData = await res.json();
-    cache.current[theatre] = d;
+    cache.current[`${companyScope.selected}::${theatre}`] = d;
     return d;
-  }, []);
+  }, [companyScope.selected]);
 
-  // Initial load
+  // Initial load + reload when the company scope changes
   useEffect(() => {
-    fetchDashboard("Global")
+    cache.current = {};
+    setLoading(true);
+    fetchDashboard(selectedTheatre)
       .then((d) => {
         setData(d);
         setLoading(false);
       })
       .catch(() => setLoading(false));
-  }, [fetchDashboard]);
+  }, [fetchDashboard, selectedTheatre]);
 
-  // Theatre change
   const handleTheatreChange = async (theatre: string) => {
     setSelectedTheatre(theatre);
 
-    if (cache.current[theatre]) {
-      setData(cache.current[theatre]);
+    const cacheKey = `${companyScope.selected}::${theatre}`;
+    if (cache.current[cacheKey]) {
+      setData(cache.current[cacheKey]);
       return;
     }
 

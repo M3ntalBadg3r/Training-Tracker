@@ -15,6 +15,7 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
+import { useCompanyScope } from "@/components/company/CompanyScopeProvider";
 
 const TRAINING_TYPE_LABELS: Record<string, string> = {
   Certification: "Certification",
@@ -52,6 +53,18 @@ interface StudentEntry {
 }
 
 export default function APSPage() {
+  const companyScope = useCompanyScope();
+  // Compliance is per-company; force a single-company selection.
+  const [aPSCompanyId, setAPSCompanyId] = useState<number | null>(null);
+  useEffect(() => {
+    if (companyScope.loading) return;
+    if (companyScope.selected !== "all") {
+      setAPSCompanyId(companyScope.selected);
+    } else if (companyScope.companies.length > 0) {
+      setAPSCompanyId((prev) => prev ?? companyScope.companies[0].id);
+    }
+  }, [companyScope.loading, companyScope.selected, companyScope.companies]);
+  const companyQS = aPSCompanyId !== null ? `&companyId=${aPSCompanyId}` : "";
   const [countries, setCountries] = useState<string[]>([]);
   const [regions, setRegions] = useState<string[]>([]);
   const [theatres, setTheatres] = useState<string[]>([]);
@@ -91,9 +104,10 @@ export default function APSPage() {
   const [showExportTheatre, setShowExportTheatre] = useState(false);
   const [showExportGlobal, setShowExportGlobal] = useState(false);
 
-  // Initial load - get available countries/theatres
+  // Initial load - get available countries/theatres (scoped to selected company)
   useEffect(() => {
-    fetch("/api/programs/aps?level=country")
+    if (aPSCompanyId === null) return;
+    fetch(`/api/programs/aps?level=country${companyQS}`)
       .then((r) => r.json())
       .then((data) => {
         setCountries(data.countries || []);
@@ -101,68 +115,68 @@ export default function APSPage() {
         setTheatres(data.theatres || []);
       })
       .catch(() => {});
-  }, []);
+  }, [aPSCompanyId, companyQS]);
 
   // Fetch country report
   useEffect(() => {
-    if (!selectedCountry) {
+    if (!selectedCountry || aPSCompanyId === null) {
       setCountrySpecs([]);
       return;
     }
     setCountryLoading(true);
-    fetch(`/api/programs/aps?level=country&country=${encodeURIComponent(selectedCountry)}`)
+    fetch(`/api/programs/aps?level=country&country=${encodeURIComponent(selectedCountry)}${companyQS}`)
       .then((r) => r.json())
       .then((data) => {
         setCountrySpecs(data.specialisations || []);
       })
       .catch(() => {})
       .finally(() => setCountryLoading(false));
-  }, [selectedCountry]);
+  }, [selectedCountry, aPSCompanyId, companyQS]);
 
   // Fetch region report
   useEffect(() => {
-    if (!selectedRegion) {
+    if (!selectedRegion || aPSCompanyId === null) {
       setRegionSpecs([]);
       return;
     }
     setRegionLoading(true);
-    fetch(`/api/programs/aps?level=region&region=${encodeURIComponent(selectedRegion)}`)
+    fetch(`/api/programs/aps?level=region&region=${encodeURIComponent(selectedRegion)}${companyQS}`)
       .then((r) => r.json())
       .then((data) => {
         setRegionSpecs(data.specialisations || []);
       })
       .catch(() => {})
       .finally(() => setRegionLoading(false));
-  }, [selectedRegion]);
+  }, [selectedRegion, aPSCompanyId, companyQS]);
 
   // Fetch theatre report
   useEffect(() => {
-    if (!selectedTheatre) {
+    if (!selectedTheatre || aPSCompanyId === null) {
       setTheatreSpecs([]);
       return;
     }
     setTheatreLoading(true);
-    fetch(`/api/programs/aps?level=theatre&theatre=${encodeURIComponent(selectedTheatre)}`)
+    fetch(`/api/programs/aps?level=theatre&theatre=${encodeURIComponent(selectedTheatre)}${companyQS}`)
       .then((r) => r.json())
       .then((data) => {
         setTheatreSpecs(data.specialisations || []);
       })
       .catch(() => {})
       .finally(() => setTheatreLoading(false));
-  }, [selectedTheatre]);
+  }, [selectedTheatre, aPSCompanyId, companyQS]);
 
   // Fetch global report
   useEffect(() => {
-    if (!globalOpen) return;
+    if (!globalOpen || aPSCompanyId === null) return;
     setGlobalLoading(true);
-    fetch("/api/programs/aps?level=global")
+    fetch(`/api/programs/aps?level=global${companyQS}`)
       .then((r) => r.json())
       .then((data) => {
         setGlobalSpecs(data.specialisations || []);
       })
       .catch(() => {})
       .finally(() => setGlobalLoading(false));
-  }, [globalOpen]);
+  }, [globalOpen, aPSCompanyId, companyQS]);
 
   const viewStudents = async (
     trainingTitle: string,
@@ -188,6 +202,7 @@ export default function APSPage() {
     if (level === "theatre") params.set("theatre", filterValue);
 
     try {
+      if (aPSCompanyId !== null) params.set("companyId", String(aPSCompanyId));
       const res = await fetch(`/api/programs/aps?${params}`);
       const data = await res.json();
       setStudentList(data.students || []);
@@ -235,7 +250,24 @@ export default function APSPage() {
 
   return (
     <div>
-      <PageHeader title="APS — Authorized Professional Services" helpSlug="programs-aps" />
+      <PageHeader
+        title="APS — Authorized Professional Services"
+        helpSlug="programs-aps"
+        rightContent={
+          <div className="flex items-center gap-2">
+            <label className="text-sm text-gray-500">Company</label>
+            <select
+              value={aPSCompanyId ?? ""}
+              onChange={(e) => setAPSCompanyId(e.target.value ? Number(e.target.value) : null)}
+              className="text-sm border border-gray-300 rounded-lg px-2 py-1.5 bg-white"
+            >
+              {companyScope.companies.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+          </div>
+        }
+      />
 
       {/* Country Report */}
       <section className="mb-6">

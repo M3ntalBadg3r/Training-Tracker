@@ -31,10 +31,36 @@ model Student {
   fullName   String          @map("full_name")
   theatre    String
   country    String
+  companyId  Int             @map("company_id")
   regionData RegionData?     @relation(fields: [country], references: [country])
+  company    Company         @relation(fields: [companyId], references: [id])
   trainings  TrainingTaken[]
 
+  @@index([companyId])
   @@map("students")
+}
+
+model Company {
+  id               Int               @id @default(autoincrement())
+  name             String            @unique
+  createdAt        DateTime          @default(now()) @map("created_at")
+  updatedAt        DateTime          @updatedAt @map("updated_at")
+  students         Student[]
+  users            UserCompany[]
+  scheduledExports ScheduledExport[]
+
+  @@map("companies")
+}
+
+model UserCompany {
+  userId    Int     @map("user_id")
+  companyId Int     @map("company_id")
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@id([userId, companyId])
+  @@index([companyId])
+  @@map("user_companies")
 }
 
 model TrainingTaken {
@@ -86,6 +112,7 @@ model ImportMetadata {
 }
 
 enum Role {
+  SuperAdmin
   Admin
   User
 }
@@ -137,15 +164,16 @@ model ProgramDataAlternative {
 }
 
 model User {
-  id            Int      @id @default(autoincrement())
-  username      String   @unique
-  passwordHash  String   @map("password_hash")
-  displayName   String   @map("display_name")
-  role          Role     @default(User)
-  mfaEnabled    Boolean  @default(false) @map("mfa_enabled")
-  mfaSecret     String?  @map("mfa_secret")
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @updatedAt @map("updated_at")
+  id            Int           @id @default(autoincrement())
+  username      String        @unique
+  passwordHash  String        @map("password_hash")
+  displayName   String        @map("display_name")
+  role          Role          @default(User)
+  mfaEnabled    Boolean       @default(false) @map("mfa_enabled")
+  mfaSecret     String?       @map("mfa_secret")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+  companies     UserCompany[]
 
   @@map("users")
 }
@@ -153,6 +181,7 @@ model User {
 model ScheduledExport {
   id          Int       @id @default(autoincrement())
   name        String
+  companyId   Int       @map("company_id")
   reportType  String    @map("report_type")
   format      String
   destination String
@@ -168,6 +197,9 @@ model ScheduledExport {
   createdAt   DateTime  @default(now()) @map("created_at")
   updatedAt   DateTime  @updatedAt @map("updated_at")
 
+  company     Company   @relation(fields: [companyId], references: [id])
+
+  @@index([companyId])
   @@map("scheduled_exports")
 }
 

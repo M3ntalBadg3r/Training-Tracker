@@ -1,15 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { requireAuth, handleAuthError } from "@/lib/auth";
+import { getAuthorizedCompanyIds, resolveCompanyFilter } from "@/lib/company-scope";
 
 export async function GET(request: NextRequest) {
+  let auth;
   try {
-    await requireAuth(request);
+    auth = await requireAuth(request);
   } catch (error) {
     return handleAuthError(error);
   }
 
+  const allowed = await getAuthorizedCompanyIds(auth.sub, auth.role);
+  const companyFilter = resolveCompanyFilter(allowed, request.nextUrl.searchParams.get("companyId"));
+  if (companyFilter !== null && companyFilter.length === 0) return NextResponse.json([]);
+
   const rawRecords = await prisma.trainingTaken.findMany({
+    where: companyFilter ? { student: { companyId: { in: companyFilter } } } : {},
     include: {
       trainingData: {
         select: {

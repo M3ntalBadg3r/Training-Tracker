@@ -1,14 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { requireAuth, handleAuthError } from "@/lib/auth";
+import { getAuthorizedCompanyIds, resolveCompanyFilter } from "@/lib/company-scope";
 
 const APS_PROGRAM_NAME = "Authorized Professional Services (APS)";
 
 export async function GET(request: NextRequest) {
+  let auth;
   try {
-    await requireAuth(request);
+    auth = await requireAuth(request);
   } catch (error) {
     return handleAuthError(error);
+  }
+
+  const allowed = await getAuthorizedCompanyIds(auth.sub, auth.role);
+  const companyFilter = resolveCompanyFilter(allowed, request.nextUrl.searchParams.get("companyId"));
+  if (companyFilter !== null && companyFilter.length === 0) {
+    return NextResponse.json({ specialisations: [], countries: [], regions: [], theatres: [] });
   }
 
   const level = request.nextUrl.searchParams.get("level") || "country";
@@ -22,7 +30,7 @@ export async function GET(request: NextRequest) {
   // trainingTitle can be comma-separated for OR logic (primary + alternatives)
   if (studentsMode && trainingTitleParam) {
     const titles = trainingTitleParam.split(",").map((t) => t.trim()).filter(Boolean);
-    return getStudents(titles, level, country, theatre, region);
+    return getStudents(titles, level, country, theatre, region, companyFilter);
   }
 
   // Get all APS program data
@@ -52,7 +60,9 @@ export async function GET(request: NextRequest) {
   const regionData = await prisma.regionData.findMany({ orderBy: { country: "asc" } });
   const countries = regionData.map((r: typeof regionData[number]) => r.country);
   const regionList = [...new Set(regionData.map((r: typeof regionData[number]) => r.region))].filter(Boolean).sort();
+  const studentScopeWhere = companyFilter ? { companyId: { in: companyFilter } } : {};
   const theatreStudents = await prisma.student.findMany({
+    where: studentScopeWhere,
     select: { theatre: true },
     distinct: ["theatre"],
     orderBy: { theatre: "asc" },
@@ -85,7 +95,7 @@ export async function GET(request: NextRequest) {
     const countryReqs = programData.filter((pd: ProgramDataRow) => pd.level === "Country");
     const trainingTitles = extractTrainingTitles(countryReqs);
 
-    const emailSets = await getEmailSetsByCountry(trainingTitles, country, now);
+    const emailSets = await getEmailSetsByCountry(trainingTitles, country, now, companyFilter);
     const specialisations = buildSpecialisations(specMap, "Country", emailSets);
 
     return NextResponse.json({ specialisations, countries, regions: regionList, theatres: theatreList });
@@ -95,7 +105,7 @@ export async function GET(request: NextRequest) {
     const countryReqs = programData.filter((pd: ProgramDataRow) => pd.level === "Country");
     const trainingTitles = extractTrainingTitles(countryReqs);
 
-    const emailSets = await getEmailSetsByRegion(trainingTitles, region, now);
+    const emailSets = await getEmailSetsByRegion(trainingTitles, region, now, companyFilter);
     const specialisations = buildSpecialisations(specMap, "Country", emailSets);
 
     return NextResponse.json({ specialisations, countries, regions: regionList, theatres: theatreList });
@@ -105,7 +115,7 @@ export async function GET(request: NextRequest) {
     const theatreReqs = programData.filter((pd: ProgramDataRow) => pd.level === "Theatre");
     const trainingTitles = extractTrainingTitles(theatreReqs);
 
-    const emailSets = await getEmailSetsByTheatre(trainingTitles, theatre, now);
+    const emailSets = await getEmailSetsByTheatre(trainingTitles, theatre, now, companyFilter);
     const specialisations = buildSpecialisations(specMap, "Theatre", emailSets);
 
     return NextResponse.json({ specialisations, countries, regions: regionList, theatres: theatreList });
@@ -116,6 +126,7 @@ export async function GET(request: NextRequest) {
     // A theatre is compliant if it meets ALL theatre-level requirements for the specialisation.
 
     const allTheatres = await prisma.student.findMany({
+      where: studentScopeWhere,
       select: { theatre: true },
       distinct: ["theatre"],
     });
@@ -136,7 +147,7 @@ export async function GET(request: NextRequest) {
         const theatreTrainingTitles = extractTrainingTitles(theatreReqs);
 
         for (const t of distinctTheatres) {
-          const emailSets = await getEmailSetsByTheatre(theatreTrainingTitles, t, now);
+          const emailSets = await getEmailSetsByTheatre(theatreTrainingTitles, t, now, companyFilter);
           // Check each requirement individually (union primary + alternatives)
           const allMet = theatreReqs.every((req: ProgramDataRow) => {
             if (!req.trainingTitle) return false;
@@ -186,7 +197,8 @@ export async function GET(request: NextRequest) {
 async function getEmailSetsByRegion(
   trainingTitles: string[],
   regionName: string,
-  now: Date
+  now: Date,
+  companyFilter: number[] | null
 ): Promise<Map<string, Set<string>>> {
   if (trainingTitles.length === 0) return new Map();
 
@@ -202,7 +214,10 @@ async function getEmailSetsByRegion(
     where: {
       trainingTitle: { in: trainingTitles },
       expiryDate: { gt: now },
-      student: { country: { in: countryList } },
+      student: {
+        country: { in: countryList },
+        ...(companyFilter ? { companyId: { in: companyFilter } } : {}),
+      },
     },
     select: { trainingTitle: true, email: true },
   });
@@ -218,7 +233,8 @@ async function getEmailSetsByRegion(
 async function getEmailSetsByCountry(
   trainingTitles: string[],
   country: string,
-  now: Date
+  now: Date,
+  companyFilter: number[] | null
 ): Promise<Map<string, Set<string>>> {
   if (trainingTitles.length === 0) return new Map();
 
@@ -226,7 +242,7 @@ async function getEmailSetsByCountry(
     where: {
       trainingTitle: { in: trainingTitles },
       expiryDate: { gt: now },
-      student: { country },
+      student: { country, ...(companyFilter ? { companyId: { in: companyFilter } } : {}) },
     },
     select: { trainingTitle: true, email: true },
   });
@@ -242,7 +258,8 @@ async function getEmailSetsByCountry(
 async function getEmailSetsByTheatre(
   trainingTitles: string[],
   theatre: string,
-  now: Date
+  now: Date,
+  companyFilter: number[] | null
 ): Promise<Map<string, Set<string>>> {
   if (trainingTitles.length === 0) return new Map();
 
@@ -250,7 +267,7 @@ async function getEmailSetsByTheatre(
     where: {
       trainingTitle: { in: trainingTitles },
       expiryDate: { gt: now },
-      student: { theatre },
+      student: { theatre, ...(companyFilter ? { companyId: { in: companyFilter } } : {}) },
     },
     select: { trainingTitle: true, email: true },
   });
@@ -318,26 +335,31 @@ async function getStudents(
   level: string,
   country: string,
   theatre: string,
-  region: string
+  region: string,
+  companyFilter: number[] | null
 ) {
   const now = new Date();
 
-  const whereClause: Record<string, unknown> = {
-    trainingTitle: { in: trainingTitles },
-    expiryDate: { gt: now },
-  };
+  const studentScope: Record<string, unknown> = {};
+  if (companyFilter) studentScope.companyId = { in: companyFilter };
 
   if (level === "country" && country) {
-    whereClause.student = { country };
+    studentScope.country = country;
   } else if (level === "region" && region) {
     const regionCountries = await prisma.regionData.findMany({
       where: { region },
       select: { country: true },
     });
-    whereClause.student = { country: { in: regionCountries.map((r: typeof regionCountries[number]) => r.country) } };
+    studentScope.country = { in: regionCountries.map((r: typeof regionCountries[number]) => r.country) };
   } else if (level === "theatre" && theatre) {
-    whereClause.student = { theatre };
+    studentScope.theatre = theatre;
   }
+
+  const whereClause: Record<string, unknown> = {
+    trainingTitle: { in: trainingTitles },
+    expiryDate: { gt: now },
+    ...(Object.keys(studentScope).length > 0 ? { student: studentScope } : {}),
+  };
 
   const records = await prisma.trainingTaken.findMany({
     where: whereClause,

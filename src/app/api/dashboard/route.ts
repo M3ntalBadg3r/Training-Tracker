@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { requireAuth, handleAuthError } from "@/lib/auth";
+import { getAuthorizedCompanyIds, resolveCompanyFilter } from "@/lib/company-scope";
 
 type TrainingRecord = {
   email: string;
@@ -109,26 +110,47 @@ function computeChartData(allTrainingTaken: TrainingRecord[]) {
 }
 
 export async function GET(request: NextRequest) {
+  let auth;
   try {
-    await requireAuth(request);
+    auth = await requireAuth(request);
   } catch (error) {
     return handleAuthError(error);
+  }
+
+  const allowed = await getAuthorizedCompanyIds(auth.sub, auth.role);
+  const companyFilter = resolveCompanyFilter(allowed, request.nextUrl.searchParams.get("companyId"));
+
+  // Fail closed: caller has no access to the requested (or any) company.
+  if (companyFilter !== null && companyFilter.length === 0) {
+    return NextResponse.json({
+      theatres: [],
+      metrics: { totalStudents: 0, certifications: 0, accreditations: 0, instructorLedTraining: 0 },
+      byProductType: [],
+      byFunction: [],
+      expiring: [],
+      monthlyAchieved: [],
+    });
   }
 
   const theatre = request.nextUrl.searchParams.get("theatre");
   const filterByTheatre = theatre && theatre !== "Global";
 
-  // Fetch distinct theatres for the dropdown
+  const companyStudentWhere = companyFilter ? { companyId: { in: companyFilter } } : {};
+
+  // Fetch distinct theatres for the dropdown (scoped to allowed companies)
   const distinctTheatres = await prisma.student.findMany({
     select: { theatre: true },
     distinct: ["theatre"],
     orderBy: { theatre: "asc" },
+    where: companyStudentWhere,
   });
   const theatres = distinctTheatres.map((s: typeof distinctTheatres[number]) => s.theatre);
 
-  // Theatre filter for Prisma queries
-  const studentWhere = filterByTheatre ? { theatre } : {};
-  const trainingWhere = filterByTheatre ? { student: { theatre } } : {};
+  // Combine theatre + company filters for Prisma queries
+  const studentWhere = { ...companyStudentWhere, ...(filterByTheatre ? { theatre } : {}) };
+  const trainingWhere = (filterByTheatre || companyFilter)
+    ? { student: { ...(filterByTheatre ? { theatre } : {}), ...(companyFilter ? { companyId: { in: companyFilter } } : {}) } }
+    : {};
 
   // --- Top-level metrics ---
   const totalStudents = await prisma.student.count({ where: studentWhere });

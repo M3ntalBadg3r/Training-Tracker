@@ -33,7 +33,7 @@ function requireRefreshToken(provider: string, cred: Record<string, unknown>): s
 export async function runExport(schedule: ScheduledExport): Promise<{ status: string; error?: string }> {
   let credentialProvider: string | null = null;
   try {
-    const reportResult = await fetchReportData(schedule.reportType as ReportType);
+    const reportResult = await fetchReportData(schedule.reportType as ReportType, schedule.companyId);
     const buffer = generateExportBuffer(reportResult.data, reportResult.columns, schedule.format, reportResult.title);
     const filename = buildFilename(schedule);
     const mimeType = getMimeType(schedule.format);

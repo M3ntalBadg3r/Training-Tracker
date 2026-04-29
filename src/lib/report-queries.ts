@@ -49,8 +49,9 @@ const TYPE_LABELS: Record<string, string> = {
   InstructorLedTraining: "Instructor-Led Training",
 };
 
-async function fetchAllTrainingRecords(): Promise<TrainingRecordRow[]> {
+async function fetchAllTrainingRecords(companyId?: number | null): Promise<TrainingRecordRow[]> {
   const rawRecords = await prisma.trainingTaken.findMany({
+    where: companyId ? { student: { companyId } } : {},
     include: {
       trainingData: {
         select: {
@@ -93,7 +94,7 @@ async function fetchAllTrainingRecords(): Promise<TrainingRecordRow[]> {
 
 // ─── Report queries ─────────────────────────────────────────────────────────────
 
-export async function fetchTrainedNotCertified(): Promise<TrainedNotCertifiedRow[]> {
+export async function fetchTrainedNotCertified(companyId?: number | null): Promise<TrainedNotCertifiedRow[]> {
   const iltWithCert = await prisma.trainingData.findMany({
     where: { trainingType: "InstructorLedTraining", certification: { isEmpty: false } },
   });
@@ -116,7 +117,10 @@ export async function fetchTrainedNotCertified(): Promise<TrainedNotCertifiedRow
     if (ilt.certification.length === 0) continue;
 
     const iltRecords = await prisma.trainingTaken.findMany({
-      where: { trainingTitle: ilt.trainingTitle },
+      where: {
+        trainingTitle: ilt.trainingTitle,
+        ...(companyId ? { student: { companyId } } : {}),
+      },
       select: { email: true, completedDate: true, expiryDate: true },
     });
     if (iltRecords.length === 0) continue;
@@ -171,22 +175,22 @@ export async function fetchTrainedNotCertified(): Promise<TrainedNotCertifiedRow
   return results;
 }
 
-export async function fetchByProductType(): Promise<TrainingRecordRow[]> {
-  const records = await fetchAllTrainingRecords();
+export async function fetchByProductType(companyId?: number | null): Promise<TrainingRecordRow[]> {
+  const records = await fetchAllTrainingRecords(companyId);
   return records.sort((a, b) => a.productType.localeCompare(b.productType) || a.fullName.localeCompare(b.fullName));
 }
 
-export async function fetchByFunction(): Promise<TrainingRecordRow[]> {
-  const records = await fetchAllTrainingRecords();
+export async function fetchByFunction(companyId?: number | null): Promise<TrainingRecordRow[]> {
+  const records = await fetchAllTrainingRecords(companyId);
   return records.sort((a, b) => a.function.localeCompare(b.function) || a.fullName.localeCompare(b.fullName));
 }
 
-export async function fetchExpiringSoon(monthsAhead = 6): Promise<TrainingRecordRow[]> {
+export async function fetchExpiringSoon(monthsAhead = 6, companyId?: number | null): Promise<TrainingRecordRow[]> {
   const now = new Date();
   const cutoff = new Date(now);
   cutoff.setMonth(cutoff.getMonth() + monthsAhead);
 
-  const records = await fetchAllTrainingRecords();
+  const records = await fetchAllTrainingRecords(companyId);
   return records
     .filter((r) => {
       const expiry = new Date(r.expiryDate);
@@ -195,11 +199,11 @@ export async function fetchExpiringSoon(monthsAhead = 6): Promise<TrainingRecord
     .sort((a, b) => a.expiryDate.localeCompare(b.expiryDate));
 }
 
-export async function fetchAchievedLast12Months(): Promise<TrainingRecordRow[]> {
+export async function fetchAchievedLast12Months(companyId?: number | null): Promise<TrainingRecordRow[]> {
   const cutoff = new Date();
   cutoff.setFullYear(cutoff.getFullYear() - 1);
 
-  const records = await fetchAllTrainingRecords();
+  const records = await fetchAllTrainingRecords(companyId);
   return records
     .filter((r) => new Date(r.completedDate) >= cutoff)
     .sort((a, b) => b.completedDate.localeCompare(a.completedDate));
@@ -251,35 +255,35 @@ export interface ReportResult {
   title: string;
 }
 
-export async function fetchReportData(reportType: ReportType): Promise<ReportResult> {
+export async function fetchReportData(reportType: ReportType, companyId?: number | null): Promise<ReportResult> {
   switch (reportType) {
     case "trained-not-certified":
       return {
-        data: await fetchTrainedNotCertified(),
+        data: await fetchTrainedNotCertified(companyId),
         columns: TRAINED_NOT_CERTIFIED_COLUMNS,
         title: "Trained But Not Certified",
       };
     case "by-product":
       return {
-        data: await fetchByProductType(),
+        data: await fetchByProductType(companyId),
         columns: TRAINING_RECORD_COLUMNS,
         title: "Training Records by Product Type",
       };
     case "by-function":
       return {
-        data: await fetchByFunction(),
+        data: await fetchByFunction(companyId),
         columns: TRAINING_RECORD_COLUMNS,
         title: "Training Records by Function",
       };
     case "expiring-soon":
       return {
-        data: await fetchExpiringSoon(),
+        data: await fetchExpiringSoon(6, companyId),
         columns: TRAINING_RECORD_COLUMNS,
         title: "Expiring Soon",
       };
     case "last-12-months":
       return {
-        data: await fetchAchievedLast12Months(),
+        data: await fetchAchievedLast12Months(companyId),
         columns: TRAINING_RECORD_COLUMNS,
         title: "Achieved in Last 12 Months",
       };
