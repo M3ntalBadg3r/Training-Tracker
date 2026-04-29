@@ -45,13 +45,23 @@ export async function POST(request: NextRequest) {
 
   const passwordHash = await hashPassword(password);
 
+  // The first user is always a SuperAdmin so they can manage companies, users,
+  // and the rest of the system.
   const user = await prisma.user.create({
     data: {
       username,
       displayName,
       passwordHash,
-      role: "Admin",
+      role: "SuperAdmin",
     },
+  });
+
+  // Make sure a default "Unassigned" company exists so imports and student
+  // creation work out of the box.
+  await prisma.company.upsert({
+    where: { name: "Unassigned" },
+    update: {},
+    create: { name: "Unassigned" },
   });
 
   return NextResponse.json(

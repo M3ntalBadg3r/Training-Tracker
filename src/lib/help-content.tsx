@@ -617,13 +617,36 @@ const helpSections: Record<string, HelpSection> = {
     ),
   },
 
+  "companies": {
+    title: "Companies",
+    content: (
+      <>
+        <p>
+          Companies group students into separate tenants. Every student is
+          assigned to exactly one company, and Admin/User accounts can only see
+          data for the companies they have been granted access to.
+        </p>
+        <h3>Managing companies</h3>
+        <ul>
+          <li><strong>Add Company</strong> &mdash; SuperAdmin only. Pick a unique name; the company becomes selectable in the global header switcher and in user/import/export forms.</li>
+          <li><strong>Rename</strong> &mdash; Updates the company everywhere (students keep their assignments).</li>
+          <li><strong>Delete</strong> &mdash; Only allowed when no students or scheduled exports reference the company. Reassign or remove dependents first.</li>
+        </ul>
+        <p>
+          The default <strong>Unassigned</strong> company is created automatically
+          on upgrade and holds students that existed before company support was
+          added. Reassign students from there in <strong>Students &rarr; (row) &rarr; Edit</strong>.
+        </p>
+      </>
+    ),
+  },
   "user-management": {
     title: "User Management",
     content: (
       <>
         <p>
-          Manage user accounts for the Training Tracker system. Only
-          administrators can access this page.
+          Manage user accounts for the Training Tracker system. Only SuperAdmins
+          can access this page.
         </p>
 
         <h3>Roles</h3>
@@ -636,20 +659,24 @@ const helpSections: Record<string, HelpSection> = {
           </thead>
           <tbody>
             <tr>
+              <td><strong>SuperAdmin</strong></td>
+              <td>Full system access — companies, users, training/region catalogs, backups, cleanup, updates. Sees every company.</td>
+            </tr>
+            <tr>
               <td><strong>Admin</strong></td>
-              <td>Full access to all pages and features, including admin functions</td>
+              <td>Scoped to one or more assigned companies. Can edit students, run imports, and manage scheduled exports for those companies.</td>
             </tr>
             <tr>
               <td><strong>User</strong></td>
-              <td>Read-only access to Dashboard, Students, Training, and Reports. No access to admin pages or edit/delete actions.</td>
+              <td>Read-only access to Dashboard, Students, Training, Reports, and Programs — limited to assigned companies. No edit/delete.</td>
             </tr>
           </tbody>
         </table>
 
         <h3>Features</h3>
         <ul>
-          <li><strong>Add User</strong> &mdash; Create a new account with username, display name, password, and role.</li>
-          <li><strong>Edit User</strong> &mdash; Change display name or role.</li>
+          <li><strong>Add User</strong> &mdash; Create a new account with username, display name, password, role, and (for non-SuperAdmin roles) the companies they can see.</li>
+          <li><strong>Edit User</strong> &mdash; Change display name, role, or company assignments.</li>
           <li><strong>Reset Password</strong> &mdash; Set a new password for any user.</li>
           <li><strong>Disable MFA</strong> &mdash; Turn off multi-factor authentication for a user.</li>
           <li><strong>Delete User</strong> &mdash; Remove a user account. You cannot delete yourself or the last admin.</li>

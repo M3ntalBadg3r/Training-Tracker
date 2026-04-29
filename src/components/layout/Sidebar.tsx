@@ -33,6 +33,7 @@ import {
   Clock,
   CalendarDays,
   AlertCircle,
+  Building2,
 } from "lucide-react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useTheme } from "@/components/theme/ThemeProvider";
@@ -43,16 +44,17 @@ const navItems = [
   { href: "/training", label: "Training", icon: GraduationCap },
 ];
 
-const adminSubItems = [
-  { href: "/admin/users", label: "Users", icon: Users },
-  { href: "/admin/program-data", label: "Program Data", icon: ClipboardList },
-  { href: "/admin/training-data", label: "Training Data", icon: BookOpen },
-  { href: "/admin/region-data", label: "Region Data", icon: Globe },
-  { href: "/admin/cleanup", label: "Data Clean-Up", icon: Sparkles },
-  { href: "/admin/backup", label: "Backup", icon: HardDrive },
+const adminSubItems: { href: string; label: string; icon: typeof Users; superAdminOnly?: boolean }[] = [
+  { href: "/admin/users", label: "Users", icon: Users, superAdminOnly: true },
+  { href: "/admin/companies", label: "Companies", icon: Building2, superAdminOnly: true },
+  { href: "/admin/program-data", label: "Program Data", icon: ClipboardList, superAdminOnly: true },
+  { href: "/admin/training-data", label: "Training Data", icon: BookOpen, superAdminOnly: true },
+  { href: "/admin/region-data", label: "Region Data", icon: Globe, superAdminOnly: true },
+  { href: "/admin/cleanup", label: "Data Clean-Up", icon: Sparkles, superAdminOnly: true },
+  { href: "/admin/backup", label: "Backup", icon: HardDrive, superAdminOnly: true },
   { href: "/admin/import", label: "Import", icon: Upload },
   { href: "/admin/scheduled-exports", label: "Export", icon: CalendarClock },
-  { href: "/admin/updates", label: "Updates", icon: RefreshCw },
+  { href: "/admin/updates", label: "Updates", icon: RefreshCw, superAdminOnly: true },
 ];
 
 const programSubItems = [
@@ -71,6 +73,7 @@ const reportSubItems = [
 export default function Sidebar() {
   const pathname = usePathname();
   const { user, isAdmin, logout } = useAuth();
+  const isSuperAdmin = user?.role === "SuperAdmin";
   const { theme, toggleTheme } = useTheme();
   const [collapsed, setCollapsed] = useState(true);
   const [adminOpen, setAdminOpen] = useState(false);
@@ -331,7 +334,7 @@ export default function Sidebar() {
                       <Settings size={16} className="shrink-0" />
                       <span>Overview</span>
                     </Link>
-                    {adminSubItems.map((item) => {
+                    {adminSubItems.filter((item) => !item.superAdminOnly || isSuperAdmin).map((item) => {
                       const isActive = pathname === item.href;
                       const Icon = item.icon;
                       return (

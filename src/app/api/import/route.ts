@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { computeExpiryDate, parseDate } from "@/lib/utils";
 import { requireAuth, handleAuthError } from "@/lib/auth";
+import { canAccessCompany, getAuthorizedCompanyIds, isSuperAdmin } from "@/lib/company-scope";
 
 interface ImportRow {
   fullName: string;
@@ -10,6 +11,7 @@ interface ImportRow {
   country: string;
   title: string;
   completedDate: string;
+  company: string;
 }
 
 function titleCase(str: string): string {
@@ -28,15 +30,17 @@ function deriveFullName(email: string): string {
 }
 
 export async function POST(request: NextRequest) {
+  let auth;
   try {
-    await requireAuth(request, "Admin");
+    auth = await requireAuth(request, "Admin");
   } catch (error) {
     return handleAuthError(error);
   }
   const body = await request.json();
-  const { rows, columnMapping } = body as {
+  const { rows, columnMapping, defaultCompanyId } = body as {
     rows: Record<string, string>[];
     columnMapping: Record<string, string>;
+    defaultCompanyId?: number;
   };
 
   if (!rows || !columnMapping) {
@@ -46,12 +50,37 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const allowedCompanyIds = await getAuthorizedCompanyIds(auth.sub, auth.role);
+  const callerIsSuperAdmin = isSuperAdmin(auth.role);
+
+  // Resolve the default company. Required for non-SuperAdmin callers; optional
+  // for SuperAdmin (used as a fallback only when a row has no Company column).
+  let defaultCompany: { id: number; name: string } | null = null;
+  if (defaultCompanyId !== undefined && defaultCompanyId !== null) {
+    const cid = Number(defaultCompanyId);
+    if (!Number.isInteger(cid)) {
+      return NextResponse.json({ error: "Invalid defaultCompanyId" }, { status: 400 });
+    }
+    if (!(await canAccessCompany(auth.sub, auth.role, cid))) {
+      return NextResponse.json({ error: "You do not have access to that company" }, { status: 403 });
+    }
+    const found = await prisma.company.findUnique({ where: { id: cid }, select: { id: true, name: true } });
+    if (!found) return NextResponse.json({ error: "Default company not found" }, { status: 404 });
+    defaultCompany = found;
+  }
+
+  // Cache loaded/created companies by lowercased name
+  const companyCache = new Map<string, { id: number; name: string }>();
+  if (defaultCompany) companyCache.set(defaultCompany.name.toLowerCase(), defaultCompany);
+
   const summary = {
     studentsCreated: 0,
     studentsUpdated: 0,
     trainingsCreated: 0,
     trainingsSkipped: 0,
     trainingsAutoCreated: 0,
+    companiesCreated: 0,
+    companyConflicts: 0,
     errors: [] as string[],
   };
 
@@ -60,9 +89,8 @@ export async function POST(request: NextRequest) {
     const rawEmail = (row[columnMapping.email] || "").trim();
     const email = rawEmail.toLowerCase();
     const rawFullName = (row[columnMapping.fullName] || "").trim();
-    const fullName = rawFullName
-      ? titleCase(rawFullName)
-      : deriveFullName(email);
+    const fullName = rawFullName ? titleCase(rawFullName) : deriveFullName(email);
+    const company = (columnMapping.company ? (row[columnMapping.company] || "").trim() : "");
 
     return {
       fullName,
@@ -71,14 +99,14 @@ export async function POST(request: NextRequest) {
       country: row[columnMapping.country] || "",
       title: row[columnMapping.title] || "",
       completedDate: row[columnMapping.completedDate] || "",
+      company,
     };
   });
 
   for (let i = 0; i < mappedRows.length; i++) {
     const row = mappedRows[i];
-    const rowNum = i + 2; // +2 because row 1 is header
+    const rowNum = i + 2;
 
-    // Validate required fields
     if (!row.email) {
       summary.errors.push(`Row ${rowNum}: Missing email address`);
       continue;
@@ -104,16 +132,78 @@ export async function POST(request: NextRequest) {
       continue;
     }
 
+    // ─── Resolve the company for this row ────────────────────────────────────
+    let rowCompany: { id: number; name: string } | null = null;
+    const rowCompanyName = row.company.trim();
+
+    if (rowCompanyName) {
+      const cached = companyCache.get(rowCompanyName.toLowerCase());
+      if (cached) {
+        rowCompany = cached;
+      } else {
+        const found = await prisma.company.findUnique({
+          where: { name: rowCompanyName },
+          select: { id: true, name: true },
+        });
+        if (found) {
+          rowCompany = found;
+          companyCache.set(found.name.toLowerCase(), found);
+        } else if (callerIsSuperAdmin) {
+          // SuperAdmin: auto-create unknown companies on the fly.
+          const created = await prisma.company.create({
+            data: { name: rowCompanyName },
+            select: { id: true, name: true },
+          });
+          rowCompany = created;
+          companyCache.set(created.name.toLowerCase(), created);
+          summary.companiesCreated++;
+        } else {
+          summary.errors.push(
+            `Row ${rowNum}: Company "${rowCompanyName}" does not exist. Ask a SuperAdmin to create it.`
+          );
+          continue;
+        }
+      }
+    } else if (defaultCompany) {
+      rowCompany = defaultCompany;
+    } else {
+      summary.errors.push(`Row ${rowNum}: No company specified and no default company selected`);
+      continue;
+    }
+
+    // Caller must have access to the company they're importing into.
+    if (allowedCompanyIds !== null && !allowedCompanyIds.includes(rowCompany.id)) {
+      summary.errors.push(`Row ${rowNum}: Out of scope — you do not have access to "${rowCompany.name}".`);
+      continue;
+    }
+
     try {
       // Upsert student
       const existingStudent = await prisma.student.findUnique({
         where: { email: row.email },
       });
 
+      let studentCompanyId = rowCompany.id;
+
       if (existingStudent) {
+        // If the existing student's company is outside the caller's scope, reject.
+        if (allowedCompanyIds !== null && !allowedCompanyIds.includes(existingStudent.companyId)) {
+          summary.errors.push(
+            `Row ${rowNum}: Out of scope — student ${row.email} belongs to a company you cannot access.`
+          );
+          continue;
+        }
+
+        // Warn if the row's company differs from the existing assignment.
+        if (existingStudent.companyId !== rowCompany.id) {
+          summary.companyConflicts++;
+          summary.errors.push(
+            `Row ${rowNum}: ${row.email} is already assigned to a different company; the row's company "${rowCompany.name}" was ignored. Reassign manually if required.`
+          );
+        }
+        studentCompanyId = existingStudent.companyId;
         summary.studentsUpdated++;
       } else {
-        // Ensure the country exists in region_data before creating the student
         if (row.country) {
           const regionExists = await prisma.regionData.findUnique({
             where: { country: row.country },
@@ -131,12 +221,12 @@ export async function POST(request: NextRequest) {
             fullName: row.fullName,
             theatre: row.theatre,
             country: row.country,
+            companyId: studentCompanyId,
           },
         });
         summary.studentsCreated++;
       }
 
-      // Check if training title exists in training_data; auto-create a placeholder if not
       const trainingExists = await prisma.trainingData.findUnique({
         where: { trainingTitle: row.title },
       });
@@ -157,14 +247,9 @@ export async function POST(request: NextRequest) {
         summary.trainingsAutoCreated++;
       }
 
-      // Check for duplicate training taken
       const expiryDate = computeExpiryDate(completedDate);
       const existingTraining = await prisma.trainingTaken.findFirst({
-        where: {
-          email: row.email,
-          trainingTitle: row.title,
-          completedDate: completedDate,
-        },
+        where: { email: row.email, trainingTitle: row.title, completedDate: completedDate },
       });
 
       if (existingTraining) {
@@ -172,7 +257,6 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
-      // Create training taken record
       await prisma.trainingTaken.create({
         data: {
           email: row.email,
@@ -191,7 +275,6 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Record last import timestamp for students
   await prisma.importMetadata.upsert({
     where: { key: "students" },
     update: { timestamp: new Date() },

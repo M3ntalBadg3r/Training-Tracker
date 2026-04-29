@@ -107,9 +107,23 @@ export async function requireAuth(
   if (!user) {
     throw new AuthError("Unauthorized", 401);
   }
-  if (requiredRole && user.role !== requiredRole) {
-    throw new AuthError("Forbidden", 403);
+  if (requiredRole) {
+    // "Admin" should accept SuperAdmin too — SuperAdmin is a superset of Admin.
+    if (requiredRole === "Admin") {
+      if (user.role !== "Admin" && user.role !== "SuperAdmin") {
+        throw new AuthError("Forbidden", 403);
+      }
+    } else if (user.role !== requiredRole) {
+      throw new AuthError("Forbidden", 403);
+    }
   }
+  return user;
+}
+
+export async function requireSuperAdmin(request: NextRequest): Promise<TokenPayload> {
+  const user = await getAuthFromRequest(request);
+  if (!user) throw new AuthError("Unauthorized", 401);
+  if (user.role !== "SuperAdmin") throw new AuthError("Forbidden", 403);
   return user;
 }
 

@@ -6,6 +6,7 @@ import Link from "next/link";
 import PageHeader from "@/components/layout/PageHeader";
 import { Search, Download, ArrowLeft } from "lucide-react";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
+import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
 
 interface TrainingRecordRow {
   fullName: string;
@@ -49,6 +50,7 @@ function ExportMenu({
 
 export default function ByFunctionPage() {
   const router = useRouter();
+  const companyScope = useCompanyScope();
   const [trainingRecords, setTrainingRecords] = useState<TrainingRecordRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [fnSearch, setFnSearch] = useState("");
@@ -57,11 +59,13 @@ export default function ByFunctionPage() {
   const [fnTheatre, setFnTheatre] = useState("");
 
   useEffect(() => {
-    fetch("/api/reports/training-records")
+    if (companyScope.loading) return;
+    setLoading(true);
+    fetch(withCompany("/api/reports/training-records", companyScope.selected))
       .then((r) => r.json())
       .then((data) => { setTrainingRecords(data); setLoading(false); })
       .catch(() => setLoading(false));
-  }, []);
+  }, [companyScope.loading, companyScope.selected]);
 
   const trFunctions = useMemo(() => [...new Set(trainingRecords.map((r) => r.function))].filter(Boolean).sort(), [trainingRecords]);
   const trTypes = useMemo(() => [...new Set(trainingRecords.map((r) => r.trainingType))].filter(Boolean).sort(), [trainingRecords]);

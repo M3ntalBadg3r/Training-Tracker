@@ -81,7 +81,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
     <AuthContext.Provider
       value={{
         user,
-        isAdmin: user?.role === "Admin",
+        isAdmin: user?.role === "Admin" || user?.role === "SuperAdmin",
         loading,
         logout,
         refreshUser: fetchUser,

@@ -32,6 +32,36 @@ function isAdminPath(pathname: string): boolean {
   return pathname.startsWith("/admin") || pathname.startsWith("/api/admin");
 }
 
+// SuperAdmin-only routes — these handle system-wide management (users,
+// companies, training/region catalogs, backups, cleanup, updates) and are
+// not safe to expose to a per-company Admin.
+const SUPER_ADMIN_PREFIXES = [
+  "/admin/users",
+  "/api/admin/users",
+  "/admin/companies",
+  "/api/admin/companies",
+  "/admin/region-data",
+  "/api/region-data",
+  "/admin/training-data",
+  "/api/training-data",
+  "/api/admin/specialisations",
+  "/admin/program-data",
+  "/api/admin/program-data",
+  "/admin/backup",
+  "/api/admin/backup",
+  "/admin/cleanup",
+  "/api/admin/cleanup",
+  "/admin/updates",
+  "/api/admin/updates",
+  "/api/admin/wipe",
+];
+
+function isSuperAdminPath(pathname: string): boolean {
+  return SUPER_ADMIN_PREFIXES.some(
+    (p) => pathname === p || pathname.startsWith(p + "/")
+  );
+}
+
 function isApiRoute(pathname: string): boolean {
   return pathname.startsWith("/api/");
 }
@@ -89,8 +119,19 @@ export async function proxy(request: NextRequest) {
     return response;
   }
 
-  // Admin role check for admin paths
-  if (isAdminPath(pathname) && payload.role !== "Admin") {
+  const role = String(payload.role ?? "");
+  const isAdminish = role === "Admin" || role === "SuperAdmin";
+
+  // SuperAdmin-only paths
+  if (isSuperAdminPath(pathname) && role !== "SuperAdmin") {
+    if (isApiRoute(pathname)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+    return NextResponse.redirect(new URL("/dashboard", request.url));
+  }
+
+  // Admin (or SuperAdmin) required for the rest of the admin surface
+  if (isAdminPath(pathname) && !isAdminish) {
     if (isApiRoute(pathname)) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }

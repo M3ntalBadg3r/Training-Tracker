@@ -1,61 +1,86 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { requireAuth, handleAuthError } from "@/lib/auth";
+import { canAccessCompany, getAuthorizedCompanyIds, resolveCompanyFilter } from "@/lib/company-scope";
 
 export async function GET(request: NextRequest) {
+  let auth;
   try {
-    await requireAuth(request);
+    auth = await requireAuth(request);
   } catch (error) {
     return handleAuthError(error);
   }
 
+  const allowed = await getAuthorizedCompanyIds(auth.sub, auth.role);
+  const companyFilter = resolveCompanyFilter(allowed, request.nextUrl.searchParams.get("companyId"));
+
+  if (companyFilter !== null && companyFilter.length === 0) {
+    return NextResponse.json([]);
+  }
+
   const students = await prisma.student.findMany({
-    include: { regionData: true },
+    where: companyFilter ? { companyId: { in: companyFilter } } : {},
+    include: { regionData: true, company: { select: { id: true, name: true } } },
     orderBy: { fullName: "asc" },
   });
 
-  const result = students.map((s: typeof students[number]) => ({
+  const result = students.map((s) => ({
     email: s.email,
     fullName: s.fullName,
     theatre: s.theatre,
     country: s.country,
     region: s.regionData?.region || null,
+    companyId: s.companyId,
+    companyName: s.company?.name ?? null,
   }));
 
   return NextResponse.json(result);
 }
 
 export async function POST(request: NextRequest) {
+  let auth;
   try {
-    await requireAuth(request, "Admin");
+    auth = await requireAuth(request, "Admin");
   } catch (error) {
     return handleAuthError(error);
   }
   const body = await request.json();
-  const { email, fullName, theatre, country } = body;
+  const { email, fullName, theatre, country, companyId } = body;
 
-  if (!email || !fullName || !theatre || !country) {
-    return NextResponse.json(
-      { error: "Missing required fields" },
-      { status: 400 }
-    );
+  if (!email || !fullName || !theatre || !country || companyId === undefined || companyId === null) {
+    return NextResponse.json({ error: "Missing required fields (including company)" }, { status: 400 });
   }
 
-  // Validate types and lengths
-  if (typeof email !== "string" || typeof fullName !== "string" ||
-      typeof theatre !== "string" || typeof country !== "string") {
+  if (
+    typeof email !== "string" ||
+    typeof fullName !== "string" ||
+    typeof theatre !== "string" ||
+    typeof country !== "string"
+  ) {
     return NextResponse.json({ error: "Invalid field types" }, { status: 400 });
   }
-  if (email.length > 255 || fullName.length > 255 ||
-      theatre.length > 100 || country.length > 100) {
+  if (email.length > 255 || fullName.length > 255 || theatre.length > 100 || country.length > 100) {
     return NextResponse.json({ error: "Field value too long" }, { status: 400 });
   }
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return NextResponse.json({ error: "Invalid email format" }, { status: 400 });
   }
 
+  const cid = Number(companyId);
+  if (!Number.isInteger(cid)) {
+    return NextResponse.json({ error: "Invalid company" }, { status: 400 });
+  }
+
+  const allowed = await canAccessCompany(auth.sub, auth.role, cid);
+  if (!allowed) {
+    return NextResponse.json({ error: "You do not have access to that company" }, { status: 403 });
+  }
+
+  const company = await prisma.company.findUnique({ where: { id: cid } });
+  if (!company) return NextResponse.json({ error: "Company not found" }, { status: 404 });
+
   const student = await prisma.student.create({
-    data: { email, fullName, theatre, country },
+    data: { email, fullName, theatre, country, companyId: cid },
   });
 
   return NextResponse.json(student, { status: 201 });

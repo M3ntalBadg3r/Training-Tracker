@@ -1,13 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { requireAuth, handleAuthError } from "@/lib/auth";
+import { getAuthorizedCompanyIds, resolveCompanyFilter } from "@/lib/company-scope";
 
 export async function GET(request: NextRequest) {
+  let auth;
   try {
-    await requireAuth(request);
+    auth = await requireAuth(request);
   } catch (error) {
     return handleAuthError(error);
   }
+
+  const allowed = await getAuthorizedCompanyIds(auth.sub, auth.role);
+  const companyFilter = resolveCompanyFilter(allowed, request.nextUrl.searchParams.get("companyId"));
+  if (companyFilter !== null && companyFilter.length === 0) return NextResponse.json([]);
 
   // Find all ILT trainings that have at least one certification mapping
   const iltWithCert = await prisma.trainingData.findMany({
@@ -57,7 +63,10 @@ export async function GET(request: NextRequest) {
 
     // Students who completed this ILT (include dates for the report)
     const iltRecords = await prisma.trainingTaken.findMany({
-      where: { trainingTitle: ilt.trainingTitle },
+      where: {
+        trainingTitle: ilt.trainingTitle,
+        ...(companyFilter ? { student: { companyId: { in: companyFilter } } } : {}),
+      },
       select: { email: true, completedDate: true, expiryDate: true },
     });
 
