@@ -20,6 +20,10 @@ interface DataTableProps<T> {
     label: string;
     onDelete: (row: T) => void;
   };
+  rowEdit?: {
+    label: string;
+    onEdit: (row: T) => void;
+  };
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -32,6 +36,7 @@ export default function DataTable<T extends Record<string, any>>({
   defaultSortDirection = "asc",
   rowAction,
   rowDelete,
+  rowEdit,
 }: DataTableProps<T>) {
   const [searchTerm, setSearchTerm] = useState("");
   const [searchColumn, setSearchColumn] = useState("all");
@@ -194,7 +199,7 @@ export default function DataTable<T extends Record<string, any>>({
                     </div>
                   </th>
                 ))}
-                {(rowAction || rowDelete) && (
+                {(rowAction || rowDelete || rowEdit) && (
                   <th className="px-4 py-3 text-left font-semibold text-gray-700">
                     Actions
                   </th>
@@ -205,7 +210,7 @@ export default function DataTable<T extends Record<string, any>>({
               {paginatedData.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={columns.length + (rowAction || rowDelete ? 1 : 0)}
+                    colSpan={columns.length + (rowAction || rowDelete || rowEdit ? 1 : 0)}
                     className="px-4 py-8 text-center text-gray-500"
                   >
                     No records found
@@ -222,7 +227,7 @@ export default function DataTable<T extends Record<string, any>>({
                         {col.render ? col.render(row) : getCellValue(row, col)}
                       </td>
                     ))}
-                    {(rowAction || rowDelete) && (
+                    {(rowAction || rowDelete || rowEdit) && (
                       <td className="px-4 py-3">
                         <div className="flex gap-2">
                           {rowAction && (
@@ -231,6 +236,14 @@ export default function DataTable<T extends Record<string, any>>({
                               className="px-3 py-1 text-xs font-medium text-blue-600 bg-blue-50 rounded-md hover:bg-blue-100 transition-colors"
                             >
                               {rowAction.label}
+                            </button>
+                          )}
+                          {rowEdit && (
+                            <button
+                              onClick={() => rowEdit.onEdit(row)}
+                              className="px-3 py-1 text-xs font-medium text-blue-600 bg-blue-50 rounded-md hover:bg-blue-100 transition-colors"
+                            >
+                              {rowEdit.label}
                             </button>
                           )}
                           {rowDelete && (
