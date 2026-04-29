@@ -124,6 +124,7 @@ deploy/           # install.sh, update.sh, install-remote.sh, perform-update.sh,
 - **fullTitle vs trainingTitle**: `trainingTitle` is the internal DB key (from imports); `fullTitle` is the human-readable display name. Multiple trainingTitles can share a fullTitle — always group/deduplicate by fullTitle when counting.
 - **Date handling**: All dates flow through `lib/utils.ts`. Use `parseDate()` for parsing, `formatDate()` for display (DD Mmm YYYY), `computeExpiryDate()` for expiry.
 - **Import column mapping**: The import API auto-maps columns with fuzzy matching and supports type aliases (e.g., `ilt` → `InstructorLedTraining`, `pre-sales` → `PreSales`).
+- **Manual training-taken mutations**: `POST /api/training-taken` creates a single TrainingTaken row; `PATCH /api/training-taken/[id]` updates only `completedDate`. Both are Admin-only and both auto-derive `expiryDate = completedDate + 2 years` via `computeExpiryDate` — never accept an explicit expiry. Manual `POST` enforces the same `email + trainingTitle + completedDate` dedupe key as the import flow and returns 409 on duplicate.
 
 ## Git Workflow
 

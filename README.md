@@ -270,14 +270,21 @@ Navigate to **Students** in the sidebar to view all students in a table with col
 - Region
 - Country
 
-Click **View** on any row to open the student's detailed record.
+Click **View** on any row to open the student's detailed record. Admins can click **Add Student** in the page header to create a student manually (Full Name, Email, Theatre, Country) without running an import. Region is auto-derived from the country's entry in Region Data.
 
 ### Student Detail
 
 The student detail page shows:
 
 - **Contact Information** — Full Name, Email, Theatre, Country, and Region. Click **Edit** to modify these fields. Changes are previewed in a confirmation modal before saving.
-- **Training Records** — A table of all trainings completed by the student, including Title (with link if available), Type, Product, Function, Completed Date, and Active status. Individual training records can be removed in edit mode.
+- **Training Records** — A table of all trainings completed by the student, including Title (with link if available), Type, Product, Function, Completed Date, and Active status.
+
+While in edit mode, admins can also:
+
+- **Add Training** — Pick a training from the catalog and a completed date. If the chosen training maps to multiple internal training titles, a second selector appears to disambiguate. Expiry is auto-set to two years after the completed date.
+- **Edit** any row — Adjust the completed date; expiry is recalculated automatically.
+- **Remove** any row — Queues the row for deletion when Save is clicked.
+- **Delete Student** — Permanently removes the student and all of their training records, after a confirmation popup.
 
 ---
 

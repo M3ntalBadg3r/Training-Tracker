@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { TrainingType } from "@prisma/client";
-import { isActive, formatDate } from "@/lib/utils";
+import { isActive, formatDate, parseDate, computeExpiryDate } from "@/lib/utils";
 import { requireAuth, handleAuthError } from "@/lib/auth";
 
 export async function GET(request: NextRequest) {
@@ -81,4 +81,73 @@ export async function GET(request: NextRequest) {
   }));
 
   return NextResponse.json(result);
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    await requireAuth(request, "Admin");
+  } catch (error) {
+    return handleAuthError(error);
+  }
+
+  const body = await request.json();
+  const { email, trainingTitle, completedDate } = body;
+
+  if (!email || !trainingTitle || !completedDate) {
+    return NextResponse.json(
+      { error: "Missing required fields: email, trainingTitle, completedDate" },
+      { status: 400 }
+    );
+  }
+  if (
+    typeof email !== "string" ||
+    typeof trainingTitle !== "string" ||
+    typeof completedDate !== "string"
+  ) {
+    return NextResponse.json({ error: "Invalid field types" }, { status: 400 });
+  }
+
+  const parsedCompleted = parseDate(completedDate);
+  if (!parsedCompleted) {
+    return NextResponse.json(
+      { error: "Invalid completedDate" },
+      { status: 400 }
+    );
+  }
+
+  const student = await prisma.student.findUnique({ where: { email } });
+  if (!student) {
+    return NextResponse.json({ error: "Student not found" }, { status: 404 });
+  }
+
+  const trainingData = await prisma.trainingData.findUnique({
+    where: { trainingTitle },
+  });
+  if (!trainingData) {
+    return NextResponse.json(
+      { error: "Training not found" },
+      { status: 404 }
+    );
+  }
+
+  const existing = await prisma.trainingTaken.findFirst({
+    where: { email, trainingTitle, completedDate: parsedCompleted },
+  });
+  if (existing) {
+    return NextResponse.json(
+      { error: "A matching training record already exists for this student" },
+      { status: 409 }
+    );
+  }
+
+  const created = await prisma.trainingTaken.create({
+    data: {
+      email,
+      trainingTitle,
+      completedDate: parsedCompleted,
+      expiryDate: computeExpiryDate(parsedCompleted),
+    },
+  });
+
+  return NextResponse.json(created, { status: 201 });
 }

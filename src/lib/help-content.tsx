@@ -116,6 +116,12 @@ const helpSections: Record<string, HelpSection> = {
           Click <strong>View</strong> on any row to open the student&apos;s
           detailed record.
         </p>
+        <p>
+          Admins can click <strong>Add Student</strong> to create a student
+          manually without an import. Provide Full Name, Email, Theatre, and
+          Country. Region is auto-derived from the country&apos;s entry in
+          Region Data.
+        </p>
       </>
     ),
   },
@@ -136,9 +142,38 @@ const helpSections: Record<string, HelpSection> = {
             <strong>Training Records</strong> &mdash; A table of all trainings
             completed by the student, including Title (with link if available),
             Type, Product, Function, Completed Date, and Active status.
-            Individual training records can be removed in edit mode.
           </li>
         </ul>
+        <p>
+          Admins can manage training records and the student themselves while
+          in edit mode:
+        </p>
+        <ul>
+          <li>
+            <strong>Add Training</strong> &mdash; Pick a training from the
+            catalog and a completed date. If the chosen training maps to
+            multiple internal training titles, a second selector appears to
+            disambiguate. Expiry is automatically set to two years after the
+            completed date.
+          </li>
+          <li>
+            <strong>Edit</strong> on any row &mdash; Adjust the completed date.
+            Expiry is recalculated automatically.
+          </li>
+          <li>
+            <strong>Remove</strong> on any row &mdash; Queues the row for
+            deletion when you click Save.
+          </li>
+          <li>
+            <strong>Delete Student</strong> &mdash; Permanently removes the
+            student and every one of their training records. A confirmation
+            popup is shown first; this action cannot be undone.
+          </li>
+        </ul>
+        <p>
+          Add, Edit, and Remove changes are queued and applied together when
+          you click <strong>Save</strong>.
+        </p>
       </>
     ),
   },
