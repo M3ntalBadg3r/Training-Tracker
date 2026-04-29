@@ -604,15 +604,6 @@ export default function StudentRecordPage({
                   >
                     <X size={16} /> Cancel
                   </button>
-                  <button
-                    onClick={() => {
-                      setDeleteStudentError("");
-                      setShowDeleteStudent(true);
-                    }}
-                    className="flex items-center gap-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm"
-                  >
-                    <Trash2 size={16} /> Delete Student
-                  </button>
                 </>
               ) : (
                 <button
@@ -686,6 +677,21 @@ export default function StudentRecordPage({
             : undefined
         }
       />
+
+      {/* Delete Student — bottom-right, edit mode only */}
+      {isAdmin && editing && (
+        <div className="flex justify-end mt-6">
+          <button
+            onClick={() => {
+              setDeleteStudentError("");
+              setShowDeleteStudent(true);
+            }}
+            className="flex items-center gap-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm"
+          >
+            <Trash2 size={16} /> Delete Student
+          </button>
+        </div>
+      )}
 
       {/* Save Confirmation Modal */}
       <Modal
