@@ -4,13 +4,32 @@ import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import PageHeader from "@/components/layout/PageHeader";
-import { Search, Download, ArrowLeft } from "lucide-react";
+import KpiStrip from "@/components/ui/KpiStrip";
+import DateRangePicker, { DateRangeValue, filterByRange } from "@/components/ui/DateRangePicker";
+import GroupedRows from "@/components/data-table/GroupedRows";
+import { useChartTheme, tooltipStyle } from "@/lib/chart-theme";
+import { groupRows, GroupByMode } from "@/lib/group-by";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
+import { Search, Download, ArrowLeft, Award, ShieldCheck, GraduationCap, CircleCheck } from "lucide-react";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
+} from "recharts";
 
 interface TrainingRecordRow {
   fullName: string;
   email: string;
   theatre: string;
+  region: string;
   country: string;
   trainingTitle: string;
   trainingType: string;
@@ -20,6 +39,8 @@ interface TrainingRecordRow {
   expiryDate: string;
   active: boolean;
 }
+
+const TYPES = ["Certification", "Accreditation", "Instructor-Led Training"] as const;
 
 function ExportMenu({
   data,
@@ -34,7 +55,7 @@ function ExportMenu({
   return (
     <div className="relative">
       <button
-        onClick={() => setShow((prev) => !prev)}
+        onClick={() => setShow((p) => !p)}
         className="flex items-center gap-2 px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300"
       >
         <Download size={16} /> Export
@@ -52,39 +73,88 @@ function ExportMenu({
 
 export default function ByProductTypePage() {
   const router = useRouter();
+  const chart = useChartTheme();
   const [trainingRecords, setTrainingRecords] = useState<TrainingRecordRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [ptSearch, setPtSearch] = useState("");
-  const [ptProduct, setPtProduct] = useState("");
-  const [ptType, setPtType] = useState("");
-  const [ptTheatre, setPtTheatre] = useState("");
+
+  const [search, setSearch] = useState("");
+  const [filterProduct, setFilterProduct] = useState("");
+  const [filterType, setFilterType] = useState("");
+  const [filterTheatre, setFilterTheatre] = useState("");
+  const [dateRange, setDateRange] = useState<DateRangeValue>({ from: null, to: null });
+  const [groupBy, setGroupBy] = useState<GroupByMode | null>(null);
 
   useEffect(() => {
     fetch("/api/reports/training-records")
       .then((r) => r.json())
-      .then((data) => { setTrainingRecords(data); setLoading(false); })
+      .then((d) => { setTrainingRecords(d); setLoading(false); })
       .catch(() => setLoading(false));
   }, []);
 
-  const trProductTypes = useMemo(() => [...new Set(trainingRecords.map((r) => r.productType))].filter(Boolean).sort(), [trainingRecords]);
-  const trTypes = useMemo(() => [...new Set(trainingRecords.map((r) => r.trainingType))].filter(Boolean).sort(), [trainingRecords]);
-  const trTheatres = useMemo(() => [...new Set(trainingRecords.map((r) => r.theatre))].filter(Boolean).sort(), [trainingRecords]);
+  const products = useMemo(() => [...new Set(trainingRecords.map((r) => r.productType))].filter(Boolean).sort(), [trainingRecords]);
+  const types = useMemo(() => [...new Set(trainingRecords.map((r) => r.trainingType))].filter(Boolean).sort(), [trainingRecords]);
+  const theatres = useMemo(() => [...new Set(trainingRecords.map((r) => r.theatre))].filter(Boolean).sort(), [trainingRecords]);
 
   const filtered = useMemo(() => {
-    const q = ptSearch.toLowerCase();
-    return trainingRecords.filter((r) => {
-      if (ptSearch && !r.fullName.toLowerCase().includes(q) && !r.email.toLowerCase().includes(q)) return false;
-      if (ptProduct && r.productType !== ptProduct) return false;
-      if (ptType && r.trainingType !== ptType) return false;
-      if (ptTheatre && r.theatre !== ptTheatre) return false;
+    const q = search.toLowerCase();
+    const dateFiltered = filterByRange(trainingRecords, "completedDate", dateRange);
+    return dateFiltered.filter((r) => {
+      if (search && !r.fullName.toLowerCase().includes(q) && !r.email.toLowerCase().includes(q)) return false;
+      if (filterProduct && r.productType !== filterProduct) return false;
+      if (filterType && r.trainingType !== filterType) return false;
+      if (filterTheatre && r.theatre !== filterTheatre) return false;
       return true;
     });
-  }, [trainingRecords, ptSearch, ptProduct, ptType, ptTheatre]);
+  }, [trainingRecords, search, filterProduct, filterType, filterTheatre, dateRange]);
+
+  // KPIs
+  const kpis = useMemo(() => {
+    const activeCount = filtered.filter((r) => r.active).length;
+    return {
+      total: filtered.length,
+      cert: filtered.filter((r) => r.trainingType === "Certification").length,
+      accred: filtered.filter((r) => r.trainingType === "Accreditation").length,
+      ilt: filtered.filter((r) => r.trainingType === "Instructor-Led Training").length,
+      active: activeCount,
+      expired: filtered.length - activeCount,
+    };
+  }, [filtered]);
+
+  // Stacked bar by product
+  const productSeries = useMemo(() => {
+    const m = new Map<string, { name: string; Certification: number; Accreditation: number; "Instructor-Led Training": number }>();
+    for (const r of filtered) {
+      if (!r.productType) continue;
+      let row = m.get(r.productType);
+      if (!row) {
+        row = { name: r.productType, Certification: 0, Accreditation: 0, "Instructor-Led Training": 0 };
+        m.set(r.productType, row);
+      }
+      const key = r.trainingType as (typeof TYPES)[number];
+      if (TYPES.includes(key)) row[key]++;
+    }
+    return Array.from(m.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [filtered]);
+
+  // Active vs expired donut
+  const statusSeries = useMemo(
+    () => [
+      { name: "Active", value: kpis.active, color: chart.isDark ? "#34d399" : "#10b981" },
+      { name: "Expired", value: kpis.expired, color: chart.isDark ? "#f87171" : "#ef4444" },
+    ],
+    [kpis.active, kpis.expired, chart.isDark]
+  );
+
+  const grouped = useMemo(
+    () => groupRows(filtered, groupBy ?? "theatre"),
+    [filtered, groupBy]
+  );
 
   const exportColumns = [
     { key: "fullName", header: "Full Name" },
     { key: "email", header: "Email" },
     { key: "theatre", header: "Theatre" },
+    { key: "region", header: "Region" },
     { key: "country", header: "Country" },
     { key: "trainingTitle", header: "Training" },
     { key: "trainingType", header: "Training Type" },
@@ -94,7 +164,6 @@ export default function ByProductTypePage() {
     { key: "expiryDate", header: "Expiry Date" },
     { key: "active", header: "Active" },
   ];
-
   const exportRows = filtered.map((r) => ({
     ...r,
     completedDate: new Date(r.completedDate).toLocaleDateString(),
@@ -115,8 +184,53 @@ export default function ByProductTypePage() {
       </div>
       <PageHeader title="By Product Type" helpSlug="reports" />
 
+      <KpiStrip
+        cards={[
+          { label: "Total Records", value: kpis.total, icon: CircleCheck, tone: "blue" },
+          { label: "Certifications", value: kpis.cert, icon: Award, tone: "indigo" },
+          { label: "Accreditations", value: kpis.accred, icon: ShieldCheck, tone: "emerald" },
+          { label: "ILTs", value: kpis.ilt, icon: GraduationCap, tone: "amber" },
+        ]}
+      />
+
+      <section className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+        <div className="lg:col-span-2 bg-white rounded-lg border border-gray-200 p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-base font-semibold text-gray-900">Records by Product Type</h3>
+            {filterProduct && (
+              <button onClick={() => setFilterProduct("")} className="text-xs text-blue-600 hover:underline">Clear product filter</button>
+            )}
+          </div>
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={productSeries}>
+              <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
+              <XAxis dataKey="name" tick={{ fontSize: 12, fill: chart.axis }} stroke={chart.axis} />
+              <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: chart.axis }} stroke={chart.axis} />
+              <Tooltip contentStyle={tooltipStyle(chart)} />
+              <Legend />
+              <Bar dataKey="Certification" stackId="a" fill={chart.typeColor("Certification")} cursor="pointer" onClick={((d: unknown) => { const n = (d as { name?: string }).name; if (n) setFilterProduct(n); }) as never} />
+              <Bar dataKey="Accreditation" stackId="a" fill={chart.typeColor("Accreditation")} cursor="pointer" onClick={((d: unknown) => { const n = (d as { name?: string }).name; if (n) setFilterProduct(n); }) as never} />
+              <Bar dataKey="Instructor-Led Training" stackId="a" fill={chart.typeColor("Instructor-Led Training")} cursor="pointer" onClick={((d: unknown) => { const n = (d as { name?: string }).name; if (n) setFilterProduct(n); }) as never} />
+            </BarChart>
+          </ResponsiveContainer>
+          <p className="text-xs text-gray-400 mt-2">Click a bar to filter the table by that product</p>
+        </div>
+        <div className="bg-white rounded-lg border border-gray-200 p-5">
+          <h3 className="text-base font-semibold text-gray-900 mb-4">Active vs Expired</h3>
+          <ResponsiveContainer width="100%" height={300}>
+            <PieChart>
+              <Pie data={statusSeries} dataKey="value" nameKey="name" innerRadius={50} outerRadius={90} paddingAngle={2}>
+                {statusSeries.map((s) => <Cell key={s.name} fill={s.color} />)}
+              </Pie>
+              <Tooltip contentStyle={tooltipStyle(chart)} />
+              <Legend />
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
+      </section>
+
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-200">
+        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-wrap gap-2">
           <p className="text-sm text-gray-500">All training records broken down by product type</p>
           <span className="text-sm font-medium text-gray-500">{filtered.length} result{filtered.length !== 1 ? "s" : ""}</span>
         </div>
@@ -125,22 +239,29 @@ export default function ByProductTypePage() {
             <div className="flex flex-col sm:flex-row gap-3">
               <div className="relative flex-1">
                 <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                <input type="text" placeholder="Search by name or email..." value={ptSearch} onChange={(e) => setPtSearch(e.target.value)} className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg" />
+                <input type="text" placeholder="Search by name or email..." value={search} onChange={(e) => setSearch(e.target.value)} className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg" />
               </div>
+              <DateRangePicker value={dateRange} onChange={setDateRange} placeholder="Completed date range" />
               <ExportMenu data={exportRows as never} columns={exportColumns} filename="by-product-type" />
             </div>
             <div className="flex flex-wrap gap-3">
-              <select value={ptProduct} onChange={(e) => setPtProduct(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
+              <select value={filterProduct} onChange={(e) => setFilterProduct(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
                 <option value="">All Products</option>
-                {trProductTypes.map((p) => <option key={p} value={p}>{p}</option>)}
+                {products.map((p) => <option key={p} value={p}>{p}</option>)}
               </select>
-              <select value={ptType} onChange={(e) => setPtType(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
+              <select value={filterType} onChange={(e) => setFilterType(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
                 <option value="">All Types</option>
-                {trTypes.map((t) => <option key={t} value={t}>{t}</option>)}
+                {types.map((t) => <option key={t} value={t}>{t}</option>)}
               </select>
-              <select value={ptTheatre} onChange={(e) => setPtTheatre(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
+              <select value={filterTheatre} onChange={(e) => setFilterTheatre(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
                 <option value="">All Theatres</option>
-                {trTheatres.map((t) => <option key={t} value={t}>{t}</option>)}
+                {theatres.map((t) => <option key={t} value={t}>{t}</option>)}
+              </select>
+              <select value={groupBy ?? ""} onChange={(e) => setGroupBy((e.target.value as GroupByMode) || null)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                <option value="">No Grouping</option>
+                <option value="theatre">Group by Theatre</option>
+                <option value="region">Group by Region</option>
+                <option value="country">Group by Country</option>
               </select>
             </div>
           </div>
@@ -151,6 +272,7 @@ export default function ByProductTypePage() {
                   <th className="px-4 py-3 text-left font-semibold">Full Name</th>
                   <th className="px-4 py-3 text-left font-semibold">Email</th>
                   <th className="px-4 py-3 text-left font-semibold">Theatre</th>
+                  <th className="px-4 py-3 text-left font-semibold">Region</th>
                   <th className="px-4 py-3 text-left font-semibold">Country</th>
                   <th className="px-4 py-3 text-left font-semibold">Training</th>
                   <th className="px-4 py-3 text-left font-semibold">Type</th>
@@ -162,12 +284,17 @@ export default function ByProductTypePage() {
                   <th className="px-4 py-3 text-left font-semibold"></th>
                 </tr>
               </thead>
-              <tbody>
-                {filtered.map((row, idx) => (
+              <GroupedRows
+                groups={grouped}
+                groupBy={groupBy}
+                colSpanTotal={13}
+                emptyMessage="No results match the current filters."
+                renderRow={(row, idx) => (
                   <tr key={`${row.email}-${row.trainingTitle}-${idx}`} className="border-b hover:bg-gray-50">
                     <td className="px-4 py-3">{row.fullName}</td>
                     <td className="px-4 py-3">{row.email}</td>
                     <td className="px-4 py-3">{row.theatre || "-"}</td>
+                    <td className="px-4 py-3">{row.region || "-"}</td>
                     <td className="px-4 py-3">{row.country || "-"}</td>
                     <td className="px-4 py-3">{row.trainingTitle}</td>
                     <td className="px-4 py-3">
@@ -188,11 +315,16 @@ export default function ByProductTypePage() {
                       <button onClick={() => router.push(`/students/${encodeURIComponent(row.email)}`)} className="px-3 py-1 text-xs font-medium text-blue-600 bg-blue-50 rounded-md hover:bg-blue-100 transition-colors">View</button>
                     </td>
                   </tr>
-                ))}
-                {filtered.length === 0 && (
-                  <tr><td colSpan={12} className="px-4 py-8 text-center text-gray-500">No results match the current filters.</td></tr>
                 )}
-              </tbody>
+                renderSubtotal={(g) => {
+                  const active = g.rows.filter((r) => r.active).length;
+                  return (
+                    <td colSpan={13} className="px-4 py-2">
+                      Subtotal — {g.rows.length} record{g.rows.length !== 1 ? "s" : ""} · {active} active · {g.rows.length - active} expired
+                    </td>
+                  );
+                }}
+              />
             </table>
           </div>
           {filtered.length > 0 && filtered.length !== trainingRecords.length && (
