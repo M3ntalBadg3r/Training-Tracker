@@ -28,6 +28,8 @@ import {
 interface ScheduledExport {
   id: number;
   name: string;
+  companyId: number;
+  companyName?: string | null;
   reportType: string;
   format: string;
   destination: string;
@@ -42,6 +44,8 @@ interface ScheduledExport {
   lastError: string | null;
   createdAt: string;
 }
+
+interface CompanyOption { id: number; name: string }
 
 interface Credential {
   provider: string;
@@ -259,6 +263,7 @@ function DestinationConfigFields({
 
 const EMPTY_FORM = {
   name: "",
+  companyId: "" as number | "",
   reportType: "trained-not-certified",
   format: "csv",
   destination: "local",
@@ -274,6 +279,7 @@ const EMPTY_FORM = {
 
 export default function ScheduledExportsPage() {
   const [schedules, setSchedules] = useState<ScheduledExport[]>([]);
+  const [companies, setCompanies] = useState<CompanyOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [credentials, setCredentials] = useState<Credential[]>([]);
   const [credsOpen, setCredsOpen] = useState(false);
@@ -304,12 +310,17 @@ export default function ScheduledExportsPage() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [schedsRes, credsRes, healthRes] = await Promise.all([
+      const [schedsRes, credsRes, healthRes, compsRes] = await Promise.all([
         fetch("/api/admin/scheduled-exports"),
         fetch("/api/admin/scheduled-exports/credentials"),
         fetch("/api/admin/scheduled-exports/credentials/health"),
+        fetch("/api/companies"),
       ]);
       setSchedules(await schedsRes.json());
+      if (compsRes.ok) {
+        const cd = (await compsRes.json()) as { companies: CompanyOption[] };
+        setCompanies(cd.companies);
+      }
       const credsData: Credential[] = await credsRes.json();
       setCredentials(credsData);
       // Repopulate form fields with saved non-sensitive values
@@ -350,6 +361,7 @@ export default function ScheduledExportsPage() {
     setEditingId(s.id);
     setForm({
       name: s.name,
+      companyId: s.companyId,
       reportType: s.reportType,
       format: s.format,
       destination: s.destination,
@@ -366,6 +378,7 @@ export default function ScheduledExportsPage() {
 
   async function handleSave() {
     if (!form.name.trim()) { setFormError("Name is required."); return; }
+    if (!form.companyId) { setFormError("Please pick a company."); return; }
     setSaving(true);
     setFormError("");
     try {
@@ -562,6 +575,7 @@ export default function ScheduledExportsPage() {
               <thead>
                 <tr className="border-b border-gray-100 text-left bg-gray-50">
                   <th className="px-4 py-3 font-medium text-gray-600">Name</th>
+                  <th className="px-4 py-3 font-medium text-gray-600">Company</th>
                   <th className="px-4 py-3 font-medium text-gray-600">Report</th>
                   <th className="px-4 py-3 font-medium text-gray-600">Format</th>
                   <th className="px-4 py-3 font-medium text-gray-600">Destination</th>
@@ -575,6 +589,7 @@ export default function ScheduledExportsPage() {
                 {schedules.map((s) => (
                   <tr key={s.id} className={`border-b border-gray-50 hover:bg-gray-50 ${!s.enabled ? "opacity-50" : ""}`}>
                     <td className="px-4 py-3 font-medium">{s.name}</td>
+                    <td className="px-4 py-3 text-gray-600">{s.companyName ?? `#${s.companyId}`}</td>
                     <td className="px-4 py-3 text-gray-600">{labelFor(REPORT_TYPES, s.reportType)}</td>
                     <td className="px-4 py-3 uppercase text-xs font-mono text-gray-500">{s.format}</td>
                     <td className="px-4 py-3 text-gray-600">{labelFor(DESTINATIONS, s.destination)}</td>
@@ -894,6 +909,26 @@ export default function ScheduledExportsPage() {
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
               placeholder="e.g. Weekly Certification Report"
             />
+          </div>
+
+          {/* Company */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Company</label>
+            <select
+              value={form.companyId === "" ? "" : String(form.companyId)}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, companyId: e.target.value === "" ? "" : Number(e.target.value) }))
+              }
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+            >
+              <option value="">-- Select a company --</option>
+              {companies.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+            <p className="text-xs text-gray-400 mt-1">
+              The export will only include data for the selected company.
+            </p>
           </div>
 
           {/* Report type */}

@@ -6,6 +6,7 @@ import PageHeader from "@/components/layout/PageHeader";
 import DataTable from "@/components/data-table/DataTable";
 import { ColumnDef, TrainingAvailableRow } from "@/types";
 import { trainingTypeLabel, functionTypeLabel } from "@/lib/utils";
+import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
 
 interface FilterOptions {
   theatres: string[];
@@ -54,6 +55,7 @@ const columns: ColumnDef<TrainingAvailableRow>[] = [
 
 export default function TrainingPage() {
   const router = useRouter();
+  const { selected, loading: scopeLoading } = useCompanyScope();
   const [training, setTraining] = useState<TrainingAvailableRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastImport, setLastImport] = useState<string | null>(null);
@@ -63,20 +65,22 @@ export default function TrainingPage() {
   const [country, setCountry] = useState("");
 
   const fetchTraining = useCallback(() => {
+    if (scopeLoading) return;
     const params = new URLSearchParams();
     if (theatre) params.set("theatre", theatre);
     if (region) params.set("region", region);
     if (country) params.set("country", country);
     const qs = params.toString();
+    const base = `/api/training-data${qs ? `?${qs}` : ""}`;
     setLoading(true);
-    fetch(`/api/training-data${qs ? `?${qs}` : ""}`)
+    fetch(withCompany(base, selected))
       .then((res) => res.json())
       .then((data) => {
         setTraining(data);
         setLoading(false);
       })
       .catch(() => setLoading(false));
-  }, [theatre, region, country]);
+  }, [theatre, region, country, selected, scopeLoading]);
 
   useEffect(() => {
     fetchTraining();
@@ -168,6 +172,7 @@ export default function TrainingPage() {
             if (theatre) params.set("theatre", theatre);
             if (region) params.set("region", region);
             if (country) params.set("country", country);
+            if (selected !== "all") params.set("companyId", String(selected));
             router.push(`/training/${encodeURIComponent(row.fullTitle)}?${params.toString()}`);
           },
         }}

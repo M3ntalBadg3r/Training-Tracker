@@ -8,6 +8,7 @@ import DataTable from "@/components/data-table/DataTable";
 import Badge from "@/components/ui/Badge";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import { ColumnDef, TrainingTakenRow } from "@/types";
+import { useCompanyScope } from "@/components/company/CompanyScopeProvider";
 
 const columns: ColumnDef<TrainingTakenRow>[] = [
   { key: "fullName", header: "Full Name" },
@@ -35,8 +36,10 @@ export default function TrainingTakenPage({
   const theatre = searchParams.get("theatre");
   const region = searchParams.get("region");
   const country = searchParams.get("country");
+  const urlCompanyId = searchParams.get("companyId");
   const hasLocationFilters = !!(theatre || region || country);
   const router = useRouter();
+  const { selected, loading: scopeLoading } = useCompanyScope();
 
   const [students, setStudents] = useState<TrainingTakenRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -69,12 +72,16 @@ export default function TrainingTakenPage({
   ];
 
   useEffect(() => {
+    if (scopeLoading) return;
     const url = new URL(`/api/training-taken`, window.location.origin);
     url.searchParams.set("fullTitle", fullTitle);
     if (trainingType) url.searchParams.set("trainingType", trainingType);
     if (theatre) url.searchParams.set("theatre", theatre);
     if (region) url.searchParams.set("region", region);
     if (country) url.searchParams.set("country", country);
+    // Prefer URL-passed companyId (from training page navigation), fall back to context selection
+    const companyId = urlCompanyId ?? (selected !== "all" ? String(selected) : null);
+    if (companyId) url.searchParams.set("companyId", companyId);
     fetch(url.toString())
       .then((res) => res.json())
       .then((data) => {
@@ -82,7 +89,7 @@ export default function TrainingTakenPage({
         setLoading(false);
       })
       .catch(() => setLoading(false));
-  }, [fullTitle, trainingType, theatre, region, country]);
+  }, [fullTitle, trainingType, theatre, region, country, urlCompanyId, selected, scopeLoading]);
 
   if (loading) {
     return (

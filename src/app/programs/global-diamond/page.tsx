@@ -5,6 +5,7 @@ import PageHeader from "@/components/layout/PageHeader";
 import { ChevronDown, ChevronRight, Download } from "lucide-react";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import type { GlobalDiamondReportData, GlobalDiamondRequirement } from "@/types";
+import { useCompanyScope } from "@/components/company/CompanyScopeProvider";
 
 const TRAINING_TYPE_LABELS: Record<string, string> = {
   Certification: "Certification",
@@ -13,18 +14,34 @@ const TRAINING_TYPE_LABELS: Record<string, string> = {
 };
 
 export default function GlobalDiamondPage() {
+  const companyScope = useCompanyScope();
   const [data, setData] = useState<GlobalDiamondReportData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showExport, setShowExport] = useState(false);
 
+  // Compliance is per-company; force a single-company selection when the global
+  // switcher is on "All". We pick the first allowed company as a sensible default.
+  const [selectedCompanyId, setSelectedCompanyId] = useState<number | null>(null);
+
   useEffect(() => {
-    fetch("/api/programs/global-diamond")
+    if (companyScope.loading) return;
+    if (companyScope.selected !== "all") {
+      setSelectedCompanyId(companyScope.selected);
+    } else if (companyScope.companies.length > 0) {
+      setSelectedCompanyId((prev) => prev ?? companyScope.companies[0].id);
+    }
+  }, [companyScope.loading, companyScope.selected, companyScope.companies]);
+
+  useEffect(() => {
+    if (selectedCompanyId === null) return;
+    setLoading(true);
+    fetch(`/api/programs/global-diamond?companyId=${selectedCompanyId}`)
       .then((r) => r.json())
       .then((d) => setData(d))
       .catch(() => setError("Failed to load compliance data"))
       .finally(() => setLoading(false));
-  }, []);
+  }, [selectedCompanyId]);
 
   const buildExportData = () => {
     if (!data) return [];
@@ -88,7 +105,20 @@ export default function GlobalDiamondPage() {
         title="Global Diamond"
         helpSlug="programs-global-diamond"
         rightContent={
-          data && data.specialisations.length > 0 ? (
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <label className="text-sm text-gray-500">Company</label>
+              <select
+                value={selectedCompanyId ?? ""}
+                onChange={(e) => setSelectedCompanyId(e.target.value ? Number(e.target.value) : null)}
+                className="text-sm border border-gray-300 rounded-lg px-2 py-1.5 bg-white"
+              >
+                {companyScope.companies.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+            {(data && data.specialisations.length > 0 ? (
             <div className="relative">
               <button
                 onClick={() => setShowExport((p) => !p)}
@@ -119,7 +149,8 @@ export default function GlobalDiamondPage() {
                 </div>
               )}
             </div>
-          ) : null
+          ) : null)}
+          </div>
         }
       />
 

@@ -3,6 +3,7 @@ import { requireAuth, handleAuthError } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { execSync } from "child_process";
 import path from "path";
+import { canAccessCompany, getAuthorizedCompanyIds } from "@/lib/company-scope";
 
 const CRON_MARKER = "# training-tracker-auto-export";
 
@@ -29,36 +30,55 @@ async function syncCron() {
 }
 
 export async function GET(request: NextRequest) {
+  let auth;
   try {
-    await requireAuth(request, "Admin");
+    auth = await requireAuth(request, "Admin");
   } catch (error) {
     return handleAuthError(error);
   }
 
+  const allowed = await getAuthorizedCompanyIds(auth.sub, auth.role);
   const exports = await prisma.scheduledExport.findMany({
+    where: allowed === null ? {} : { companyId: { in: allowed } },
     orderBy: { createdAt: "desc" },
+    include: { company: { select: { id: true, name: true } } },
   });
-  return NextResponse.json(exports);
+
+  return NextResponse.json(
+    exports.map((e) => ({
+      ...e,
+      companyName: e.company?.name ?? null,
+    }))
+  );
 }
 
 export async function POST(request: NextRequest) {
+  let auth;
   try {
-    await requireAuth(request, "Admin");
+    auth = await requireAuth(request, "Admin");
   } catch (error) {
     return handleAuthError(error);
   }
 
   try {
     const body = await request.json();
-    const { name, reportType, format, destination, config, enabled, frequency, time, dayOfWeek, dayOfMonth } = body;
+    const { name, companyId, reportType, format, destination, config, enabled, frequency, time, dayOfWeek, dayOfMonth } = body;
 
     if (!name || !reportType || !format || !destination || !frequency || !time) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+    }
+    const cid = Number(companyId);
+    if (!Number.isInteger(cid)) {
+      return NextResponse.json({ error: "Company is required" }, { status: 400 });
+    }
+    if (!(await canAccessCompany(auth.sub, auth.role, cid))) {
+      return NextResponse.json({ error: "You do not have access to that company" }, { status: 403 });
     }
 
     const record = await prisma.scheduledExport.create({
       data: {
         name,
+        companyId: cid,
         reportType,
         format,
         destination,

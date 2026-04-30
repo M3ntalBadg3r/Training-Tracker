@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma, { type PrismaTransactionClient } from "@/lib/prisma";
-import { requireAuth, handleAuthError } from "@/lib/auth";
+import { requireAuth, handleAuthError, requireSuperAdmin } from "@/lib/auth";
 
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ country: string }> }
 ) {
   try {
-    await requireAuth(request, "Admin");
+    await requireSuperAdmin(request);
   } catch (error) {
     return handleAuthError(error);
   }
@@ -63,7 +63,7 @@ export async function DELETE(
   { params }: { params: Promise<{ country: string }> }
 ) {
   try {
-    await requireAuth(request, "Admin");
+    await requireSuperAdmin(request);
   } catch (error) {
     return handleAuthError(error);
   }

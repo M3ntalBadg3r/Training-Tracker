@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import PageHeader from "@/components/layout/PageHeader";
 import { Upload, FileSpreadsheet, CheckCircle, AlertCircle } from "lucide-react";
 import { ImportSummary } from "@/types";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
+import { useAuth } from "@/components/auth/AuthProvider";
 
 const TARGET_FIELDS = [
   { key: "fullName", label: "Full Name", required: true },
@@ -14,11 +15,17 @@ const TARGET_FIELDS = [
   { key: "country", label: "Country", required: true },
   { key: "title", label: "Title", required: true },
   { key: "completedDate", label: "Completed Date", required: true },
+  { key: "company", label: "Company", required: false },
 ];
+
+interface CompanyOption { id: number; name: string }
 
 type Step = "upload" | "mapping" | "importing" | "summary";
 
 export default function ImportPage() {
+  const { user } = useAuth();
+  const isSuperAdmin = user?.role === "SuperAdmin";
+
   const [step, setStep] = useState<Step>("upload");
   const [fileName, setFileName] = useState<string>("");
   const [headers, setHeaders] = useState<string[]>([]);
@@ -27,6 +34,19 @@ export default function ImportPage() {
   const [summary, setSummary] = useState<ImportSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [companies, setCompanies] = useState<CompanyOption[]>([]);
+  const [defaultCompanyId, setDefaultCompanyId] = useState<number | "">("");
+
+  useEffect(() => {
+    fetch("/api/companies")
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((data: { companies: CompanyOption[] }) => {
+        setCompanies(data.companies);
+        if (data.companies.length === 1) setDefaultCompanyId(data.companies[0].id);
+      })
+      .catch(() => setCompanies([]));
+  }, []);
 
   const parseFile = (file: File) => {
     setError(null);
@@ -121,6 +141,14 @@ export default function ImportPage() {
       return;
     }
 
+    // If the file has no Company column, a default company is required.
+    if (!columnMapping.company && !defaultCompanyId) {
+      setError(
+        "Please pick a default company for rows that don't include one (or map a Company column)."
+      );
+      return;
+    }
+
     setStep("importing");
     setError(null);
 
@@ -128,7 +156,7 @@ export default function ImportPage() {
       const res = await fetch("/api/import", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rows, columnMapping }),
+        body: JSON.stringify({ rows, columnMapping, defaultCompanyId: defaultCompanyId || undefined }),
       });
 
       if (!res.ok) {
@@ -216,7 +244,9 @@ export default function ImportPage() {
 
             <h3 className="text-lg font-semibold mb-4">Map Columns</h3>
             <p className="text-sm text-gray-600 mb-4">
-              Map the columns from your file to the required fields.
+              Map the columns from your file to the required fields. The Company
+              column is optional — if a row has no value, the default company below
+              will be used.
             </p>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -247,6 +277,30 @@ export default function ImportPage() {
                   </select>
                 </div>
               ))}
+            </div>
+
+            <div className="mt-6 border-t border-gray-200 pt-4">
+              <h4 className="text-sm font-semibold mb-2">Default Company</h4>
+              <p className="text-xs text-gray-500 mb-2">
+                Used for rows where the Company column is empty or unmapped.
+                {isSuperAdmin
+                  ? " As a SuperAdmin, any unknown company name in the file will be auto-created."
+                  : " Rows referencing companies you do not have access to will be rejected."}
+              </p>
+              <select
+                value={defaultCompanyId === "" ? "" : String(defaultCompanyId)}
+                onChange={(e) =>
+                  setDefaultCompanyId(e.target.value === "" ? "" : Number(e.target.value))
+                }
+                className="w-full md:w-1/2 border border-gray-300 rounded-lg px-3 py-2 text-sm"
+              >
+                <option value="">-- Select a default company --</option>
+                {companies.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
             </div>
 
             {/* Preview */}
@@ -345,6 +399,15 @@ export default function ImportPage() {
                 <div className="text-sm text-gray-600">Trainings Skipped</div>
               </div>
             </div>
+
+            {(summary.companiesCreated ?? 0) > 0 && (
+              <div className="mb-3 flex items-start gap-3 bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <CheckCircle size={18} className="text-blue-600 mt-0.5 shrink-0" />
+                <p className="text-sm text-blue-800">
+                  {summary.companiesCreated} new {summary.companiesCreated === 1 ? "company was" : "companies were"} auto-created during this import.
+                </p>
+              </div>
+            )}
 
             {(summary.trainingsAutoCreated ?? 0) > 0 && (
               <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-lg p-4">

@@ -6,6 +6,7 @@ import Link from "next/link";
 import PageHeader from "@/components/layout/PageHeader";
 import { Search, Download, ArrowLeft } from "lucide-react";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
+import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
 
 interface TrainingRecordRow {
   fullName: string;
@@ -58,12 +59,16 @@ export default function ExpiringSoonPage() {
 
   const now = useMemo(() => new Date(), []);
 
+  const companyScope = useCompanyScope();
+
   useEffect(() => {
-    fetch("/api/reports/training-records")
+    if (companyScope.loading) return;
+    setLoading(true);
+    fetch(withCompany("/api/reports/training-records", companyScope.selected))
       .then((r) => r.json())
       .then((data) => { setTrainingRecords(data); setLoading(false); })
       .catch(() => setLoading(false));
-  }, []);
+  }, [companyScope.loading, companyScope.selected]);
 
   const trTypes = useMemo(() => [...new Set(trainingRecords.map((r) => r.trainingType))].filter(Boolean).sort(), [trainingRecords]);
   const trTheatres = useMemo(() => [...new Set(trainingRecords.map((r) => r.theatre))].filter(Boolean).sort(), [trainingRecords]);

@@ -35,17 +35,18 @@ src/
     training/     # Training catalog + [fullTitle] detail page
     reports/      # Trained-but-not-certified report
     account/      # User account page (profile, MFA setup)
-    admin/        # Admin pages (region-data, training-data, backup, import, users, cleanup, updates, scheduled-exports, program-data)
+    admin/        # Admin pages (region-data, training-data, backup, import, users, companies, cleanup, updates, scheduled-exports, program-data)
     programs/     # Partner program compliance dashboards
       aps/        # Authorized Professional Services (APS) compliance dashboard
       global-diamond/  # Global Diamond compliance dashboard
     login/        # Login page
     setup/        # First-run setup wizard
-    layout.tsx    # Root layout with AuthProvider + AppShell
+    layout.tsx    # Root layout with AuthProvider + CompanyScopeProvider + AppShell
   components/
     layout/       # Sidebar, PageHeader, AppShell
     ui/           # Modal, Badge, HelpModal
     auth/         # AuthProvider (context + useAuth hook)
+    company/      # CompanyScopeProvider (selected company in header) + CompanySwitcher
     theme/        # ThemeProvider (dark mode context + useTheme hook)
     data-table/   # Generic DataTable (search, sort, filter, paginate)
     admin/        # Admin-only widgets: ProviderCredentialWizard, CredentialHealthBanner
@@ -54,6 +55,7 @@ src/
   lib/
     prisma.ts     # Prisma client singleton (PrismaPg adapter)
     auth.ts       # JWT, password hashing, TOTP/MFA utilities
+    company-scope.ts # Resolve a user's allowed company ids; helpers for `?companyId=` filtering
     cron-auth.ts  # HMAC-SHA256 signature verification for cron endpoints
     rate-limit.ts # In-memory sliding-window rate limiter for auth endpoints
     utils.ts      # Date helpers, formatters, label mappers
@@ -76,12 +78,14 @@ deploy/           # install.sh, update.sh, install-remote.sh, perform-update.sh,
 
 ## Data Model
 
-- **Student** — PK: `email`. Fields: fullName, theatre, country.
+- **Student** — PK: `email`. Fields: fullName, theatre, country, companyId (FK → Company.id, NOT NULL).
+- **Company** — PK: `id`. Fields: name (unique). Tenants: students, scheduled exports, and (via `UserCompany`) Admin/User access lists are all scoped per-company.
+- **UserCompany** — Composite PK: (userId, companyId). Many-to-many between non-SuperAdmin users and the companies they can see. SuperAdmins are not represented in this table; they implicitly have access to every company.
 - **TrainingData** — PK: `trainingTitle`. Fields: fullTitle (display name), trainingType, productType, function, link, certification[].
 - **TrainingTaken** — FK: email → Student, trainingTitle → TrainingData. Fields: completedDate, expiryDate (auto: +2 years).
 - **RegionData** — PK: `country`. Fields: region.
-- **User** — PK: `id` (auto-increment). Fields: username (unique), passwordHash, displayName, role (Admin/User), mfaEnabled, mfaSecret.
-- **ScheduledExport** — PK: `id`. Fields: name, reportType, format, destination, config (JSON), enabled, frequency, time, dayOfWeek?, dayOfMonth?, lastRunAt?, lastStatus?, lastError?.
+- **User** — PK: `id` (auto-increment). Fields: username (unique), passwordHash, displayName, role (SuperAdmin/Admin/User), mfaEnabled, mfaSecret. Has many `UserCompany` rows when role ≠ SuperAdmin.
+- **ScheduledExport** — PK: `id`. Fields: name, companyId (FK → Company.id, NOT NULL — the export only includes data for this company), reportType, format, destination, config (JSON), enabled, frequency, time, dayOfWeek?, dayOfMonth?, lastRunAt?, lastStatus?, lastError?.
 - **ExportCredential** — PK: `id`, unique: `provider`. Fields: provider, config (JSON), lastCheckedAt?, lastCheckStatus? (`"ok"` | `"expired"` | `"failed"`), lastCheckError?, lastSuccessAt?. Stores SMTP/OAuth credentials per delivery provider; the health columns drive the dashboard banner and per-card status badge. Cloud providers (`google-drive`, `box`, `onedrive`) all use OAuth refresh-token flows captured by the wizard at `/admin/scheduled-exports`; OneDrive is delegated (uploads to the connecting user's `/me/drive`).
 - **Specialisation** — PK: `id` (auto-increment). Fields: name (unique). Admin-managed list of product specialisations for partner programs.
 - **ProgramData** — PK: `id` (auto-increment). FK: specialisationId → Specialisation, trainingTitle → TrainingData. Fields: programName, level (ProgramLevel enum), trainingType?, trainingTitle?, quantityRequired, minimumPerTheatre?. Training fields are nullable (null = "count compliant theatres" mode for APS-style Global entries). minimumPerTheatre is used by Global Diamond for per-theatre minimum enforcement. Has many ProgramDataAlternative (OR logic alternatives).
@@ -91,7 +95,7 @@ deploy/           # install.sh, update.sh, install-remote.sh, perform-update.sh,
 - **TrainingType**: `Certification`, `Accreditation`, `InstructorLedTraining`
 - **ProductType**: `Cortex`, `SASE`, `Cloud`, `Strata`, `Foundation`
 - **FunctionType**: `Sales`, `PreSales`, `Deployments`
-- **Role**: `Admin`, `User`
+- **Role**: `SuperAdmin` (full access, can manage companies/users/system), `Admin` (scoped to assigned companies; can edit data within scope but cannot manage users/companies/region-data/training-data/backup/cleanup/updates), `User` (read-only, scoped to assigned companies)
 - **ProgramLevel**: `Country`, `Theatre`, `Global`
 
 ## Architecture Notes
@@ -99,7 +103,9 @@ deploy/           # install.sh, update.sh, install-remote.sh, perform-update.sh,
 - Path alias: `@/*` → `./src/*`
 - Pages are server components by default; client components use `"use client"` directive.
 - Authentication uses JWT tokens in HTTP-only cookies (via `jose` library). Proxy (`src/proxy.ts`) protects all routes. API routes have additional `requireAuth()` guards for defense-in-depth.
-- Two fixed roles: **Admin** (full access) and **User** (read-only, no admin pages). Role checked in proxy and API routes.
+- Three roles: **SuperAdmin** (system-wide), **Admin** (scoped to assigned companies via `UserCompany`), **User** (read-only, scoped). The proxy enforces a SuperAdmin-only allow-list (`/admin/users`, `/admin/companies`, `/admin/training-data`, `/admin/region-data`, `/admin/program-data`, `/admin/backup`, `/admin/cleanup`, `/admin/updates`). API routes apply company scoping via `lib/company-scope.ts` helpers (`getAuthorizedCompanyIds`, `resolveCompanyFilter`, `canAccessCompany`).
+- All data-bearing API endpoints accept a `?companyId=` query parameter that is intersected with the caller's allowed companies; the global header switcher (in `AppShell`, backed by `CompanyScopeProvider`) sets it client-side and persists the selection in `localStorage` (`tt.selectedCompany`). SuperAdmins can choose "All companies"; everyone else sees only the companies they've been granted.
+- Importing data requires a Company column or a per-import default company. SuperAdmins auto-create unknown companies on the fly; other Admins get an "out of scope" error if a row references a company they don't have access to. When a row's email matches an existing student in another company, the row is processed but the company assignment is preserved (warn-only).
 - TOTP-based MFA supported via `otpauth` library. Optional per-user, managed in Admin > Users.
 - First-run setup wizard creates the initial admin account when no users exist in the database.
 - Multiple `trainingTitle`s can map to the same `fullTitle`. Deduplication by `email + fullTitle + trainingType` is applied in dashboard and training-page APIs to avoid double-counting.

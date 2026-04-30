@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { TrainingType, ProductType, FunctionType } from "@prisma/client";
-import { requireAuth, handleAuthError } from "@/lib/auth";
+import { requireAuth, handleAuthError, requireSuperAdmin } from "@/lib/auth";
+import { getAuthorizedCompanyIds, resolveCompanyFilter } from "@/lib/company-scope";
 
 export async function GET(request: NextRequest) {
+  let auth;
   try {
-    await requireAuth(request);
+    auth = await requireAuth(request);
   } catch (error) {
     return handleAuthError(error);
   }
@@ -15,19 +17,25 @@ export async function GET(request: NextRequest) {
   const region = searchParams.get("region");
   const country = searchParams.get("country");
 
-  // Build a where clause for trainingsTaken → student filtering
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const studentWhere: Record<string, any> = {};
-  if (theatre) studentWhere.theatre = theatre;
-  if (country) studentWhere.country = country;
-  if (region) studentWhere.regionData = { region };
+  const allowed = await getAuthorizedCompanyIds(auth.sub, auth.role);
+  const companyFilter = resolveCompanyFilter(allowed, searchParams.get("companyId"));
+  if (companyFilter !== null && companyFilter.length === 0) {
+    return NextResponse.json([]);
+  }
 
-  const hasFilters = Object.keys(studentWhere).length > 0;
+  const hasLocationFilters = !!(theatre || region || country);
+  // Need student data when location-filtering or when scoping by company
+  const needsStudentData = hasLocationFilters || companyFilter !== null;
 
   const trainingData = await prisma.trainingData.findMany({
     include: {
       trainingsTaken: {
-        include: { student: hasFilters ? { include: { regionData: true } } : false },
+        include: {
+          // student: false skips the join for unfiltered SuperAdmin queries (perf opt)
+          student: needsStudentData
+            ? (hasLocationFilters ? { include: { regionData: true } } : true)
+            : false,
+        },
       },
     },
     orderBy: { fullTitle: "asc" },
@@ -46,12 +54,13 @@ export async function GET(request: NextRequest) {
     }
   >();
 
-  // Helper to check if a training-taken record's student matches the filters
+  // Helper to check if a training-taken record's student matches all active filters
   const matchesFilter = (t: (typeof trainingData)[number]["trainingsTaken"][number]): boolean => {
-    if (!hasFilters) return true;
+    if (!needsStudentData) return true;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const student = (t as any).student;
     if (!student) return false;
+    if (companyFilter && !companyFilter.includes(student.companyId)) return false;
     if (theatre && student.theatre !== theatre) return false;
     if (country && student.country !== country) return false;
     if (region && student.regionData?.region !== region) return false;
@@ -89,7 +98,7 @@ export async function GET(request: NextRequest) {
   }
 
   let results = Array.from(grouped.values());
-  if (hasFilters) {
+  if (hasLocationFilters) {
     results = results.filter((r) => r.studentsTaken > 0);
   }
   return NextResponse.json(results);
@@ -97,7 +106,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    await requireAuth(request, "Admin");
+    await requireSuperAdmin(request);
   } catch (error) {
     return handleAuthError(error);
   }

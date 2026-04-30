@@ -3,10 +3,12 @@ import prisma from "@/lib/prisma";
 import { TrainingType } from "@prisma/client";
 import { isActive, formatDate, parseDate, computeExpiryDate } from "@/lib/utils";
 import { requireAuth, handleAuthError } from "@/lib/auth";
+import { canAccessCompany, getAuthorizedCompanyIds, resolveCompanyFilter } from "@/lib/company-scope";
 
 export async function GET(request: NextRequest) {
+  let auth;
   try {
-    await requireAuth(request);
+    auth = await requireAuth(request);
   } catch (error) {
     return handleAuthError(error);
   }
@@ -14,6 +16,12 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const fullTitle = searchParams.get("fullTitle");
   const trainingType = searchParams.get("trainingType");
+
+  const allowed = await getAuthorizedCompanyIds(auth.sub, auth.role);
+  const companyFilter = resolveCompanyFilter(allowed, searchParams.get("companyId"));
+  if (companyFilter !== null && companyFilter.length === 0) {
+    return NextResponse.json([]);
+  }
 
   if (!fullTitle) {
     return NextResponse.json(
@@ -45,6 +53,7 @@ export async function GET(request: NextRequest) {
   if (theatre) studentWhere.theatre = theatre;
   if (country) studentWhere.country = country;
   if (region) studentWhere.regionData = { region };
+  if (companyFilter) studentWhere.companyId = { in: companyFilter };
 
   // Find all training taken records with these titles
   const trainingTaken = await prisma.trainingTaken.findMany({
@@ -84,8 +93,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  let auth;
   try {
-    await requireAuth(request, "Admin");
+    auth = await requireAuth(request, "Admin");
   } catch (error) {
     return handleAuthError(error);
   }
@@ -118,6 +128,9 @@ export async function POST(request: NextRequest) {
   const student = await prisma.student.findUnique({ where: { email } });
   if (!student) {
     return NextResponse.json({ error: "Student not found" }, { status: 404 });
+  }
+  if (!(await canAccessCompany(auth.sub, auth.role, student.companyId))) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const trainingData = await prisma.trainingData.findUnique({

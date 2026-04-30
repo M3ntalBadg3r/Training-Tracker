@@ -1,14 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { requireAuth, handleAuthError } from "@/lib/auth";
+import { getAuthorizedCompanyIds, resolveCompanyFilter } from "@/lib/company-scope";
 
 const GLOBAL_DIAMOND_PROGRAM_NAME = "Global Diamond";
 
 export async function GET(request: NextRequest) {
+  let auth;
   try {
-    await requireAuth(request);
+    auth = await requireAuth(request);
   } catch (error) {
     return handleAuthError(error);
+  }
+
+  const allowed = await getAuthorizedCompanyIds(auth.sub, auth.role);
+  const companyFilter = resolveCompanyFilter(allowed, request.nextUrl.searchParams.get("companyId"));
+  if (companyFilter !== null && companyFilter.length === 0) {
+    return NextResponse.json({ specialisations: [] });
   }
 
   // Get all Global Diamond program data (all entries are Global level with specific training)
@@ -30,8 +38,10 @@ export async function GET(request: NextRequest) {
 
   const now = new Date();
 
-  // Get all distinct theatres
+  // Get all distinct theatres (within scope)
+  const studentScope = companyFilter ? { companyId: { in: companyFilter } } : {};
   const theatreStudents = await prisma.student.findMany({
+    where: studentScope,
     select: { theatre: true },
     distinct: ["theatre"],
     orderBy: { theatre: "asc" },
@@ -54,6 +64,7 @@ export async function GET(request: NextRequest) {
         where: {
           trainingTitle: { in: allTitlesArray },
           expiryDate: { gt: now },
+          ...(companyFilter ? { student: { companyId: { in: companyFilter } } } : {}),
         },
         select: { trainingTitle: true, email: true, student: { select: { theatre: true } } },
       })

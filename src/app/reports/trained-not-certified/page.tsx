@@ -6,6 +6,7 @@ import Link from "next/link";
 import PageHeader from "@/components/layout/PageHeader";
 import { Search, Download, ArrowLeft } from "lucide-react";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
+import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
 
 interface TrainedNotCertifiedRow {
   fullName: string;
@@ -59,12 +60,16 @@ export default function TrainedNotCertifiedPage() {
   const [filterCert, setFilterCert] = useState("");
   const [filterActive, setFilterActive] = useState("");
 
+  const companyScope = useCompanyScope();
+
   useEffect(() => {
-    fetch("/api/reports/trained-not-certified")
+    if (companyScope.loading) return;
+    setLoading(true);
+    fetch(withCompany("/api/reports/trained-not-certified", companyScope.selected))
       .then((r) => r.json())
       .then((data) => { setReportData(data); setLoading(false); })
       .catch(() => setLoading(false));
-  }, []);
+  }, [companyScope.loading, companyScope.selected]);
 
   const theatres = useMemo(() => [...new Set(reportData.map((r) => r.theatre))].filter(Boolean).sort(), [reportData]);
   const regions = useMemo(() => [...new Set(reportData.map((r) => r.region))].filter(Boolean).sort(), [reportData]);

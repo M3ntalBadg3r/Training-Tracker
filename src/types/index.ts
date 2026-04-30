@@ -64,6 +64,8 @@ export interface ImportSummary {
   trainingsCreated: number;
   trainingsSkipped: number;
   trainingsAutoCreated: number;
+  companiesCreated?: number;
+  companyConflicts?: number;
   errors: string[];
 }
 

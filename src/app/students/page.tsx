@@ -7,26 +7,16 @@ import DataTable from "@/components/data-table/DataTable";
 import Modal from "@/components/ui/Modal";
 import { ColumnDef, StudentRow } from "@/types";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
 import { Plus } from "lucide-react";
 
-const columns: ColumnDef<StudentRow>[] = [
-  { key: "fullName", header: "Full Name" },
-  { key: "email", header: "Email Address" },
-  { key: "theatre", header: "Theatre" },
-  { key: "region", header: "Region", accessor: (row) => {
-    const r = (row.region ?? "").trim();
-    if (!r) return "N/A";
-    const lower = r.toLowerCase();
-    if (lower === "unknown" || lower === "not applicable") return "";
-    return r;
-  } },
-  { key: "country", header: "Country" },
-];
+interface CompanyOption { id: number; name: string }
 
 export default function StudentsPage() {
   const router = useRouter();
   const { isAdmin } = useAuth();
-  const [students, setStudents] = useState<StudentRow[]>([]);
+  const companyScope = useCompanyScope();
+  const [students, setStudents] = useState<(StudentRow & { companyName?: string | null })[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastImport, setLastImport] = useState<string | null>(null);
 
@@ -36,16 +26,44 @@ export default function StudentsPage() {
     fullName: "",
     theatre: "",
     country: "",
+    companyId: "" as number | "",
   });
   const [addError, setAddError] = useState("");
   const [saving, setSaving] = useState(false);
 
+  // The "Company" column is only visible when the global switcher is set to "All"
+  // (otherwise every row has the same company value, which adds visual noise).
+  const showCompanyColumn = companyScope.selected === "all";
+
+  const columns: ColumnDef<StudentRow & { companyName?: string | null }>[] = [
+    { key: "fullName", header: "Full Name" },
+    { key: "email", header: "Email Address" },
+    ...(showCompanyColumn
+      ? [{ key: "companyName" as const, header: "Company", accessor: (row: StudentRow & { companyName?: string | null }) => row.companyName ?? "" }]
+      : []),
+    { key: "theatre", header: "Theatre" },
+    {
+      key: "region",
+      header: "Region",
+      accessor: (row) => {
+        const r = (row.region ?? "").trim();
+        if (!r) return "N/A";
+        const lower = r.toLowerCase();
+        if (lower === "unknown" || lower === "not applicable") return "";
+        return r;
+      },
+    },
+    { key: "country", header: "Country" },
+  ];
+
   const fetchStudents = () =>
-    fetch("/api/students")
+    fetch(withCompany("/api/students", companyScope.selected))
       .then((res) => res.json())
       .then((data) => setStudents(data));
 
   useEffect(() => {
+    if (companyScope.loading) return;
+    setLoading(true);
     fetchStudents().finally(() => setLoading(false));
     fetch("/api/import-metadata?key=students")
       .then((res) => res.json())
@@ -53,10 +71,15 @@ export default function StudentsPage() {
         if (data?.timestamp) setLastImport(data.timestamp);
       })
       .catch(() => {});
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [companyScope.loading, companyScope.selected]);
 
   const handleAddStudent = async () => {
     setAddError("");
+    if (!addForm.companyId) {
+      setAddError("Please select a company.");
+      return;
+    }
     setSaving(true);
     try {
       const res = await fetch("/api/students", {
@@ -70,7 +93,7 @@ export default function StudentsPage() {
         return;
       }
       setShowAdd(false);
-      setAddForm({ email: "", fullName: "", theatre: "", country: "" });
+      setAddForm({ email: "", fullName: "", theatre: "", country: "", companyId: "" });
       await fetchStudents();
     } finally {
       setSaving(false);
@@ -84,6 +107,14 @@ export default function StudentsPage() {
       </div>
     );
   }
+
+  // Default the picker to the currently-selected company (when not "all"),
+  // so adding a student in a single-company view is one click.
+  const defaultCompanyForAdd = (): number | "" => {
+    if (companyScope.selected !== "all") return companyScope.selected;
+    if (companyScope.companies.length === 1) return companyScope.companies[0].id;
+    return "";
+  };
 
   return (
     <div>
@@ -101,7 +132,13 @@ export default function StudentsPage() {
               <button
                 onClick={() => {
                   setAddError("");
-                  setAddForm({ email: "", fullName: "", theatre: "", country: "" });
+                  setAddForm({
+                    email: "",
+                    fullName: "",
+                    theatre: "",
+                    country: "",
+                    companyId: defaultCompanyForAdd(),
+                  });
                   setShowAdd(true);
                 }}
                 className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
@@ -112,14 +149,13 @@ export default function StudentsPage() {
           </div>
         }
       />
-      <DataTable<StudentRow>
+      <DataTable<StudentRow & { companyName?: string | null }>
         data={students}
         columns={columns}
         defaultSortColumn="fullName"
         rowAction={{
           label: "View",
-          onClick: (row) =>
-            router.push(`/students/${encodeURIComponent(row.email)}`),
+          onClick: (row) => router.push(`/students/${encodeURIComponent(row.email)}`),
         }}
       />
 
@@ -129,12 +165,7 @@ export default function StudentsPage() {
         title="Add Student"
         actions={
           <>
-            <button
-              onClick={() => setShowAdd(false)}
-              className="px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300"
-            >
-              Cancel
-            </button>
+            <button onClick={() => setShowAdd(false)} className="px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300">Cancel</button>
             <button
               onClick={handleAddStudent}
               disabled={saving}
@@ -147,54 +178,55 @@ export default function StudentsPage() {
       >
         <div className="space-y-3">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Full Name
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
             <input
               type="text"
               value={addForm.fullName}
-              onChange={(e) =>
-                setAddForm((f) => ({ ...f, fullName: e.target.value }))
-              }
+              onChange={(e) => setAddForm((f) => ({ ...f, fullName: e.target.value }))}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Email Address
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
             <input
               type="email"
               value={addForm.email}
-              onChange={(e) =>
-                setAddForm((f) => ({ ...f, email: e.target.value }))
-              }
+              onChange={(e) => setAddForm((f) => ({ ...f, email: e.target.value }))}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Theatre
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Company</label>
+            <select
+              value={addForm.companyId === "" ? "" : String(addForm.companyId)}
+              onChange={(e) =>
+                setAddForm((f) => ({ ...f, companyId: e.target.value === "" ? "" : Number(e.target.value) }))
+              }
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+            >
+              <option value="">-- Select company --</option>
+              {companyScope.companies.map((c: CompanyOption) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Theatre</label>
             <input
               type="text"
               value={addForm.theatre}
-              onChange={(e) =>
-                setAddForm((f) => ({ ...f, theatre: e.target.value }))
-              }
+              onChange={(e) => setAddForm((f) => ({ ...f, theatre: e.target.value }))}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Country
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Country</label>
             <input
               type="text"
               value={addForm.country}
-              onChange={(e) =>
-                setAddForm((f) => ({ ...f, country: e.target.value }))
-              }
+              onChange={(e) => setAddForm((f) => ({ ...f, country: e.target.value }))}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
             />
             <p className="text-xs text-gray-400 mt-1">
@@ -202,9 +234,7 @@ export default function StudentsPage() {
             </p>
           </div>
           {addError && (
-            <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2">
-              {addError}
-            </div>
+            <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2">{addError}</div>
           )}
         </div>
       </Modal>
