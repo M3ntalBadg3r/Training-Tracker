@@ -33,7 +33,7 @@ src/
     dashboard/    # Dashboard page (metrics + charts)
     students/     # Student list + [email] detail page
     training/     # Training catalog + [fullTitle] detail page
-    reports/      # Trained-but-not-certified report
+    reports/      # Index page + 9 reports: by-product-type, by-function, expiring-soon, last-12-months, trained-not-certified, coverage, catalogue-health, program-compliance-trend, renewal-forecast
     account/      # User account page (profile, MFA setup)
     admin/        # Admin pages (region-data, training-data, backup, import, users, cleanup, updates, scheduled-exports, program-data)
     programs/     # Partner program compliance dashboards
@@ -44,10 +44,10 @@ src/
     layout.tsx    # Root layout with AuthProvider + AppShell
   components/
     layout/       # Sidebar, PageHeader, AppShell
-    ui/           # Modal, Badge, HelpModal
+    ui/           # Modal, Badge, HelpModal, KpiStrip, DateRangePicker
     auth/         # AuthProvider (context + useAuth hook)
     theme/        # ThemeProvider (dark mode context + useTheme hook)
-    data-table/   # Generic DataTable (search, sort, filter, paginate)
+    data-table/   # Generic DataTable (search, sort, filter, paginate) + GroupedRows (grouped tbody with subtotals + expand/collapse)
     admin/        # Admin-only widgets: ProviderCredentialWizard, CredentialHealthBanner
   hooks/          # useDebounce
   proxy.ts       # Route protection (auth + role checks)
@@ -57,6 +57,9 @@ src/
     cron-auth.ts  # HMAC-SHA256 signature verification for cron endpoints
     rate-limit.ts # In-memory sliding-window rate limiter for auth endpoints
     utils.ts      # Date helpers, formatters, label mappers
+    chart-theme.ts # useChartTheme() hook — theme-aware Recharts axis/grid/tooltip + COLORS palette
+    group-by.ts    # rollUp(country, region, theatre) + groupRows() — country->region->theatre rollup with theatre fallback for null/'unknown' regions
+    program-compliance.ts # Shared compliance calculations (email-set queries, OR-logic union, per-theatre breakdown) used by APS, Global Diamond, and Program Compliance Trend
     export.ts     # CSV/Excel/PDF export utilities (browser-side, triggers download)
     server-export.ts  # Server-side CSV/Excel/PDF generation (returns Buffer)
     report-queries.ts # Server-side Prisma queries for each report type
