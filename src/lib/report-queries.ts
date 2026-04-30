@@ -25,6 +25,7 @@ export interface TrainingRecordRow {
   fullName: string;
   email: string;
   theatre: string;
+  region: string;
   country: string;
   trainingTitle: string;
   trainingType: string;
@@ -61,7 +62,12 @@ async function fetchAllTrainingRecords(): Promise<TrainingRecordRow[]> {
         },
       },
       student: {
-        select: { fullName: true, theatre: true, country: true },
+        select: {
+          fullName: true,
+          theatre: true,
+          country: true,
+          regionData: { select: { region: true } },
+        },
       },
     },
   });
@@ -80,6 +86,7 @@ async function fetchAllTrainingRecords(): Promise<TrainingRecordRow[]> {
     fullName: tt.student.fullName,
     email: tt.email,
     theatre: tt.student.theatre,
+    region: tt.student.regionData?.region ?? "",
     country: tt.student.country,
     trainingTitle: tt.trainingData.fullTitle,
     trainingType: TYPE_LABELS[tt.trainingData.trainingType] ?? tt.trainingData.trainingType,
