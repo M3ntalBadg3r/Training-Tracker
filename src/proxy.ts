@@ -35,15 +35,19 @@ function isAdminPath(pathname: string): boolean {
 // SuperAdmin-only routes — these handle system-wide management (users,
 // companies, training/region catalogs, backups, cleanup, updates) and are
 // not safe to expose to a per-company Admin.
+//
+// Note: only **page** routes for catalogs (training-data, region-data) live
+// here. The /api/training-data and /api/region-data endpoints expose read
+// operations that scoped Users and Admins still need (the Training page,
+// student detail page, etc.). Mutation handlers in those subtrees protect
+// themselves via `requireSuperAdmin` instead.
 const SUPER_ADMIN_PREFIXES = [
   "/admin/users",
   "/api/admin/users",
   "/admin/companies",
   "/api/admin/companies",
   "/admin/region-data",
-  "/api/region-data",
   "/admin/training-data",
-  "/api/training-data",
   "/api/admin/specialisations",
   "/admin/program-data",
   "/api/admin/program-data",
