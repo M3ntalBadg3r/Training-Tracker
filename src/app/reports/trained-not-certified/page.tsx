@@ -4,9 +4,23 @@ import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import PageHeader from "@/components/layout/PageHeader";
-import { Search, Download, ArrowLeft } from "lucide-react";
+import KpiStrip from "@/components/ui/KpiStrip";
+import GroupedRows from "@/components/data-table/GroupedRows";
+import { useChartTheme, tooltipStyle } from "@/lib/chart-theme";
+import { groupRows, GroupByMode, resolveBucket } from "@/lib/group-by";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
+import { Search, Download, ArrowLeft, AlertCircle, Award, GraduationCap, Users } from "lucide-react";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from "recharts";
 
 interface TrainedNotCertifiedRow {
   fullName: string;
@@ -21,19 +35,11 @@ interface TrainedNotCertifiedRow {
   iltActive: boolean;
 }
 
-function ExportMenu({
-  data,
-  columns,
-  filename,
-}: {
-  data: Record<string, unknown>[];
-  columns: { key: string; header: string }[];
-  filename: string;
-}) {
+function ExportMenu({ data, columns, filename }: { data: Record<string, unknown>[]; columns: { key: string; header: string }[]; filename: string }) {
   const [show, setShow] = useState(false);
   return (
     <div className="relative">
-      <button onClick={() => setShow((prev) => !prev)} className="flex items-center gap-2 px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300">
+      <button onClick={() => setShow((p) => !p)} className="flex items-center gap-2 px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300">
         <Download size={16} /> Export
       </button>
       {show && (
@@ -49,8 +55,10 @@ function ExportMenu({
 
 export default function TrainedNotCertifiedPage() {
   const router = useRouter();
+  const chart = useChartTheme();
   const [reportData, setReportData] = useState<TrainedNotCertifiedRow[]>([]);
   const [loading, setLoading] = useState(true);
+
   const [searchQuery, setSearchQuery] = useState("");
   const [filterTheatre, setFilterTheatre] = useState("");
   const [filterRegion, setFilterRegion] = useState("");
@@ -59,6 +67,7 @@ export default function TrainedNotCertifiedPage() {
   const [filterIlt, setFilterIlt] = useState("");
   const [filterCert, setFilterCert] = useState("");
   const [filterActive, setFilterActive] = useState("");
+  const [groupBy, setGroupBy] = useState<GroupByMode | null>("theatre");
 
   const companyScope = useCompanyScope();
 
@@ -67,7 +76,7 @@ export default function TrainedNotCertifiedPage() {
     setLoading(true);
     fetch(withCompany("/api/reports/trained-not-certified", companyScope.selected))
       .then((r) => r.json())
-      .then((data) => { setReportData(data); setLoading(false); })
+      .then((d) => { setReportData(d); setLoading(false); })
       .catch(() => setLoading(false));
   }, [companyScope.loading, companyScope.selected]);
 
@@ -93,6 +102,47 @@ export default function TrainedNotCertifiedPage() {
     });
   }, [reportData, searchQuery, filterTheatre, filterRegion, filterCountry, filterProduct, filterIlt, filterCert, filterActive]);
 
+  // Funnel-style chart by product: ILT-only count + active-ILT count
+  const productSeries = useMemo(() => {
+    const m = new Map<string, { name: string; "ILT Completed": number; "ILT Still Active": number }>();
+    for (const r of filteredData) {
+      let row = m.get(r.iltProductType);
+      if (!row) {
+        row = { name: r.iltProductType, "ILT Completed": 0, "ILT Still Active": 0 };
+        m.set(r.iltProductType, row);
+      }
+      row["ILT Completed"]++;
+      if (r.iltActive) row["ILT Still Active"]++;
+    }
+    return Array.from(m.values()).sort((a, b) => b["ILT Completed"] - a["ILT Completed"]);
+  }, [filteredData]);
+
+  const bucketSeries = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const r of filteredData) {
+      const k = resolveBucket(r, groupBy ?? "theatre");
+      m.set(k, (m.get(k) ?? 0) + 1);
+    }
+    return Array.from(m.entries())
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 12);
+  }, [filteredData, groupBy]);
+
+  const kpis = useMemo(() => {
+    const activeIlt = filteredData.filter((r) => r.iltActive).length;
+    const distinctStudents = new Set(filteredData.map((r) => r.email)).size;
+    const distinctIlts = new Set(filteredData.map((r) => r.iltFullTitle)).size;
+    return {
+      total: filteredData.length,
+      activeIlt,
+      distinctStudents,
+      distinctIlts,
+    };
+  }, [filteredData]);
+
+  const grouped = useMemo(() => groupRows(filteredData, groupBy ?? "theatre"), [filteredData, groupBy]);
+
   const exportColumns = [
     { key: "fullName", header: "Full Name" },
     { key: "email", header: "Email Address" },
@@ -105,7 +155,6 @@ export default function TrainedNotCertifiedPage() {
     { key: "iltActive", header: "ILT Active" },
     { key: "certificationFullTitle", header: "Certification Not Obtained" },
   ];
-
   const exportRows = filteredData.map((r) => ({
     ...r,
     iltCompletedDate: new Date(r.iltCompletedDate).toLocaleDateString(),
@@ -125,8 +174,52 @@ export default function TrainedNotCertifiedPage() {
       </div>
       <PageHeader title="Trained But Not Certified" helpSlug="reports" />
 
+      <KpiStrip
+        cards={[
+          { label: "Gaps (ILT → Cert)", value: kpis.total, icon: AlertCircle, tone: "red" },
+          { label: "Distinct Students", value: kpis.distinctStudents, icon: Users, tone: "blue" },
+          { label: "Distinct ILTs", value: kpis.distinctIlts, icon: GraduationCap, tone: "amber" },
+          { label: "ILT Still Active", value: kpis.activeIlt, icon: Award, tone: "emerald" },
+        ]}
+      />
+
+      <section className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        <div className="bg-white rounded-lg border border-gray-200 p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-base font-semibold text-gray-900">Gap by Product (ILT → Cert)</h3>
+            {filterProduct && (
+              <button onClick={() => setFilterProduct("")} className="text-xs text-blue-600 hover:underline">Clear product filter</button>
+            )}
+          </div>
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={productSeries}>
+              <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
+              <XAxis dataKey="name" tick={{ fontSize: 12, fill: chart.axis }} stroke={chart.axis} />
+              <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: chart.axis }} stroke={chart.axis} />
+              <Tooltip contentStyle={tooltipStyle(chart)} />
+              <Legend />
+              <Bar dataKey="ILT Completed" fill={chart.typeColor("Instructor-Led Training")} cursor="pointer" onClick={((d: unknown) => { const n = (d as { name?: string }).name; if (n) setFilterProduct(n); }) as never} />
+              <Bar dataKey="ILT Still Active" fill={chart.typeColor("Certification")} cursor="pointer" onClick={((d: unknown) => { const n = (d as { name?: string }).name; if (n) setFilterProduct(n); }) as never} />
+            </BarChart>
+          </ResponsiveContainer>
+          <p className="text-xs text-gray-400 mt-2">Click a bar to filter the table by that product</p>
+        </div>
+        <div className="bg-white rounded-lg border border-gray-200 p-5">
+          <h3 className="text-base font-semibold text-gray-900 mb-4">Top {groupBy ?? "theatre"}s with Gaps</h3>
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={bucketSeries} layout="vertical" margin={{ left: 60 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
+              <XAxis type="number" allowDecimals={false} tick={{ fontSize: 12, fill: chart.axis }} stroke={chart.axis} />
+              <YAxis type="category" dataKey="name" tick={{ fontSize: 11, fill: chart.axis }} stroke={chart.axis} width={100} />
+              <Tooltip contentStyle={tooltipStyle(chart)} />
+              <Bar dataKey="count" fill={chart.series(0)} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </section>
+
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-200">
+        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-wrap gap-2">
           <p className="text-sm text-gray-500">Students who completed an Instructor-Led Training but haven&apos;t obtained the associated Certification</p>
           <span className="text-sm font-medium text-gray-500">{reportData.length} result{reportData.length !== 1 ? "s" : ""}</span>
         </div>
@@ -169,6 +262,12 @@ export default function TrainedNotCertifiedPage() {
                 <option value="yes">Active</option>
                 <option value="no">Not Active</option>
               </select>
+              <select value={groupBy ?? ""} onChange={(e) => setGroupBy((e.target.value as GroupByMode) || null)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                <option value="">No Grouping</option>
+                <option value="theatre">Group by Theatre</option>
+                <option value="region">Group by Region</option>
+                <option value="country">Group by Country</option>
+              </select>
             </div>
           </div>
 
@@ -189,8 +288,12 @@ export default function TrainedNotCertifiedPage() {
                   <th className="px-4 py-3 text-left font-semibold"></th>
                 </tr>
               </thead>
-              <tbody>
-                {filteredData.map((row, idx) => (
+              <GroupedRows
+                groups={grouped}
+                groupBy={groupBy}
+                colSpanTotal={11}
+                emptyMessage={reportData.length === 0 ? "No results found. Ensure ILT trainings have certification mappings in Training Data." : "No results match the current filters."}
+                renderRow={(row, idx) => (
                   <tr key={`${row.email}-${row.iltFullTitle}-${idx}`} className="border-b hover:bg-gray-50">
                     <td className="px-4 py-3">{row.fullName}</td>
                     <td className="px-4 py-3">{row.email}</td>
@@ -210,17 +313,16 @@ export default function TrainedNotCertifiedPage() {
                       <button onClick={() => router.push(`/students/${encodeURIComponent(row.email)}`)} className="px-3 py-1 text-xs font-medium text-blue-600 bg-blue-50 rounded-md hover:bg-blue-100 transition-colors">View</button>
                     </td>
                   </tr>
-                ))}
-                {filteredData.length === 0 && (
-                  <tr>
-                    <td colSpan={11} className="px-4 py-8 text-center text-gray-500">
-                      {reportData.length === 0
-                        ? "No results found. Ensure ILT trainings have certification mappings in Training Data."
-                        : "No results match the current filters."}
-                    </td>
-                  </tr>
                 )}
-              </tbody>
+                renderSubtotal={(g) => {
+                  const active = g.rows.filter((r) => r.iltActive).length;
+                  return (
+                    <td colSpan={11} className="px-4 py-2">
+                      Subtotal — {g.rows.length} gap{g.rows.length !== 1 ? "s" : ""} · {active} ILT still active
+                    </td>
+                  );
+                }}
+              />
             </table>
           </div>
 
