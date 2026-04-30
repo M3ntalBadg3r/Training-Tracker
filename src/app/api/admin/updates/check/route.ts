@@ -22,12 +22,10 @@ export async function GET(request: NextRequest) {
       headers["Authorization"] = `Bearer ${githubToken}`;
     }
 
-    // Dev channel: fetch recent releases and find the highest version
-    // Stable channel: fetch /releases/latest (excludes pre-releases)
-    const url =
-      channel === "dev"
-        ? `https://api.github.com/repos/${GITHUB_REPO}/releases?per_page=10`
-        : `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`;
+    // Always fetch the releases list and pick the highest version ourselves.
+    // GitHub's /releases/latest relies on created_at ordering which breaks when
+    // a pre-release is promoted to stable after a newer pre-release has been created.
+    const url = `https://api.github.com/repos/${GITHUB_REPO}/releases?per_page=20`;
 
     const response = await fetch(url, { headers, next: { revalidate: 0 } });
 
@@ -51,22 +49,27 @@ export async function GET(request: NextRequest) {
     }
 
     const data = await response.json();
-    // For dev channel, find the release with the highest version number
-    // rather than relying on API ordering
-    let release;
-    if (channel === "dev" && Array.isArray(data)) {
-      release = data.reduce(
-        (best: typeof data[0] | null, r: typeof data[0]) => {
-          if (!best) return r;
-          const v = parseVersionNumber((r.tag_name || "").replace(/^v/, ""));
-          const bestV = parseVersionNumber((best.tag_name || "").replace(/^v/, ""));
-          return v > bestV ? r : best;
-        },
-        null
-      );
-    } else {
-      release = channel === "dev" ? data[0] : data;
+    if (!Array.isArray(data)) {
+      return NextResponse.json({
+        currentVersion,
+        channel,
+        latestVersion: null,
+        updateAvailable: false,
+        error: "Unexpected response from GitHub API",
+      });
     }
+
+    // Stable: only consider non-prerelease releases; Dev: consider all releases
+    const candidates = channel === "dev" ? data : data.filter((r) => !r.prerelease && !r.draft);
+    const release = candidates.reduce(
+      (best: typeof data[0] | null, r: typeof data[0]) => {
+        if (!best) return r;
+        const v = parseVersionNumber((r.tag_name || "").replace(/^v/, ""));
+        const bestV = parseVersionNumber((best.tag_name || "").replace(/^v/, ""));
+        return v > bestV ? r : best;
+      },
+      null
+    );
 
     if (!release) {
       return NextResponse.json({

@@ -37,24 +37,31 @@ if [ -n "$GITHUB_TOKEN" ]; then
     AUTH_HEADER="-H \"Authorization: Bearer ${GITHUB_TOKEN}\""
 fi
 
-# Dev channel: fetch all releases (includes pre-releases), take the first
-# Stable channel: fetch /releases/latest (excludes pre-releases)
-if [ "$UPDATE_CHANNEL" = "dev" ]; then
-    RESPONSE=$(eval curl -s --max-time 10 $AUTH_HEADER "https://api.github.com/repos/${REPO}/releases?per_page=1" 2>/dev/null)
-    # Response is an array — extract the first element
-    if echo "$RESPONSE" | grep -q '"tag_name"'; then
-        LATEST=$(echo "$RESPONSE" | node -e "const d=require('fs').readFileSync('/dev/stdin','utf8');const j=JSON.parse(d);console.log(j[0].tag_name.replace(/^v/,''))" 2>/dev/null)
-        NOTES=$(echo "$RESPONSE" | node -e "const d=require('fs').readFileSync('/dev/stdin','utf8');const j=JSON.parse(d);console.log(j[0].body||'')" 2>/dev/null)
-        PUBLISHED=$(echo "$RESPONSE" | node -e "const d=require('fs').readFileSync('/dev/stdin','utf8');const j=JSON.parse(d);console.log(j[0].published_at||'')" 2>/dev/null)
-        NAME=$(echo "$RESPONSE" | node -e "const d=require('fs').readFileSync('/dev/stdin','utf8');const j=JSON.parse(d);console.log(j[0].name||'')" 2>/dev/null)
-    fi
-else
-    RESPONSE=$(eval curl -s --max-time 10 $AUTH_HEADER "https://api.github.com/repos/${REPO}/releases/latest" 2>/dev/null)
-    if echo "$RESPONSE" | grep -q '"tag_name"'; then
-        LATEST=$(echo "$RESPONSE" | node -e "const d=require('fs').readFileSync('/dev/stdin','utf8');const j=JSON.parse(d);console.log(j.tag_name.replace(/^v/,''))" 2>/dev/null)
-        NOTES=$(echo "$RESPONSE" | node -e "const d=require('fs').readFileSync('/dev/stdin','utf8');const j=JSON.parse(d);console.log(j.body||'')" 2>/dev/null)
-        PUBLISHED=$(echo "$RESPONSE" | node -e "const d=require('fs').readFileSync('/dev/stdin','utf8');const j=JSON.parse(d);console.log(j.published_at||'')" 2>/dev/null)
-        NAME=$(echo "$RESPONSE" | node -e "const d=require('fs').readFileSync('/dev/stdin','utf8');const j=JSON.parse(d);console.log(j.name||'')" 2>/dev/null)
+# Always fetch the releases list and pick the highest version ourselves.
+# /releases/latest relies on created_at ordering which breaks when a pre-release
+# is promoted to stable after a newer pre-release has been created.
+RESPONSE=$(eval curl -s --max-time 10 $AUTH_HEADER "https://api.github.com/repos/${REPO}/releases?per_page=20" 2>/dev/null)
+
+if echo "$RESPONSE" | grep -q '"tag_name"'; then
+    STABLE_ONLY="false"
+    [ "$UPDATE_CHANNEL" != "dev" ] && STABLE_ONLY="true"
+
+    # Single node call extracts all needed fields from the best matching release
+    RELEASE_JSON=$(echo "$RESPONSE" | node -e "
+        const d=require('fs').readFileSync('/dev/stdin','utf8');
+        const all=JSON.parse(d);
+        const stableOnly=${STABLE_ONLY};
+        const candidates=stableOnly?all.filter(r=>!r.prerelease&&!r.draft):all;
+        const ver=t=>t.replace(/^v/,'').replace(/-dev$/,'').split('.').reduce((a,x,i)=>a+parseInt(x||0)*(i===0?1000:1),0);
+        const best=candidates.reduce((b,r)=>(!b||ver(r.tag_name)>ver(b.tag_name)?r:b),null);
+        if(best) console.log(JSON.stringify({tag:best.tag_name.replace(/^v/,''),name:best.name||'',published:best.published_at||'',body:best.body||''}));
+    " 2>/dev/null)
+
+    if [ -n "$RELEASE_JSON" ]; then
+        LATEST=$(echo "$RELEASE_JSON"   | node -e "process.stdout.write(JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')).tag)" 2>/dev/null)
+        NAME=$(echo "$RELEASE_JSON"     | node -e "process.stdout.write(JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')).name)" 2>/dev/null)
+        PUBLISHED=$(echo "$RELEASE_JSON"| node -e "process.stdout.write(JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')).published)" 2>/dev/null)
+        NOTES=$(echo "$RELEASE_JSON"    | node -e "process.stdout.write(JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')).body)" 2>/dev/null)
     fi
 fi
 
