@@ -45,21 +45,22 @@ export async function POST(request: NextRequest) {
     return handleAuthError(error);
   }
   const body = await request.json();
-  const { email, fullName, theatre, country, companyId } = body;
+  // Theatre is intentionally not accepted from the client — it's derived
+  // from the country's RegionData entry to keep tenants consistent.
+  const { email, fullName, country, companyId } = body;
 
-  if (!email || !fullName || !theatre || !country || companyId === undefined || companyId === null) {
+  if (!email || !fullName || !country || companyId === undefined || companyId === null) {
     return NextResponse.json({ error: "Missing required fields (including company)" }, { status: 400 });
   }
 
   if (
     typeof email !== "string" ||
     typeof fullName !== "string" ||
-    typeof theatre !== "string" ||
     typeof country !== "string"
   ) {
     return NextResponse.json({ error: "Invalid field types" }, { status: 400 });
   }
-  if (email.length > 255 || fullName.length > 255 || theatre.length > 100 || country.length > 100) {
+  if (email.length > 255 || fullName.length > 255 || country.length > 100) {
     return NextResponse.json({ error: "Field value too long" }, { status: 400 });
   }
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
@@ -79,8 +80,18 @@ export async function POST(request: NextRequest) {
   const company = await prisma.company.findUnique({ where: { id: cid } });
   if (!company) return NextResponse.json({ error: "Company not found" }, { status: 404 });
 
+  const regionData = await prisma.regionData.findUnique({ where: { country } });
+  if (!regionData || !regionData.theatre) {
+    return NextResponse.json(
+      {
+        error: `Country "${country}" must exist in Region Data with a theatre assigned. Ask a SuperAdmin to set it up.`,
+      },
+      { status: 400 }
+    );
+  }
+
   const student = await prisma.student.create({
-    data: { email, fullName, theatre, country, companyId: cid },
+    data: { email, fullName, theatre: regionData.theatre, country, companyId: cid },
   });
 
   return NextResponse.json(student, { status: 201 });

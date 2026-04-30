@@ -275,13 +275,13 @@ Navigate to **Students** in the sidebar to view all students in a table with col
 - Region
 - Country
 
-Click **View** on any row to open the student's detailed record. Admins can click **Add Student** in the page header to create a student manually (Full Name, Email, Theatre, Country) without running an import. Region is auto-derived from the country's entry in Region Data.
+Click **View** on any row to open the student's detailed record. Admins can click **Add Student** in the page header to create a student manually (Full Name, Email, Company, Country) without running an import. Country is a dropdown limited to entries in **Region Data** that have a Theatre assigned — Theatre and Region are auto-derived from the chosen country and shown read-only. To use a country that doesn't appear in the dropdown, ask a SuperAdmin to add it (with a Theatre) on the Region Data page first.
 
 ### Student Detail
 
 The student detail page shows:
 
-- **Contact Information** — Full Name, Email, Theatre, Country, and Region. Click **Edit** to modify these fields. Changes are previewed in a confirmation modal before saving.
+- **Contact Information** — Full Name, Email, Theatre, Country, and Region. Click **Edit** to modify Full Name, Email, or Country. Theatre and Region are auto-derived from the selected country (read-only). If the student's current country has no Theatre yet (post-migration), the dropdown shows it with a "needs theatre" suffix — switch to a configured country, or ask a SuperAdmin to set the Theatre in Region Data. Changes are previewed in a confirmation modal before saving.
 - **Training Records** — A table of all trainings completed by the student, including Title (with link if available), Type, Product, Function, Completed Date, and Active status.
 
 While in edit mode, admins can also:
@@ -390,18 +390,25 @@ Navigate to **Admin** in the sidebar to access administrative functions. The Adm
 
 ### Region Data
 
-Manage the mapping between countries and regions.
+Manage the mapping between countries, regions, and theatres. This page is the source of truth for a country's theatre — it drives the country dropdown on the student add/edit forms and validates theatres during student imports.
 
 **Features:**
 
-- **View** — Table of all countries and their assigned regions.
-- **Search** — Filter by country name.
-- **Filter** — Filter by region.
-- **Add** — Add a new country/region mapping using the input row at the bottom of the table.
-- **Edit** — Click **Edit** on any row to modify the country or region inline, then **Save** or **Cancel**.
+- **View** — Table of all countries with their assigned region and theatre. Countries with no theatre are flagged so you can fix them.
+- **Search / Filter** — Filter by country, region, or theatre. The Theatre column has a "(missing)" filter to surface rows that still need a theatre assigned.
+- **Add** — Add a new country with its region and (optionally) theatre. A country without a theatre cannot be selected for new students — set the theatre before assigning students.
+- **Edit** — Click **Edit** on any row to modify the country, region, or theatre inline, then **Save** or **Cancel**.
 - **Delete** — Remove a country/region mapping.
-- **Import** — Upload a CSV or Excel file with `Country` and `Region` columns. The system auto-maps columns and shows a preview before importing.
-- **Export** — Download all region data as CSV or Excel.
+- **Import** — Upload a CSV or Excel file with `Country`, `Region`, and (optionally) `Theatre` columns. The system auto-maps columns and shows a preview before importing.
+- **Export** — Download all region data (including theatre) as CSV, Excel, or PDF.
+
+#### Student import behaviour
+
+When importing student data (the **Admin → Import** page), each row's theatre is reconciled against Region Data:
+
+- If the country exists in Region Data with a theatre, that theatre is the source of truth — any disagreement on the import row is overridden and surfaced as a warning in the **Issues** list.
+- If the country exists in Region Data but has no theatre, the imported theatre is used as-is and a warning asks for the missing theatre to be set.
+- If the country is brand new, Region Data auto-creates an entry with region "Unknown" and the imported theatre, and a warning asks a SuperAdmin to verify it.
 
 ### Training Data
 

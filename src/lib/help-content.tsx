@@ -118,9 +118,12 @@ const helpSections: Record<string, HelpSection> = {
         </p>
         <p>
           Admins can click <strong>Add Student</strong> to create a student
-          manually without an import. Provide Full Name, Email, Theatre, and
-          Country. Region is auto-derived from the country&apos;s entry in
-          Region Data.
+          manually without an import. Provide Full Name, Email, Company, and
+          pick a Country from the dropdown &mdash; the Theatre and Region are
+          auto-derived from the country&apos;s entry in Region Data and shown
+          read-only. The dropdown only lists countries that have a theatre
+          assigned. To add a new country, ask a SuperAdmin to create it on the
+          <strong> Region Data</strong> page first.
         </p>
       </>
     ),
@@ -135,8 +138,13 @@ const helpSections: Record<string, HelpSection> = {
           <li>
             <strong>Contact Information</strong> &mdash; Full Name, Email,
             Theatre, Country, and Region. Click <strong>Edit</strong> to modify
-            these fields. Changes are previewed in a confirmation modal before
-            saving.
+            Full Name, Email, or Country. Theatre and Region are auto-derived
+            from the chosen country (read-only). If the student&apos;s current
+            country has no theatre yet (post-migration), it will appear in the
+            dropdown with a &quot;needs theatre&quot; suffix &mdash; pick a
+            properly-configured country, or ask a SuperAdmin to set the theatre
+            in Region Data. Changes are previewed in a confirmation modal
+            before saving.
           </li>
           <li>
             <strong>Training Records</strong> &mdash; A table of all trainings
@@ -259,9 +267,38 @@ const helpSections: Record<string, HelpSection> = {
           </li>
           <li>
             <strong>Summary</strong> &mdash; A summary shows counts of students
-            created/updated, trainings imported/skipped, and any errors.
+            created/updated, trainings imported/skipped, and an{" "}
+            <strong>Issues</strong> list. Issues includes both hard errors
+            (rows skipped) and warnings (rows imported with adjustments) such
+            as a row&apos;s theatre being overridden by the value in Region
+            Data.
           </li>
         </ol>
+
+        <h3>Theatre handling</h3>
+        <p>
+          Region Data is the source of truth for a country&apos;s theatre. For
+          each row that has a country:
+        </p>
+        <ul>
+          <li>
+            <strong>Country in Region Data with a theatre</strong> &mdash; the
+            student&apos;s theatre is set from Region Data. If the imported
+            theatre disagrees, the row imports with a warning showing what was
+            overridden.
+          </li>
+          <li>
+            <strong>Country in Region Data without a theatre</strong> &mdash;
+            the imported theatre is kept and a warning asks a SuperAdmin to
+            populate the theatre in Region Data.
+          </li>
+          <li>
+            <strong>Country not in Region Data</strong> &mdash; the country is
+            auto-created with region &quot;Unknown&quot; (and the imported
+            theatre, if any). A warning asks a SuperAdmin to verify and fill in
+            the missing values.
+          </li>
+        </ul>
 
         <h3>Data Cleansing (Automatic)</h3>
         <p>
@@ -465,27 +502,33 @@ const helpSections: Record<string, HelpSection> = {
     title: "Region Data",
     content: (
       <>
-        <p>Manage the mapping between countries and regions.</p>
+        <p>
+          Manage the mapping between countries, regions, and theatres. This is
+          the source of truth for a country&apos;s theatre &mdash; it drives the
+          country dropdown on the student add/edit forms and validates theatres
+          during student imports.
+        </p>
 
         <h3>Features</h3>
         <ul>
           <li>
-            <strong>View</strong> &mdash; Table of all countries and their
-            assigned regions.
+            <strong>View</strong> &mdash; Table of all countries with their
+            assigned region and theatre. Countries with no theatre are flagged
+            so you can fix them.
           </li>
           <li>
-            <strong>Search</strong> &mdash; Filter by country name.
+            <strong>Search / Filter</strong> &mdash; Filter by country name,
+            region, or theatre. The Theatre column has a special
+            &quot;(missing)&quot; filter to find rows that still need a theatre.
           </li>
           <li>
-            <strong>Filter</strong> &mdash; Filter by region.
-          </li>
-          <li>
-            <strong>Add</strong> &mdash; Add a new country/region mapping using
-            the input row at the bottom of the table.
+            <strong>Add</strong> &mdash; Add a new country with its region and
+            (optionally) theatre. A country without a theatre cannot be selected
+            for new students &mdash; set the theatre before assigning students.
           </li>
           <li>
             <strong>Edit</strong> &mdash; Click <strong>Edit</strong> on any row
-            to modify the country or region inline, then{" "}
+            to modify the country, region, or theatre inline, then{" "}
             <strong>Save</strong> or <strong>Cancel</strong>.
           </li>
           <li>
@@ -493,12 +536,14 @@ const helpSections: Record<string, HelpSection> = {
           </li>
           <li>
             <strong>Import</strong> &mdash; Upload a CSV or Excel file with{" "}
-            <code>Country</code> and <code>Region</code> columns. The system
-            auto-maps columns and shows a preview before importing.
+            <code>Country</code>, <code>Region</code>, and (optionally){" "}
+            <code>Theatre</code> columns. The system auto-maps columns and shows
+            a preview before importing. Existing rows are updated when the
+            imported value differs.
           </li>
           <li>
-            <strong>Export</strong> &mdash; Download all region data as CSV,
-            Excel, or PDF.
+            <strong>Export</strong> &mdash; Download all region data (including
+            theatre) as CSV, Excel, or PDF.
           </li>
         </ul>
       </>

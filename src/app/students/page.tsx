@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import PageHeader from "@/components/layout/PageHeader";
 import DataTable from "@/components/data-table/DataTable";
 import Modal from "@/components/ui/Modal";
-import { ColumnDef, StudentRow } from "@/types";
+import { ColumnDef, CountryOption, StudentRow } from "@/types";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
 import { Plus } from "lucide-react";
@@ -19,17 +19,27 @@ export default function StudentsPage() {
   const [students, setStudents] = useState<(StudentRow & { companyName?: string | null })[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastImport, setLastImport] = useState<string | null>(null);
+  const [countries, setCountries] = useState<CountryOption[]>([]);
 
   const [showAdd, setShowAdd] = useState(false);
   const [addForm, setAddForm] = useState({
     email: "",
     fullName: "",
-    theatre: "",
     country: "",
     companyId: "" as number | "",
   });
   const [addError, setAddError] = useState("");
   const [saving, setSaving] = useState(false);
+
+  // Only countries with a populated theatre are eligible for new students.
+  const selectableCountries = useMemo(
+    () => countries.filter((c) => !!c.theatre),
+    [countries]
+  );
+  const selectedCountry = useMemo(
+    () => selectableCountries.find((c) => c.country === addForm.country) ?? null,
+    [selectableCountries, addForm.country]
+  );
 
   // The "Company" column is only visible when the global switcher is set to "All"
   // (otherwise every row has the same company value, which adds visual noise).
@@ -74,10 +84,21 @@ export default function StudentsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [companyScope.loading, companyScope.selected]);
 
+  useEffect(() => {
+    fetch("/api/region-data/countries")
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data: CountryOption[]) => setCountries(Array.isArray(data) ? data : []))
+      .catch(() => setCountries([]));
+  }, []);
+
   const handleAddStudent = async () => {
     setAddError("");
     if (!addForm.companyId) {
       setAddError("Please select a company.");
+      return;
+    }
+    if (!addForm.country) {
+      setAddError("Please select a country.");
       return;
     }
     setSaving(true);
@@ -85,7 +106,12 @@ export default function StudentsPage() {
       const res = await fetch("/api/students", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(addForm),
+        body: JSON.stringify({
+          email: addForm.email,
+          fullName: addForm.fullName,
+          country: addForm.country,
+          companyId: addForm.companyId,
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -93,7 +119,7 @@ export default function StudentsPage() {
         return;
       }
       setShowAdd(false);
-      setAddForm({ email: "", fullName: "", theatre: "", country: "", companyId: "" });
+      setAddForm({ email: "", fullName: "", country: "", companyId: "" });
       await fetchStudents();
     } finally {
       setSaving(false);
@@ -135,7 +161,6 @@ export default function StudentsPage() {
                   setAddForm({
                     email: "",
                     fullName: "",
-                    theatre: "",
                     country: "",
                     companyId: defaultCompanyForAdd(),
                   });
@@ -213,25 +238,43 @@ export default function StudentsPage() {
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Theatre</label>
-            <input
-              type="text"
-              value={addForm.theatre}
-              onChange={(e) => setAddForm((f) => ({ ...f, theatre: e.target.value }))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-            />
-          </div>
-          <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Country</label>
-            <input
-              type="text"
+            <select
               value={addForm.country}
               onChange={(e) => setAddForm((f) => ({ ...f, country: e.target.value }))}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-            />
-            <p className="text-xs text-gray-400 mt-1">
-              Region is auto-derived from the country&apos;s entry in Region Data.
+            >
+              <option value="">-- Select country --</option>
+              {selectableCountries.map((c) => (
+                <option key={c.country} value={c.country}>
+                  {c.country}
+                </option>
+              ))}
+            </select>
+            {selectableCountries.length === 0 && (
+              <p className="mt-1 text-xs text-amber-600">
+                No countries with a theatre are configured. A SuperAdmin must add them in
+                Region Data first.
+              </p>
+            )}
+            <p className="mt-1 text-xs text-gray-500">
+              Theatre and Region are auto-derived from Region Data. To add a new country,
+              ask a SuperAdmin to create it on the Region Data page.
             </p>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Theatre</label>
+              <div className="w-full px-3 py-2 border border-gray-200 bg-gray-50 rounded-lg text-sm text-gray-700 min-h-[38px]">
+                {selectedCountry?.theatre ?? <span className="text-gray-400">—</span>}
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Region</label>
+              <div className="w-full px-3 py-2 border border-gray-200 bg-gray-50 rounded-lg text-sm text-gray-700 min-h-[38px]">
+                {selectedCountry?.region ?? <span className="text-gray-400">—</span>}
+              </div>
+            </div>
           </div>
           {addError && (
             <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2">{addError}</div>

@@ -24,6 +24,7 @@ import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 const TARGET_FIELDS = [
   { key: "country", label: "Country", required: true },
   { key: "region", label: "Region", required: true },
+  { key: "theatre", label: "Theatre", required: false },
 ];
 
 type ImportStep = "upload" | "mapping" | "importing" | "summary";
@@ -35,11 +36,14 @@ interface ImportSummary {
   errors: string[];
 }
 
+type SortColumn = "country" | "region" | "theatre";
+
 export default function RegionDataPage() {
   const [regions, setRegions] = useState<RegionDataRow[]>([]);
   const [editingRegion, setEditingRegion] = useState<string | null>(null);
   const [editCountryValue, setEditCountryValue] = useState("");
   const [editRegionValue, setEditRegionValue] = useState("");
+  const [editTheatreValue, setEditTheatreValue] = useState("");
   const [loading, setLoading] = useState(true);
   const [lastImport, setLastImport] = useState<string | null>(null);
   const [showExportMenu, setShowExportMenu] = useState(false);
@@ -48,13 +52,15 @@ export default function RegionDataPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [searchColumn, setSearchColumn] = useState("all");
   const [regionFilter, setRegionFilter] = useState("");
-  const [sortColumn, setSortColumn] = useState<"country" | "region">("country");
+  const [theatreFilter, setTheatreFilter] = useState("");
+  const [sortColumn, setSortColumn] = useState<SortColumn>("country");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
 
   // Add modal state
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [newCountry, setNewCountry] = useState("");
   const [newRegionValue, setNewRegionValue] = useState("");
+  const [newTheatreValue, setNewTheatreValue] = useState("");
 
   // Import state
   const [showImport, setShowImport] = useState(false);
@@ -72,6 +78,11 @@ export default function RegionDataPage() {
     [regions]
   );
 
+  const uniqueTheatres = useMemo(
+    () => [...new Set(regions.map((r) => r.theatre).filter((t): t is string => !!t))].sort(),
+    [regions]
+  );
+
   const filteredRegions = useMemo(() => {
     let result = [...regions];
 
@@ -80,25 +91,37 @@ export default function RegionDataPage() {
       result = result.filter((r) => {
         if (searchColumn === "country") return r.country.toLowerCase().includes(term);
         if (searchColumn === "region") return r.region.toLowerCase().includes(term);
-        return r.country.toLowerCase().includes(term) || r.region.toLowerCase().includes(term);
+        if (searchColumn === "theatre") return (r.theatre ?? "").toLowerCase().includes(term);
+        return (
+          r.country.toLowerCase().includes(term) ||
+          r.region.toLowerCase().includes(term) ||
+          (r.theatre ?? "").toLowerCase().includes(term)
+        );
       });
     }
 
     if (regionFilter) {
       result = result.filter((r) => r.region === regionFilter);
     }
+    if (theatreFilter) {
+      result = result.filter((r) =>
+        theatreFilter === "__missing__" ? !r.theatre : r.theatre === theatreFilter
+      );
+    }
 
     result.sort((a, b) => {
-      const aVal = sortColumn === "country" ? a.country : a.region;
-      const bVal = sortColumn === "country" ? b.country : b.region;
+      const aVal =
+        sortColumn === "country" ? a.country : sortColumn === "region" ? a.region : a.theatre ?? "";
+      const bVal =
+        sortColumn === "country" ? b.country : sortColumn === "region" ? b.region : b.theatre ?? "";
       const cmp = aVal.localeCompare(bVal);
       return sortDirection === "asc" ? cmp : -cmp;
     });
 
     return result;
-  }, [regions, searchTerm, searchColumn, regionFilter, sortColumn, sortDirection]);
+  }, [regions, searchTerm, searchColumn, regionFilter, theatreFilter, sortColumn, sortDirection]);
 
-  const handleSort = (col: "country" | "region") => {
+  const handleSort = (col: SortColumn) => {
     if (sortColumn === col) {
       setSortDirection((prev) => (prev === "asc" ? "desc" : "asc"));
     } else {
@@ -131,26 +154,44 @@ export default function RegionDataPage() {
     const res = await fetch("/api/region-data", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ country: newCountry, region: newRegionValue }),
+      body: JSON.stringify({
+        country: newCountry,
+        region: newRegionValue,
+        theatre: newTheatreValue,
+      }),
     });
     if (res.ok) {
       setAddModalOpen(false);
       setNewCountry("");
       setNewRegionValue("");
+      setNewTheatreValue("");
       fetchRegions();
     }
   };
 
   const handleUpdateRegion = async (originalCountry: string) => {
+    const trimmedTheatre = editTheatreValue.trim();
     const res = await fetch(`/api/region-data/${encodeURIComponent(originalCountry)}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ country: editCountryValue, region: editRegionValue }),
+      body: JSON.stringify({
+        country: editCountryValue,
+        region: editRegionValue,
+        theatre: trimmedTheatre,
+      }),
     });
     if (res.ok) {
       setRegions((prev) =>
         prev
-          .map((r) => r.country === originalCountry ? { country: editCountryValue, region: editRegionValue } : r)
+          .map((r) =>
+            r.country === originalCountry
+              ? {
+                  country: editCountryValue,
+                  region: editRegionValue,
+                  theatre: trimmedTheatre || null,
+                }
+              : r
+          )
           .sort((a, b) => a.country.localeCompare(b.country))
       );
       setEditingRegion(null);
@@ -310,9 +351,9 @@ export default function RegionDataPage() {
             </button>
             {showExportMenu && (
               <div className="absolute left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[140px]">
-                <button onClick={() => { exportToCsv(regions, [{ key: "country", header: "Country" }, { key: "region", header: "Region" }], "region-data"); setShowExportMenu(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-t-lg">Export as CSV</button>
-                <button onClick={() => { exportToExcel(regions, [{ key: "country", header: "Country" }, { key: "region", header: "Region" }], "region-data"); setShowExportMenu(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100">Export as Excel</button>
-                <button onClick={() => { exportToPdf(regions, [{ key: "country", header: "Country" }, { key: "region", header: "Region" }], "region-data"); setShowExportMenu(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-b-lg">Export as PDF</button>
+                <button onClick={() => { exportToCsv(regions, [{ key: "country", header: "Country" }, { key: "region", header: "Region" }, { key: "theatre", header: "Theatre" }], "region-data"); setShowExportMenu(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-t-lg">Export as CSV</button>
+                <button onClick={() => { exportToExcel(regions, [{ key: "country", header: "Country" }, { key: "region", header: "Region" }, { key: "theatre", header: "Theatre" }], "region-data"); setShowExportMenu(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100">Export as Excel</button>
+                <button onClick={() => { exportToPdf(regions, [{ key: "country", header: "Country" }, { key: "region", header: "Region" }, { key: "theatre", header: "Theatre" }], "region-data"); setShowExportMenu(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-b-lg">Export as PDF</button>
               </div>
             )}
           </div>
@@ -331,7 +372,8 @@ export default function RegionDataPage() {
           <div className="flex justify-end mb-3">
             <button
               onClick={() => {
-                const csv = "Country,Region\nUnited States,Americas\nUnited Kingdom,EMEA";
+                const csv =
+                  "Country,Region,Theatre\nUnited States,Americas,AMER\nUnited Kingdom,EMEA,EMEA";
                 const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
                 const a = document.createElement("a");
                 a.href = url;
@@ -378,11 +420,16 @@ export default function RegionDataPage() {
               </div>
               <div>
                 <h4 className="text-sm font-semibold mb-3">Map Columns</h4>
-                <p className="text-sm text-gray-600 mb-3">Map the columns from your file to Country and Region.</p>
+                <p className="text-sm text-gray-600 mb-3">
+                  Map the columns from your file to Country, Region, and (optionally) Theatre.
+                </p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {TARGET_FIELDS.map((field) => (
                     <div key={field.key} className="flex items-center gap-3">
-                      <label className="w-20 text-sm font-medium text-gray-700">{field.label}<span className="text-red-500 ml-1">*</span></label>
+                      <label className="w-20 text-sm font-medium text-gray-700">
+                        {field.label}
+                        {field.required && <span className="text-red-500 ml-1">*</span>}
+                      </label>
                       <select
                         value={columnMapping[field.key] || ""}
                         onChange={(e) => setColumnMapping((prev) => ({ ...prev, [field.key]: e.target.value }))}
@@ -476,12 +523,12 @@ export default function RegionDataPage() {
       {/* Add Region Modal */}
       <Modal
         open={addModalOpen}
-        onClose={() => { setAddModalOpen(false); setNewCountry(""); setNewRegionValue(""); }}
+        onClose={() => { setAddModalOpen(false); setNewCountry(""); setNewRegionValue(""); setNewTheatreValue(""); }}
         title="Add Region"
         size="sm"
         actions={
           <>
-            <button onClick={() => { setAddModalOpen(false); setNewCountry(""); setNewRegionValue(""); }} className="px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300">Cancel</button>
+            <button onClick={() => { setAddModalOpen(false); setNewCountry(""); setNewRegionValue(""); setNewTheatreValue(""); }} className="px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300">Cancel</button>
             <button onClick={handleAddRegion} className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">Add</button>
           </>
         }
@@ -507,6 +554,19 @@ export default function RegionDataPage() {
               placeholder="e.g. Americas"
             />
           </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Theatre</label>
+            <input
+              type="text"
+              value={newTheatreValue}
+              onChange={(e) => setNewTheatreValue(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+              placeholder="e.g. AMER"
+            />
+            <p className="mt-1 text-xs text-gray-500">
+              Required before students can be assigned to this country.
+            </p>
+          </div>
         </div>
       </Modal>
 
@@ -530,6 +590,7 @@ export default function RegionDataPage() {
           <option value="all">All columns</option>
           <option value="country">Country</option>
           <option value="region">Region</option>
+          <option value="theatre">Theatre</option>
         </select>
       </section>
 
@@ -563,6 +624,23 @@ export default function RegionDataPage() {
                     </select>
                   </div>
                 </th>
+                <th className="px-4 py-3 text-left">
+                  <div className="space-y-1">
+                    <button onClick={() => handleSort("theatre")} className="flex items-center gap-1 font-semibold text-gray-700 hover:text-gray-900">
+                      Theatre
+                      {sortColumn === "theatre" && (sortDirection === "asc" ? <ChevronUp size={14} /> : <ChevronDown size={14} />)}
+                    </button>
+                    <select
+                      value={theatreFilter}
+                      onChange={(e) => setTheatreFilter(e.target.value)}
+                      className="w-full text-xs border border-gray-200 rounded px-1 py-0.5 font-normal"
+                    >
+                      <option value="">All</option>
+                      <option value="__missing__">(missing)</option>
+                      {uniqueTheatres.map((t) => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                  </div>
+                </th>
                 <th className="px-4 py-3 text-left font-semibold text-gray-700">Actions</th>
               </tr>
             </thead>
@@ -580,6 +658,21 @@ export default function RegionDataPage() {
                     ) : r.region}
                   </td>
                   <td className="px-4 py-3">
+                    {editingRegion === r.country ? (
+                      <input
+                        type="text"
+                        value={editTheatreValue}
+                        onChange={(e) => setEditTheatreValue(e.target.value)}
+                        placeholder="e.g. AMER"
+                        className="border border-gray-300 rounded px-2 py-1 text-sm w-full"
+                      />
+                    ) : r.theatre ? (
+                      r.theatre
+                    ) : (
+                      <span className="text-amber-600 text-xs">(missing)</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
                     <div className="flex gap-2">
                       {editingRegion === r.country ? (
                         <>
@@ -588,7 +681,7 @@ export default function RegionDataPage() {
                         </>
                       ) : (
                         <>
-                          <button onClick={() => { setEditingRegion(r.country); setEditCountryValue(r.country); setEditRegionValue(r.region); }} className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200">Edit</button>
+                          <button onClick={() => { setEditingRegion(r.country); setEditCountryValue(r.country); setEditRegionValue(r.region); setEditTheatreValue(r.theatre ?? ""); }} className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200">Edit</button>
                           <button onClick={() => handleDeleteRegion(r.country)} className="px-2 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200"><Trash2 size={14} /></button>
                         </>
                       )}
@@ -597,7 +690,7 @@ export default function RegionDataPage() {
                 </tr>
               ))}
               {filteredRegions.length === 0 && (
-                <tr><td colSpan={3} className="px-4 py-8 text-center text-gray-500">No records found</td></tr>
+                <tr><td colSpan={4} className="px-4 py-8 text-center text-gray-500">No records found</td></tr>
               )}
             </tbody>
           </table>

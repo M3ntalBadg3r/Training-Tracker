@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
     return handleAuthError(error);
   }
   const body = await request.json();
-  const { country, region } = body;
+  const { country, region, theatre } = body;
 
   if (!country || !region) {
     return NextResponse.json(
@@ -32,8 +32,14 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const trimmedTheatre = typeof theatre === "string" ? theatre.trim() : "";
+
   const regionData = await prisma.regionData.create({
-    data: { country, region },
+    data: {
+      country,
+      region,
+      theatre: trimmedTheatre ? trimmedTheatre : null,
+    },
   });
 
   return NextResponse.json(regionData, { status: 201 });

@@ -45,6 +45,13 @@ export interface TrainingTakenRow {
 export interface RegionDataRow {
   country: string;
   region: string;
+  theatre: string | null;
+}
+
+export interface CountryOption {
+  country: string;
+  region: string;
+  theatre: string | null;
 }
 
 export interface TrainingDataRow {
