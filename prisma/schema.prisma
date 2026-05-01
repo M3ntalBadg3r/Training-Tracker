@@ -10,6 +10,8 @@ enum TrainingType {
   Certification
   Accreditation
   InstructorLedTraining @map("Instructor-Led Training")
+  OLX
+  OLXSubItem            @map("OLX Sub-Item")
 }
 
 enum ProductType {
@@ -92,8 +94,30 @@ model TrainingData {
   programData             ProgramData[]
   programDataAlternatives ProgramDataAlternative[]
 
+  // OLX parent ↔ sub-item membership (many-to-many).
+  // `parentMemberships` are rows where THIS training is a sub-item that belongs
+  // to one or more parent OLX trainings. `subItemMemberships` are rows where
+  // THIS training is a parent OLX whose sub-items are listed.
+  parentMemberships  OlxSubItemRelation[] @relation("SubItemSide")
+  subItemMemberships OlxSubItemRelation[] @relation("ParentSide")
+
   @@index([fullTitle])
   @@map("training_data")
+}
+
+// Join table: each row says "the OLX parent <parentTrainingTitle> includes
+// the sub-item <subItemTrainingTitle>". A single sub-item may be reused
+// across multiple parents.
+model OlxSubItemRelation {
+  parentTrainingTitle  String @map("parent_training_title")
+  subItemTrainingTitle String @map("sub_item_training_title")
+
+  parent  TrainingData @relation("ParentSide",  fields: [parentTrainingTitle],  references: [trainingTitle], onDelete: Cascade)
+  subItem TrainingData @relation("SubItemSide", fields: [subItemTrainingTitle], references: [trainingTitle], onDelete: Cascade)
+
+  @@id([parentTrainingTitle, subItemTrainingTitle])
+  @@index([subItemTrainingTitle])
+  @@map("olx_sub_item_relations")
 }
 
 model RegionData {

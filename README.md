@@ -249,6 +249,7 @@ Four summary cards are displayed at the top:
 | **Certifications Earned** | Total certification completions across all students |
 | **Accreditations Earned** | Total accreditation completions across all students |
 | **Instructor-Led Trainings** | Total ILT completions across all students |
+| **OLX Completed** | Total OLX completions. An OLX is "completed" once a student has completed every sub-item, or directly for single-item OLX entries. |
 
 ### Charts
 
@@ -300,7 +301,7 @@ Navigate to **Training** in the sidebar to browse all available training program
 The table displays:
 
 - Full Title
-- Training Type (Certification, Accreditation, or Instructor-Led Training)
+- Training Type (Certification, Accreditation, Instructor-Led Training, OLX, or OLX Sub-Item)
 - Product Type
 - Function
 - Link (if available)
@@ -366,7 +367,7 @@ Monthly area chart of completions with a dashed prior-year comparison line, plus
 
 ### Trained But Not Certified
 
-Identifies students who have completed an **Instructor-Led Training** but have **not** obtained the associated **Certification** (mapping configured in **Admin > Training Data**). Includes a gap-by-product chart and a top-buckets bar showing which theatres / regions / countries have the most gaps.
+Identifies students who have completed an **Instructor-Led Training** or an **OLX** (full sub-item set) but have **not** obtained the associated **Certification** (mapping configured in **Admin > Training Data**). Includes a gap-by-product chart and a top-buckets bar showing which theatres / regions / countries have the most gaps.
 
 ### Coverage / Compliance
 
@@ -422,7 +423,7 @@ Manage the definitions of all training programs in the system.
 |--------|-------------|
 | **Training Title** | Short identifier used internally and during import matching |
 | **Full Title** | Display name shown to users |
-| **Type** | Certification, Accreditation, or Instructor-Led Training |
+| **Type** | Certification, Accreditation, Instructor-Led Training, OLX, or OLX Sub-Item |
 | **Product** | Cortex, SASE, Cloud, Strata, or Foundation |
 | **Function** | Sales, Pre-Sales, or Deployments |
 | **Link** | Optional URL to training resources |
@@ -440,7 +441,7 @@ Manage the definitions of all training programs in the system.
 
 #### Certification Mapping
 
-The **Certification** column is only available for trainings of type **Instructor-Led Training**. It allows you to map an ILT to one or more Certifications that it leads to.
+The **Certification** column is available for trainings of type **Instructor-Led Training** and **OLX** (parent). It allows you to map an ILT or an OLX parent to one or more Certifications that it leads to. OLX Sub-Items cannot carry certifications.
 
 - When editing or adding an ILT, a checkbox list of all available Certifications is shown.
 - Select one or more Certifications to create the mapping.
@@ -671,7 +672,7 @@ Each entry specifies a requirement within a program:
 | **Program Name** | The partner program (e.g., "Authorized Professional Services (APS)") |
 | **Specialisation** | The product specialisation (e.g., "Cortex XDR", "Prisma Access"). Managed via a controlled dropdown — click **+** to add new specialisations. |
 | **Level** | Whether the requirement applies at Country, Theatre, or Global level |
-| **Type** | Certification, Accreditation, or Instructor-Led Training |
+| **Type** | Certification, Accreditation, Instructor-Led Training, OLX, or OLX Sub-Item |
 | **Training** | The specific training required (filtered by the selected Type) |
 | **Quantity Required** | For Country/Theatre: number of people needed. For Global: number of compliant theatres needed. |
 
@@ -726,6 +727,8 @@ Requirements are configured in **Admin > Program Data** using program name **Glo
 | **Certification** | Formal certification exams |
 | **Accreditation** | Accreditation programmes |
 | **Instructor-Led Training** | Classroom or virtual instructor-led sessions |
+| **OLX** | Online learning experience. Either a single online training or a parent that bundles multiple **OLX Sub-Items** &mdash; the parent counts as completed once a student finishes every sub-item. Like an ILT, an OLX can lead to one or more Certifications. |
+| **OLX Sub-Item** | A component of a parent OLX. Sub-items can be shared across multiple parents. Imports flag a row as a sub-item by populating the **Parent Training Title** column (comma-separated for multi-parent membership). |
 
 ### Product Types
 

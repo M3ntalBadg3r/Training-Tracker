@@ -11,7 +11,24 @@ export async function GET(request: NextRequest) {
 
   const trainingData = await prisma.trainingData.findMany({
     orderBy: { trainingTitle: "asc" },
+    include: {
+      subItemMemberships: { select: { subItemTrainingTitle: true } },
+      parentMemberships: { select: { parentTrainingTitle: true } },
+    },
   });
 
-  return NextResponse.json(trainingData);
+  const result = trainingData.map((t) => ({
+    trainingTitle: t.trainingTitle,
+    fullTitle: t.fullTitle,
+    trainingType: t.trainingType,
+    productType: t.productType,
+    function: t.function,
+    link: t.link,
+    certification: t.certification,
+    isIncomplete: t.isIncomplete,
+    subItems: t.subItemMemberships.map((m) => m.subItemTrainingTitle),
+    parents: t.parentMemberships.map((m) => m.parentTrainingTitle),
+  }));
+
+  return NextResponse.json(result);
 }

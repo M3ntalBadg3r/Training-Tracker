@@ -444,6 +444,9 @@ export default function StudentRecordPage({
     if (!student) return [];
     const real = student.trainings
       .filter((t) => !deletedTrainingIds.includes(t.id))
+      // Hide OLX sub-items whose parent has been completed — they're
+      // implicitly represented by the parent row.
+      .filter((t) => !t.rolledUpUnderParent)
       .map((t) => {
         const overrideIso = pendingEdits[t.id];
         if (!overrideIso) return t;
@@ -506,6 +509,9 @@ export default function StudentRecordPage({
   const activeILT = visibleTrainings.filter(
     (t) => t.trainingType === "Instructor-Led Training" && t.active
   ).length;
+  const activeOLX = visibleTrainings.filter(
+    (t) => t.trainingType === "OLX" && t.active
+  ).length;
 
   const statCards = [
     {
@@ -528,6 +534,13 @@ export default function StudentRecordPage({
       icon: GraduationCap,
       color: "bg-amber-50",
       iconColor: "text-amber-500",
+    },
+    {
+      label: "OLX Completed",
+      value: activeOLX,
+      icon: GraduationCap,
+      color: "bg-sky-50",
+      iconColor: "text-sky-500",
     },
   ];
 
@@ -667,7 +680,7 @@ export default function StudentRecordPage({
       </div>
 
       {/* Stat Cards */}
-      <section className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         {statCards.map((card) => {
           const Icon = card.icon;
           return (

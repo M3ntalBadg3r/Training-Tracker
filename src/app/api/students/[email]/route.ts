@@ -24,7 +24,14 @@ export async function GET(
       regionData: true,
       company: { select: { id: true, name: true } },
       trainings: {
-        include: { trainingData: true },
+        include: {
+          trainingData: {
+            include: {
+              parentMemberships: { select: { parentTrainingTitle: true } },
+              subItemMemberships: { select: { subItemTrainingTitle: true } },
+            },
+          },
+        },
         orderBy: { completedDate: "desc" },
       },
     },
@@ -49,6 +56,17 @@ export async function GET(
     }
   }
 
+  // Set of OLX parent training titles the student has completed. We use this
+  // to hide individual sub-item rows that roll up into a completed parent —
+  // matching the rule "show the parent OLX as a single completed item with
+  // sub-items collapsed beneath".
+  const completedOlxParents = new Set<string>();
+  for (const t of student.trainings) {
+    if (t.trainingData.trainingType === "OLX") {
+      completedOlxParents.add(t.trainingData.trainingTitle);
+    }
+  }
+
   const result = {
     email: student.email,
     fullName: student.fullName,
@@ -57,17 +75,27 @@ export async function GET(
     region: student.regionData?.region || null,
     companyId: student.companyId,
     companyName: student.company?.name ?? null,
-    trainings: Array.from(dedupeMap.values()).map((t) => ({
-      id: t.id,
-      fullTitle: t.trainingData.fullTitle,
-      link: t.trainingData.link,
-      trainingType: trainingTypeLabel(t.trainingData.trainingType),
-      productType: t.trainingData.productType,
-      function: functionTypeLabel(t.trainingData.function),
-      completedDate: formatDate(t.completedDate),
-      expiryDate: formatDate(t.expiryDate),
-      active: isActive(t.expiryDate),
-    })),
+    trainings: Array.from(dedupeMap.values()).map((t) => {
+      const isSubItem = t.trainingData.trainingType === "OLXSubItem";
+      const parents = t.trainingData.parentMemberships.map((m) => m.parentTrainingTitle);
+      // A sub-item is "rolled up" when at least one of its parents is a
+      // training the student has completed (i.e. all siblings done).
+      const rolledUpUnderParent = isSubItem && parents.some((p) => completedOlxParents.has(p));
+      return {
+        id: t.id,
+        fullTitle: t.trainingData.fullTitle,
+        link: t.trainingData.link,
+        trainingType: trainingTypeLabel(t.trainingData.trainingType),
+        productType: t.trainingData.productType,
+        function: functionTypeLabel(t.trainingData.function),
+        completedDate: formatDate(t.completedDate),
+        expiryDate: formatDate(t.expiryDate),
+        active: isActive(t.expiryDate),
+        isSubItem,
+        rolledUpUnderParent,
+        parents,
+      };
+    }),
   };
 
   return NextResponse.json(result);

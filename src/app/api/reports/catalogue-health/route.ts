@@ -52,6 +52,8 @@ export async function GET(request: NextRequest) {
     Certification: "Certification",
     Accreditation: "Accreditation",
     InstructorLedTraining: "Instructor-Led Training",
+    OLX: "OLX",
+    OLXSubItem: "OLX Sub-Item",
   };
   const FUNC_LABELS: Record<string, string> = {
     Sales: "Sales",

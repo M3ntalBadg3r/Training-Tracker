@@ -3,6 +3,7 @@ import prisma from "@/lib/prisma";
 import { TrainingType, ProductType, FunctionType } from "@prisma/client";
 import { requireAuth, handleAuthError, requireSuperAdmin } from "@/lib/auth";
 import { getAuthorizedCompanyIds, resolveCompanyFilter } from "@/lib/company-scope";
+import { recomputeAllStudentsForParent } from "@/lib/olx";
 
 export async function GET(request: NextRequest) {
   let auth;
@@ -28,6 +29,9 @@ export async function GET(request: NextRequest) {
   const needsStudentData = hasLocationFilters || companyFilter !== null;
 
   const trainingData = await prisma.trainingData.findMany({
+    // Hide OLX sub-items from the top-level catalog — they're shown nested
+    // under their parent OLX on the parent's detail page.
+    where: { trainingType: { not: "OLXSubItem" } },
     include: {
       trainingsTaken: {
         include: {
@@ -111,7 +115,7 @@ export async function POST(request: NextRequest) {
     return handleAuthError(error);
   }
   const body = await request.json();
-  const { trainingTitle, fullTitle, trainingType, productType, function: fn, link, certification } = body;
+  const { trainingTitle, fullTitle, trainingType, productType, function: fn, link, certification, subItems, parents } = body;
 
   if (!trainingTitle || !fullTitle || !trainingType || !productType || !fn) {
     return NextResponse.json(
@@ -119,6 +123,15 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     );
   }
+
+  // Sub-items only have meaning on an OLX parent. Parent membership only
+  // makes sense for an OLX sub-item.
+  const subItemTitles: string[] = trainingType === "OLX" && Array.isArray(subItems)
+    ? Array.from(new Set(subItems.filter((s): s is string => typeof s === "string" && !!s.trim())))
+    : [];
+  const parentTitles: string[] = trainingType === "OLXSubItem" && Array.isArray(parents)
+    ? Array.from(new Set(parents.filter((p): p is string => typeof p === "string" && !!p.trim())))
+    : [];
 
   const training = await prisma.trainingData.create({
     data: {
@@ -128,9 +141,23 @@ export async function POST(request: NextRequest) {
       productType: productType as ProductType,
       function: fn as FunctionType,
       link: link || null,
-      certification: Array.isArray(certification) ? certification : [],
+      // Only OLX parents may carry certifications.
+      certification: trainingType === "OLXSubItem" ? [] : (Array.isArray(certification) ? certification : []),
+      subItemMemberships: subItemTitles.length > 0
+        ? { create: subItemTitles.map((s) => ({ subItemTrainingTitle: s })) }
+        : undefined,
+      parentMemberships: parentTitles.length > 0
+        ? { create: parentTitles.map((p) => ({ parentTrainingTitle: p })) }
+        : undefined,
     },
   });
+
+  // Recompute affected parents (the new parent itself, or each parent the
+  // new sub-item is attached to).
+  const affectedParents = trainingType === "OLX" ? [trainingTitle] : parentTitles;
+  for (const p of affectedParents) {
+    await recomputeAllStudentsForParent(p);
+  }
 
   return NextResponse.json(training, { status: 201 });
 }

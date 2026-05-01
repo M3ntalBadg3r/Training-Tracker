@@ -4,6 +4,7 @@ import { TrainingType } from "@prisma/client";
 import { isActive, formatDate, parseDate, computeExpiryDate } from "@/lib/utils";
 import { requireAuth, handleAuthError } from "@/lib/auth";
 import { canAccessCompany, getAuthorizedCompanyIds, resolveCompanyFilter } from "@/lib/company-scope";
+import { recomputeParentsForSubItem } from "@/lib/olx";
 
 export async function GET(request: NextRequest) {
   let auth;
@@ -161,6 +162,10 @@ export async function POST(request: NextRequest) {
       expiryDate: computeExpiryDate(parsedCompleted),
     },
   });
+
+  // If the just-added training is an OLX sub-item, materialise the parent
+  // OLX TrainingTaken row when this completes its sibling set.
+  await recomputeParentsForSubItem(email, trainingTitle);
 
   return NextResponse.json(created, { status: 201 });
 }

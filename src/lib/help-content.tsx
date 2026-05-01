@@ -41,6 +41,14 @@ const helpSections: Record<string, HelpSection> = {
               <td><strong>Instructor-Led Trainings</strong></td>
               <td>Total ILT completions across all students</td>
             </tr>
+            <tr>
+              <td><strong>OLX Completed</strong></td>
+              <td>
+                Total OLX completions across all students. An OLX is &quot;completed&quot; when
+                the student has completed every sub-item linked to that OLX, or when the
+                OLX has no sub-items and the student has a completion for it directly.
+              </td>
+            </tr>
           </tbody>
         </table>
 
@@ -652,7 +660,13 @@ const helpSections: Record<string, HelpSection> = {
             </tr>
             <tr>
               <td><strong>Type</strong></td>
-              <td>Certification, Accreditation, or Instructor-Led Training</td>
+              <td>
+                Certification, Accreditation, Instructor-Led Training, OLX, or
+                OLX Sub-Item. An <strong>OLX</strong> can be a single training
+                or a parent that bundles multiple <strong>OLX Sub-Items</strong>
+                {" "}&mdash; the parent is only counted as completed once a
+                student has finished every sub-item.
+              </td>
             </tr>
             <tr>
               <td><strong>Product</strong></td>
@@ -668,7 +682,16 @@ const helpSections: Record<string, HelpSection> = {
             </tr>
             <tr>
               <td><strong>Certification</strong></td>
-              <td>Certification mapping (ILT only)</td>
+              <td>Certification mapping (ILT and OLX parent only)</td>
+            </tr>
+            <tr>
+              <td><strong>Parent Training Title</strong></td>
+              <td>
+                Optional. On import, populating this column marks the row as
+                an OLX Sub-Item that belongs to the named parent OLX. Use a
+                comma-separated list to assign the sub-item to multiple
+                parents.
+              </td>
             </tr>
           </tbody>
         </table>
@@ -697,9 +720,12 @@ const helpSections: Record<string, HelpSection> = {
           </li>
           <li>
             <strong>Import</strong> &mdash; Upload a CSV or Excel file. Columns
-            can be mapped to all fields including Certification. The system
-            supports common aliases for type values (e.g. <code>ILT</code>,{" "}
-            <code>cert</code>, <code>pre-sales</code>).
+            can be mapped to all fields including Certification and{" "}
+            <strong>Parent Training Title</strong> (which marks a row as an OLX
+            sub-item belonging to one or more parent OLX trainings &mdash;
+            comma-separated when shared between parents). The system supports
+            common aliases for type values (e.g. <code>ILT</code>,{" "}
+            <code>cert</code>, <code>pre-sales</code>, <code>olx</code>).
           </li>
           <li>
             <strong>Export</strong> &mdash; Download all training data as CSV,

@@ -20,6 +20,13 @@ export interface StudentTrainingRow {
   completedDate: string;
   expiryDate: string;
   active: boolean;
+  // OLX-specific flags. `isSubItem` indicates this is an OLXSubItem row;
+  // `rolledUpUnderParent` indicates the student has also completed the
+  // parent OLX, so the sub-item should be hidden from the top-level list
+  // (it's shown nested under the parent instead).
+  isSubItem?: boolean;
+  rolledUpUnderParent?: boolean;
+  parents?: string[];
 }
 
 export interface TrainingAvailableRow {
@@ -63,6 +70,11 @@ export interface TrainingDataRow {
   link: string | null;
   certification: string[];
   isIncomplete: boolean;
+  // OLX parent ↔ sub-item relationships. Both empty for non-OLX entries.
+  // For an OLX parent: subItems lists the sub-item training titles.
+  // For an OLX sub-item: parents lists the parent training titles it belongs to.
+  subItems?: string[];
+  parents?: string[];
 }
 
 export interface ImportSummary {

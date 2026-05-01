@@ -16,7 +16,12 @@ export async function GET(request: NextRequest) {
   if (companyFilter !== null && companyFilter.length === 0) return NextResponse.json([]);
 
   const rawRecords = await prisma.trainingTaken.findMany({
-    where: companyFilter ? { student: { companyId: { in: companyFilter } } } : {},
+    where: {
+      // OLX sub-items aren't stand-alone completions — they roll up into the
+      // parent OLX. Exclude them from completion-counting reports.
+      trainingData: { trainingType: { not: "OLXSubItem" } },
+      ...(companyFilter ? { student: { companyId: { in: companyFilter } } } : {}),
+    },
     include: {
       trainingData: {
         select: {
@@ -57,6 +62,8 @@ export async function GET(request: NextRequest) {
     Certification: "Certification",
     Accreditation: "Accreditation",
     InstructorLedTraining: "Instructor-Led Training",
+    OLX: "OLX",
+    OLXSubItem: "OLX Sub-Item",
   };
 
   const now = new Date();

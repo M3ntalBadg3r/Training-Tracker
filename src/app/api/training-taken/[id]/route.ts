@@ -3,12 +3,16 @@ import prisma from "@/lib/prisma";
 import { requireAuth, handleAuthError } from "@/lib/auth";
 import { parseDate, computeExpiryDate } from "@/lib/utils";
 import { canAccessCompany } from "@/lib/company-scope";
+import { recomputeParentsForSubItem } from "@/lib/olx";
 
 async function getRecordOrForbid(
   id: number,
   userId: number,
   role: string
-): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+): Promise<
+  | { ok: true; email: string; trainingTitle: string }
+  | { ok: false; status: number; error: string }
+> {
   const record = await prisma.trainingTaken.findUnique({
     where: { id },
     include: { student: { select: { companyId: true } } },
@@ -17,7 +21,7 @@ async function getRecordOrForbid(
   if (!(await canAccessCompany(userId, role, record.student.companyId))) {
     return { ok: false, status: 403, error: "Forbidden" };
   }
-  return { ok: true };
+  return { ok: true, email: record.email, trainingTitle: record.trainingTitle };
 }
 
 export async function DELETE(
@@ -38,6 +42,10 @@ export async function DELETE(
   if (!check.ok) return NextResponse.json({ error: check.error }, { status: check.status });
 
   await prisma.trainingTaken.delete({ where: { id: numId } });
+
+  // If a sub-item was removed, the parent OLX may no longer be complete.
+  await recomputeParentsForSubItem(check.email, check.trainingTitle);
+
   return NextResponse.json({ success: true });
 }
 
@@ -77,6 +85,9 @@ export async function PATCH(
       expiryDate: computeExpiryDate(parsedCompleted),
     },
   });
+
+  // Sub-item completion date changed → parent's "latest sub-item" date may shift.
+  await recomputeParentsForSubItem(check.email, check.trainingTitle);
 
   return NextResponse.json(updated);
 }

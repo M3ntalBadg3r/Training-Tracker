@@ -59,6 +59,7 @@ src/
     cron-auth.ts  # HMAC-SHA256 signature verification for cron endpoints
     rate-limit.ts # In-memory sliding-window rate limiter for auth endpoints
     utils.ts      # Date helpers, formatters, label mappers
+    olx.ts        # OLX parent-completion materialization (recomputeParentsForStudent / ForSubItem / ForMany / AllStudentsForParent)
     chart-theme.ts # useChartTheme() hook — theme-aware Recharts axis/grid/tooltip + COLORS palette
     group-by.ts    # rollUp(country, region, theatre) + groupRows() — country->region->theatre rollup with theatre fallback for null/'unknown' regions
     program-compliance.ts # Shared compliance calculations (email-set queries, OR-logic union, per-theatre breakdown) used by APS, Global Diamond, and Program Compliance Trend
@@ -84,8 +85,9 @@ deploy/           # install.sh, update.sh, install-remote.sh, perform-update.sh,
 - **Student** — PK: `email`. Fields: fullName, theatre, country, companyId (FK → Company.id, NOT NULL). `theatre` is denormalized from `RegionData.theatre`: it's set on create/edit by looking up the country, and the student forms surface it as a read-only auto-derived field.
 - **Company** — PK: `id`. Fields: name (unique). Tenants: students, scheduled exports, and (via `UserCompany`) Admin/User access lists are all scoped per-company.
 - **UserCompany** — Composite PK: (userId, companyId). Many-to-many between non-SuperAdmin users and the companies they can see. SuperAdmins are not represented in this table; they implicitly have access to every company.
-- **TrainingData** — PK: `trainingTitle`. Fields: fullTitle (display name), trainingType, productType, function, link, certification[].
-- **TrainingTaken** — FK: email → Student, trainingTitle → TrainingData. Fields: completedDate, expiryDate (auto: +2 years).
+- **TrainingData** — PK: `trainingTitle`. Fields: fullTitle (display name), trainingType, productType, function, link, certification[]. OLX parents and OLX sub-items are both stored here; the parent ↔ sub-item membership lives in `OlxSubItemRelation`. Only `Certification`, `InstructorLedTraining`, and `OLX` rows can carry certifications — sub-items have an empty array.
+- **TrainingTaken** — FK: email → Student, trainingTitle → TrainingData. Fields: completedDate, expiryDate (auto: +2 years). When a student completes every sub-item of an OLX parent, the system materialises a `TrainingTaken` row on the parent with `completedDate` = the latest sub-item date and `expiryDate` = +2 years; this row is removed if the student later loses any sub-item completion. A "single-item OLX" is just an OLX parent with no sub-items — it's treated as a normal training row.
+- **OlxSubItemRelation** — Composite PK: (parentTrainingTitle, subItemTrainingTitle). Many-to-many between an OLX parent and its sub-items (a sub-item may belong to multiple parents). Cascade deletes from either side.
 - **RegionData** — PK: `country`. Fields: region, theatre (nullable). Theatre is the source of truth for a country's theatre — student add/edit forms only show countries with a populated theatre, and student imports flag (and override) any row whose theatre disagrees.
 - **User** — PK: `id` (auto-increment). Fields: username (unique), passwordHash, displayName, role (SuperAdmin/Admin/User), mfaEnabled, mfaSecret. Has many `UserCompany` rows when role ≠ SuperAdmin.
 - **ScheduledExport** — PK: `id`. Fields: name, companyId (FK → Company.id, NOT NULL — the export only includes data for this company), reportType, format, destination, config (JSON), enabled, frequency, time, dayOfWeek?, dayOfMonth?, lastRunAt?, lastStatus?, lastError?.
@@ -95,7 +97,7 @@ deploy/           # install.sh, update.sh, install-remote.sh, perform-update.sh,
 - **ProgramDataAlternative** — PK: `id` (auto-increment). FK: programDataId → ProgramData (cascade delete), trainingTitle → TrainingData (cascade delete). Fields: trainingType, trainingTitle. Stores alternative trainings that also satisfy a ProgramData requirement (OR logic). Students with any alternative training count toward the requirement's quantity.
 
 ### Enums
-- **TrainingType**: `Certification`, `Accreditation`, `InstructorLedTraining`
+- **TrainingType**: `Certification`, `Accreditation`, `InstructorLedTraining`, `OLX`, `OLXSubItem`
 - **ProductType**: `Cortex`, `SASE`, `Cloud`, `Strata`, `Foundation`
 - **FunctionType**: `Sales`, `PreSales`, `Deployments`
 - **Role**: `SuperAdmin` (full access, can manage companies/users/system), `Admin` (scoped to assigned companies; can edit data within scope but cannot manage users/companies/region-data/training-data/backup/cleanup/updates), `User` (read-only, scoped to assigned companies)
@@ -135,6 +137,7 @@ deploy/           # install.sh, update.sh, install-remote.sh, perform-update.sh,
 - **Import column mapping**: The import API auto-maps columns with fuzzy matching and supports type aliases (e.g., `ilt` → `InstructorLedTraining`, `pre-sales` → `PreSales`).
 - **Manual training-taken mutations**: `POST /api/training-taken` creates a single TrainingTaken row; `PATCH /api/training-taken/[id]` updates only `completedDate`. Both are Admin-only and both auto-derive `expiryDate = completedDate + 2 years` via `computeExpiryDate` — never accept an explicit expiry. Manual `POST` enforces the same `email + trainingTitle + completedDate` dedupe key as the import flow and returns 409 on duplicate.
 - **Student theatre is derived, not user-input**: `POST /api/students` and `PUT /api/students/[email]` ignore any `theatre` in the body and look it up from `RegionData` by `country`. They reject the request if the country isn't in Region Data with a populated theatre. The student forms expose this as a country dropdown plus a read-only theatre/region display. The import flow at `/api/import` does the same lookup row-by-row and surfaces a warning whenever the CSV's theatre disagrees with the curated value (the curated value wins). Read-only consumers (`GET /api/region-data/countries`) feed the dropdown.
+- **OLX parent completion is computed, not imported**: never write a `TrainingTaken` row for an OLX parent directly from imports — the parent row is materialised by `lib/olx.ts` after the student's last sub-item lands. Mutations on `TrainingTaken` (POST/PATCH/DELETE) and `/api/import` all call `recomputeParentsForSubItem` / `recomputeParentsForMany`. The training data import accepts a `Parent Training Title` column (comma-separated for multi-parent sub-items); presence of that column forces the row's `trainingType` to `OLXSubItem`. Reports that count completions (`/api/reports/training-records`, `/api/reports/coverage`, `/api/reports/renewal-forecast`, `/api/dashboard`, `report-queries.ts`) filter out `OLXSubItem` rows from `TrainingTaken` so a sub-item never double-counts with its parent. The "Trained But Not Certified" report treats OLX parents the same as ILTs.
 
 ## Git Workflow
 
