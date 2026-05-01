@@ -431,12 +431,15 @@ export default function ImportPage() {
 
             {summary.errors.length > 0 && (
               <div>
-                <h4 className="text-sm font-semibold text-red-700 mb-2">
-                  Errors ({summary.errors.length})
+                <h4 className="text-sm font-semibold text-amber-700 mb-2">
+                  Issues ({summary.errors.length})
                 </h4>
-                <div className="max-h-60 overflow-y-auto bg-red-50 rounded-lg p-3">
+                <p className="text-xs text-gray-500 mb-2">
+                  Includes hard errors (rows skipped) and warnings (rows imported with adjustments).
+                </p>
+                <div className="max-h-60 overflow-y-auto bg-amber-50 rounded-lg p-3">
                   {summary.errors.map((err, idx) => (
-                    <div key={idx} className="text-sm text-red-600 py-1">
+                    <div key={idx} className="text-sm text-amber-700 py-1">
                       {err}
                     </div>
                   ))}

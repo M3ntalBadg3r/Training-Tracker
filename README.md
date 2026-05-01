@@ -275,13 +275,13 @@ Navigate to **Students** in the sidebar to view all students in a table with col
 - Region
 - Country
 
-Click **View** on any row to open the student's detailed record. Admins can click **Add Student** in the page header to create a student manually (Full Name, Email, Theatre, Country) without running an import. Region is auto-derived from the country's entry in Region Data.
+Click **View** on any row to open the student's detailed record. Admins can click **Add Student** in the page header to create a student manually (Full Name, Email, Company, Country) without running an import. Country is a dropdown limited to entries in **Region Data** that have a Theatre assigned — Theatre and Region are auto-derived from the chosen country and shown read-only. To use a country that doesn't appear in the dropdown, ask a SuperAdmin to add it (with a Theatre) on the Region Data page first.
 
 ### Student Detail
 
 The student detail page shows:
 
-- **Contact Information** — Full Name, Email, Theatre, Country, and Region. Click **Edit** to modify these fields. Changes are previewed in a confirmation modal before saving.
+- **Contact Information** — Full Name, Email, Theatre, Country, and Region. Click **Edit** to modify Full Name, Email, or Country. Theatre and Region are auto-derived from the selected country (read-only). If the student's current country has no Theatre yet (post-migration), the dropdown shows it with a "needs theatre" suffix — switch to a configured country, or ask a SuperAdmin to set the Theatre in Region Data. Changes are previewed in a confirmation modal before saving.
 - **Training Records** — A table of all trainings completed by the student, including Title (with link if available), Type, Product, Function, Completed Date, and Active status.
 
 While in edit mode, admins can also:
@@ -339,48 +339,50 @@ During import, the following cleansing rules are applied automatically:
 
 ## Reports
 
-Navigate to **Reports** in the sidebar. Reports are presented as collapsible sections, each with their own filters and export options. Clicking a dashboard chart navigates directly to the corresponding report.
+Navigate to **Reports** in the sidebar. Each report follows the same shape: a four-card **KPI strip** at the top, a **chart row** above the table, then a **filtered, groupable table** with CSV / Excel / PDF export. Charts are interactive — clicking a bar, segment, or month drills the table down to that slice. PDF / Excel / CSV exports remain tabular (the original column shapes for the existing five reports are unchanged so scheduled exports keep working).
+
+### Common Features
+
+- **Group by** — toggle theatre / region / country grouping on the table. The hierarchy rolls up: country → region → theatre, with a fallback to theatre when a student's region is missing or `unknown`.
+- **Date-range picker** — limit results to a window (where applicable) with presets for Last 30 / 90 days, Last 12 months, Year to date, and All time.
+- **Drill-down** — click a chart segment to apply that as a table filter; a small "Clear filter" link appears next to the chart while active.
+- **Dark mode** — chart axes, gridlines, and tooltips adapt automatically alongside the rest of the app.
 
 ### By Product Type
 
-Detailed listing of all training records, filterable by product type, training type, and theatre. This is the report behind the **By Product Type** dashboard chart.
+Stacked bar of Certifications / Accreditations / ILTs per product, plus an active-vs-expired donut. Drill in by clicking a bar.
 
 ### By Function
 
-Detailed listing of all training records, filterable by function, training type, and theatre. This is the report behind the **By Function** dashboard chart.
+Same shape as By Product Type, with the function dimension (Sales, Pre-Sales, Deployments) instead.
 
 ### Expiring Soon
 
-Shows training records expiring within a selectable time window (1, 3, or 6 months). Filterable by training type and theatre. This is the report behind the **Expiring Soon** dashboard chart.
+Horizon bar showing records expiring within 1 / 3 / 6 / 12 months, plus a stacked theatre × month bar showing where expiry pressure clusters. Filter window is selectable up to 12 months.
 
-### Achieved Over Last 12 Months
+### Last 12 Months
 
-Shows all training records completed in the last 12 months, filterable by training type and theatre. This is the report behind the **Achieved Over Last 12 Months** dashboard chart.
+Monthly area chart of completions with a dashed prior-year comparison line, plus a top-10 leaderboard of most-completed trainings. Click a month to filter the table.
 
 ### Trained But Not Certified
 
-This report identifies students who have completed an **Instructor-Led Training** but have **not** obtained the associated **Certification**.
+Identifies students who have completed an **Instructor-Led Training** but have **not** obtained the associated **Certification** (mapping configured in **Admin > Training Data**). Includes a gap-by-product chart and a top-buckets bar showing which theatres / regions / countries have the most gaps.
 
-The association is determined by the certification mapping configured in **Admin > Training Data** (see [Training Data](#training-data)).
+### Coverage / Compliance
 
-**Columns displayed:**
+Active-training-holder share of population per theatre / region / country bucket × product × type. Coverage badges colour-code each row red / amber / green at 40% and 80% thresholds. Use the **Group by** selector to switch dimension.
 
-- Full Name
-- Email Address
-- Theatre
-- Region
-- Country
-- Instructor-Led Training (shown as Full Title)
-- Certification Not Obtained (shown as Full Title)
+### Training Catalogue Health
 
-**Filtering:**
+Per-training metrics: total completions, last-12-month completions, active students, expiring within 90 days, and uptake %. Highlights catalogue items with **zero completions** and **stale** trainings (no completions in 12 months). Top-10 leaderboards for active students and 90-day expiry pressure.
 
-- Search by name or email
-- Filter by Theatre, Region, Country, Training, or Certification
+### Program Compliance Trend
 
-**Export:**
+Monthly snapshots over the last 12 months for the partner programs configured in **Admin > Program Data** (APS and Global Diamond). For each month-end, the same OR-logic union of primary + alternative trainings used by the live program dashboards is applied with the active-as-of date set to that month-end. Line chart per specialisation shows compliance % over time.
 
-- Export filtered results as CSV or Excel
+### Renewal Forecast
+
+Projects how many of the trainings expiring in the next 12 months will be renewed vs lapsed, based on historical renewal behaviour. A renewal counts when a follow-up record lands within ±90 days of a previous expiry. Renewal rate is computed per training (≥5 historical expiries), falling back to per product, then global. Includes a stacked bar by month (renewed vs lapsed) and an at-risk leaderboard of trainings ranked by projected lapses.
 
 ---
 
@@ -390,18 +392,25 @@ Navigate to **Admin** in the sidebar to access administrative functions. The Adm
 
 ### Region Data
 
-Manage the mapping between countries and regions.
+Manage the mapping between countries, regions, and theatres. This page is the source of truth for a country's theatre — it drives the country dropdown on the student add/edit forms and validates theatres during student imports.
 
 **Features:**
 
-- **View** — Table of all countries and their assigned regions.
-- **Search** — Filter by country name.
-- **Filter** — Filter by region.
-- **Add** — Add a new country/region mapping using the input row at the bottom of the table.
-- **Edit** — Click **Edit** on any row to modify the country or region inline, then **Save** or **Cancel**.
+- **View** — Table of all countries with their assigned region and theatre. Countries with no theatre are flagged so you can fix them.
+- **Search / Filter** — Filter by country, region, or theatre. The Theatre column has a "(missing)" filter to surface rows that still need a theatre assigned.
+- **Add** — Add a new country with its region and (optionally) theatre. A country without a theatre cannot be selected for new students — set the theatre before assigning students.
+- **Edit** — Click **Edit** on any row to modify the country, region, or theatre inline, then **Save** or **Cancel**.
 - **Delete** — Remove a country/region mapping.
-- **Import** — Upload a CSV or Excel file with `Country` and `Region` columns. The system auto-maps columns and shows a preview before importing.
-- **Export** — Download all region data as CSV or Excel.
+- **Import** — Upload a CSV or Excel file with `Country`, `Region`, and (optionally) `Theatre` columns. The system auto-maps columns and shows a preview before importing.
+- **Export** — Download all region data (including theatre) as CSV, Excel, or PDF.
+
+#### Student import behaviour
+
+When importing student data (the **Admin → Import** page), each row's theatre is reconciled against Region Data:
+
+- If the country exists in Region Data with a theatre, that theatre is the source of truth — any disagreement on the import row is overridden and surfaced as a warning in the **Issues** list.
+- If the country exists in Region Data but has no theatre, the imported theatre is used as-is and a warning asks for the missing theatre to be set.
+- If the country is brand new, Region Data auto-creates an entry with region "Unknown" and the imported theatre, and a warning asks a SuperAdmin to verify it.
 
 ### Training Data
 

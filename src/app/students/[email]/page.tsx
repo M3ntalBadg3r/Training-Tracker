@@ -8,6 +8,7 @@ import Badge from "@/components/ui/Badge";
 import Modal from "@/components/ui/Modal";
 import {
   ColumnDef,
+  CountryOption,
   StudentRecord,
   StudentTrainingRow,
   TrainingDataRow,
@@ -90,9 +91,9 @@ export default function StudentRecordPage({
   const [editForm, setEditForm] = useState({
     fullName: "",
     email: "",
-    theatre: "",
     country: "",
   });
+  const [countries, setCountries] = useState<CountryOption[]>([]);
 
   // Pending training mutations (applied on Save)
   const [deletedTrainingIds, setDeletedTrainingIds] = useState<number[]>([]);
@@ -132,7 +133,6 @@ export default function StudentRecordPage({
         setEditForm({
           fullName: data.fullName,
           email: data.email,
-          theatre: data.theatre,
           country: data.country,
         });
         setLoading(false);
@@ -149,6 +149,40 @@ export default function StudentRecordPage({
         .catch(() => {});
     }
   }, [editing, trainingCatalog.length]);
+
+  // Country list for the edit dropdown — fetch once when editing starts
+  useEffect(() => {
+    if (editing && countries.length === 0) {
+      fetch("/api/region-data/countries")
+        .then((res) => (res.ok ? res.json() : []))
+        .then((data: CountryOption[]) => setCountries(Array.isArray(data) ? data : []))
+        .catch(() => setCountries([]));
+    }
+  }, [editing, countries.length]);
+
+  // Country dropdown options: countries with theatre populated, plus the
+  // student's current country (even if its theatre is missing) so the form
+  // can still load and save other fields.
+  const countryOptions = useMemo<{ option: CountryOption; needsTheatre: boolean }[]>(() => {
+    const byCountry = new Map(countries.map((c) => [c.country, c]));
+    const usable = countries.filter((c) => !!c.theatre);
+    const result = usable.map((c) => ({ option: c, needsTheatre: false }));
+    if (student && student.country && !byCountry.get(student.country)?.theatre) {
+      const existing = byCountry.get(student.country);
+      const synthetic: CountryOption = existing ?? {
+        country: student.country,
+        region: student.region ?? "",
+        theatre: null,
+      };
+      result.unshift({ option: synthetic, needsTheatre: true });
+    }
+    return result;
+  }, [countries, student]);
+
+  const selectedEditCountry = useMemo(
+    () => countryOptions.find((c) => c.option.country === editForm.country)?.option ?? null,
+    [countryOptions, editForm.country]
+  );
 
   const fullTitleOptions = useMemo(() => {
     const seen = new Set<string>();
@@ -176,7 +210,9 @@ export default function StudentRecordPage({
     setSaveError("");
 
     try {
-      // 1. Update student fields (and optionally email)
+      // 1. Update student fields (and optionally email).
+      //    Theatre is intentionally not sent — the API derives it from
+      //    RegionData based on the saved country.
       const studentRes = await fetch(
         `/api/students/${encodeURIComponent(student.email)}`,
         {
@@ -186,7 +222,6 @@ export default function StudentRecordPage({
             fullName: editForm.fullName,
             newEmail:
               editForm.email !== student.email ? editForm.email : undefined,
-            theatre: editForm.theatre,
             country: editForm.country,
           }),
         }
@@ -248,7 +283,6 @@ export default function StudentRecordPage({
       setEditForm({
         fullName: data.fullName,
         email: data.email,
-        theatre: data.theatre,
         country: data.country,
       });
       setDeletedTrainingIds([]);
@@ -276,7 +310,6 @@ export default function StudentRecordPage({
       setEditForm({
         fullName: student.fullName,
         email: student.email,
-        theatre: student.theatre,
         country: student.country,
       });
     }
@@ -526,7 +559,7 @@ export default function StudentRecordPage({
                     className="border border-gray-300 rounded-lg px-3 py-2 text-lg font-bold w-full"
                   />
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-sm font-medium text-gray-600 mb-1">
                       Email Address
@@ -542,29 +575,44 @@ export default function StudentRecordPage({
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-600 mb-1">
-                      Theatre
-                    </label>
-                    <input
-                      type="text"
-                      value={editForm.theatre}
-                      onChange={(e) =>
-                        setEditForm((f) => ({ ...f, theatre: e.target.value }))
-                      }
-                      className="border border-gray-300 rounded-lg px-3 py-2 w-full"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-600 mb-1">
                       Country
                     </label>
-                    <input
-                      type="text"
+                    <select
                       value={editForm.country}
                       onChange={(e) =>
                         setEditForm((f) => ({ ...f, country: e.target.value }))
                       }
-                      className="border border-gray-300 rounded-lg px-3 py-2 w-full"
-                    />
+                      className="border border-gray-300 rounded-lg px-3 py-2 w-full bg-white"
+                    >
+                      {countryOptions.map(({ option, needsTheatre }) => (
+                        <option key={option.country} value={option.country}>
+                          {option.country}
+                          {needsTheatre ? " (needs theatre — fix in Region Data)" : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-600 mb-1">
+                      Theatre
+                    </label>
+                    <div className="border border-gray-200 bg-gray-50 rounded-lg px-3 py-2 text-sm text-gray-700 min-h-[38px]">
+                      {selectedEditCountry?.theatre ?? (
+                        <span className="text-amber-600">
+                          Country has no theatre — set it in Region Data
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-600 mb-1">
+                      Region
+                    </label>
+                    <div className="border border-gray-200 bg-gray-50 rounded-lg px-3 py-2 text-sm text-gray-700 min-h-[38px]">
+                      {selectedEditCountry?.region || <span className="text-gray-400">—</span>}
+                    </div>
                   </div>
                 </div>
               </div>

@@ -24,6 +24,7 @@ import {
   LineChart,
   Line,
 } from "recharts";
+import { useChartTheme, tooltipStyle } from "@/lib/chart-theme";
 
 interface DashboardData {
   theatres: string[];
@@ -59,14 +60,9 @@ interface DashboardData {
   }[];
 }
 
-const COLORS = {
-  Certification: "#3b82f6",
-  Accreditation: "#10b981",
-  "Instructor-Led Training": "#f59e0b",
-};
-
 export default function DashboardPage() {
   const router = useRouter();
+  const chart = useChartTheme();
   const companyScope = useCompanyScope();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -226,14 +222,14 @@ export default function DashboardPage() {
           <h3 className="text-base font-semibold text-gray-900 mb-4">By Product Type</h3>
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={data.byProductType}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-              <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
-              <Tooltip />
+              <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
+              <XAxis dataKey="name" tick={{ fontSize: 12, fill: chart.axis }} stroke={chart.axis} />
+              <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: chart.axis }} stroke={chart.axis} />
+              <Tooltip contentStyle={tooltipStyle(chart)} />
               <Legend />
-              <Bar dataKey="Certification" fill={COLORS.Certification} />
-              <Bar dataKey="Accreditation" fill={COLORS.Accreditation} />
-              <Bar dataKey="Instructor-Led Training" fill={COLORS["Instructor-Led Training"]} />
+              <Bar dataKey="Certification" fill={chart.typeColor("Certification")} />
+              <Bar dataKey="Accreditation" fill={chart.typeColor("Accreditation")} />
+              <Bar dataKey="Instructor-Led Training" fill={chart.typeColor("Instructor-Led Training")} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -246,14 +242,14 @@ export default function DashboardPage() {
           <h3 className="text-base font-semibold text-gray-900 mb-4">By Function</h3>
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={data.byFunction}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-              <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
-              <Tooltip />
+              <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
+              <XAxis dataKey="name" tick={{ fontSize: 12, fill: chart.axis }} stroke={chart.axis} />
+              <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: chart.axis }} stroke={chart.axis} />
+              <Tooltip contentStyle={tooltipStyle(chart)} />
               <Legend />
-              <Bar dataKey="Certification" fill={COLORS.Certification} />
-              <Bar dataKey="Accreditation" fill={COLORS.Accreditation} />
-              <Bar dataKey="Instructor-Led Training" fill={COLORS["Instructor-Led Training"]} />
+              <Bar dataKey="Certification" fill={chart.typeColor("Certification")} />
+              <Bar dataKey="Accreditation" fill={chart.typeColor("Accreditation")} />
+              <Bar dataKey="Instructor-Led Training" fill={chart.typeColor("Instructor-Led Training")} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -269,14 +265,14 @@ export default function DashboardPage() {
           <h3 className="text-base font-semibold text-gray-900 mb-4">Expiring Soon</h3>
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={data.expiring}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-              <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
-              <Tooltip />
+              <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
+              <XAxis dataKey="name" tick={{ fontSize: 12, fill: chart.axis }} stroke={chart.axis} />
+              <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: chart.axis }} stroke={chart.axis} />
+              <Tooltip contentStyle={tooltipStyle(chart)} />
               <Legend />
-              <Bar dataKey="Certification" fill={COLORS.Certification} />
-              <Bar dataKey="Accreditation" fill={COLORS.Accreditation} />
-              <Bar dataKey="Instructor-Led Training" fill={COLORS["Instructor-Led Training"]} />
+              <Bar dataKey="Certification" fill={chart.typeColor("Certification")} />
+              <Bar dataKey="Accreditation" fill={chart.typeColor("Accreditation")} />
+              <Bar dataKey="Instructor-Led Training" fill={chart.typeColor("Instructor-Led Training")} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -289,14 +285,14 @@ export default function DashboardPage() {
           <h3 className="text-base font-semibold text-gray-900 mb-4">Achieved Over Last 12 Months</h3>
           <ResponsiveContainer width="100%" height={300}>
             <LineChart data={data.monthlyAchieved}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="month" tick={{ fontSize: 11 }} angle={-35} textAnchor="end" height={50} />
-              <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
-              <Tooltip />
+              <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
+              <XAxis dataKey="month" tick={{ fontSize: 11, fill: chart.axis }} stroke={chart.axis} angle={-35} textAnchor="end" height={50} />
+              <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: chart.axis }} stroke={chart.axis} />
+              <Tooltip contentStyle={tooltipStyle(chart)} />
               <Legend />
-              <Line type="monotone" dataKey="Certification" stroke={COLORS.Certification} strokeWidth={2} dot={{ r: 3 }} />
-              <Line type="monotone" dataKey="Accreditation" stroke={COLORS.Accreditation} strokeWidth={2} dot={{ r: 3 }} />
-              <Line type="monotone" dataKey="Instructor-Led Training" stroke={COLORS["Instructor-Led Training"]} strokeWidth={2} dot={{ r: 3 }} />
+              <Line type="monotone" dataKey="Certification" stroke={chart.typeColor("Certification")} strokeWidth={2} dot={{ r: 3 }} />
+              <Line type="monotone" dataKey="Accreditation" stroke={chart.typeColor("Accreditation")} strokeWidth={2} dot={{ r: 3 }} />
+              <Line type="monotone" dataKey="Instructor-Led Training" stroke={chart.typeColor("Instructor-Led Training")} strokeWidth={2} dot={{ r: 3 }} />
             </LineChart>
           </ResponsiveContainer>
         </div>

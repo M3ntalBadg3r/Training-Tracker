@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
   const body = await request.json();
   const { rows, columnMapping } = body as {
     rows: Record<string, string>[];
-    columnMapping: { country: string; region: string };
+    columnMapping: { country: string; region: string; theatre?: string };
   };
 
   if (!rows || !columnMapping?.country || !columnMapping?.region) {
@@ -30,6 +30,8 @@ export async function POST(request: NextRequest) {
     const row = rows[i];
     const country = row[columnMapping.country]?.trim();
     const region = row[columnMapping.region]?.trim();
+    const theatreRaw = columnMapping.theatre ? row[columnMapping.theatre]?.trim() : "";
+    const theatre = theatreRaw ? theatreRaw : null;
     const rowNum = i + 2; // +2 because row 1 is header, data starts at row 2
 
     if (!country) {
@@ -49,10 +51,19 @@ export async function POST(request: NextRequest) {
       });
 
       if (existing) {
-        if (existing.region !== region) {
+        // Only mark "updated" when something actually changes. When the
+        // import has no theatre column, leave the existing theatre alone.
+        const regionChanged = existing.region !== region;
+        const theatreChanged = columnMapping.theatre
+          ? (existing.theatre ?? null) !== theatre
+          : false;
+        if (regionChanged || theatreChanged) {
           await prisma.regionData.update({
             where: { country },
-            data: { region },
+            data: {
+              region,
+              ...(columnMapping.theatre ? { theatre } : {}),
+            },
           });
           updated++;
         } else {
@@ -60,7 +71,7 @@ export async function POST(request: NextRequest) {
         }
       } else {
         await prisma.regionData.create({
-          data: { country, region },
+          data: { country, region, theatre },
         });
         imported++;
       }

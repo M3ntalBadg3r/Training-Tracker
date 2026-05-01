@@ -34,6 +34,8 @@ import {
   CalendarDays,
   AlertCircle,
   Building2,
+  Target,
+  TrendingUp,
 } from "lucide-react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useTheme } from "@/components/theme/ThemeProvider";
@@ -68,6 +70,10 @@ const reportSubItems = [
   { href: "/reports/expiring-soon", label: "Expiring Soon", icon: Clock },
   { href: "/reports/last-12-months", label: "Last 12 Months", icon: CalendarDays },
   { href: "/reports/trained-not-certified", label: "Trained Not Certified", icon: AlertCircle },
+  { href: "/reports/coverage", label: "Coverage", icon: Target },
+  { href: "/reports/catalogue-health", label: "Catalogue Health", icon: BookOpen },
+  { href: "/reports/program-compliance-trend", label: "Compliance Trend", icon: TrendingUp },
+  { href: "/reports/renewal-forecast", label: "Renewal Forecast", icon: RefreshCw },
 ];
 
 export default function Sidebar() {

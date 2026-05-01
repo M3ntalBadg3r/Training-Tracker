@@ -33,7 +33,7 @@ src/
     dashboard/    # Dashboard page (metrics + charts)
     students/     # Student list + [email] detail page
     training/     # Training catalog + [fullTitle] detail page
-    reports/      # Trained-but-not-certified report
+    reports/      # Index page + 9 reports: by-product-type, by-function, expiring-soon, last-12-months, trained-not-certified, coverage, catalogue-health, program-compliance-trend, renewal-forecast
     account/      # User account page (profile, MFA setup)
     admin/        # Admin pages (region-data, training-data, backup, import, users, companies, cleanup, updates, scheduled-exports, program-data)
     programs/     # Partner program compliance dashboards
@@ -44,11 +44,11 @@ src/
     layout.tsx    # Root layout with AuthProvider + CompanyScopeProvider + AppShell
   components/
     layout/       # Sidebar, PageHeader, AppShell
-    ui/           # Modal, Badge, HelpModal
+    ui/           # Modal, Badge, HelpModal, KpiStrip, DateRangePicker
     auth/         # AuthProvider (context + useAuth hook)
     company/      # CompanyScopeProvider (selected company in header) + CompanySwitcher
     theme/        # ThemeProvider (dark mode context + useTheme hook)
-    data-table/   # Generic DataTable (search, sort, filter, paginate)
+    data-table/   # Generic DataTable (search, sort, filter, paginate) + GroupedRows (grouped tbody with subtotals + expand/collapse)
     admin/        # Admin-only widgets: ProviderCredentialWizard, CredentialHealthBanner
   hooks/          # useDebounce
   proxy.ts       # Route protection (auth + role checks)
@@ -59,6 +59,9 @@ src/
     cron-auth.ts  # HMAC-SHA256 signature verification for cron endpoints
     rate-limit.ts # In-memory sliding-window rate limiter for auth endpoints
     utils.ts      # Date helpers, formatters, label mappers
+    chart-theme.ts # useChartTheme() hook — theme-aware Recharts axis/grid/tooltip + COLORS palette
+    group-by.ts    # rollUp(country, region, theatre) + groupRows() — country->region->theatre rollup with theatre fallback for null/'unknown' regions
+    program-compliance.ts # Shared compliance calculations (email-set queries, OR-logic union, per-theatre breakdown) used by APS, Global Diamond, and Program Compliance Trend
     export.ts     # CSV/Excel/PDF export utilities (browser-side, triggers download)
     server-export.ts  # Server-side CSV/Excel/PDF generation (returns Buffer)
     report-queries.ts # Server-side Prisma queries for each report type
@@ -78,12 +81,12 @@ deploy/           # install.sh, update.sh, install-remote.sh, perform-update.sh,
 
 ## Data Model
 
-- **Student** — PK: `email`. Fields: fullName, theatre, country, companyId (FK → Company.id, NOT NULL).
+- **Student** — PK: `email`. Fields: fullName, theatre, country, companyId (FK → Company.id, NOT NULL). `theatre` is denormalized from `RegionData.theatre`: it's set on create/edit by looking up the country, and the student forms surface it as a read-only auto-derived field.
 - **Company** — PK: `id`. Fields: name (unique). Tenants: students, scheduled exports, and (via `UserCompany`) Admin/User access lists are all scoped per-company.
 - **UserCompany** — Composite PK: (userId, companyId). Many-to-many between non-SuperAdmin users and the companies they can see. SuperAdmins are not represented in this table; they implicitly have access to every company.
 - **TrainingData** — PK: `trainingTitle`. Fields: fullTitle (display name), trainingType, productType, function, link, certification[].
 - **TrainingTaken** — FK: email → Student, trainingTitle → TrainingData. Fields: completedDate, expiryDate (auto: +2 years).
-- **RegionData** — PK: `country`. Fields: region.
+- **RegionData** — PK: `country`. Fields: region, theatre (nullable). Theatre is the source of truth for a country's theatre — student add/edit forms only show countries with a populated theatre, and student imports flag (and override) any row whose theatre disagrees.
 - **User** — PK: `id` (auto-increment). Fields: username (unique), passwordHash, displayName, role (SuperAdmin/Admin/User), mfaEnabled, mfaSecret. Has many `UserCompany` rows when role ≠ SuperAdmin.
 - **ScheduledExport** — PK: `id`. Fields: name, companyId (FK → Company.id, NOT NULL — the export only includes data for this company), reportType, format, destination, config (JSON), enabled, frequency, time, dayOfWeek?, dayOfMonth?, lastRunAt?, lastStatus?, lastError?.
 - **ExportCredential** — PK: `id`, unique: `provider`. Fields: provider, config (JSON), lastCheckedAt?, lastCheckStatus? (`"ok"` | `"expired"` | `"failed"`), lastCheckError?, lastSuccessAt?. Stores SMTP/OAuth credentials per delivery provider; the health columns drive the dashboard banner and per-card status badge. Cloud providers (`google-drive`, `box`, `onedrive`) all use OAuth refresh-token flows captured by the wizard at `/admin/scheduled-exports`; OneDrive is delegated (uploads to the connecting user's `/me/drive`).
@@ -131,6 +134,7 @@ deploy/           # install.sh, update.sh, install-remote.sh, perform-update.sh,
 - **Date handling**: All dates flow through `lib/utils.ts`. Use `parseDate()` for parsing, `formatDate()` for display (DD Mmm YYYY), `computeExpiryDate()` for expiry.
 - **Import column mapping**: The import API auto-maps columns with fuzzy matching and supports type aliases (e.g., `ilt` → `InstructorLedTraining`, `pre-sales` → `PreSales`).
 - **Manual training-taken mutations**: `POST /api/training-taken` creates a single TrainingTaken row; `PATCH /api/training-taken/[id]` updates only `completedDate`. Both are Admin-only and both auto-derive `expiryDate = completedDate + 2 years` via `computeExpiryDate` — never accept an explicit expiry. Manual `POST` enforces the same `email + trainingTitle + completedDate` dedupe key as the import flow and returns 409 on duplicate.
+- **Student theatre is derived, not user-input**: `POST /api/students` and `PUT /api/students/[email]` ignore any `theatre` in the body and look it up from `RegionData` by `country`. They reject the request if the country isn't in Region Data with a populated theatre. The student forms expose this as a country dropdown plus a read-only theatre/region display. The import flow at `/api/import` does the same lookup row-by-row and surfaces a warning whenever the CSV's theatre disagrees with the curated value (the curated value wins). Read-only consumers (`GET /api/region-data/countries`) feed the dropdown.
 
 ## Git Workflow
 

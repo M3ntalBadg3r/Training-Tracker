@@ -118,9 +118,12 @@ const helpSections: Record<string, HelpSection> = {
         </p>
         <p>
           Admins can click <strong>Add Student</strong> to create a student
-          manually without an import. Provide Full Name, Email, Theatre, and
-          Country. Region is auto-derived from the country&apos;s entry in
-          Region Data.
+          manually without an import. Provide Full Name, Email, Company, and
+          pick a Country from the dropdown &mdash; the Theatre and Region are
+          auto-derived from the country&apos;s entry in Region Data and shown
+          read-only. The dropdown only lists countries that have a theatre
+          assigned. To add a new country, ask a SuperAdmin to create it on the
+          <strong> Region Data</strong> page first.
         </p>
       </>
     ),
@@ -135,8 +138,13 @@ const helpSections: Record<string, HelpSection> = {
           <li>
             <strong>Contact Information</strong> &mdash; Full Name, Email,
             Theatre, Country, and Region. Click <strong>Edit</strong> to modify
-            these fields. Changes are previewed in a confirmation modal before
-            saving.
+            Full Name, Email, or Country. Theatre and Region are auto-derived
+            from the chosen country (read-only). If the student&apos;s current
+            country has no theatre yet (post-migration), it will appear in the
+            dropdown with a &quot;needs theatre&quot; suffix &mdash; pick a
+            properly-configured country, or ask a SuperAdmin to set the theatre
+            in Region Data. Changes are previewed in a confirmation modal
+            before saving.
           </li>
           <li>
             <strong>Training Records</strong> &mdash; A table of all trainings
@@ -259,9 +267,38 @@ const helpSections: Record<string, HelpSection> = {
           </li>
           <li>
             <strong>Summary</strong> &mdash; A summary shows counts of students
-            created/updated, trainings imported/skipped, and any errors.
+            created/updated, trainings imported/skipped, and an{" "}
+            <strong>Issues</strong> list. Issues includes both hard errors
+            (rows skipped) and warnings (rows imported with adjustments) such
+            as a row&apos;s theatre being overridden by the value in Region
+            Data.
           </li>
         </ol>
+
+        <h3>Theatre handling</h3>
+        <p>
+          Region Data is the source of truth for a country&apos;s theatre. For
+          each row that has a country:
+        </p>
+        <ul>
+          <li>
+            <strong>Country in Region Data with a theatre</strong> &mdash; the
+            student&apos;s theatre is set from Region Data. If the imported
+            theatre disagrees, the row imports with a warning showing what was
+            overridden.
+          </li>
+          <li>
+            <strong>Country in Region Data without a theatre</strong> &mdash;
+            the imported theatre is kept and a warning asks a SuperAdmin to
+            populate the theatre in Region Data.
+          </li>
+          <li>
+            <strong>Country not in Region Data</strong> &mdash; the country is
+            auto-created with region &quot;Unknown&quot; (and the imported
+            theatre, if any). A warning asks a SuperAdmin to verify and fill in
+            the missing values.
+          </li>
+        </ul>
 
         <h3>Data Cleansing (Automatic)</h3>
         <p>
@@ -295,60 +332,137 @@ const helpSections: Record<string, HelpSection> = {
     content: (
       <>
         <p>
-          The Reports section contains five individual report pages, each
-          accessible from the sidebar or the Reports landing page. Dashboard
-          chart cards link directly to the relevant report page. Every report
-          has its own filters and export options (CSV, Excel, PDF).
+          The Reports section contains nine report pages, each accessible from
+          the sidebar or the Reports landing page. Dashboard chart cards link
+          directly to the relevant report. Every report exports as CSV, Excel,
+          or PDF (tabular data only — charts are screen-only).
         </p>
+
+        <h3>Common Features</h3>
+        <ul>
+          <li><strong>KPI strip</strong> — four headline metrics at the top of every report.</li>
+          <li><strong>Charts above the table</strong> — bars/areas/leaderboards summarising the filtered data.</li>
+          <li><strong>Drill-down</strong> — click a chart segment to filter the table in place; a small &quot;Clear filter&quot; link appears when active.</li>
+          <li><strong>Group by</strong> &mdash; toggle theatre / region / country grouping. The hierarchy rolls up: country → region → theatre, with a fallback to theatre when region is missing or &quot;unknown&quot;.</li>
+          <li><strong>Date-range picker</strong> — limit results to a date window (where applicable). Includes presets for Last 30/90 days, Last 12 months, YTD, and All time.</li>
+          <li><strong>Dark mode</strong> — chart axes, gridlines, and tooltips adapt automatically.</li>
+        </ul>
 
         <h3>By Product Type</h3>
-        <p>
-          Detailed listing of all training records, filterable by product type,
-          training type, and theatre. Clicking the <strong>By Product
-          Type</strong> chart on the dashboard opens this report.
-        </p>
+        <p>Stacked bar of Cert/Accred/ILT per product, plus an active-vs-expired donut.</p>
 
         <h3>By Function</h3>
-        <p>
-          Detailed listing of all training records, filterable by function,
-          training type, and theatre. Clicking the <strong>By Function</strong>{" "}
-          chart on the dashboard opens this report.
-        </p>
+        <p>Stacked bar of Cert/Accred/ILT per function (Sales, Pre-Sales, Deployments), plus an active-vs-expired donut.</p>
 
         <h3>Expiring Soon</h3>
-        <p>
-          Shows training records expiring within a selectable time window (1, 3,
-          or 6 months). Filterable by training type and theatre. Clicking the{" "}
-          <strong>Expiring Soon</strong> chart on the dashboard opens this
-          report.
-        </p>
+        <p>Horizon bar showing records expiring within 1/3/6/12 months, plus a theatre × month stacked bar showing where the cliff falls.</p>
 
         <h3>Last 12 Months</h3>
-        <p>
-          Shows all training records completed in the last 12 months, filterable
-          by training type and theatre. Clicking the{" "}
-          <strong>Achieved Over Last 12 Months</strong> chart on the dashboard
-          opens this report.
-        </p>
+        <p>Monthly area chart with a dashed prior-year comparison line, plus a top-10 leaderboard of trainings by completion count. Click a month to filter.</p>
 
         <h3>Trained But Not Certified</h3>
+        <p>Gap funnel by product (ILT completed → ILT still active) plus the top theatres/regions/countries with gaps.</p>
+
+        <h3>Coverage / Compliance</h3>
         <p>
-          Identifies students who completed an{" "}
-          <strong>Instructor-Led Training</strong> but have <strong>not</strong>{" "}
-          obtained the associated <strong>Certification</strong>. The
-          association is determined by the certification mapping configured in{" "}
-          <strong>Admin &gt; Training Data</strong>.
+          Active-training-holder share of population per theatre/region/country
+          bucket × product × type. Coverage badges colour-code each row red /
+          amber / green at 40% and 80% thresholds.
         </p>
 
-        <h4>Navigation</h4>
+        <h3>Training Catalogue Health</h3>
         <p>
-          In the sidebar, <strong>Reports</strong> expands to show all five
-          sub-pages. In collapsed sidebar mode, clicking the Reports icon
-          navigates to the Reports landing page.
+          Per-training metrics (total completions, last-12-month completions,
+          active students, expiring within 90 days, uptake %). Highlights
+          zero-uptake titles and mass-expiry-risk titles.
         </p>
 
-        <h4>Export</h4>
-        <p>Each report page has an Export button to download results as CSV, Excel, or PDF.</p>
+        <h3>Program Compliance Trend</h3>
+        <p>
+          Monthly snapshots over the last 12 months for APS and Global Diamond.
+          A line chart per specialisation shows how compliance % moves over
+          time. Filter by program. The same union-of-primary-and-alternatives
+          logic used by the live dashboards is applied at each historical
+          snapshot.
+        </p>
+
+        <h3>Renewal Forecast</h3>
+        <p>
+          Projects upcoming renewals vs lapses for the next 6 and 12 months.
+          Renewal rate is derived from history per training (≥5 expiries),
+          falling back to per product, then global. A renewal counts when a
+          follow-up record lands within ±90 days of the previous expiry.
+        </p>
+      </>
+    ),
+  },
+
+  "reports-coverage": {
+    title: "Coverage / Compliance Report",
+    content: (
+      <>
+        <p>
+          Shows what share of the student population in each theatre, region,
+          or country holds an active training of each product × type combination.
+        </p>
+        <ul>
+          <li>The <strong>Group by</strong> selector chooses the bucketing dimension.</li>
+          <li>Country rolls up to region; region rolls up to theatre. If a student&apos;s region is missing or &quot;unknown&quot;, region-mode falls back to theatre.</li>
+          <li>The coverage badge colour reflects 80% (green), 40% (amber), and below (red) thresholds.</li>
+        </ul>
+      </>
+    ),
+  },
+
+  "reports-catalogue-health": {
+    title: "Training Catalogue Health",
+    content: (
+      <>
+        <p>
+          Per-training catalogue metrics that help you spot dead and at-risk
+          training titles.
+        </p>
+        <ul>
+          <li><strong>Zero Completions</strong> — titles in the catalogue that have never been completed by anyone.</li>
+          <li><strong>Stale</strong> — titles with completions historically but none in the last 12 months.</li>
+          <li><strong>Mass-Expiry Risk</strong> — titles with the highest count of active records expiring in the next 90 days.</li>
+          <li><strong>Uptake %</strong> — distinct active students / total students globally.</li>
+        </ul>
+      </>
+    ),
+  },
+
+  "reports-program-compliance-trend": {
+    title: "Program Compliance Trend",
+    content: (
+      <>
+        <p>
+          Tracks monthly compliance over the last 12 months for the partner
+          programs configured in <strong>Admin &gt; Program Data</strong>
+          (APS and Global Diamond).
+        </p>
+        <ul>
+          <li>For each month-end, the report re-runs the same OR-logic union of primary + alternative trainings used by the live program dashboards, with the active-as-of date set to that month-end.</li>
+          <li>For tractability the trend evaluates at the Global level — country/theatre breakdowns remain on the live dashboards.</li>
+          <li>Filter by program to focus on APS or Global Diamond individually.</li>
+        </ul>
+      </>
+    ),
+  },
+
+  "reports-renewal-forecast": {
+    title: "Renewal Forecast",
+    content: (
+      <>
+        <p>
+          Forecasts how many of the trainings expiring in the next 12 months
+          will be renewed vs lapsed, based on historical renewal behaviour.
+        </p>
+        <ul>
+          <li>A <strong>renewal</strong> is a follow-up TrainingTaken row for the same student + training whose completed date is within ±90 days of the previous expiry.</li>
+          <li><strong>Renewal rate</strong> is computed per training when ≥5 historical expiries exist; otherwise it falls back to per-product, then to a global rate.</li>
+          <li>The at-risk leaderboard ranks trainings by projected lapses over the 12-month horizon.</li>
+        </ul>
       </>
     ),
   },
@@ -465,27 +579,33 @@ const helpSections: Record<string, HelpSection> = {
     title: "Region Data",
     content: (
       <>
-        <p>Manage the mapping between countries and regions.</p>
+        <p>
+          Manage the mapping between countries, regions, and theatres. This is
+          the source of truth for a country&apos;s theatre &mdash; it drives the
+          country dropdown on the student add/edit forms and validates theatres
+          during student imports.
+        </p>
 
         <h3>Features</h3>
         <ul>
           <li>
-            <strong>View</strong> &mdash; Table of all countries and their
-            assigned regions.
+            <strong>View</strong> &mdash; Table of all countries with their
+            assigned region and theatre. Countries with no theatre are flagged
+            so you can fix them.
           </li>
           <li>
-            <strong>Search</strong> &mdash; Filter by country name.
+            <strong>Search / Filter</strong> &mdash; Filter by country name,
+            region, or theatre. The Theatre column has a special
+            &quot;(missing)&quot; filter to find rows that still need a theatre.
           </li>
           <li>
-            <strong>Filter</strong> &mdash; Filter by region.
-          </li>
-          <li>
-            <strong>Add</strong> &mdash; Add a new country/region mapping using
-            the input row at the bottom of the table.
+            <strong>Add</strong> &mdash; Add a new country with its region and
+            (optionally) theatre. A country without a theatre cannot be selected
+            for new students &mdash; set the theatre before assigning students.
           </li>
           <li>
             <strong>Edit</strong> &mdash; Click <strong>Edit</strong> on any row
-            to modify the country or region inline, then{" "}
+            to modify the country, region, or theatre inline, then{" "}
             <strong>Save</strong> or <strong>Cancel</strong>.
           </li>
           <li>
@@ -493,12 +613,14 @@ const helpSections: Record<string, HelpSection> = {
           </li>
           <li>
             <strong>Import</strong> &mdash; Upload a CSV or Excel file with{" "}
-            <code>Country</code> and <code>Region</code> columns. The system
-            auto-maps columns and shows a preview before importing.
+            <code>Country</code>, <code>Region</code>, and (optionally){" "}
+            <code>Theatre</code> columns. The system auto-maps columns and shows
+            a preview before importing. Existing rows are updated when the
+            imported value differs.
           </li>
           <li>
-            <strong>Export</strong> &mdash; Download all region data as CSV,
-            Excel, or PDF.
+            <strong>Export</strong> &mdash; Download all region data (including
+            theatre) as CSV, Excel, or PDF.
           </li>
         </ul>
       </>

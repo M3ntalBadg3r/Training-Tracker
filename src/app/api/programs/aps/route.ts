@@ -2,6 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { requireAuth, handleAuthError } from "@/lib/auth";
 import { getAuthorizedCompanyIds, resolveCompanyFilter } from "@/lib/company-scope";
+import {
+  countriesInRegion,
+  extractTitles,
+  getEmailSetsByTitle,
+  listTheatres,
+  unionAttained,
+} from "@/lib/program-compliance";
 
 const APS_PROGRAM_NAME = "Authorized Professional Services (APS)";
 
@@ -26,14 +33,11 @@ export async function GET(request: NextRequest) {
   const trainingTitleParam = request.nextUrl.searchParams.get("trainingTitle") || "";
   const studentsMode = request.nextUrl.searchParams.get("students") === "true";
 
-  // If students mode, return the list of students for a specific training/country/theatre
-  // trainingTitle can be comma-separated for OR logic (primary + alternatives)
   if (studentsMode && trainingTitleParam) {
     const titles = trainingTitleParam.split(",").map((t) => t.trim()).filter(Boolean);
     return getStudents(titles, level, country, theatre, region, companyFilter);
   }
 
-  // Get all APS program data
   const programData = await prisma.programData.findMany({
     where: { programName: APS_PROGRAM_NAME },
     include: {
@@ -56,20 +60,11 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  // Get distinct countries, regions, and theatres
   const regionData = await prisma.regionData.findMany({ orderBy: { country: "asc" } });
   const countries = regionData.map((r: typeof regionData[number]) => r.country);
   const regionList = [...new Set(regionData.map((r: typeof regionData[number]) => r.region))].filter(Boolean).sort();
-  const studentScopeWhere = companyFilter ? { companyId: { in: companyFilter } } : {};
-  const theatreStudents = await prisma.student.findMany({
-    where: studentScopeWhere,
-    select: { theatre: true },
-    distinct: ["theatre"],
-    orderBy: { theatre: "asc" },
-  });
-  const theatreList = theatreStudents.map((s: typeof theatreStudents[number]) => s.theatre).filter(Boolean);
+  const theatreList = await listTheatres(companyFilter);
 
-  // Group by specialisation
   const specMap = new Map<string, ProgramDataRow[]>();
   for (const pd of programData) {
     const key = pd.specialisation.name;
@@ -79,58 +74,35 @@ export async function GET(request: NextRequest) {
 
   const now = new Date();
 
-  /** Extract unique non-null training titles from program data rows (including alternatives) */
-  function extractTrainingTitles(rows: ProgramDataRow[]): string[] {
-    const titles = new Set<string>();
-    for (const pd of rows) {
-      if (pd.trainingTitle) titles.add(pd.trainingTitle);
-      for (const alt of pd.alternatives) {
-        titles.add(alt.trainingTitle);
-      }
-    }
-    return [...titles];
-  }
-
   if (level === "country" && country) {
     const countryReqs = programData.filter((pd: ProgramDataRow) => pd.level === "Country");
-    const trainingTitles = extractTrainingTitles(countryReqs);
-
-    const emailSets = await getEmailSetsByCountry(trainingTitles, country, now, companyFilter);
+    const titles = extractTitles(countryReqs);
+    const emailSets = await getEmailSetsByTitle(titles, now, { country, companyIds: companyFilter });
     const specialisations = buildSpecialisations(specMap, "Country", emailSets);
-
     return NextResponse.json({ specialisations, countries, regions: regionList, theatres: theatreList });
   }
 
   if (level === "region" && region) {
     const countryReqs = programData.filter((pd: ProgramDataRow) => pd.level === "Country");
-    const trainingTitles = extractTrainingTitles(countryReqs);
-
-    const emailSets = await getEmailSetsByRegion(trainingTitles, region, now, companyFilter);
+    const titles = extractTitles(countryReqs);
+    const regionCountries = await countriesInRegion(region);
+    const emailSets = regionCountries.length > 0
+      ? await getEmailSetsByTitle(titles, now, { countries: regionCountries, companyIds: companyFilter })
+      : new Map<string, Set<string>>();
     const specialisations = buildSpecialisations(specMap, "Country", emailSets);
-
     return NextResponse.json({ specialisations, countries, regions: regionList, theatres: theatreList });
   }
 
   if (level === "theatre" && theatre) {
     const theatreReqs = programData.filter((pd: ProgramDataRow) => pd.level === "Theatre");
-    const trainingTitles = extractTrainingTitles(theatreReqs);
-
-    const emailSets = await getEmailSetsByTheatre(trainingTitles, theatre, now, companyFilter);
+    const titles = extractTitles(theatreReqs);
+    const emailSets = await getEmailSetsByTitle(titles, now, { theatre, companyIds: companyFilter });
     const specialisations = buildSpecialisations(specMap, "Theatre", emailSets);
-
     return NextResponse.json({ specialisations, countries, regions: regionList, theatres: theatreList });
   }
 
   if (level === "global") {
-    // Global report: count compliant theatres per specialisation.
-    // A theatre is compliant if it meets ALL theatre-level requirements for the specialisation.
-
-    const allTheatres = await prisma.student.findMany({
-      where: studentScopeWhere,
-      select: { theatre: true },
-      distinct: ["theatre"],
-    });
-    const distinctTheatres = allTheatres.map((s: typeof allTheatres[number]) => s.theatre);
+    const distinctTheatres = await listTheatres(companyFilter);
 
     const globalSpecialisations = [];
 
@@ -140,24 +112,16 @@ export async function GET(request: NextRequest) {
 
       if (globalReqs.length === 0) continue;
 
-      // Count theatres that meet all theatre-level requirements
       let compliantTheatreCount = 0;
 
       if (theatreReqs.length > 0) {
-        const theatreTrainingTitles = extractTrainingTitles(theatreReqs);
+        const titles = extractTitles(theatreReqs);
 
         for (const t of distinctTheatres) {
-          const emailSets = await getEmailSetsByTheatre(theatreTrainingTitles, t, now, companyFilter);
-          // Check each requirement individually (union primary + alternatives)
+          const emailSets = await getEmailSetsByTitle(titles, now, { theatre: t, companyIds: companyFilter });
           const allMet = theatreReqs.every((req: ProgramDataRow) => {
             if (!req.trainingTitle) return false;
-            const allTitles = [req.trainingTitle, ...req.alternatives.map((a) => a.trainingTitle)];
-            const union = new Set<string>();
-            for (const title of allTitles) {
-              const set = emailSets.get(title);
-              if (set) for (const email of set) union.add(email);
-            }
-            return union.size >= req.quantityRequired;
+            return unionAttained(req, emailSets) >= req.quantityRequired;
           });
           if (allMet) compliantTheatreCount++;
         }
@@ -166,7 +130,6 @@ export async function GET(request: NextRequest) {
       const specReqs = globalReqs.map((req: ProgramDataRow) => ({
         trainingType: req.trainingType ?? null,
         trainingTitle: req.trainingTitle ?? null,
-        // Global requirements have no associated training; show a descriptive label
         trainingFullTitle: req.trainingData?.fullTitle ?? "Theatre Compliance",
         quantityRequired: req.quantityRequired,
         attained: compliantTheatreCount,
@@ -188,96 +151,8 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  // Default: return structure for initial load
   const specialisations = buildSpecialisations(specMap, "Country", new Map());
-
   return NextResponse.json({ specialisations, countries, regions: regionList, theatres: theatreList });
-}
-
-async function getEmailSetsByRegion(
-  trainingTitles: string[],
-  regionName: string,
-  now: Date,
-  companyFilter: number[] | null
-): Promise<Map<string, Set<string>>> {
-  if (trainingTitles.length === 0) return new Map();
-
-  // Find all countries in this region
-  const regionCountries = await prisma.regionData.findMany({
-    where: { region: regionName },
-    select: { country: true },
-  });
-  const countryList = regionCountries.map((r: typeof regionCountries[number]) => r.country);
-  if (countryList.length === 0) return new Map();
-
-  const results = await prisma.trainingTaken.findMany({
-    where: {
-      trainingTitle: { in: trainingTitles },
-      expiryDate: { gt: now },
-      student: {
-        country: { in: countryList },
-        ...(companyFilter ? { companyId: { in: companyFilter } } : {}),
-      },
-    },
-    select: { trainingTitle: true, email: true },
-  });
-
-  const map = new Map<string, Set<string>>();
-  for (const r of results) {
-    if (!map.has(r.trainingTitle)) map.set(r.trainingTitle, new Set());
-    map.get(r.trainingTitle)!.add(r.email);
-  }
-  return map;
-}
-
-async function getEmailSetsByCountry(
-  trainingTitles: string[],
-  country: string,
-  now: Date,
-  companyFilter: number[] | null
-): Promise<Map<string, Set<string>>> {
-  if (trainingTitles.length === 0) return new Map();
-
-  const results = await prisma.trainingTaken.findMany({
-    where: {
-      trainingTitle: { in: trainingTitles },
-      expiryDate: { gt: now },
-      student: { country, ...(companyFilter ? { companyId: { in: companyFilter } } : {}) },
-    },
-    select: { trainingTitle: true, email: true },
-  });
-
-  const map = new Map<string, Set<string>>();
-  for (const r of results) {
-    if (!map.has(r.trainingTitle)) map.set(r.trainingTitle, new Set());
-    map.get(r.trainingTitle)!.add(r.email);
-  }
-  return map;
-}
-
-async function getEmailSetsByTheatre(
-  trainingTitles: string[],
-  theatre: string,
-  now: Date,
-  companyFilter: number[] | null
-): Promise<Map<string, Set<string>>> {
-  if (trainingTitles.length === 0) return new Map();
-
-  const results = await prisma.trainingTaken.findMany({
-    where: {
-      trainingTitle: { in: trainingTitles },
-      expiryDate: { gt: now },
-      student: { theatre, ...(companyFilter ? { companyId: { in: companyFilter } } : {}) },
-    },
-    select: { trainingTitle: true, email: true },
-  });
-
-  const map = new Map<string, Set<string>>();
-  for (const r of results) {
-    if (!map.has(r.trainingTitle)) map.set(r.trainingTitle, new Set());
-    map.get(r.trainingTitle)!.add(r.email);
-  }
-  return map;
 }
 
 function buildSpecialisations(
@@ -303,28 +178,18 @@ function buildSpecialisations(
 
     result.push({
       name,
-      requirements: levelReqs.map((req) => {
-        // Union unique students across primary + alternatives
-        const allTitles = [req.trainingTitle, ...req.alternatives.map((a) => a.trainingTitle)].filter(Boolean) as string[];
-        const union = new Set<string>();
-        for (const title of allTitles) {
-          const set = emailSets.get(title);
-          if (set) for (const email of set) union.add(email);
-        }
-
-        return {
-          trainingType: req.trainingType ?? null,
-          trainingTitle: req.trainingTitle ?? null,
-          trainingFullTitle: req.trainingData?.fullTitle ?? "—",
-          quantityRequired: req.quantityRequired,
-          attained: req.trainingTitle ? union.size : 0,
-          alternatives: req.alternatives.map((a) => ({
-            trainingType: a.trainingType,
-            trainingTitle: a.trainingTitle,
-            trainingFullTitle: a.trainingData?.fullTitle ?? "—",
-          })),
-        };
-      }),
+      requirements: levelReqs.map((req) => ({
+        trainingType: req.trainingType ?? null,
+        trainingTitle: req.trainingTitle ?? null,
+        trainingFullTitle: req.trainingData?.fullTitle ?? "—",
+        quantityRequired: req.quantityRequired,
+        attained: req.trainingTitle ? unionAttained(req, emailSets) : 0,
+        alternatives: req.alternatives.map((a) => ({
+          trainingType: a.trainingType,
+          trainingTitle: a.trainingTitle,
+          trainingFullTitle: a.trainingData?.fullTitle ?? "—",
+        })),
+      })),
     });
   }
   return result;
@@ -340,29 +205,25 @@ async function getStudents(
 ) {
   const now = new Date();
 
-  const studentScope: Record<string, unknown> = {};
-  if (companyFilter) studentScope.companyId = { in: companyFilter };
-
+  const studentFilter: Record<string, unknown> = {};
   if (level === "country" && country) {
-    studentScope.country = country;
+    studentFilter.country = country;
   } else if (level === "region" && region) {
-    const regionCountries = await prisma.regionData.findMany({
-      where: { region },
-      select: { country: true },
-    });
-    studentScope.country = { in: regionCountries.map((r: typeof regionCountries[number]) => r.country) };
+    const regionCountries = await countriesInRegion(region);
+    studentFilter.country = { in: regionCountries };
   } else if (level === "theatre" && theatre) {
-    studentScope.theatre = theatre;
+    studentFilter.theatre = theatre;
+  }
+  if (companyFilter && companyFilter.length > 0) {
+    studentFilter.companyId = { in: companyFilter };
   }
 
-  const whereClause: Record<string, unknown> = {
-    trainingTitle: { in: trainingTitles },
-    expiryDate: { gt: now },
-    ...(Object.keys(studentScope).length > 0 ? { student: studentScope } : {}),
-  };
-
   const records = await prisma.trainingTaken.findMany({
-    where: whereClause,
+    where: {
+      trainingTitle: { in: trainingTitles },
+      expiryDate: { gt: now },
+      ...(Object.keys(studentFilter).length > 0 ? { student: studentFilter } : {}),
+    },
     include: {
       student: { select: { fullName: true, email: true, country: true, theatre: true } },
       trainingData: { select: { fullTitle: true } },
@@ -370,7 +231,6 @@ async function getStudents(
     orderBy: { student: { fullName: "asc" } },
   });
 
-  // Deduplicate by email (take the latest completion)
   const emailMap = new Map<string, typeof records[0]>();
   for (const r of records) {
     const existing = emailMap.get(r.email);

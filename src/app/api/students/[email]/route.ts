@@ -87,10 +87,11 @@ export async function PUT(
   const decodedEmail = decodeURIComponent(email);
   const body = await request.json();
 
-  const { fullName, theatre, country, newEmail, companyId } = body;
+  // Theatre is intentionally not accepted from the client — it's derived
+  // from the (possibly new) country's RegionData entry whenever country changes.
+  const { fullName, country, newEmail, companyId } = body;
 
   if ((fullName && (typeof fullName !== "string" || fullName.length > 255)) ||
-      (theatre && (typeof theatre !== "string" || theatre.length > 100)) ||
       (country && (typeof country !== "string" || country.length > 100))) {
     return NextResponse.json({ error: "Invalid field value" }, { status: 400 });
   }
@@ -120,6 +121,24 @@ export async function PUT(
     nextCompanyId = cid;
   }
 
+  // If the country changed, look up the RegionData entry and derive the new
+  // theatre. Reject the change when the new country isn't configured. When
+  // country didn't change, leave the existing theatre alone (so post-migration
+  // students with mismatched theatres aren't silently mutated).
+  let nextTheatre: string | undefined;
+  if (country && country !== existing.country) {
+    const rd = await prisma.regionData.findUnique({ where: { country } });
+    if (!rd || !rd.theatre) {
+      return NextResponse.json(
+        {
+          error: `Country "${country}" must exist in Region Data with a theatre assigned. Ask a SuperAdmin to set it up.`,
+        },
+        { status: 400 }
+      );
+    }
+    nextTheatre = rd.theatre;
+  }
+
   if (newEmail && newEmail !== decodedEmail) {
     await prisma.$transaction(async (tx: PrismaTransactionClient) => {
       await tx.trainingTaken.updateMany({
@@ -132,7 +151,7 @@ export async function PUT(
         data: {
           email: newEmail,
           fullName: fullName || existing.fullName,
-          theatre: theatre || existing.theatre,
+          theatre: nextTheatre ?? existing.theatre,
           country: country || existing.country,
           companyId: nextCompanyId ?? existing.companyId,
         },
@@ -146,8 +165,8 @@ export async function PUT(
     where: { email: decodedEmail },
     data: {
       ...(fullName && { fullName }),
-      ...(theatre && { theatre }),
       ...(country && { country }),
+      ...(nextTheatre !== undefined && { theatre: nextTheatre }),
       ...(nextCompanyId !== undefined && { companyId: nextCompanyId }),
     },
   });

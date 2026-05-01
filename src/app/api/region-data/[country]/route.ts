@@ -17,6 +17,15 @@ export async function PUT(
 
   const newCountry = body.country?.trim();
   const newRegion = body.region?.trim();
+  // Theatre handling: only update when the field is present in the body. An
+  // explicit empty string means "clear it" (store NULL). Omitting the key
+  // leaves the existing value untouched.
+  const theatreProvided = Object.prototype.hasOwnProperty.call(body, "theatre");
+  const newTheatre = theatreProvided
+    ? (typeof body.theatre === "string" && body.theatre.trim()
+        ? body.theatre.trim()
+        : null)
+    : undefined;
 
   if (!newRegion) {
     return NextResponse.json({ error: "Region is required" }, { status: 400 });
@@ -35,6 +44,12 @@ export async function PUT(
       );
     }
 
+    // Preserve existing theatre when the body didn't include one.
+    const oldRow = await prisma.regionData.findUnique({
+      where: { country: decodedCountry },
+    });
+    const theatreToStore = theatreProvided ? newTheatre : oldRow?.theatre ?? null;
+
     // Use a transaction: update students to new country, delete old, create new
     const regionData = await prisma.$transaction(async (tx: PrismaTransactionClient) => {
       await tx.student.updateMany({
@@ -43,7 +58,7 @@ export async function PUT(
       });
       await tx.regionData.delete({ where: { country: decodedCountry } });
       return tx.regionData.create({
-        data: { country: newCountry, region: newRegion },
+        data: { country: newCountry, region: newRegion, theatre: theatreToStore },
       });
     });
 
@@ -52,7 +67,10 @@ export async function PUT(
 
   const regionData = await prisma.regionData.update({
     where: { country: decodedCountry },
-    data: { region: newRegion },
+    data: {
+      region: newRegion,
+      ...(theatreProvided ? { theatre: newTheatre } : {}),
+    },
   });
 
   return NextResponse.json(regionData);

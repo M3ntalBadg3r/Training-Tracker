@@ -99,6 +99,7 @@ model TrainingData {
 model RegionData {
   country  String    @id
   region   String
+  theatre  String?
   students Student[]
 
   @@map("region_data")

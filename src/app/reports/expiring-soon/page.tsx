@@ -4,14 +4,29 @@ import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import PageHeader from "@/components/layout/PageHeader";
-import { Search, Download, ArrowLeft } from "lucide-react";
+import KpiStrip from "@/components/ui/KpiStrip";
+import GroupedRows from "@/components/data-table/GroupedRows";
+import { useChartTheme, tooltipStyle } from "@/lib/chart-theme";
+import { groupRows, GroupByMode, resolveBucket } from "@/lib/group-by";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
+import { Search, Download, ArrowLeft, Clock, AlertTriangle, AlertCircle, CalendarClock } from "lucide-react";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from "recharts";
 
 interface TrainingRecordRow {
   fullName: string;
   email: string;
   theatre: string;
+  region: string;
   country: string;
   trainingTitle: string;
   trainingType: string;
@@ -22,19 +37,13 @@ interface TrainingRecordRow {
   active: boolean;
 }
 
-function ExportMenu({
-  data,
-  columns,
-  filename,
-}: {
-  data: Record<string, unknown>[];
-  columns: { key: string; header: string }[];
-  filename: string;
-}) {
+const TYPES = ["Certification", "Accreditation", "Instructor-Led Training"] as const;
+
+function ExportMenu({ data, columns, filename }: { data: Record<string, unknown>[]; columns: { key: string; header: string }[]; filename: string }) {
   const [show, setShow] = useState(false);
   return (
     <div className="relative">
-      <button onClick={() => setShow((prev) => !prev)} className="flex items-center gap-2 px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300">
+      <button onClick={() => setShow((p) => !p)} className="flex items-center gap-2 px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300">
         <Download size={16} /> Export
       </button>
       {show && (
@@ -48,14 +57,39 @@ function ExportMenu({
   );
 }
 
+const HORIZONS: { key: string; label: string; months: number }[] = [
+  { key: "0-1", label: "≤ 1 month", months: 1 },
+  { key: "1-3", label: "1–3 months", months: 3 },
+  { key: "3-6", label: "3–6 months", months: 6 },
+  { key: "6-12", label: "6–12 months", months: 12 },
+];
+
+function monthsBetween(now: Date, future: Date): number {
+  return (future.getFullYear() - now.getFullYear()) * 12 + (future.getMonth() - now.getMonth());
+}
+
+function bucketHorizon(expiry: Date, now: Date): string | null {
+  if (expiry <= now) return null;
+  const m = monthsBetween(now, expiry);
+  if (m <= 1) return "0-1";
+  if (m <= 3) return "1-3";
+  if (m <= 6) return "3-6";
+  if (m <= 12) return "6-12";
+  return null;
+}
+
 export default function ExpiringSoonPage() {
   const router = useRouter();
+  const chart = useChartTheme();
   const [trainingRecords, setTrainingRecords] = useState<TrainingRecordRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [expSearch, setExpSearch] = useState("");
-  const [expWindow, setExpWindow] = useState("6");
-  const [expType, setExpType] = useState("");
-  const [expTheatre, setExpTheatre] = useState("");
+
+  const [search, setSearch] = useState("");
+  const [filterWindow, setFilterWindow] = useState("12");
+  const [filterType, setFilterType] = useState("");
+  const [filterTheatre, setFilterTheatre] = useState("");
+  const [filterHorizon, setFilterHorizon] = useState<string | null>(null);
+  const [groupBy, setGroupBy] = useState<GroupByMode | null>("theatre");
 
   const now = useMemo(() => new Date(), []);
 
@@ -66,32 +100,101 @@ export default function ExpiringSoonPage() {
     setLoading(true);
     fetch(withCompany("/api/reports/training-records", companyScope.selected))
       .then((r) => r.json())
-      .then((data) => { setTrainingRecords(data); setLoading(false); })
+      .then((d) => { setTrainingRecords(d); setLoading(false); })
       .catch(() => setLoading(false));
   }, [companyScope.loading, companyScope.selected]);
 
-  const trTypes = useMemo(() => [...new Set(trainingRecords.map((r) => r.trainingType))].filter(Boolean).sort(), [trainingRecords]);
-  const trTheatres = useMemo(() => [...new Set(trainingRecords.map((r) => r.theatre))].filter(Boolean).sort(), [trainingRecords]);
+  const types = useMemo(() => [...new Set(trainingRecords.map((r) => r.trainingType))].filter(Boolean).sort(), [trainingRecords]);
+  const theatres = useMemo(() => [...new Set(trainingRecords.map((r) => r.theatre))].filter(Boolean).sort(), [trainingRecords]);
 
   const filtered = useMemo(() => {
-    const q = expSearch.toLowerCase();
-    const windowMonths = parseInt(expWindow);
+    const q = search.toLowerCase();
+    const months = parseInt(filterWindow);
     const cutoff = new Date(now);
-    cutoff.setMonth(cutoff.getMonth() + windowMonths);
+    cutoff.setMonth(cutoff.getMonth() + months);
     return trainingRecords.filter((r) => {
       const expiry = new Date(r.expiryDate);
       if (expiry <= now || expiry > cutoff) return false;
-      if (expSearch && !r.fullName.toLowerCase().includes(q) && !r.email.toLowerCase().includes(q)) return false;
-      if (expType && r.trainingType !== expType) return false;
-      if (expTheatre && r.theatre !== expTheatre) return false;
+      if (search && !r.fullName.toLowerCase().includes(q) && !r.email.toLowerCase().includes(q)) return false;
+      if (filterType && r.trainingType !== filterType) return false;
+      if (filterTheatre && r.theatre !== filterTheatre) return false;
+      if (filterHorizon) {
+        const b = bucketHorizon(expiry, now);
+        if (b !== filterHorizon) return false;
+      }
       return true;
     });
-  }, [trainingRecords, expSearch, expWindow, expType, expTheatre, now]);
+  }, [trainingRecords, search, filterWindow, filterType, filterTheatre, filterHorizon, now]);
+
+  const horizonSeries = useMemo(() => {
+    const counts: Record<string, { name: string; Certification: number; Accreditation: number; "Instructor-Led Training": number }> = {};
+    for (const h of HORIZONS) {
+      counts[h.key] = { name: h.label, Certification: 0, Accreditation: 0, "Instructor-Led Training": 0 };
+    }
+    for (const r of filtered) {
+      const expiry = new Date(r.expiryDate);
+      const b = bucketHorizon(expiry, now);
+      if (!b) continue;
+      const key = r.trainingType as (typeof TYPES)[number];
+      if (TYPES.includes(key)) counts[b][key]++;
+    }
+    return HORIZONS.map((h) => ({ ...counts[h.key], horizonKey: h.key }));
+  }, [filtered, now]);
+
+  // Theatre × month heatmap as a stacked bar (months on X axis, one bar per theatre series)
+  const heatmapMonths = useMemo(() => {
+    const months: { key: string; label: string }[] = [];
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    for (let i = 0; i < 12; i++) {
+      const d = new Date(start);
+      d.setMonth(start.getMonth() + i);
+      months.push({
+        key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
+        label: d.toLocaleDateString("en-GB", { month: "short", year: "2-digit" }),
+      });
+    }
+    return months;
+  }, [now]);
+
+  const heatmapTheatres = useMemo(() => [...new Set(filtered.map((r) => r.theatre))].filter(Boolean).sort(), [filtered]);
+
+  const heatmapData = useMemo(() => {
+    const rows = heatmapMonths.map((m) => ({ month: m.label } as Record<string, string | number>));
+    for (const t of heatmapTheatres) rows.forEach((r) => (r[t] = 0));
+    for (const r of filtered) {
+      const expiry = new Date(r.expiryDate);
+      const key = `${expiry.getFullYear()}-${String(expiry.getMonth() + 1).padStart(2, "0")}`;
+      const idx = heatmapMonths.findIndex((m) => m.key === key);
+      if (idx === -1) continue;
+      const target = rows[idx];
+      target[r.theatre] = ((target[r.theatre] as number) || 0) + 1;
+    }
+    return rows;
+  }, [filtered, heatmapMonths, heatmapTheatres]);
+
+  const kpis = useMemo(
+    () => ({
+      total: filtered.length,
+      m1: filtered.filter((r) => bucketHorizon(new Date(r.expiryDate), now) === "0-1").length,
+      m3: filtered.filter((r) => {
+        const b = bucketHorizon(new Date(r.expiryDate), now);
+        return b === "0-1" || b === "1-3";
+      }).length,
+      m6: filtered.filter((r) => {
+        const b = bucketHorizon(new Date(r.expiryDate), now);
+        return b === "0-1" || b === "1-3" || b === "3-6";
+      }).length,
+    }),
+    [filtered, now]
+  );
+
+  const grouped = useMemo(() => groupRows(filtered, groupBy ?? "theatre"), [filtered, groupBy]);
 
   const exportColumns = [
     { key: "fullName", header: "Full Name" },
     { key: "email", header: "Email" },
     { key: "theatre", header: "Theatre" },
+    { key: "region", header: "Region" },
     { key: "country", header: "Country" },
     { key: "trainingTitle", header: "Training" },
     { key: "trainingType", header: "Training Type" },
@@ -101,7 +204,6 @@ export default function ExpiringSoonPage() {
     { key: "expiryDate", header: "Expiry Date" },
     { key: "active", header: "Active" },
   ];
-
   const exportRows = filtered.map((r) => ({
     ...r,
     completedDate: new Date(r.completedDate).toLocaleDateString(),
@@ -113,6 +215,9 @@ export default function ExpiringSoonPage() {
     return <div className="flex items-center justify-center h-64"><div className="text-gray-500">Loading report...</div></div>;
   }
 
+  // Avoid unused import warning when grouping by something other than theatre
+  void resolveBucket;
+
   return (
     <div>
       <div className="flex items-center gap-2 mb-2">
@@ -122,9 +227,57 @@ export default function ExpiringSoonPage() {
       </div>
       <PageHeader title="Expiring Soon" helpSlug="reports" />
 
+      <KpiStrip
+        cards={[
+          { label: "In Window", value: kpis.total, icon: CalendarClock, tone: "blue" },
+          { label: "≤ 1 month", value: kpis.m1, icon: AlertCircle, tone: "red" },
+          { label: "≤ 3 months", value: kpis.m3, icon: AlertTriangle, tone: "amber" },
+          { label: "≤ 6 months", value: kpis.m6, icon: Clock, tone: "indigo" },
+        ]}
+      />
+
+      <section className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        <div className="bg-white rounded-lg border border-gray-200 p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-base font-semibold text-gray-900">Expiry Horizon</h3>
+            {filterHorizon && (
+              <button onClick={() => setFilterHorizon(null)} className="text-xs text-blue-600 hover:underline">Clear horizon filter</button>
+            )}
+          </div>
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={horizonSeries}>
+              <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
+              <XAxis dataKey="name" tick={{ fontSize: 12, fill: chart.axis }} stroke={chart.axis} />
+              <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: chart.axis }} stroke={chart.axis} />
+              <Tooltip contentStyle={tooltipStyle(chart)} />
+              <Legend />
+              <Bar dataKey="Certification" stackId="a" fill={chart.typeColor("Certification")} cursor="pointer" onClick={((d: unknown) => { const k = (d as { horizonKey?: string }).horizonKey; if (k) setFilterHorizon(k); }) as never} />
+              <Bar dataKey="Accreditation" stackId="a" fill={chart.typeColor("Accreditation")} cursor="pointer" onClick={((d: unknown) => { const k = (d as { horizonKey?: string }).horizonKey; if (k) setFilterHorizon(k); }) as never} />
+              <Bar dataKey="Instructor-Led Training" stackId="a" fill={chart.typeColor("Instructor-Led Training")} cursor="pointer" onClick={((d: unknown) => { const k = (d as { horizonKey?: string }).horizonKey; if (k) setFilterHorizon(k); }) as never} />
+            </BarChart>
+          </ResponsiveContainer>
+          <p className="text-xs text-gray-400 mt-2">Click a band to filter the table to that horizon</p>
+        </div>
+        <div className="bg-white rounded-lg border border-gray-200 p-5">
+          <h3 className="text-base font-semibold text-gray-900 mb-4">Expiries by Theatre × Month</h3>
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={heatmapData}>
+              <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
+              <XAxis dataKey="month" tick={{ fontSize: 11, fill: chart.axis }} stroke={chart.axis} angle={-35} textAnchor="end" height={50} />
+              <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: chart.axis }} stroke={chart.axis} />
+              <Tooltip contentStyle={tooltipStyle(chart)} />
+              <Legend />
+              {heatmapTheatres.map((t, i) => (
+                <Bar key={t} dataKey={t} stackId="a" fill={chart.series(i)} />
+              ))}
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </section>
+
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-200">
-          <p className="text-sm text-gray-500">Training records expiring within the next 1, 3, or 6 months</p>
+        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-wrap gap-2">
+          <p className="text-sm text-gray-500">Training records expiring within the next {filterWindow} months</p>
           <span className="text-sm font-medium text-gray-500">{filtered.length} result{filtered.length !== 1 ? "s" : ""}</span>
         </div>
         <div className="px-6 py-4">
@@ -132,23 +285,30 @@ export default function ExpiringSoonPage() {
             <div className="flex flex-col sm:flex-row gap-3">
               <div className="relative flex-1">
                 <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                <input type="text" placeholder="Search by name or email..." value={expSearch} onChange={(e) => setExpSearch(e.target.value)} className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg" />
+                <input type="text" placeholder="Search by name or email..." value={search} onChange={(e) => setSearch(e.target.value)} className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg" />
               </div>
               <ExportMenu data={exportRows as never} columns={exportColumns} filename="expiring-soon" />
             </div>
             <div className="flex flex-wrap gap-3">
-              <select value={expWindow} onChange={(e) => setExpWindow(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
+              <select value={filterWindow} onChange={(e) => setFilterWindow(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
                 <option value="1">Within 1 Month</option>
                 <option value="3">Within 3 Months</option>
                 <option value="6">Within 6 Months</option>
+                <option value="12">Within 12 Months</option>
               </select>
-              <select value={expType} onChange={(e) => setExpType(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
+              <select value={filterType} onChange={(e) => setFilterType(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
                 <option value="">All Types</option>
-                {trTypes.map((t) => <option key={t} value={t}>{t}</option>)}
+                {types.map((t) => <option key={t} value={t}>{t}</option>)}
               </select>
-              <select value={expTheatre} onChange={(e) => setExpTheatre(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
+              <select value={filterTheatre} onChange={(e) => setFilterTheatre(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
                 <option value="">All Theatres</option>
-                {trTheatres.map((t) => <option key={t} value={t}>{t}</option>)}
+                {theatres.map((t) => <option key={t} value={t}>{t}</option>)}
+              </select>
+              <select value={groupBy ?? ""} onChange={(e) => setGroupBy((e.target.value as GroupByMode) || null)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                <option value="">No Grouping</option>
+                <option value="theatre">Group by Theatre</option>
+                <option value="region">Group by Region</option>
+                <option value="country">Group by Country</option>
               </select>
             </div>
           </div>
@@ -159,6 +319,7 @@ export default function ExpiringSoonPage() {
                   <th className="px-4 py-3 text-left font-semibold">Full Name</th>
                   <th className="px-4 py-3 text-left font-semibold">Email</th>
                   <th className="px-4 py-3 text-left font-semibold">Theatre</th>
+                  <th className="px-4 py-3 text-left font-semibold">Region</th>
                   <th className="px-4 py-3 text-left font-semibold">Country</th>
                   <th className="px-4 py-3 text-left font-semibold">Training</th>
                   <th className="px-4 py-3 text-left font-semibold">Type</th>
@@ -170,12 +331,17 @@ export default function ExpiringSoonPage() {
                   <th className="px-4 py-3 text-left font-semibold"></th>
                 </tr>
               </thead>
-              <tbody>
-                {filtered.map((row, idx) => (
+              <GroupedRows
+                groups={grouped}
+                groupBy={groupBy}
+                colSpanTotal={13}
+                emptyMessage="No records expiring within the selected window."
+                renderRow={(row, idx) => (
                   <tr key={`${row.email}-${row.trainingTitle}-${idx}`} className="border-b hover:bg-gray-50">
                     <td className="px-4 py-3">{row.fullName}</td>
                     <td className="px-4 py-3">{row.email}</td>
                     <td className="px-4 py-3">{row.theatre || "-"}</td>
+                    <td className="px-4 py-3">{row.region || "-"}</td>
                     <td className="px-4 py-3">{row.country || "-"}</td>
                     <td className="px-4 py-3">{row.trainingTitle}</td>
                     <td className="px-4 py-3">
@@ -196,16 +362,15 @@ export default function ExpiringSoonPage() {
                       <button onClick={() => router.push(`/students/${encodeURIComponent(row.email)}`)} className="px-3 py-1 text-xs font-medium text-blue-600 bg-blue-50 rounded-md hover:bg-blue-100 transition-colors">View</button>
                     </td>
                   </tr>
-                ))}
-                {filtered.length === 0 && (
-                  <tr><td colSpan={12} className="px-4 py-8 text-center text-gray-500">No records expiring within the selected window.</td></tr>
                 )}
-              </tbody>
+                renderSubtotal={(g) => (
+                  <td colSpan={13} className="px-4 py-2">
+                    Subtotal — {g.rows.length} expiring record{g.rows.length !== 1 ? "s" : ""}
+                  </td>
+                )}
+              />
             </table>
           </div>
-          {filtered.length > 0 && (
-            <div className="mt-3 text-sm text-gray-500">Showing {filtered.length} records expiring within {expWindow} month{expWindow !== "1" ? "s" : ""}</div>
-          )}
         </div>
       </div>
     </div>

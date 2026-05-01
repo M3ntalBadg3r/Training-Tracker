@@ -73,6 +73,10 @@ export async function POST(request: NextRequest) {
   const companyCache = new Map<string, { id: number; name: string }>();
   if (defaultCompany) companyCache.set(defaultCompany.name.toLowerCase(), defaultCompany);
 
+  // Cache RegionData lookups by country (case-sensitive, mirroring the column).
+  // Keeps the per-row lookup cheap and lets us record auto-created entries once.
+  const regionCache = new Map<string, { country: string; region: string; theatre: string | null }>();
+
   const summary = {
     studentsCreated: 0,
     studentsUpdated: 0,
@@ -178,6 +182,53 @@ export async function POST(request: NextRequest) {
     }
 
     try {
+      // ─── Resolve theatre via RegionData (source of truth) ──────────────────
+      // - Country known with theatre set: warn if the row's theatre differs,
+      //   then use the RegionData theatre.
+      // - Country known with no theatre: keep row's theatre, warn so the
+      //   SuperAdmin populates RegionData.
+      // - Country unknown: auto-create RegionData (region "Unknown"), keep
+      //   row's theatre, warn.
+      const csvTheatre = (row.theatre || "").trim();
+      let resolvedTheatre = csvTheatre;
+      if (row.country) {
+        let rd = regionCache.get(row.country);
+        if (!rd) {
+          const found = await prisma.regionData.findUnique({ where: { country: row.country } });
+          if (found) {
+            rd = { country: found.country, region: found.region, theatre: found.theatre };
+          } else {
+            const created = await prisma.regionData.create({
+              data: { country: row.country, region: "Unknown", theatre: csvTheatre || null },
+            });
+            rd = { country: created.country, region: created.region, theatre: created.theatre };
+            summary.errors.push(
+              `Row ${rowNum}: Country "${row.country}" was not in Region Data; created with region "Unknown"${
+                csvTheatre ? ` and theatre "${csvTheatre}"` : " and no theatre"
+              }. Ask a SuperAdmin to verify.`
+            );
+          }
+          regionCache.set(row.country, rd);
+        }
+        if (rd.theatre) {
+          if (csvTheatre && csvTheatre !== rd.theatre) {
+            summary.errors.push(
+              `Row ${rowNum}: Theatre "${csvTheatre}" for country "${row.country}" overridden to "${rd.theatre}" (per Region Data).`
+            );
+          }
+          resolvedTheatre = rd.theatre;
+        } else if (csvTheatre) {
+          // RegionData exists but no theatre yet — surface as a warning the
+          // first time we see this country.
+          // (Multiple rows for the same country will only warn once because of
+          // the regionCache; we add the warning lazily here on every row to
+          // keep the per-row context clear.)
+          summary.errors.push(
+            `Row ${rowNum}: Country "${row.country}" has no theatre in Region Data; using imported theatre "${csvTheatre}".`
+          );
+        }
+      }
+
       // Upsert student
       const existingStudent = await prisma.student.findUnique({
         where: { email: row.email },
@@ -204,22 +255,11 @@ export async function POST(request: NextRequest) {
         studentCompanyId = existingStudent.companyId;
         summary.studentsUpdated++;
       } else {
-        if (row.country) {
-          const regionExists = await prisma.regionData.findUnique({
-            where: { country: row.country },
-          });
-          if (!regionExists) {
-            await prisma.regionData.create({
-              data: { country: row.country, region: "Unknown" },
-            });
-          }
-        }
-
         await prisma.student.create({
           data: {
             email: row.email,
             fullName: row.fullName,
-            theatre: row.theatre,
+            theatre: resolvedTheatre,
             country: row.country,
             companyId: studentCompanyId,
           },
