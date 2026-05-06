@@ -46,10 +46,10 @@ export async function POST(request: NextRequest) {
   const passwordHash = await hashPassword(password);
 
   // The first user is always a SuperAdmin so they can manage companies, users,
-  // and the rest of the system.
+  // and the rest of the system. Username is lowercased for case-insensitive login.
   const user = await prisma.user.create({
     data: {
-      username,
+      username: String(username).toLowerCase(),
       displayName,
       passwordHash,
       role: "SuperAdmin",

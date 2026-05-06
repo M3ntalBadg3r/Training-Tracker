@@ -20,6 +20,9 @@ export async function GET(request: NextRequest) {
       displayName: true,
       role: true,
       mfaEnabled: true,
+      mustEnableMfa: true,
+      lastLoginAt: true,
+      lastLoginIp: true,
       createdAt: true,
       companies: { select: { companyId: true, company: { select: { id: true, name: true } } } },
     },
@@ -32,6 +35,9 @@ export async function GET(request: NextRequest) {
       displayName: u.displayName,
       role: u.role,
       mfaEnabled: u.mfaEnabled,
+      mustEnableMfa: u.mustEnableMfa,
+      lastLoginAt: u.lastLoginAt,
+      lastLoginIp: u.lastLoginIp,
       createdAt: u.createdAt,
       companies: u.companies.map((uc) => ({ id: uc.company.id, name: uc.company.name })),
     }))
@@ -47,12 +53,13 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json();
-  const { username, displayName, password, role, companyIds } = body as {
+  const { username, displayName, password, role, companyIds, mustEnableMfa } = body as {
     username?: string;
     displayName?: string;
     password?: string;
     role?: string;
     companyIds?: number[];
+    mustEnableMfa?: boolean;
   };
 
   if (!username || !displayName || !password) {
@@ -70,7 +77,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Role must be SuperAdmin, Admin, or User" }, { status: 400 });
   }
 
-  const existing = await prisma.user.findUnique({ where: { username } });
+  // Lowercase the username so login is case-insensitive (matches login route).
+  const normalizedUsername = username.toLowerCase();
+  const existing = await prisma.user.findUnique({ where: { username: normalizedUsername } });
   if (existing) return NextResponse.json({ error: "Username already exists" }, { status: 409 });
 
   const ids = Array.isArray(companyIds) ? companyIds.filter((n) => Number.isInteger(n)) : [];
@@ -91,10 +100,11 @@ export async function POST(request: NextRequest) {
   const passwordHash = await hashPassword(password);
   const user = await prisma.user.create({
     data: {
-      username,
+      username: normalizedUsername,
       displayName,
       passwordHash,
       role: effectiveRole as "SuperAdmin" | "Admin" | "User",
+      mustEnableMfa: mustEnableMfa === true,
       companies: { create: linkIds.map((cid) => ({ companyId: cid })) },
     },
     select: {
@@ -103,6 +113,9 @@ export async function POST(request: NextRequest) {
       displayName: true,
       role: true,
       mfaEnabled: true,
+      mustEnableMfa: true,
+      lastLoginAt: true,
+      lastLoginIp: true,
       createdAt: true,
       companies: { select: { company: { select: { id: true, name: true } } } },
     },

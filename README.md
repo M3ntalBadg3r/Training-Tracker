@@ -164,7 +164,7 @@ Training Tracker is multi-company: every student belongs to exactly one company,
 
 ### Login
 
-Navigate to any page and you will be redirected to the login screen. Enter your username and password. If MFA is enabled on your account, you will be prompted for a 6-digit code from your authenticator app.
+Navigate to any page and you will be redirected to the login screen. Enter your username and password. If MFA is enabled on your account, you will be prompted for a 6-digit code from your authenticator app. Usernames are **case-insensitive** — `Alice`, `alice`, and `ALICE` all match the same account.
 
 ### My Account
 
@@ -173,6 +173,19 @@ Click **My Account** in the sidebar to view your profile and manage MFA settings
 ### Multi-Factor Authentication (MFA)
 
 Any user can enable TOTP-based MFA from **My Account**. Click **Enable MFA**, scan the QR code with your authenticator app (Google Authenticator, Authy, Microsoft Authenticator, etc.), and enter the verification code. Once enabled, login requires a 6-digit code from your authenticator app. You can disable MFA from the same page (requires your password). Admins can also disable MFA for any user via **Admin > Users**.
+
+#### Forcing MFA enrolment
+
+SuperAdmins can require MFA enrolment for individual users:
+
+- **At first login** — When creating a user via **Admin → Users → Add User**, the **Require MFA at first login** checkbox is enabled by default. The new user's first session will be locked to a chromeless `/setup-mfa` page until they enrol in TOTP MFA.
+- **At next login** — In the **Edit User** modal, tick **Require MFA at next login** to flip the same flag on an existing user. Their next login will be locked to `/setup-mfa`.
+
+The lock is enforced server-side: the user receives a session cookie that the proxy treats as valid only for the MFA enrolment routes — every other page and API returns 403 / redirects to `/setup-mfa` until enrolment completes.
+
+### Last login tracking
+
+The **Admin → Users** table shows two new columns: **Last login** (date + time, in 24h format) and **Last IP** (the source IP, taken from `X-Forwarded-For`). Both are updated on every successful login.
 
 ### First-Run Setup
 

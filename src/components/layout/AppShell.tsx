@@ -4,7 +4,7 @@ import { usePathname } from "next/navigation";
 import Sidebar from "@/components/layout/Sidebar";
 import CompanySwitcher from "@/components/company/CompanySwitcher";
 
-const NO_SHELL_PATHS = ["/login", "/setup"];
+const NO_SHELL_PATHS = ["/login", "/setup", "/setup-mfa"];
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();

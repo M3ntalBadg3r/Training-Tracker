@@ -70,6 +70,24 @@ function isApiRoute(pathname: string): boolean {
   return pathname.startsWith("/api/");
 }
 
+// Routes the user is allowed to reach while the JWT carries the
+// `pendingMfaEnrollment` claim (set by the login route when an admin has
+// flagged the user with `mustEnableMfa`). Everything else is blocked until the
+// user completes MFA enrolment via /setup-mfa.
+const MFA_ENROLLMENT_ALLOWLIST = [
+  "/setup-mfa",
+  "/api/auth/mfa/setup",
+  "/api/auth/mfa/verify",
+  "/api/auth/me",
+  "/api/auth/logout",
+];
+
+function isMfaEnrollmentAllowed(pathname: string): boolean {
+  return MFA_ENROLLMENT_ALLOWLIST.some(
+    (p) => pathname === p || pathname.startsWith(p + "/")
+  );
+}
+
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -125,6 +143,21 @@ export async function proxy(request: NextRequest) {
 
   const role = String(payload.role ?? "");
   const isAdminish = role === "Admin" || role === "SuperAdmin";
+  const pendingMfaEnrollment = payload.pendingMfaEnrollment === true;
+
+  // Force users with mustEnableMfa to complete MFA enrolment before reaching
+  // any other route. This is the server-side enforcement of the admin-set
+  // "Require MFA at next login" flag — a client-side redirect would be
+  // bypassable by calling APIs directly.
+  if (pendingMfaEnrollment && !isMfaEnrollmentAllowed(pathname)) {
+    if (isApiRoute(pathname)) {
+      return NextResponse.json(
+        { error: "MFA enrollment required" },
+        { status: 403 }
+      );
+    }
+    return NextResponse.redirect(new URL("/setup-mfa", request.url));
+  }
 
   // SuperAdmin-only paths
   if (isSuperAdminPath(pathname) && role !== "SuperAdmin") {

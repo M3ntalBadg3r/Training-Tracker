@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { getAuthFromRequest, verifyMfaToken } from "@/lib/auth";
+import {
+  createToken,
+  getAuthFromRequest,
+  setAuthCookie,
+  verifyMfaToken,
+} from "@/lib/auth";
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 
 // POST: Verify a TOTP code and enable MFA
@@ -38,10 +43,24 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid code" }, { status: 401 });
   }
 
-  await prisma.user.update({
+  const updated = await prisma.user.update({
     where: { id: user.id },
-    data: { mfaEnabled: true },
+    data: { mfaEnabled: true, mustEnableMfa: false },
   });
 
-  return NextResponse.json({ success: true });
+  const response = NextResponse.json({ success: true });
+
+  // If the session was locked by the pendingMfaEnrollment claim, re-issue a
+  // normal cookie so the user can navigate the app immediately.
+  if (authUser.pendingMfaEnrollment) {
+    const newToken = await createToken({
+      sub: updated.id,
+      username: updated.username,
+      role: updated.role,
+      displayName: updated.displayName,
+    });
+    setAuthCookie(response, newToken);
+  }
+
+  return response;
 }

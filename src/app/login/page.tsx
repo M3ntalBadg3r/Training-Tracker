@@ -58,7 +58,7 @@ export default function LoginPage() {
         return;
       }
 
-      router.push("/dashboard");
+      router.push(data.pendingMfaEnrollment ? "/setup-mfa" : "/dashboard");
     } catch (err) {
       console.error("Login fetch error:", err);
       setError("Unable to connect to the server. Please try again.");

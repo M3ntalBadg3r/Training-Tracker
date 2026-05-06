@@ -41,10 +41,16 @@ export interface TokenPayload {
   username: string;
   role: string;
   displayName: string;
+  // When true, the session is in a locked state until MFA enrolment completes;
+  // proxy.ts only allows the /setup-mfa page and the MFA setup/verify endpoints.
+  pendingMfaEnrollment?: boolean;
 }
 
 export async function createToken(payload: TokenPayload): Promise<string> {
-  return new SignJWT({ ...payload, sub: String(payload.sub) })
+  const { sub, pendingMfaEnrollment, ...rest } = payload;
+  const claims: Record<string, unknown> = { ...rest, sub: String(sub) };
+  if (pendingMfaEnrollment) claims.pendingMfaEnrollment = true;
+  return new SignJWT(claims)
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime(JWT_EXPIRY)
@@ -61,6 +67,7 @@ export async function verifyToken(
       username: payload.username as string,
       role: payload.role as string,
       displayName: payload.displayName as string,
+      pendingMfaEnrollment: payload.pendingMfaEnrollment === true,
     };
   } catch {
     return null;
@@ -123,7 +130,20 @@ export async function requireAuth(
 export async function requireSuperAdmin(request: NextRequest): Promise<TokenPayload> {
   const user = await getAuthFromRequest(request);
   if (!user) throw new AuthError("Unauthorized", 401);
+  if (user.pendingMfaEnrollment) throw new AuthError("MFA enrollment required", 403);
   if (user.role !== "SuperAdmin") throw new AuthError("Forbidden", 403);
+  return user;
+}
+
+// Reject sessions that are still in pending-MFA-enrolment state. Callers that
+// must interoperate with the enrolment flow itself (the MFA setup/verify
+// routes, /api/auth/me, /api/auth/logout) use `getAuthFromRequest` directly.
+export async function requireFullSession(
+  request: NextRequest,
+  requiredRole?: string
+): Promise<TokenPayload> {
+  const user = await requireAuth(request, requiredRole);
+  if (user.pendingMfaEnrollment) throw new AuthError("MFA enrollment required", 403);
   return user;
 }
 

@@ -21,6 +21,18 @@ export function formatDate(date: Date | string): string {
   });
 }
 
+export function formatDateTime(date: Date | string): string {
+  const d = new Date(date);
+  return d.toLocaleString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
 export function parseDate(dateStr: string): Date | null {
   const d = new Date(dateStr);
   if (isNaN(d.getTime())) return null;

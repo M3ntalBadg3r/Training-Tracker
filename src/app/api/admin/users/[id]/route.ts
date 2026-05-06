@@ -20,10 +20,11 @@ export async function PUT(
   if (isNaN(userId)) return NextResponse.json({ error: "Invalid ID" }, { status: 400 });
 
   const body = await request.json();
-  const { displayName, role, companyIds } = body as {
+  const { displayName, role, companyIds, mustEnableMfa } = body as {
     displayName?: string;
     role?: string;
     companyIds?: number[] | null;
+    mustEnableMfa?: boolean;
   };
 
   if (role && !VALID_ROLES.has(role)) {
@@ -71,6 +72,7 @@ export async function PUT(
       data: {
         ...(displayName && { displayName }),
         ...(role && { role: role as "SuperAdmin" | "Admin" | "User" }),
+        ...(typeof mustEnableMfa === "boolean" && { mustEnableMfa }),
       },
     });
 
@@ -95,6 +97,9 @@ export async function PUT(
       displayName: true,
       role: true,
       mfaEnabled: true,
+      mustEnableMfa: true,
+      lastLoginAt: true,
+      lastLoginIp: true,
       createdAt: true,
       companies: { select: { company: { select: { id: true, name: true } } } },
     },

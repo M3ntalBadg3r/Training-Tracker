@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import PageHeader from "@/components/layout/PageHeader";
 import Modal from "@/components/ui/Modal";
 import { Plus, Pencil, Trash2, KeyRound, ShieldOff } from "lucide-react";
+import { formatDateTime } from "@/lib/utils";
 
 interface CompanyOption {
   id: number;
@@ -16,6 +17,9 @@ interface UserRow {
   displayName: string;
   role: string;
   mfaEnabled: boolean;
+  mustEnableMfa: boolean;
+  lastLoginAt: string | null;
+  lastLoginIp: string | null;
   createdAt: string;
   companies: CompanyOption[];
 }
@@ -38,6 +42,7 @@ export default function UserManagementPage() {
     password: "",
     role: "User",
     companyIds: [] as number[],
+    mustEnableMfa: true,
   });
   const [addError, setAddError] = useState("");
 
@@ -46,6 +51,7 @@ export default function UserManagementPage() {
     displayName: "",
     role: "",
     companyIds: [] as number[],
+    mustEnableMfa: false,
   });
   const [editError, setEditError] = useState("");
 
@@ -88,7 +94,7 @@ export default function UserManagementPage() {
       return;
     }
     setShowAdd(false);
-    setAddForm({ username: "", displayName: "", password: "", role: "User", companyIds: [] });
+    setAddForm({ username: "", displayName: "", password: "", role: "User", companyIds: [], mustEnableMfa: true });
     fetchUsers();
   };
 
@@ -189,6 +195,8 @@ export default function UserManagementPage() {
               <th className="px-4 py-3 text-left font-semibold text-gray-700">Role</th>
               <th className="px-4 py-3 text-left font-semibold text-gray-700">Companies</th>
               <th className="px-4 py-3 text-left font-semibold text-gray-700">MFA</th>
+              <th className="px-4 py-3 text-left font-semibold text-gray-700">Last login</th>
+              <th className="px-4 py-3 text-left font-semibold text-gray-700">Last IP</th>
               <th className="px-4 py-3 text-left font-semibold text-gray-700">Created</th>
               <th className="px-4 py-3 text-left font-semibold text-gray-700">Actions</th>
             </tr>
@@ -215,9 +223,19 @@ export default function UserManagementPage() {
                 <td className="px-4 py-3">
                   {user.mfaEnabled ? (
                     <span className="text-green-600 text-xs font-medium">Enabled</span>
+                  ) : user.mustEnableMfa ? (
+                    <span className="text-amber-600 text-xs font-medium" title="Required at next login">
+                      Required
+                    </span>
                   ) : (
                     <span className="text-gray-400 text-xs">Disabled</span>
                   )}
+                </td>
+                <td className="px-4 py-3 text-gray-500 text-xs">
+                  {user.lastLoginAt ? formatDateTime(user.lastLoginAt) : <span className="text-gray-300">—</span>}
+                </td>
+                <td className="px-4 py-3 text-gray-500 text-xs font-mono">
+                  {user.lastLoginIp ?? <span className="text-gray-300 font-sans">—</span>}
                 </td>
                 <td className="px-4 py-3 text-gray-500 text-xs">
                   {new Date(user.createdAt).toLocaleDateString()}
@@ -231,6 +249,7 @@ export default function UserManagementPage() {
                           displayName: user.displayName,
                           role: user.role,
                           companyIds: user.companies.map((c) => c.id),
+                          mustEnableMfa: user.mustEnableMfa,
                         });
                         setEditError("");
                       }}
@@ -338,6 +357,14 @@ export default function UserManagementPage() {
               }
             />
           )}
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={addForm.mustEnableMfa}
+              onChange={(e) => setAddForm((f) => ({ ...f, mustEnableMfa: e.target.checked }))}
+            />
+            Require MFA at first login
+          </label>
           {addError && (
             <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2">{addError}</div>
           )}
@@ -386,6 +413,22 @@ export default function UserManagementPage() {
               }
             />
           )}
+          <div>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={editForm.mustEnableMfa}
+                onChange={(e) => setEditForm((f) => ({ ...f, mustEnableMfa: e.target.checked }))}
+                disabled={editUser?.mfaEnabled === true}
+              />
+              Require MFA at next login
+            </label>
+            {editUser?.mfaEnabled && (
+              <p className="text-xs text-gray-400 mt-1 ml-6">
+                User already has MFA enabled.
+              </p>
+            )}
+          </div>
           {editError && (
             <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2">{editError}</div>
           )}
