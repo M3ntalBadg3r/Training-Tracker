@@ -146,16 +146,30 @@ deploy/           # install.sh, update.sh, install-remote.sh, perform-update.sh,
 - **Dev releases**: After pushing to `dev`, create a GitHub **pre-release** via `gh api` (with `"prerelease": true`). Dev systems (`UPDATE_CHANNEL=dev`) will see these.
 - **Stable releases**: After pushing to `master`, create a GitHub **full release** via `gh api` (with `"prerelease": false`). Production systems (`UPDATE_CHANNEL=stable`) will see these.
 - **GitHub operations**: Always use `gh api` directly for all GitHub API interactions (creating releases, tags, etc.). Do NOT use `gh release create`, MCP tools, or `git tag && git push` — the git remote is proxied and they will fail. The `gh` CLI is always available and authenticated.
-- **Creating a release** (example):
+- **Release tag conventions** (mandatory — the update comparator depends on these):
+  - **Stable**: tag = `v<version>`, e.g. `v1.38`. The version (after stripping the leading `v`) MUST equal `package.json`'s `version` field.
+  - **Dev pre-release**: tag = `v<version>-dev`, e.g. `v1.38-dev`. The `-dev` suffix is the only suffix the update comparator strips before numeric comparison.
+  - **Do NOT use** any other suffix (`-stable`, `-rc`, `-beta`, `-hotfix`, …). The version comparator (`parseVersionNumber` in `src/app/api/admin/updates/check/route.ts` and the inline regex in `deploy/check-update.sh`) only strips `-dev`; any other suffix is folded into the minor parse and produces ties or unintended ordering.
+  - **Same numeric version on both channels is fine but ties on the dev channel**: the comparator uses strict `>` so when `v1.38` (stable) and `v1.38-dev` (pre-release) both parse to `1038`, whichever GitHub returns first wins. Both tags should always reference functionally equivalent code (the master merge is a `--no-ff` of the dev tip), so this is harmless. If you need the dev channel to clearly diverge, bump `package.json` ahead on dev (e.g. cut `v1.39-dev` while stable is still on `v1.38`).
+- **Creating a release** (examples):
   ```bash
+  # Dev pre-release (after pushing to dev)
   gh api repos/M3ntalBadg3r/Training-Tracker/releases \
-    -f tag_name="v<version>" \
-    -f target_commitish="$(git rev-parse HEAD)" \
+    -f tag_name="v<version>-dev" \
+    -f target_commitish="$(git rev-parse origin/dev)" \
     -f name="v<version>" \
     -f body="Release notes here" \
-    -F prerelease=true   # false for stable releases
+    -F prerelease=true
+
+  # Stable release (after merging dev → master and pushing)
+  gh api repos/M3ntalBadg3r/Training-Tracker/releases \
+    -f tag_name="v<version>" \
+    -f target_commitish="$(git rev-parse origin/master)" \
+    -f name="v<version>" \
+    -f body="Release notes here" \
+    -F prerelease=false
   ```
-- **Update channels**: Systems set `UPDATE_CHANNEL` in `.env` to `"stable"` (default) or `"dev"`. The update check API and CLI scripts use this to determine whether to include pre-releases.
+- **Update channels**: Systems set `UPDATE_CHANNEL` in `.env` to `"stable"` (default) or `"dev"`. The update check API and CLI scripts use this to determine whether to include pre-releases. Both channels list `releases?per_page=20`, optionally filter out `prerelease`/`draft`, and pick the highest version using `major*1000 + minor` after stripping `v` and `-dev`.
 
 ## Mandatory Post-Change Rules
 
@@ -165,7 +179,7 @@ After every change, you MUST complete these steps before considering the task do
 2. **Update README.md** — If the change affects how the system is used (new features, changed behavior, new pages, config changes), update `README.md` to reflect it.
 3. **Update the help system** — If the change affects user-facing behavior, update the relevant section in `src/lib/help-content.tsx` so the in-app help stays accurate.
 4. **Update CLAUDE.md** — If the change modifies the project structure (new/renamed/removed files or directories) or the data model (new/changed models, fields, enums, or relationships), update the relevant sections in this file.
-5. **Create a GitHub release** — After pushing, create a GitHub release via `gh api` (see example in Git Workflow section above) with friendly release notes describing what's new, changed, and fixed.
+5. **Create a GitHub release** — After pushing, create a GitHub release via `gh api` using the tag conventions in the Git Workflow section above (`v<version>-dev` for dev pre-releases, `v<version>` for stable). Write friendly release notes describing what's new, changed, and fixed.
 
 ## Deployment
 
