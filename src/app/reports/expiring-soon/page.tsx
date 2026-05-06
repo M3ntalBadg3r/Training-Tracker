@@ -37,7 +37,14 @@ interface TrainingRecordRow {
   active: boolean;
 }
 
-const TYPES = ["Certification", "Accreditation", "Instructor-Led Training"] as const;
+const TYPES = ["Certification", "Accreditation", "Instructor-Led Training", "OLX"] as const;
+
+function typeBadgeClass(t: string): string {
+  if (t === "Certification") return "bg-blue-100 text-blue-800";
+  if (t === "Accreditation") return "bg-emerald-100 text-emerald-800";
+  if (t === "OLX") return "bg-sky-100 text-sky-800";
+  return "bg-amber-100 text-amber-800";
+}
 
 function ExportMenu({ data, columns, filename }: { data: Record<string, unknown>[]; columns: { key: string; header: string }[]; filename: string }) {
   const [show, setShow] = useState(false);
@@ -127,9 +134,9 @@ export default function ExpiringSoonPage() {
   }, [trainingRecords, search, filterWindow, filterType, filterTheatre, filterHorizon, now]);
 
   const horizonSeries = useMemo(() => {
-    const counts: Record<string, { name: string; Certification: number; Accreditation: number; "Instructor-Led Training": number }> = {};
+    const counts: Record<string, { name: string; Certification: number; Accreditation: number; "Instructor-Led Training": number; OLX: number }> = {};
     for (const h of HORIZONS) {
-      counts[h.key] = { name: h.label, Certification: 0, Accreditation: 0, "Instructor-Led Training": 0 };
+      counts[h.key] = { name: h.label, Certification: 0, Accreditation: 0, "Instructor-Led Training": 0, OLX: 0 };
     }
     for (const r of filtered) {
       const expiry = new Date(r.expiryDate);
@@ -254,6 +261,7 @@ export default function ExpiringSoonPage() {
               <Bar dataKey="Certification" stackId="a" fill={chart.typeColor("Certification")} cursor="pointer" onClick={((d: unknown) => { const k = (d as { horizonKey?: string }).horizonKey; if (k) setFilterHorizon(k); }) as never} />
               <Bar dataKey="Accreditation" stackId="a" fill={chart.typeColor("Accreditation")} cursor="pointer" onClick={((d: unknown) => { const k = (d as { horizonKey?: string }).horizonKey; if (k) setFilterHorizon(k); }) as never} />
               <Bar dataKey="Instructor-Led Training" stackId="a" fill={chart.typeColor("Instructor-Led Training")} cursor="pointer" onClick={((d: unknown) => { const k = (d as { horizonKey?: string }).horizonKey; if (k) setFilterHorizon(k); }) as never} />
+              <Bar dataKey="OLX" stackId="a" fill={chart.typeColor("OLX")} cursor="pointer" onClick={((d: unknown) => { const k = (d as { horizonKey?: string }).horizonKey; if (k) setFilterHorizon(k); }) as never} />
             </BarChart>
           </ResponsiveContainer>
           <p className="text-xs text-gray-400 mt-2">Click a band to filter the table to that horizon</p>
@@ -345,7 +353,7 @@ export default function ExpiringSoonPage() {
                     <td className="px-4 py-3">{row.country || "-"}</td>
                     <td className="px-4 py-3">{row.trainingTitle}</td>
                     <td className="px-4 py-3">
-                      <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${row.trainingType === "Certification" ? "bg-blue-100 text-blue-800" : row.trainingType === "Accreditation" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>
+                      <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${typeBadgeClass(row.trainingType)}`}>
                         {row.trainingType}
                       </span>
                     </td>

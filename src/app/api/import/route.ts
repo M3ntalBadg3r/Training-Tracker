@@ -3,6 +3,7 @@ import prisma from "@/lib/prisma";
 import { computeExpiryDate, parseDate } from "@/lib/utils";
 import { requireAuth, handleAuthError } from "@/lib/auth";
 import { canAccessCompany, getAuthorizedCompanyIds, isSuperAdmin } from "@/lib/company-scope";
+import { recomputeParentsForMany } from "@/lib/olx";
 
 interface ImportRow {
   fullName: string;
@@ -87,6 +88,11 @@ export async function POST(request: NextRequest) {
     companyConflicts: 0,
     errors: [] as string[],
   };
+
+  // Track (email, trainingTitle) pairs for OLX parent recomputation after
+  // the loop. We can't know yet which titles are sub-items; we'll filter at
+  // recompute time using the join table.
+  const recomputePairs: { email: string; subItemTrainingTitle: string }[] = [];
 
   // Map rows using column mapping
   const mappedRows: ImportRow[] = rows.map((row) => {
@@ -306,12 +312,24 @@ export async function POST(request: NextRequest) {
         },
       });
       summary.trainingsCreated++;
+      recomputePairs.push({ email: row.email, subItemTrainingTitle: row.title });
     } catch (error) {
       console.error(`Import row ${rowNum} error:`, error);
       const safeMessage = error instanceof Error && error.message.includes("Unique constraint")
         ? "Duplicate entry"
         : "Failed to process";
       summary.errors.push(`Row ${rowNum}: ${safeMessage}`);
+    }
+  }
+
+  // Materialise parent OLX TrainingTaken rows for any imported sub-items
+  // that just completed their sibling set for a student.
+  if (recomputePairs.length > 0) {
+    try {
+      await recomputeParentsForMany(recomputePairs);
+    } catch (error) {
+      console.error("OLX parent recomputation failed:", error);
+      summary.errors.push("OLX parent recomputation failed — some parent OLX completions may be missing.");
     }
   }
 

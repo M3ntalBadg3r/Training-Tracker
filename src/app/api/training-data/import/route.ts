@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { TrainingType, ProductType, FunctionType } from "@prisma/client";
 import { requireAuth, handleAuthError, requireSuperAdmin } from "@/lib/auth";
+import { recomputeAllStudentsForParent } from "@/lib/olx";
 
 const VALID_TRAINING_TYPES = new Set(Object.values(TrainingType));
 const VALID_PRODUCT_TYPES = new Set(Object.values(ProductType));
@@ -17,6 +18,11 @@ const TRAINING_TYPE_MAP: Record<string, TrainingType> = {
   "instructor-led training": TrainingType.InstructorLedTraining,
   instructorledtraining: TrainingType.InstructorLedTraining,
   ilt: TrainingType.InstructorLedTraining,
+  olx: TrainingType.OLX,
+  online: TrainingType.OLX,
+  "olx sub-item": TrainingType.OLXSubItem,
+  "olx subitem": TrainingType.OLXSubItem,
+  olxsubitem: TrainingType.OLXSubItem,
 };
 
 const PRODUCT_TYPE_MAP: Record<string, ProductType> = {
@@ -64,6 +70,7 @@ interface ColumnMapping {
   function?: string;
   link?: string;
   certification?: string;
+  parentTrainingTitle?: string;
 }
 
 export async function POST(request: NextRequest) {
@@ -95,6 +102,12 @@ export async function POST(request: NextRequest) {
   let skipped = 0;
   const errors: string[] = [];
 
+  // Track parents whose membership set changed so we can recompute student
+  // OLX completion at the end. Also remember any parent links that referenced
+  // a parent that doesn't yet exist after this batch.
+  const parentLinks: { subItem: string; parent: string }[] = [];
+  const affectedParents = new Set<string>();
+
   // Parse default values
   const defaultTrainingType = parseTrainingType(defaults?.trainingType) ?? TrainingType.Certification;
   const defaultProductType = parseProductType(defaults?.productType) ?? ProductType.Cortex;
@@ -123,15 +136,28 @@ export async function POST(request: NextRequest) {
     const rawProductType = columnMapping.productType ? row[columnMapping.productType]?.trim() : undefined;
     const rawFunction = columnMapping.function ? row[columnMapping.function]?.trim() : undefined;
 
-    const trainingType = parseTrainingType(rawTrainingType) ?? defaultTrainingType;
+    let trainingType = parseTrainingType(rawTrainingType) ?? defaultTrainingType;
     const productType = parseProductType(rawProductType) ?? defaultProductType;
     const functionType = parseFunctionType(rawFunction) ?? defaultFunctionType;
 
+    // OLX sub-item parents: comma-separated list. Presence forces type to OLXSubItem.
+    const rawParents = columnMapping.parentTrainingTitle
+      ? row[columnMapping.parentTrainingTitle]?.trim()
+      : "";
+    const parentsList = rawParents
+      ? Array.from(new Set(rawParents.split(",").map((p: string) => p.trim()).filter(Boolean)))
+      : [];
+    if (parentsList.length > 0) {
+      trainingType = TrainingType.OLXSubItem;
+    }
+
     const link = columnMapping.link ? row[columnMapping.link]?.trim() || null : null;
     const certRaw = columnMapping.certification ? row[columnMapping.certification]?.trim() : "";
-    const certification = certRaw
-      ? certRaw.split(",").map((c: string) => c.trim()).filter(Boolean)
-      : [];
+    const certification = trainingType === TrainingType.OLXSubItem
+      ? []
+      : certRaw
+        ? certRaw.split(",").map((c: string) => c.trim()).filter(Boolean)
+        : [];
 
     try {
       const existing = await prisma.trainingData.findUnique({
@@ -170,6 +196,12 @@ export async function POST(request: NextRequest) {
         });
         imported++;
       }
+
+      // Queue parent ↔ sub-item links for processing once all rows have
+      // been upserted (parents may appear later in the file).
+      for (const parent of parentsList) {
+        parentLinks.push({ subItem: trainingTitle, parent });
+      }
     } catch (err) {
       console.error(`Training data import row ${rowNum} error:`, err);
       const safeMessage = err instanceof Error && err.message.includes("Unique constraint")
@@ -179,6 +211,52 @@ export async function POST(request: NextRequest) {
         `Row ${rowNum}: Failed to import "${trainingTitle}" - ${safeMessage}`
       );
       skipped++;
+    }
+  }
+
+  // Apply parent ↔ sub-item links after all rows have been processed, so that
+  // a parent OLX referenced by an earlier sub-item row but defined later in
+  // the file still resolves correctly. Skip links whose parent is missing or
+  // not actually an OLX entry, with a warning.
+  if (parentLinks.length > 0) {
+    const parentTitles = Array.from(new Set(parentLinks.map((l) => l.parent)));
+    const parentRows = await prisma.trainingData.findMany({
+      where: { trainingTitle: { in: parentTitles } },
+      select: { trainingTitle: true, trainingType: true },
+    });
+    const parentTypeByTitle = new Map(parentRows.map((p) => [p.trainingTitle, p.trainingType]));
+
+    for (const { subItem, parent } of parentLinks) {
+      const parentType = parentTypeByTitle.get(parent);
+      if (parentType === undefined) {
+        errors.push(`Parent OLX "${parent}" referenced by sub-item "${subItem}" was not found.`);
+        continue;
+      }
+      if (parentType !== TrainingType.OLX) {
+        errors.push(`Parent "${parent}" referenced by sub-item "${subItem}" is not an OLX (it's ${parentType}).`);
+        continue;
+      }
+      await prisma.olxSubItemRelation.upsert({
+        where: {
+          parentTrainingTitle_subItemTrainingTitle: {
+            parentTrainingTitle: parent,
+            subItemTrainingTitle: subItem,
+          },
+        },
+        update: {},
+        create: { parentTrainingTitle: parent, subItemTrainingTitle: subItem },
+      });
+      affectedParents.add(parent);
+    }
+  }
+
+  // Recompute parent OLX completion for any membership changes.
+  for (const p of affectedParents) {
+    try {
+      await recomputeAllStudentsForParent(p);
+    } catch (error) {
+      console.error(`Failed to recompute parent "${p}":`, error);
+      errors.push(`Recomputation failed for parent OLX "${p}".`);
     }
   }
 

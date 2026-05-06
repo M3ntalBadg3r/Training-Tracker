@@ -32,6 +32,8 @@ export function trainingTypeLabel(value: string): string {
     Certification: "Certification",
     Accreditation: "Accreditation",
     InstructorLedTraining: "Instructor-Led Training",
+    OLX: "OLX",
+    OLXSubItem: "OLX Sub-Item",
   };
   return map[value] || value;
 }

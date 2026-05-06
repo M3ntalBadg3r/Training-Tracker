@@ -41,7 +41,14 @@ interface TrainingRecordRow {
   active: boolean;
 }
 
-const TYPES = ["Certification", "Accreditation", "Instructor-Led Training"] as const;
+const TYPES = ["Certification", "Accreditation", "Instructor-Led Training", "OLX"] as const;
+
+function typeBadgeClass(t: string): string {
+  if (t === "Certification") return "bg-blue-100 text-blue-800";
+  if (t === "Accreditation") return "bg-emerald-100 text-emerald-800";
+  if (t === "OLX") return "bg-sky-100 text-sky-800";
+  return "bg-amber-100 text-amber-800";
+}
 
 function ExportMenu({ data, columns, filename }: { data: Record<string, unknown>[]; columns: { key: string; header: string }[]; filename: string }) {
   const [show, setShow] = useState(false);
@@ -107,18 +114,19 @@ export default function ByFunctionPage() {
       cert: filtered.filter((r) => r.trainingType === "Certification").length,
       accred: filtered.filter((r) => r.trainingType === "Accreditation").length,
       ilt: filtered.filter((r) => r.trainingType === "Instructor-Led Training").length,
+      olx: filtered.filter((r) => r.trainingType === "OLX").length,
       active: activeCount,
       expired: filtered.length - activeCount,
     };
   }, [filtered]);
 
   const functionSeries = useMemo(() => {
-    const m = new Map<string, { name: string; Certification: number; Accreditation: number; "Instructor-Led Training": number }>();
+    const m = new Map<string, { name: string; Certification: number; Accreditation: number; "Instructor-Led Training": number; OLX: number }>();
     for (const r of filtered) {
       if (!r.function) continue;
       let row = m.get(r.function);
       if (!row) {
-        row = { name: r.function, Certification: 0, Accreditation: 0, "Instructor-Led Training": 0 };
+        row = { name: r.function, Certification: 0, Accreditation: 0, "Instructor-Led Training": 0, OLX: 0 };
         m.set(r.function, row);
       }
       const key = r.trainingType as (typeof TYPES)[number];
@@ -177,6 +185,7 @@ export default function ByFunctionPage() {
           { label: "Certifications", value: kpis.cert, icon: Award, tone: "indigo" },
           { label: "Accreditations", value: kpis.accred, icon: ShieldCheck, tone: "emerald" },
           { label: "ILTs", value: kpis.ilt, icon: GraduationCap, tone: "amber" },
+          { label: "OLX", value: kpis.olx, icon: GraduationCap, tone: "blue" },
         ]}
       />
 
@@ -198,6 +207,7 @@ export default function ByFunctionPage() {
               <Bar dataKey="Certification" stackId="a" fill={chart.typeColor("Certification")} cursor="pointer" onClick={((d: unknown) => { const n = (d as { name?: string }).name; if (n) setFilterFunction(n); }) as never} />
               <Bar dataKey="Accreditation" stackId="a" fill={chart.typeColor("Accreditation")} cursor="pointer" onClick={((d: unknown) => { const n = (d as { name?: string }).name; if (n) setFilterFunction(n); }) as never} />
               <Bar dataKey="Instructor-Led Training" stackId="a" fill={chart.typeColor("Instructor-Led Training")} cursor="pointer" onClick={((d: unknown) => { const n = (d as { name?: string }).name; if (n) setFilterFunction(n); }) as never} />
+              <Bar dataKey="OLX" stackId="a" fill={chart.typeColor("OLX")} cursor="pointer" onClick={((d: unknown) => { const n = (d as { name?: string }).name; if (n) setFilterFunction(n); }) as never} />
             </BarChart>
           </ResponsiveContainer>
           <p className="text-xs text-gray-400 mt-2">Click a bar to filter the table by that function</p>
@@ -285,7 +295,7 @@ export default function ByFunctionPage() {
                     <td className="px-4 py-3">{row.country || "-"}</td>
                     <td className="px-4 py-3">{row.trainingTitle}</td>
                     <td className="px-4 py-3">
-                      <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${row.trainingType === "Certification" ? "bg-blue-100 text-blue-800" : row.trainingType === "Accreditation" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>
+                      <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${typeBadgeClass(row.trainingType)}`}>
                         {row.trainingType}
                       </span>
                     </td>

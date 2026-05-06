@@ -15,10 +15,13 @@ export async function GET(request: NextRequest) {
   const companyFilter = resolveCompanyFilter(allowed, request.nextUrl.searchParams.get("companyId"));
   if (companyFilter !== null && companyFilter.length === 0) return NextResponse.json([]);
 
-  // Find all ILT trainings that have at least one certification mapping
+  // Find all ILT and OLX trainings that have at least one certification
+  // mapping. OLX parents are treated identically to ILT here — completion of
+  // an OLX (all sub-items done) materialises a TrainingTaken row on the
+  // parent, so the existing query logic works unchanged.
   const iltWithCert = await prisma.trainingData.findMany({
     where: {
-      trainingType: "InstructorLedTraining",
+      trainingType: { in: ["InstructorLedTraining", "OLX"] },
       certification: { isEmpty: false },
     },
   });

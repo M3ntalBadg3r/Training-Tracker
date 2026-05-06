@@ -6,12 +6,14 @@ export const TYPE_COLORS = {
   Certification: "#3b82f6",
   Accreditation: "#10b981",
   "Instructor-Led Training": "#f59e0b",
+  OLX: "#0ea5e9",
 } as const;
 
 export const TYPE_COLORS_DARK = {
   Certification: "#60a5fa",
   Accreditation: "#34d399",
   "Instructor-Led Training": "#fbbf24",
+  OLX: "#38bdf8",
 } as const;
 
 export const SERIES_PALETTE = [

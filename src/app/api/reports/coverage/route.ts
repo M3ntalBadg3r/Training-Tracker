@@ -54,6 +54,8 @@ export async function GET(request: NextRequest) {
   const activeTrainings = await prisma.trainingTaken.findMany({
     where: {
       expiryDate: { gt: now },
+      // Sub-items are excluded — coverage measures parent-level completion.
+      trainingData: { trainingType: { not: "OLXSubItem" } },
       ...(companyFilter ? { student: { companyId: { in: companyFilter } } } : {}),
     },
     select: {
@@ -66,6 +68,7 @@ export async function GET(request: NextRequest) {
     Certification: "Certification",
     Accreditation: "Accreditation",
     InstructorLedTraining: "Instructor-Led Training",
+    OLX: "OLX",
   };
 
   // bucket -> product -> type -> Set<email>

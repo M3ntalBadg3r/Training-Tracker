@@ -48,11 +48,19 @@ const TYPE_LABELS: Record<string, string> = {
   Certification: "Certification",
   Accreditation: "Accreditation",
   InstructorLedTraining: "Instructor-Led Training",
+  OLX: "OLX",
+  OLXSubItem: "OLX Sub-Item",
 };
 
 async function fetchAllTrainingRecords(companyId?: number | null): Promise<TrainingRecordRow[]> {
+  // OLX sub-items don't represent stand-alone completions — they roll up into
+  // their parent OLX once the full set is taken. Exclude them from
+  // completion-counting reports.
   const rawRecords = await prisma.trainingTaken.findMany({
-    where: companyId ? { student: { companyId } } : {},
+    where: {
+      trainingData: { trainingType: { not: "OLXSubItem" } },
+      ...(companyId ? { student: { companyId } } : {}),
+    },
     include: {
       trainingData: {
         select: {
@@ -102,8 +110,14 @@ async function fetchAllTrainingRecords(companyId?: number | null): Promise<Train
 // ─── Report queries ─────────────────────────────────────────────────────────────
 
 export async function fetchTrainedNotCertified(companyId?: number | null): Promise<TrainedNotCertifiedRow[]> {
+  // Both ILT and OLX trainings can lead to a certification. Treat them
+  // identically here — an OLX parent's TrainingTaken row is materialised once
+  // the student has completed every sub-item.
   const iltWithCert = await prisma.trainingData.findMany({
-    where: { trainingType: "InstructorLedTraining", certification: { isEmpty: false } },
+    where: {
+      trainingType: { in: ["InstructorLedTraining", "OLX"] },
+      certification: { isEmpty: false },
+    },
   });
   if (iltWithCert.length === 0) return [];
 

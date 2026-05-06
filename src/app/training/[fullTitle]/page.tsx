@@ -44,6 +44,7 @@ export default function TrainingTakenPage({
   const [students, setStudents] = useState<TrainingTakenRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [showExportMenu, setShowExportMenu] = useState(false);
+  const [subItems, setSubItems] = useState<{ trainingTitle: string; fullTitle: string }[]>([]);
 
   const exportData = useMemo(
     () =>
@@ -90,6 +91,26 @@ export default function TrainingTakenPage({
       })
       .catch(() => setLoading(false));
   }, [fullTitle, trainingType, theatre, region, country, urlCompanyId, selected, scopeLoading]);
+
+  // For OLX parents, fetch the sub-item list to display nested under this view.
+  useEffect(() => {
+    if (trainingType !== "OLX") {
+      setSubItems([]);
+      return;
+    }
+    fetch("/api/training-data/all")
+      .then((res) => (res.ok ? res.json() : []))
+      .then((all: { trainingTitle: string; fullTitle: string; trainingType: string; subItems?: string[] }[]) => {
+        const parents = all.filter((t) => t.trainingType === "OLX" && t.fullTitle === fullTitle);
+        const subTitles = new Set<string>();
+        for (const p of parents) {
+          for (const s of p.subItems || []) subTitles.add(s);
+        }
+        const subs = all.filter((t) => subTitles.has(t.trainingTitle));
+        setSubItems(subs.map((s) => ({ trainingTitle: s.trainingTitle, fullTitle: s.fullTitle })));
+      })
+      .catch(() => setSubItems([]));
+  }, [fullTitle, trainingType]);
 
   if (loading) {
     return (
@@ -165,6 +186,53 @@ export default function TrainingTakenPage({
           onClick: (row) => router.push(`/students/${encodeURIComponent(row.email)}`),
         }}
       />
+
+      {/* Sub-items, when this is an OLX parent. Listing them here lets users
+          jump into the per-sub-item completion view. */}
+      {trainingType === "OLX" && subItems.length > 0 && (
+        <section className="mt-8">
+          <h3 className="text-lg font-semibold mb-2">Sub-Items</h3>
+          <p className="text-sm text-gray-600 mb-3">
+            A student is counted as having completed this OLX once they&apos;ve completed every sub-item below.
+          </p>
+          <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-200">
+                  <th className="px-4 py-2 text-left font-semibold text-gray-700">Full Title</th>
+                  <th className="px-4 py-2 text-left font-semibold text-gray-700">Training Title</th>
+                  <th className="px-4 py-2 text-left font-semibold text-gray-700">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {subItems.map((s) => (
+                  <tr key={s.trainingTitle} className="border-b border-gray-100">
+                    <td className="px-4 py-2">{s.fullTitle}</td>
+                    <td className="px-4 py-2 text-gray-600">{s.trainingTitle}</td>
+                    <td className="px-4 py-2">
+                      <button
+                        onClick={() => {
+                          const params = new URLSearchParams();
+                          params.set("trainingType", "OLXSubItem");
+                          if (theatre) params.set("theatre", theatre);
+                          if (region) params.set("region", region);
+                          if (country) params.set("country", country);
+                          const cid = urlCompanyId ?? (selected !== "all" ? String(selected) : null);
+                          if (cid) params.set("companyId", cid);
+                          router.push(`/training/${encodeURIComponent(s.fullTitle)}?${params.toString()}`);
+                        }}
+                        className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
+                      >
+                        View Students
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
     </div>
   );
 }

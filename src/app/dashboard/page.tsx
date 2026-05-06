@@ -33,30 +33,35 @@ interface DashboardData {
     certifications: number;
     accreditations: number;
     instructorLedTraining: number;
+    olx: number;
   };
   byProductType: {
     name: string;
     Certification: number;
     Accreditation: number;
     "Instructor-Led Training": number;
+    OLX: number;
   }[];
   byFunction: {
     name: string;
     Certification: number;
     Accreditation: number;
     "Instructor-Led Training": number;
+    OLX: number;
   }[];
   expiring: {
     name: string;
     Certification: number;
     Accreditation: number;
     "Instructor-Led Training": number;
+    OLX: number;
   }[];
   monthlyAchieved: {
     month: string;
     Certification: number;
     Accreditation: number;
     "Instructor-Led Training": number;
+    OLX: number;
   }[];
 }
 
@@ -160,6 +165,13 @@ export default function DashboardPage() {
       color: "bg-amber-50 text-amber-700",
       iconColor: "text-amber-500",
     },
+    {
+      label: "OLX Completed",
+      value: metrics.olx,
+      icon: GraduationCap,
+      color: "bg-sky-50 text-sky-700",
+      iconColor: "text-sky-500",
+    },
   ];
 
   return (
@@ -230,6 +242,7 @@ export default function DashboardPage() {
               <Bar dataKey="Certification" fill={chart.typeColor("Certification")} />
               <Bar dataKey="Accreditation" fill={chart.typeColor("Accreditation")} />
               <Bar dataKey="Instructor-Led Training" fill={chart.typeColor("Instructor-Led Training")} />
+              <Bar dataKey="OLX" fill={chart.typeColor("OLX")} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -250,6 +263,7 @@ export default function DashboardPage() {
               <Bar dataKey="Certification" fill={chart.typeColor("Certification")} />
               <Bar dataKey="Accreditation" fill={chart.typeColor("Accreditation")} />
               <Bar dataKey="Instructor-Led Training" fill={chart.typeColor("Instructor-Led Training")} />
+              <Bar dataKey="OLX" fill={chart.typeColor("OLX")} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -273,6 +287,7 @@ export default function DashboardPage() {
               <Bar dataKey="Certification" fill={chart.typeColor("Certification")} />
               <Bar dataKey="Accreditation" fill={chart.typeColor("Accreditation")} />
               <Bar dataKey="Instructor-Led Training" fill={chart.typeColor("Instructor-Led Training")} />
+              <Bar dataKey="OLX" fill={chart.typeColor("OLX")} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -293,6 +308,7 @@ export default function DashboardPage() {
               <Line type="monotone" dataKey="Certification" stroke={chart.typeColor("Certification")} strokeWidth={2} dot={{ r: 3 }} />
               <Line type="monotone" dataKey="Accreditation" stroke={chart.typeColor("Accreditation")} strokeWidth={2} dot={{ r: 3 }} />
               <Line type="monotone" dataKey="Instructor-Led Training" stroke={chart.typeColor("Instructor-Led Training")} strokeWidth={2} dot={{ r: 3 }} />
+              <Line type="monotone" dataKey="OLX" stroke={chart.typeColor("OLX")} strokeWidth={2} dot={{ r: 3 }} />
             </LineChart>
           </ResponsiveContainer>
         </div>

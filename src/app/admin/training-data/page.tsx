@@ -23,7 +23,7 @@ import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 
-const TRAINING_TYPES = ["Certification", "Accreditation", "InstructorLedTraining"];
+const TRAINING_TYPES = ["Certification", "Accreditation", "InstructorLedTraining", "OLX", "OLXSubItem"];
 const PRODUCT_TYPES = ["Cortex", "SASE", "Cloud", "Strata", "Foundation"];
 const FUNCTION_TYPES = ["Sales", "PreSales", "Deployments"];
 
@@ -31,6 +31,8 @@ const TRAINING_TYPE_LABELS: Record<string, string> = {
   Certification: "Certification",
   Accreditation: "Accreditation",
   InstructorLedTraining: "Instructor-Led Training",
+  OLX: "OLX",
+  OLXSubItem: "OLX Sub-Item",
 };
 
 const FUNCTION_TYPE_LABELS: Record<string, string> = {
@@ -49,6 +51,11 @@ const TRAINING_TYPE_ALIASES: Record<string, string> = {
   ilt: "InstructorLedTraining",
   certs: "Certification",
   cert: "Certification",
+  olx: "OLX",
+  online: "OLX",
+  "olx sub-item": "OLXSubItem",
+  "olx subitem": "OLXSubItem",
+  olxsubitem: "OLXSubItem",
 };
 
 const PRODUCT_TYPE_ALIASES: Record<string, string> = {
@@ -90,6 +97,7 @@ const TARGET_FIELDS = [
   { key: "function", label: "Function", required: false },
   { key: "link", label: "Link", required: false },
   { key: "certification", label: "Certification", required: false },
+  { key: "parentTrainingTitle", label: "Parent Training Title", required: false },
 ];
 
 type ImportStep = "upload" | "mapping" | "resolve" | "importing" | "summary";
@@ -119,6 +127,8 @@ export default function TrainingDataPage() {
     function: "Sales",
     link: "",
     certification: [] as string[],
+    subItems: [] as string[],
+    parents: [] as string[],
   });
   const [loading, setLoading] = useState(true);
   const [lastImport, setLastImport] = useState<string | null>(null);
@@ -149,8 +159,38 @@ export default function TrainingDataPage() {
     return String((row as unknown as Record<string, unknown>)[key] ?? "");
   };
 
+  // Map of parentTrainingTitle → sub-item rows (resolved through the join table
+  // surfaced on each TrainingData row's `subItems` field).
+  const subItemsByParent = useMemo(() => {
+    const map = new Map<string, TrainingDataRow[]>();
+    const byTitle = new Map(trainingList.map((t) => [t.trainingTitle, t]));
+    for (const t of trainingList) {
+      if (t.trainingType === "OLX" && t.subItems && t.subItems.length > 0) {
+        const subs: TrainingDataRow[] = [];
+        for (const subTitle of t.subItems) {
+          const row = byTitle.get(subTitle);
+          if (row) subs.push(row);
+        }
+        map.set(t.trainingTitle, subs);
+      }
+    }
+    return map;
+  }, [trainingList]);
+
+  // Set of training titles that are sub-items of at least one parent — these
+  // should be hidden from the top-level table and only appear nested.
+  const subItemTitleSet = useMemo(() => {
+    const set = new Set<string>();
+    for (const subs of subItemsByParent.values()) {
+      for (const s of subs) set.add(s.trainingTitle);
+    }
+    return set;
+  }, [subItemsByParent]);
+
   const filteredTrainingList = useMemo(() => {
-    let result = trainingList.filter((t) => !t.isIncomplete);
+    // Hide sub-items from the top level — they're only visible nested under
+    // their parent OLX.
+    let result = trainingList.filter((t) => !t.isIncomplete && !subItemTitleSet.has(t.trainingTitle));
 
     // Free-form search
     if (debouncedSearch) {
@@ -184,7 +224,7 @@ export default function TrainingDataPage() {
     }
 
     return result;
-  }, [trainingList, debouncedSearch, searchColumn, columnFilters, sortColumn, sortDirection, tableColumns]);
+  }, [trainingList, subItemTitleSet, debouncedSearch, searchColumn, columnFilters, sortColumn, sortDirection, tableColumns]);
 
   const handleSort = (key: string) => {
     if (sortColumn === key) {
@@ -219,7 +259,12 @@ export default function TrainingDataPage() {
     function: "",
     link: "",
     certification: [] as string[],
+    subItems: [] as string[],
+    parents: [] as string[],
   });
+
+  // Tracks which OLX parents are expanded in the catalog view.
+  const [expandedParents, setExpandedParents] = useState<Record<string, boolean>>({});
 
   // Incomplete entries
   const incompleteData = useMemo(() => trainingList.filter((t) => t.isIncomplete), [trainingList]);
@@ -262,6 +307,41 @@ export default function TrainingDataPage() {
     [trainingList]
   );
 
+  // Available sub-item titles for OLX parent forms. Only OLXSubItem entries
+  // are eligible — promote a training to OLXSubItem first if it should belong
+  // to a parent.
+  const subItemOptions = useMemo(
+    () =>
+      trainingList
+        .filter((t) => t.trainingType === "OLXSubItem")
+        .map((t) => ({ trainingTitle: t.trainingTitle, fullTitle: t.fullTitle }))
+        .sort((a, b) => a.fullTitle.localeCompare(b.fullTitle)),
+    [trainingList]
+  );
+
+  const parentOptions = useMemo(
+    () =>
+      trainingList
+        .filter((t) => t.trainingType === "OLX")
+        .map((t) => ({ trainingTitle: t.trainingTitle, fullTitle: t.fullTitle }))
+        .sort((a, b) => a.fullTitle.localeCompare(b.fullTitle)),
+    [trainingList]
+  );
+
+  // Flattens the row for export so the OLX parent column matches the import
+  // format. parentTrainingTitle is comma-separated when a sub-item belongs to
+  // multiple parents.
+  const rowForExport = (t: TrainingDataRow) => ({
+    trainingTitle: t.trainingTitle,
+    fullTitle: t.fullTitle,
+    trainingType: t.trainingType,
+    productType: t.productType,
+    function: t.function,
+    link: t.link ?? "",
+    certification: (t.certification ?? []).join(", "),
+    parentTrainingTitle: (t.parents ?? []).join(", "),
+  });
+
   const fetchLastImport = () => {
     fetch("/api/import-metadata?key=training-data")
       .then((res) => res.json())
@@ -302,6 +382,8 @@ export default function TrainingDataPage() {
         function: "Sales",
         link: "",
         certification: [],
+        subItems: [],
+        parents: [],
       });
       fetchRawTrainingData();
     }
@@ -629,7 +711,7 @@ export default function TrainingDataPage() {
                 <div className="absolute left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[140px]">
                   <button
                     onClick={() => {
-                      exportToCsv(trainingList, [
+                      exportToCsv(trainingList.map(rowForExport), [
                         { key: "trainingTitle", header: "Training Title" },
                         { key: "fullTitle", header: "Full Title" },
                         { key: "trainingType", header: "Training Type" },
@@ -637,6 +719,7 @@ export default function TrainingDataPage() {
                         { key: "function", header: "Function" },
                         { key: "link", header: "Link" },
                         { key: "certification", header: "Certification" },
+                        { key: "parentTrainingTitle", header: "Parent Training Title" },
                       ], "training-data");
                       setShowExportMenu(false);
                     }}
@@ -646,7 +729,7 @@ export default function TrainingDataPage() {
                   </button>
                   <button
                     onClick={() => {
-                      exportToExcel(trainingList, [
+                      exportToExcel(trainingList.map(rowForExport), [
                         { key: "trainingTitle", header: "Training Title" },
                         { key: "fullTitle", header: "Full Title" },
                         { key: "trainingType", header: "Training Type" },
@@ -654,6 +737,7 @@ export default function TrainingDataPage() {
                         { key: "function", header: "Function" },
                         { key: "link", header: "Link" },
                         { key: "certification", header: "Certification" },
+                        { key: "parentTrainingTitle", header: "Parent Training Title" },
                       ], "training-data");
                       setShowExportMenu(false);
                     }}
@@ -663,7 +747,7 @@ export default function TrainingDataPage() {
                   </button>
                   <button
                     onClick={() => {
-                      exportToPdf(trainingList, [
+                      exportToPdf(trainingList.map(rowForExport), [
                         { key: "trainingTitle", header: "Training Title" },
                         { key: "fullTitle", header: "Full Title" },
                         { key: "trainingType", header: "Training Type" },
@@ -671,6 +755,7 @@ export default function TrainingDataPage() {
                         { key: "function", header: "Function" },
                         { key: "link", header: "Link" },
                         { key: "certification", header: "Certification" },
+                        { key: "parentTrainingTitle", header: "Parent Training Title" },
                       ], "training-data");
                       setShowExportMenu(false);
                     }}
@@ -696,7 +781,7 @@ export default function TrainingDataPage() {
           <div className="flex justify-end mb-3">
             <button
               onClick={() => {
-                const csv = "Training Title,Full Title,Training Type,Product Type,Function,Link,Certification\nMY-CERT-001,My Certification Name,Certification,Cortex,Sales,,";
+                const csv = "Training Title,Full Title,Training Type,Product Type,Function,Link,Certification,Parent Training Title\nMY-CERT-001,My Certification Name,Certification,Cortex,Sales,,,\nMY-OLX-PARENT,My OLX Course,OLX,Cortex,Sales,,My Cert,\nMY-OLX-SUB-1,Sub-Item 1,OLX Sub-Item,Cortex,Sales,,,MY-OLX-PARENT";
                 const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
                 const a = document.createElement("a");
                 a.href = url;
@@ -1245,7 +1330,7 @@ export default function TrainingDataPage() {
                       <td className="px-4 py-3">
                         {editingTitle === t.trainingTitle ? (
                           <select value={editValues.trainingType}
-                            onChange={(e) => { const val = e.target.value; setEditValues((prev) => ({ ...prev, trainingType: val, certification: val === "InstructorLedTraining" ? prev.certification : [] })); }}
+                            onChange={(e) => { const val = e.target.value; setEditValues((prev) => ({ ...prev, trainingType: val, certification: (val === "InstructorLedTraining" || val === "OLX") ? prev.certification : [] })); }}
                             className="border border-gray-300 rounded px-2 py-1 text-sm">
                             {TRAINING_TYPES.map((tt) => <option key={tt} value={tt}>{TRAINING_TYPE_LABELS[tt]}</option>)}
                           </select>
@@ -1293,7 +1378,7 @@ export default function TrainingDataPage() {
                             </>
                           ) : (
                             <>
-                              <button onClick={() => { setEditingTitle(t.trainingTitle); setEditValues({ trainingTitle: t.trainingTitle, fullTitle: t.fullTitle, trainingType: t.trainingType, productType: t.productType, function: t.function, link: t.link || "", certification: t.certification || [] }); }}
+                              <button onClick={() => { setEditingTitle(t.trainingTitle); setEditValues({ trainingTitle: t.trainingTitle, fullTitle: t.fullTitle, trainingType: t.trainingType, productType: t.productType, function: t.function, link: t.link || "", certification: t.certification || [], subItems: t.subItems || [], parents: t.parents || [] }); }}
                                 className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200">Edit</button>
                               <button onClick={() => handleMarkComplete(t.trainingTitle)}
                                 disabled={markingComplete === t.trainingTitle}
@@ -1364,7 +1449,12 @@ export default function TrainingDataPage() {
                     </td>
                   </tr>
                 ) : (
-                  filteredTrainingList.map((t) => (
+                  filteredTrainingList.flatMap((t) => {
+                    const subs = subItemsByParent.get(t.trainingTitle) ?? [];
+                    const isExpandable = subs.length > 0;
+                    const isExpanded = isExpandable && !!expandedParents[t.trainingTitle];
+                    const rows: React.ReactNode[] = [];
+                    rows.push(
                   <tr key={t.trainingTitle} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
                     {/* Full Title */}
                     <td className="px-4 py-3">
@@ -1376,7 +1466,27 @@ export default function TrainingDataPage() {
                           className="border border-gray-300 rounded px-2 py-1 text-sm w-full"
                         />
                       ) : (
-                        t.fullTitle
+                        <div className="flex items-center gap-2">
+                          {isExpandable && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setExpandedParents((prev) => ({
+                                  ...prev,
+                                  [t.trainingTitle]: !prev[t.trainingTitle],
+                                }))
+                              }
+                              className="text-gray-500 hover:text-gray-800"
+                              aria-label={isExpanded ? "Collapse sub-items" : "Expand sub-items"}
+                            >
+                              {isExpanded ? <ChevronDown size={14} /> : <ChevronUp size={14} className="rotate-90" />}
+                            </button>
+                          )}
+                          <span>{t.fullTitle}</span>
+                          {isExpandable && (
+                            <span className="text-xs text-gray-500">({subs.length} sub-item{subs.length === 1 ? "" : "s"})</span>
+                          )}
+                        </div>
                       )}
                     </td>
                     {/* Training Title */}
@@ -1402,7 +1512,7 @@ export default function TrainingDataPage() {
                             setEditValues((prev) => ({
                               ...prev,
                               trainingType: val,
-                              certification: val === "InstructorLedTraining" ? prev.certification : [],
+                              certification: (val === "InstructorLedTraining" || val === "OLX") ? prev.certification : [],
                             }));
                           }}
                           className="border border-gray-300 rounded px-2 py-1 text-sm"
@@ -1470,9 +1580,9 @@ export default function TrainingDataPage() {
                         FUNCTION_TYPE_LABELS[t.function] || t.function
                       )}
                     </td>
-                    {/* Certification */}
+                    {/* Certification (available for ILT and OLX parents) */}
                     <td className="px-4 py-3">
-                      {t.trainingType === "InstructorLedTraining" ? (
+                      {(t.trainingType === "InstructorLedTraining" || t.trainingType === "OLX") ? (
                         editingTitle === t.trainingTitle ? (
                           <div className="max-h-32 overflow-y-auto border border-gray-300 rounded px-2 py-1 text-sm space-y-1">
                             {certificationOptions.length === 0 && (
@@ -1535,6 +1645,8 @@ export default function TrainingDataPage() {
                                   function: t.function,
                                   link: t.link || "",
                                   certification: t.certification || [],
+                                  subItems: t.subItems || [],
+                                  parents: t.parents || [],
                                 });
                               }}
                               className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
@@ -1552,7 +1664,113 @@ export default function TrainingDataPage() {
                       </div>
                     </td>
                   </tr>
-                )))}
+                  );
+                  // Inline editor extension: when editing an OLX or OLXSubItem,
+                  // show a second row with the membership picker.
+                  if (editingTitle === t.trainingTitle && (editValues.trainingType === "OLX" || editValues.trainingType === "OLXSubItem")) {
+                    rows.push(
+                      <tr key={`${t.trainingTitle}::membership-edit`} className="border-b border-gray-100 bg-blue-50/40">
+                        <td colSpan={8} className="px-4 py-3">
+                          {editValues.trainingType === "OLX" ? (
+                            <div>
+                              <div className="text-xs font-semibold text-gray-600 mb-1">Sub-Items (none = single-item OLX)</div>
+                              <div className="max-h-40 overflow-y-auto border border-gray-200 rounded px-2 py-1 text-sm space-y-1 bg-white">
+                                {subItemOptions.length === 0 ? (
+                                  <span className="text-gray-400 text-xs">No OLX Sub-Item entries available.</span>
+                                ) : subItemOptions.map((s) => (
+                                  <label key={s.trainingTitle} className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 rounded px-1">
+                                    <input
+                                      type="checkbox"
+                                      checked={editValues.subItems.includes(s.trainingTitle)}
+                                      onChange={(e) => {
+                                        setEditValues((prev) => ({
+                                          ...prev,
+                                          subItems: e.target.checked
+                                            ? [...prev.subItems, s.trainingTitle]
+                                            : prev.subItems.filter((x) => x !== s.trainingTitle),
+                                        }));
+                                      }}
+                                      className="rounded border-gray-300"
+                                    />
+                                    <span className="text-xs">{s.fullTitle}</span>
+                                  </label>
+                                ))}
+                              </div>
+                            </div>
+                          ) : (
+                            <div>
+                              <div className="text-xs font-semibold text-gray-600 mb-1">Parent OLX (sub-item can belong to many)</div>
+                              <div className="max-h-40 overflow-y-auto border border-gray-200 rounded px-2 py-1 text-sm space-y-1 bg-white">
+                                {parentOptions.length === 0 ? (
+                                  <span className="text-gray-400 text-xs">No OLX parent entries available.</span>
+                                ) : parentOptions.map((p) => (
+                                  <label key={p.trainingTitle} className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 rounded px-1">
+                                    <input
+                                      type="checkbox"
+                                      checked={editValues.parents.includes(p.trainingTitle)}
+                                      onChange={(e) => {
+                                        setEditValues((prev) => ({
+                                          ...prev,
+                                          parents: e.target.checked
+                                            ? [...prev.parents, p.trainingTitle]
+                                            : prev.parents.filter((x) => x !== p.trainingTitle),
+                                        }));
+                                      }}
+                                      className="rounded border-gray-300"
+                                    />
+                                    <span className="text-xs">{p.fullTitle}</span>
+                                  </label>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  }
+                  if (isExpanded) {
+                    for (const s of subs) {
+                      rows.push(
+                        <tr key={`${t.trainingTitle}::${s.trainingTitle}`} className="border-b border-gray-100 bg-gray-50/40">
+                          <td className="pl-10 pr-4 py-2 text-sm text-gray-700">
+                            <span className="text-xs text-gray-400 mr-2">↳</span>
+                            {s.fullTitle}
+                          </td>
+                          <td className="px-4 py-2 text-sm text-gray-600">{s.trainingTitle}</td>
+                          <td className="px-4 py-2 text-sm text-gray-600">{TRAINING_TYPE_LABELS[s.trainingType] || s.trainingType}</td>
+                          <td className="px-4 py-2 text-sm">{s.link ? (
+                            <a href={s.link} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Link</a>
+                          ) : "-"}</td>
+                          <td className="px-4 py-2 text-sm text-gray-600">{s.productType}</td>
+                          <td className="px-4 py-2 text-sm text-gray-600">{FUNCTION_TYPE_LABELS[s.function] || s.function}</td>
+                          <td className="px-4 py-2 text-sm text-gray-400">-</td>
+                          <td className="px-4 py-2 text-sm">
+                            <button
+                              onClick={() => {
+                                setEditingTitle(s.trainingTitle);
+                                setEditValues({
+                                  trainingTitle: s.trainingTitle,
+                                  fullTitle: s.fullTitle,
+                                  trainingType: s.trainingType,
+                                  productType: s.productType,
+                                  function: s.function,
+                                  link: s.link || "",
+                                  certification: s.certification || [],
+                                  subItems: s.subItems || [],
+                                  parents: s.parents || [],
+                                });
+                              }}
+                              className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
+                            >
+                              Edit
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    }
+                  }
+                  return rows;
+                }))}
               </tbody>
             </table>
           </div>
@@ -1614,7 +1832,9 @@ export default function TrainingDataPage() {
                 setNewTraining((prev) => ({
                   ...prev,
                   trainingType: val,
-                  certification: val === "InstructorLedTraining" ? prev.certification : [],
+                  certification: (val === "InstructorLedTraining" || val === "OLX") ? prev.certification : [],
+                  subItems: val === "OLX" ? prev.subItems : [],
+                  parents: val === "OLXSubItem" ? prev.parents : [],
                 }));
               }}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
@@ -1670,7 +1890,7 @@ export default function TrainingDataPage() {
               placeholder="https://..."
             />
           </div>
-          {newTraining.trainingType === "InstructorLedTraining" && (
+          {(newTraining.trainingType === "InstructorLedTraining" || newTraining.trainingType === "OLX") && (
             <div>
               <label className="block text-sm font-medium mb-1">Certification</label>
               <div className="max-h-40 overflow-y-auto border border-gray-300 rounded-lg px-3 py-2 text-sm space-y-1">
@@ -1693,6 +1913,76 @@ export default function TrainingDataPage() {
                       className="rounded border-gray-300"
                     />
                     <span>{c}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+          {newTraining.trainingType === "OLX" && (
+            <div>
+              <label className="block text-sm font-medium mb-1">
+                Sub-Items
+                <span className="text-xs text-gray-500 ml-2">
+                  (leave empty for a single-item OLX)
+                </span>
+              </label>
+              <div className="max-h-40 overflow-y-auto border border-gray-300 rounded-lg px-3 py-2 text-sm space-y-1">
+                {subItemOptions.length === 0 && (
+                  <span className="text-gray-400 text-xs">
+                    No OLX Sub-Item entries available. Create them first, then assign here.
+                  </span>
+                )}
+                {subItemOptions.map((s) => (
+                  <label key={s.trainingTitle} className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 rounded px-1">
+                    <input
+                      type="checkbox"
+                      checked={newTraining.subItems.includes(s.trainingTitle)}
+                      onChange={(e) => {
+                        setNewTraining((prev) => ({
+                          ...prev,
+                          subItems: e.target.checked
+                            ? [...prev.subItems, s.trainingTitle]
+                            : prev.subItems.filter((x) => x !== s.trainingTitle),
+                        }));
+                      }}
+                      className="rounded border-gray-300"
+                    />
+                    <span>{s.fullTitle}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+          {newTraining.trainingType === "OLXSubItem" && (
+            <div>
+              <label className="block text-sm font-medium mb-1">
+                Parent OLX
+                <span className="text-xs text-gray-500 ml-2">
+                  (one or more — sub-items can be shared across parents)
+                </span>
+              </label>
+              <div className="max-h-40 overflow-y-auto border border-gray-300 rounded-lg px-3 py-2 text-sm space-y-1">
+                {parentOptions.length === 0 && (
+                  <span className="text-gray-400 text-xs">
+                    No OLX parent entries available yet. You can leave this empty and assign later.
+                  </span>
+                )}
+                {parentOptions.map((p) => (
+                  <label key={p.trainingTitle} className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 rounded px-1">
+                    <input
+                      type="checkbox"
+                      checked={newTraining.parents.includes(p.trainingTitle)}
+                      onChange={(e) => {
+                        setNewTraining((prev) => ({
+                          ...prev,
+                          parents: e.target.checked
+                            ? [...prev.parents, p.trainingTitle]
+                            : prev.parents.filter((x) => x !== p.trainingTitle),
+                        }));
+                      }}
+                      className="rounded border-gray-300"
+                    />
+                    <span>{p.fullTitle}</span>
                   </label>
                 ))}
               </div>

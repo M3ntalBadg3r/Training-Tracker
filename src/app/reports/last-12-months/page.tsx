@@ -39,7 +39,14 @@ interface TrainingRecordRow {
   active: boolean;
 }
 
-const TYPES = ["Certification", "Accreditation", "Instructor-Led Training"] as const;
+const TYPES = ["Certification", "Accreditation", "Instructor-Led Training", "OLX"] as const;
+
+function typeBadgeClass(t: string): string {
+  if (t === "Certification") return "bg-blue-100 text-blue-800";
+  if (t === "Accreditation") return "bg-emerald-100 text-emerald-800";
+  if (t === "OLX") return "bg-sky-100 text-sky-800";
+  return "bg-amber-100 text-amber-800";
+}
 
 function ExportMenu({ data, columns, filename }: { data: Record<string, unknown>[]; columns: { key: string; header: string }[]; filename: string }) {
   const [show, setShow] = useState(false);
@@ -163,6 +170,7 @@ export default function Last12MonthsPage() {
       cert: filtered.filter((r) => r.trainingType === "Certification").length,
       accred: filtered.filter((r) => r.trainingType === "Accreditation").length,
       ilt: filtered.filter((r) => r.trainingType === "Instructor-Led Training").length,
+      olx: filtered.filter((r) => r.trainingType === "OLX").length,
       thisYearTotal,
       priorYearTotal,
       change,
@@ -213,6 +221,7 @@ export default function Last12MonthsPage() {
           { label: "Certifications", value: kpis.cert, icon: Award, tone: "indigo" },
           { label: "Accreditations", value: kpis.accred, icon: ShieldCheck, tone: "emerald" },
           { label: "ILTs", value: kpis.ilt, icon: GraduationCap, tone: "amber" },
+          { label: "OLX", value: kpis.olx, icon: GraduationCap, tone: "blue" },
         ]}
       />
 
@@ -328,7 +337,7 @@ export default function Last12MonthsPage() {
                     <td className="px-4 py-3">{row.country || "-"}</td>
                     <td className="px-4 py-3">{row.trainingTitle}</td>
                     <td className="px-4 py-3">
-                      <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${row.trainingType === "Certification" ? "bg-blue-100 text-blue-800" : row.trainingType === "Accreditation" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>
+                      <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${typeBadgeClass(row.trainingType)}`}>
                         {row.trainingType}
                       </span>
                     </td>

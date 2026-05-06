@@ -39,7 +39,12 @@ export async function GET(request: NextRequest) {
   horizonEnd.setFullYear(horizonEnd.getFullYear() + 1);
 
   const records = await prisma.trainingTaken.findMany({
-    where: companyFilter ? { student: { companyId: { in: companyFilter } } } : {},
+    where: {
+      // Sub-items roll up into the parent OLX, which carries the canonical
+      // expiry. Exclude them from the renewal forecast.
+      trainingData: { trainingType: { not: "OLXSubItem" } },
+      ...(companyFilter ? { student: { companyId: { in: companyFilter } } } : {}),
+    },
     include: {
       trainingData: { select: { fullTitle: true, productType: true, trainingType: true } },
     },

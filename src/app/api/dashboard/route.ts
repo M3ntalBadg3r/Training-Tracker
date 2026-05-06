@@ -15,12 +15,13 @@ type TrainingRecord = {
   };
 };
 
-function getTypeLabel(trainingType: string): "Certification" | "Accreditation" | "Instructor-Led Training" {
-  return trainingType === "Certification"
-    ? "Certification"
-    : trainingType === "Accreditation"
-      ? "Accreditation"
-      : "Instructor-Led Training";
+type TypeLabel = "Certification" | "Accreditation" | "Instructor-Led Training" | "OLX";
+
+function getTypeLabel(trainingType: string): TypeLabel {
+  if (trainingType === "Certification") return "Certification";
+  if (trainingType === "Accreditation") return "Accreditation";
+  if (trainingType === "OLX") return "OLX";
+  return "Instructor-Led Training";
 }
 
 function computeChartData(allTrainingTaken: TrainingRecord[]) {
@@ -28,9 +29,9 @@ function computeChartData(allTrainingTaken: TrainingRecord[]) {
 
   // --- Breakdown by Product Type ---
   const productTypes = ["Cortex", "SASE", "Cloud", "Strata", "Foundation"];
-  const byProductType: Record<string, { Certification: number; Accreditation: number; "Instructor-Led Training": number }> = {};
+  const byProductType: Record<string, { Certification: number; Accreditation: number; "Instructor-Led Training": number; OLX: number }> = {};
   for (const pt of productTypes) {
-    byProductType[pt] = { Certification: 0, Accreditation: 0, "Instructor-Led Training": 0 };
+    byProductType[pt] = { Certification: 0, Accreditation: 0, "Instructor-Led Training": 0, OLX: 0 };
   }
   for (const tt of allTrainingTaken) {
     const pt = tt.trainingData.productType;
@@ -45,9 +46,9 @@ function computeChartData(allTrainingTaken: TrainingRecord[]) {
     PreSales: "Pre-Sales",
     Deployments: "Deployments",
   };
-  const byFunction: Record<string, { Certification: number; Accreditation: number; "Instructor-Led Training": number }> = {};
+  const byFunction: Record<string, { Certification: number; Accreditation: number; "Instructor-Led Training": number; OLX: number }> = {};
   for (const fn of Object.keys(FUNCTION_LABELS)) {
-    byFunction[FUNCTION_LABELS[fn]] = { Certification: 0, Accreditation: 0, "Instructor-Led Training": 0 };
+    byFunction[FUNCTION_LABELS[fn]] = { Certification: 0, Accreditation: 0, "Instructor-Led Training": 0, OLX: 0 };
   }
   for (const tt of allTrainingTaken) {
     const fnLabel = FUNCTION_LABELS[tt.trainingData.function] || tt.trainingData.function;
@@ -65,9 +66,9 @@ function computeChartData(allTrainingTaken: TrainingRecord[]) {
   sixMonths.setMonth(sixMonths.getMonth() + 6);
 
   const expiryBuckets = {
-    "1 Month": { Certification: 0, Accreditation: 0, "Instructor-Led Training": 0 },
-    "3 Months": { Certification: 0, Accreditation: 0, "Instructor-Led Training": 0 },
-    "6 Months": { Certification: 0, Accreditation: 0, "Instructor-Led Training": 0 },
+    "1 Month": { Certification: 0, Accreditation: 0, "Instructor-Led Training": 0, OLX: 0 },
+    "3 Months": { Certification: 0, Accreditation: 0, "Instructor-Led Training": 0, OLX: 0 },
+    "6 Months": { Certification: 0, Accreditation: 0, "Instructor-Led Training": 0, OLX: 0 },
   };
 
   for (const tt of allTrainingTaken) {
@@ -85,13 +86,14 @@ function computeChartData(allTrainingTaken: TrainingRecord[]) {
     Certification: number;
     Accreditation: number;
     "Instructor-Led Training": number;
+    OLX: number;
   }[] = [];
 
   for (let i = 11; i >= 0; i--) {
     const start = new Date(now.getFullYear(), now.getMonth() - i, 1);
     const end = new Date(now.getFullYear(), now.getMonth() - i + 1, 1);
     const monthLabel = start.toLocaleDateString("en-US", { year: "numeric", month: "short" });
-    const bucket = { month: monthLabel, Certification: 0, Accreditation: 0, "Instructor-Led Training": 0 };
+    const bucket = { month: monthLabel, Certification: 0, Accreditation: 0, "Instructor-Led Training": 0, OLX: 0 };
 
     for (const tt of allTrainingTaken) {
       if (tt.completedDate >= start && tt.completedDate < end) {
@@ -157,7 +159,12 @@ export async function GET(request: NextRequest) {
 
   const rawTrainingTaken = await prisma.trainingTaken.findMany({
     include: { trainingData: true },
-    where: trainingWhere,
+    where: {
+      // Sub-items roll up into the parent OLX. Exclude them from dashboard
+      // counts to avoid double-counting.
+      trainingData: { trainingType: { not: "OLXSubItem" } },
+      ...trainingWhere,
+    },
   });
 
   // Deduplicate: keep one record per student + fullTitle + trainingType (most recent)
@@ -175,11 +182,13 @@ export async function GET(request: NextRequest) {
   let certCount = 0;
   let accredCount = 0;
   let iltCount = 0;
+  let olxCount = 0;
   for (const tt of allTrainingTaken) {
     switch (tt.trainingData.trainingType) {
       case "Certification": certCount++; break;
       case "Accreditation": accredCount++; break;
       case "InstructorLedTraining": iltCount++; break;
+      case "OLX": olxCount++; break;
     }
   }
 
@@ -192,6 +201,7 @@ export async function GET(request: NextRequest) {
       certifications: certCount,
       accreditations: accredCount,
       instructorLedTraining: iltCount,
+      olx: olxCount,
     },
     ...chartData,
   });
