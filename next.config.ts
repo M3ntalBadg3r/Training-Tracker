@@ -7,12 +7,14 @@ const nextConfig: NextConfig = {
     UPDATE_CHANNEL: process.env.UPDATE_CHANNEL || "stable",
   },
   async headers() {
-    // Content-Security-Policy. Tailwind v4 + Recharts emit inline styles, so
-    // style-src keeps 'unsafe-inline'. Scripts are restricted to same-origin;
-    // 'unsafe-eval' is only relaxed in development for HMR.
+    // Content-Security-Policy. Next.js App Router uses inline <script> tags
+    // for streaming + hydrating React Server Components, so script-src must
+    // allow 'unsafe-inline' until we wire up nonce-based CSP via proxy.ts.
+    // Tailwind v4 + Recharts emit inline styles too, hence 'unsafe-inline'
+    // for style-src. 'unsafe-eval' is only relaxed in development for HMR.
     const scriptSrc =
       process.env.NODE_ENV === "production"
-        ? "'self'"
+        ? "'self' 'unsafe-inline'"
         : "'self' 'unsafe-eval' 'unsafe-inline'";
     const csp = [
       "default-src 'self'",
