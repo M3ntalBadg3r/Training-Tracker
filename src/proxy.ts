@@ -35,12 +35,6 @@ function isAdminPath(pathname: string): boolean {
 // SuperAdmin-only routes — these handle system-wide management (users,
 // companies, training/region catalogs, backups, cleanup, updates) and are
 // not safe to expose to a per-company Admin.
-//
-// Note: only **page** routes for catalogs (training-data, region-data) live
-// here. The /api/training-data and /api/region-data endpoints expose read
-// operations that scoped Users and Admins still need (the Training page,
-// student detail page, etc.). Mutation handlers in those subtrees protect
-// themselves via `requireSuperAdmin` instead.
 const SUPER_ADMIN_PREFIXES = [
   "/admin/users",
   "/api/admin/users",
@@ -71,10 +65,6 @@ function isApiRoute(pathname: string): boolean {
   return pathname.startsWith("/api/");
 }
 
-// Routes the user is allowed to reach while the JWT carries the
-// `pendingMfaEnrollment` claim (set by the login route when an admin has
-// flagged the user with `mustEnableMfa`). Everything else is blocked until the
-// user completes MFA enrolment via /setup-mfa.
 const MFA_ENROLLMENT_ALLOWLIST = [
   "/setup-mfa",
   "/api/auth/mfa/setup",
@@ -89,71 +79,17 @@ function isMfaEnrollmentAllowed(pathname: string): boolean {
   );
 }
 
-// --- CSP nonce ---------------------------------------------------------
-//
-// Generated per request and propagated two ways:
-//   1) as the `x-nonce` request header so Next.js stamps it onto its own
-//      hydration <script> tags automatically;
-//   2) as the response-side `Content-Security-Policy` header that whitelists
-//      `'nonce-XXX'` plus `'strict-dynamic'`, so further scripts loaded by
-//      the nonce'd hydration entry point inherit trust without needing
-//      'unsafe-inline'.
-//
-// Edge runtime — Web Crypto only (no node:crypto).
-function generateNonce(): string {
-  const arr = new Uint8Array(16);
-  crypto.getRandomValues(arr);
-  // base64 encode
-  let bin = "";
-  for (const b of arr) bin += String.fromCharCode(b);
-  // btoa is available in Edge runtime
-  return btoa(bin);
-}
-
-function buildCsp(nonce: string): string {
-  // 'strict-dynamic' lets nonce'd entry scripts pull in further bundles
-  // without needing 'self'/'unsafe-inline'. Style-src keeps 'unsafe-inline'
-  // because Tailwind v4 + Recharts emit inline styles at runtime.
-  return [
-    "default-src 'self'",
-    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`,
-    "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data: blob:",
-    "font-src 'self' data:",
-    "connect-src 'self'",
-    "frame-ancestors 'none'",
-    "base-uri 'self'",
-    "form-action 'self'",
-    "object-src 'none'",
-  ].join("; ");
-}
-
-// Wrap NextResponse.next() so every passthrough carries the nonce on
-// request (for Next to consume) and the CSP on response.
-function passThrough(request: NextRequest, nonce: string, csp: string): NextResponse {
-  const requestHeaders = new Headers(request.headers);
-  requestHeaders.set("x-nonce", nonce);
-  const response = NextResponse.next({
-    request: { headers: requestHeaders },
-  });
-  response.headers.set("Content-Security-Policy", csp);
-  return response;
-}
-
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  const nonce = generateNonce();
-  const csp = buildCsp(nonce);
-
-  // Allow static assets — no CSP needed (images/css don't execute scripts).
+  // Allow static assets
   if (isStaticAsset(pathname)) {
     return NextResponse.next();
   }
 
   // Allow public paths (login, setup, and their API routes)
   if (isPublicPath(pathname)) {
-    return passThrough(request, nonce, csp);
+    return NextResponse.next();
   }
 
   // Allow cron-triggered endpoints with valid HMAC signature
@@ -166,7 +102,7 @@ export async function proxy(request: NextRequest) {
   if (isCronRequest) {
     const signature = request.headers.get("x-cron-signature");
     if (verifyCronSignature(signature)) {
-      return passThrough(request, nonce, csp);
+      return NextResponse.next();
     }
     // Fall through to normal JWT auth if signature is invalid
   }
@@ -200,10 +136,6 @@ export async function proxy(request: NextRequest) {
   const isAdminish = role === "Admin" || role === "SuperAdmin";
   const pendingMfaEnrollment = payload.pendingMfaEnrollment === true;
 
-  // Force users with mustEnableMfa to complete MFA enrolment before reaching
-  // any other route. This is the server-side enforcement of the admin-set
-  // "Require MFA at next login" flag — a client-side redirect would be
-  // bypassable by calling APIs directly.
   if (pendingMfaEnrollment && !isMfaEnrollmentAllowed(pathname)) {
     if (isApiRoute(pathname)) {
       return NextResponse.json(
@@ -230,7 +162,7 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
-  return passThrough(request, nonce, csp);
+  return NextResponse.next();
 }
 
 export const config = {
