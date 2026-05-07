@@ -58,6 +58,7 @@ const SUPER_ADMIN_PREFIXES = [
   "/admin/updates",
   "/api/admin/updates",
   "/api/admin/wipe",
+  "/api/admin/security",
 ];
 
 function isSuperAdminPath(pathname: string): boolean {

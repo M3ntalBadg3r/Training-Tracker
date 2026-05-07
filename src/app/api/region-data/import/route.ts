@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { requireAuth, handleAuthError, requireSuperAdmin } from "@/lib/auth";
+import { handleAuthError, requireSuperAdmin } from "@/lib/auth";
 
 export async function POST(request: NextRequest) {
   try {
@@ -18,6 +18,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       { error: "Missing rows or column mapping" },
       { status: 400 }
+    );
+  }
+  if (!Array.isArray(rows)) {
+    return NextResponse.json({ error: "rows must be an array" }, { status: 400 });
+  }
+  if (rows.length > 10_000) {
+    return NextResponse.json(
+      { error: "Too many rows in a single import (max 10,000)." },
+      { status: 413 }
     );
   }
 

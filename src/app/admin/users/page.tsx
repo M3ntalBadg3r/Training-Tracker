@@ -57,7 +57,14 @@ export default function UserManagementPage() {
 
   const [resetUser, setResetUser] = useState<UserRow | null>(null);
   const [resetPassword, setResetPassword] = useState("");
+  const [resetAdminPassword, setResetAdminPassword] = useState("");
+  const [resetAdminMfaCode, setResetAdminMfaCode] = useState("");
   const [resetError, setResetError] = useState("");
+
+  const [disableMfaUser, setDisableMfaUser] = useState<UserRow | null>(null);
+  const [disableMfaPassword, setDisableMfaPassword] = useState("");
+  const [disableMfaCode, setDisableMfaCode] = useState("");
+  const [disableMfaError, setDisableMfaError] = useState("");
 
   const [deleteUser, setDeleteUser] = useState<UserRow | null>(null);
   const [deleteError, setDeleteError] = useState("");
@@ -121,7 +128,11 @@ export default function UserManagementPage() {
     const res = await fetch(`/api/admin/users/${resetUser.id}/reset-password`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password: resetPassword }),
+      body: JSON.stringify({
+        password: resetPassword,
+        adminPassword: resetAdminPassword,
+        adminMfaCode: resetAdminMfaCode || undefined,
+      }),
     });
     const data = await res.json();
     if (!res.ok) {
@@ -130,6 +141,8 @@ export default function UserManagementPage() {
     }
     setResetUser(null);
     setResetPassword("");
+    setResetAdminPassword("");
+    setResetAdminMfaCode("");
   };
 
   const handleDeleteUser = async () => {
@@ -145,12 +158,26 @@ export default function UserManagementPage() {
     fetchUsers();
   };
 
-  const handleDisableMfa = async (user: UserRow) => {
-    await fetch("/api/auth/mfa/disable", {
+  const handleDisableMfa = async () => {
+    if (!disableMfaUser) return;
+    setDisableMfaError("");
+    const res = await fetch("/api/auth/mfa/disable", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId: user.id }),
+      body: JSON.stringify({
+        userId: disableMfaUser.id,
+        password: disableMfaPassword,
+        mfaCode: disableMfaCode || undefined,
+      }),
     });
+    const data = await res.json();
+    if (!res.ok) {
+      setDisableMfaError(data.error || "Failed to disable MFA");
+      return;
+    }
+    setDisableMfaUser(null);
+    setDisableMfaPassword("");
+    setDisableMfaCode("");
     fetchUsers();
   };
 
@@ -271,7 +298,12 @@ export default function UserManagementPage() {
                     </button>
                     {user.mfaEnabled && (
                       <button
-                        onClick={() => handleDisableMfa(user)}
+                        onClick={() => {
+                          setDisableMfaUser(user);
+                          setDisableMfaPassword("");
+                          setDisableMfaCode("");
+                          setDisableMfaError("");
+                        }}
                         className="p-1.5 text-orange-600 hover:bg-orange-50 rounded"
                         title="Disable MFA"
                       >
@@ -437,11 +469,26 @@ export default function UserManagementPage() {
 
       <Modal
         open={!!resetUser}
-        onClose={() => setResetUser(null)}
+        onClose={() => {
+          setResetUser(null);
+          setResetPassword("");
+          setResetAdminPassword("");
+          setResetAdminMfaCode("");
+        }}
         title={`Reset Password: ${resetUser?.username}`}
         actions={
           <>
-            <button onClick={() => setResetUser(null)} className="px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300">Cancel</button>
+            <button
+              onClick={() => {
+                setResetUser(null);
+                setResetPassword("");
+                setResetAdminPassword("");
+                setResetAdminMfaCode("");
+              }}
+              className="px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300"
+            >
+              Cancel
+            </button>
             <button onClick={handleResetPassword} className="px-4 py-2 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700">Reset Password</button>
           </>
         }
@@ -457,8 +504,83 @@ export default function UserManagementPage() {
             />
             <p className="text-xs text-gray-400 mt-1">Min 8 characters with uppercase, lowercase, number, and special character</p>
           </div>
+          <div className="border-t border-gray-200 pt-3">
+            <p className="text-xs text-gray-500 mb-2">Re-authenticate to confirm this destructive action.</p>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Your password</label>
+            <input
+              type="password"
+              value={resetAdminPassword}
+              onChange={(e) => setResetAdminPassword(e.target.value)}
+              autoComplete="current-password"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+            />
+            <label className="block text-sm font-medium text-gray-700 mb-1 mt-2">Your MFA code (if enabled)</label>
+            <input
+              type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              value={resetAdminMfaCode}
+              onChange={(e) => setResetAdminMfaCode(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+            />
+          </div>
           {resetError && (
             <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2">{resetError}</div>
+          )}
+        </div>
+      </Modal>
+
+      <Modal
+        open={!!disableMfaUser}
+        onClose={() => {
+          setDisableMfaUser(null);
+          setDisableMfaPassword("");
+          setDisableMfaCode("");
+        }}
+        title={`Disable MFA: ${disableMfaUser?.username}`}
+        actions={
+          <>
+            <button
+              onClick={() => {
+                setDisableMfaUser(null);
+                setDisableMfaPassword("");
+                setDisableMfaCode("");
+              }}
+              className="px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300"
+            >
+              Cancel
+            </button>
+            <button onClick={handleDisableMfa} className="px-4 py-2 text-sm bg-orange-600 text-white rounded-lg hover:bg-orange-700">Disable MFA</button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <p className="text-sm text-gray-600">
+            Disabling MFA for <strong>{disableMfaUser?.username}</strong> removes their second factor entirely. Re-authenticate with your own credentials to confirm.
+          </p>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Your password</label>
+            <input
+              type="password"
+              value={disableMfaPassword}
+              onChange={(e) => setDisableMfaPassword(e.target.value)}
+              autoComplete="current-password"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Your MFA code (if enabled)</label>
+            <input
+              type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              value={disableMfaCode}
+              onChange={(e) => setDisableMfaCode(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+            />
+          </div>
+          {disableMfaError && (
+            <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2">{disableMfaError}</div>
           )}
         </div>
       </Modal>

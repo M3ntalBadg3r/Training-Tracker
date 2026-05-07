@@ -1,3 +1,16 @@
+/**
+ * Decode a URL-encoded path segment safely. decodeURIComponent throws on
+ * malformed sequences (e.g. lone `%`); we'd rather surface a 400 to the
+ * caller than a 500 stack trace.
+ */
+export function safeDecodeParam(value: string): string | null {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return null;
+  }
+}
+
 export function addYears(date: Date, years: number): Date {
   const result = new Date(date);
   result.setFullYear(result.getFullYear() + years);

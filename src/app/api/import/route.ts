@@ -50,6 +50,15 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     );
   }
+  if (!Array.isArray(rows)) {
+    return NextResponse.json({ error: "rows must be an array" }, { status: 400 });
+  }
+  if (rows.length > 50_000) {
+    return NextResponse.json(
+      { error: "Too many rows in a single import (max 50,000). Split the file and retry." },
+      { status: 413 }
+    );
+  }
 
   const allowedCompanyIds = await getAuthorizedCompanyIds(auth.sub, auth.role);
   const callerIsSuperAdmin = isSuperAdmin(auth.role);

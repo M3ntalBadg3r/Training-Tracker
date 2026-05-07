@@ -35,7 +35,7 @@ src/
     training/     # Training catalog + [fullTitle] detail page
     reports/      # Index page + 9 reports: by-product-type, by-function, expiring-soon, last-12-months, trained-not-certified, coverage, catalogue-health, program-compliance-trend, renewal-forecast
     account/      # User account page (profile, MFA setup)
-    admin/        # Admin pages (region-data, training-data, backup, import, users, companies, cleanup, updates, scheduled-exports, program-data)
+    admin/        # Admin pages (region-data, training-data, backup, import, users, companies, cleanup, updates, scheduled-exports, program-data) and SuperAdmin-only API: api/admin/security/encrypt-secrets seals plaintext mfaSecret + ExportCredential.config rows once after ENCRYPTION_KEY is provisioned.
     programs/     # Partner program compliance dashboards
       aps/        # Authorized Professional Services (APS) compliance dashboard
       global-diamond/  # Global Diamond compliance dashboard
@@ -52,14 +52,15 @@ src/
     data-table/   # Generic DataTable (search, sort, filter, paginate) + GroupedRows (grouped tbody with subtotals + expand/collapse)
     admin/        # Admin-only widgets: ProviderCredentialWizard, CredentialHealthBanner
   hooks/          # useDebounce
-  proxy.ts       # Route protection (auth + role checks)
+  proxy.ts       # Route protection (auth + role checks). Note: in Next.js 16+ the official middleware filename is `proxy.ts` (formerly `middleware.ts`).
   lib/
     prisma.ts     # Prisma client singleton (PrismaPg adapter)
-    auth.ts       # JWT, password hashing, TOTP/MFA utilities
+    auth.ts       # JWT, password hashing, TOTP/MFA utilities (sealMfaSecret/openMfaSecret wrap users.mfa_secret with the lib/crypto envelope)
+    crypto.ts     # AES-256-GCM envelope encryption (sealConfig/openConfig + sealMfaSecret helpers); keyed by ENCRYPTION_KEY env var
     company-scope.ts # Resolve a user's allowed company ids; helpers for `?companyId=` filtering
     cron-auth.ts  # HMAC-SHA256 signature verification for cron endpoints
-    rate-limit.ts # In-memory sliding-window rate limiter for auth endpoints
-    utils.ts      # Date helpers, formatters, label mappers
+    rate-limit.ts # In-memory sliding-window rate limiter for auth endpoints. getClientIp walks X-Forwarded-For from the right and skips entries in TRUSTED_PROXIES.
+    utils.ts      # Date helpers, formatters, label mappers, safeDecodeParam (URL-decode that returns null on malformed input instead of throwing)
     olx.ts        # OLX parent-completion materialization (recomputeParentsForStudent / ForSubItem / ForMany / AllStudentsForParent)
     chart-theme.ts # useChartTheme() hook — theme-aware Recharts axis/grid/tooltip + COLORS palette
     group-by.ts    # rollUp(country, region, theatre) + groupRows() — country->region->theatre rollup with theatre fallback for null/'unknown' regions
@@ -118,10 +119,14 @@ deploy/           # install.sh, update.sh, install-remote.sh, perform-update.sh,
 - Multiple `trainingTitle`s can map to the same `fullTitle`. Deduplication by `email + fullTitle + trainingType` is applied in dashboard and training-page APIs to avoid double-counting.
 - Expiry is always completedDate + 2 years (computed in `lib/utils.ts:computeExpiryDate`).
 - Sidebar collapse state is persisted to `localStorage`.
-- Rate limiting is applied to auth endpoints (login, MFA verify, setup, password reset) via `lib/rate-limit.ts`.
+- Rate limiting is applied to auth endpoints (login, MFA verify, setup, change-password, password reset, MFA disable) via `lib/rate-limit.ts`. The IP extractor walks `X-Forwarded-For` from the right and skips entries listed in `TRUSTED_PROXIES` (default `127.0.0.1,::1`) so per-IP limits aren't trivially spoofable when the app is fronted by a reverse proxy.
 - Cron endpoints (auto-backup, scheduled-exports) authenticate via HMAC-SHA256 signatures using `CRON_SECRET` env var (`lib/cron-auth.ts`).
-- Security headers (HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy) are configured in `next.config.ts`.
+- Security headers (HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy, Content-Security-Policy) are configured in `next.config.ts`.
+- Secrets at rest: `User.mfaSecret` and `ExportCredential.config` are sealed with AES-256-GCM via `lib/crypto.ts` (envelope format `enc:v1:<base64>`). `ENCRYPTION_KEY` (64 hex chars) is required. After provisioning the key, a SuperAdmin POSTs `/api/admin/security/encrypt-secrets` once to seal any pre-existing plaintext rows; the endpoint is idempotent.
 - Backup exports exclude sensitive user fields (passwordHash, mfaSecret) for security.
+- Step-up auth: an Admin/SuperAdmin disabling another user's MFA (`/api/auth/mfa/disable`) or resetting another user's password (`/api/admin/users/[id]/reset-password` — SuperAdmin-only) must re-authenticate with their own password and, if MFA is enabled on their account, a current TOTP code.
+- OAuth redirect URI: built from `APP_BASE_URL` when set, otherwise from request headers. Configure `APP_BASE_URL` in production so the URI is not influenced by `X-Forwarded-Host`.
+- All admin paths in `proxy.ts`'s `SUPER_ADMIN_PREFIXES` (users, companies, region/training/program data, specialisations, backup, cleanup, updates, wipe, security) also enforce SuperAdmin in their handlers via `requireSuperAdmin` for defense-in-depth.
 
 ## Coding Conventions
 

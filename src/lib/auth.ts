@@ -1,6 +1,12 @@
 import { SignJWT, jwtVerify } from "jose";
 import bcrypt from "bcryptjs";
 import { NextRequest, NextResponse } from "next/server";
+import {
+  encryptString,
+  decryptString,
+  isEncryptedBlob,
+  isEncryptionConfigured,
+} from "@/lib/crypto";
 
 const COOKIE_NAME = "tt-auth";
 const JWT_EXPIRY = "8h";
@@ -193,7 +199,23 @@ export async function generateMfaQrCode(uri: string): Promise<string> {
   return QRCode.toDataURL(uri);
 }
 
-export function verifyMfaToken(secret: string, token: string): boolean {
+/**
+ * Wrap a TOTP base32 secret for storage in users.mfa_secret. If
+ * ENCRYPTION_KEY is configured the secret is encrypted; otherwise it is
+ * returned as-is (legacy plaintext) so pre-key deployments keep working.
+ */
+export function sealMfaSecret(base32: string): string {
+  if (!isEncryptionConfigured()) return base32;
+  return encryptString(base32);
+}
+
+/** Unwrap whatever is in users.mfa_secret — handles both formats. */
+export function openMfaSecret(stored: string): string {
+  return isEncryptedBlob(stored) ? decryptString(stored) : stored;
+}
+
+export function verifyMfaToken(storedSecret: string, token: string): boolean {
+  const base32 = openMfaSecret(storedSecret);
   const { TOTP, Secret } = require("otpauth") as typeof import("otpauth");
   const totp = new TOTP({
     issuer: "Training Tracker",
@@ -201,7 +223,7 @@ export function verifyMfaToken(secret: string, token: string): boolean {
     algorithm: "SHA1",
     digits: 6,
     period: 30,
-    secret: Secret.fromBase32(secret),
+    secret: Secret.fromBase32(base32),
   });
   const delta = totp.validate({ token, window: 1 });
   return delta !== null;

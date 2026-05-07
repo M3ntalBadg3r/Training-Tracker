@@ -6,11 +6,21 @@ import {
   hashPassword,
   validatePassword,
 } from "@/lib/auth";
+import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 
 export async function POST(request: NextRequest) {
   const authUser = await getAuthFromRequest(request);
   if (!authUser) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // Throttle so a stolen cookie can't brute-force the current password.
+  const ip = getClientIp(request);
+  if (!checkRateLimit(`change-pw:${authUser.sub}:${ip}`, 5, 15 * 60 * 1000)) {
+    return NextResponse.json(
+      { error: "Too many attempts. Please try again later." },
+      { status: 429 },
+    );
   }
 
   const body = await request.json();

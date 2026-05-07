@@ -1,15 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma, { type PrismaTransactionClient } from "@/lib/prisma";
 import { TrainingType, ProductType, FunctionType } from "@prisma/client";
-import { requireAuth, handleAuthError, requireSuperAdmin } from "@/lib/auth";
+import { handleAuthError, requireSuperAdmin } from "@/lib/auth";
 import { recomputeAllStudentsForParent } from "@/lib/olx";
+import { safeDecodeParam } from "@/lib/utils";
 
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ title: string }> }
 ) {
   const { title } = await params;
-  const decodedTitle = decodeURIComponent(title);
+  const decodedTitleMaybe = safeDecodeParam(title);
+  if (decodedTitleMaybe === null) {
+    return NextResponse.json({ error: "Invalid title parameter" }, { status: 400 });
+  }
+  const decodedTitle = decodedTitleMaybe;
 
   const training = await prisma.trainingData.findUnique({
     where: { trainingTitle: decodedTitle },
@@ -128,7 +133,11 @@ export async function PUT(
     return handleAuthError(error);
   }
   const { title } = await params;
-  const decodedTitle = decodeURIComponent(title);
+  const decodedTitleMaybe = safeDecodeParam(title);
+  if (decodedTitleMaybe === null) {
+    return NextResponse.json({ error: "Invalid title parameter" }, { status: 400 });
+  }
+  const decodedTitle = decodedTitleMaybe;
   const body = await request.json();
 
   const newTitle = body.trainingTitle?.trim();
@@ -234,7 +243,11 @@ export async function PATCH(
     return handleAuthError(error);
   }
   const { title } = await params;
-  const decodedTitle = decodeURIComponent(title);
+  const decodedTitleMaybe = safeDecodeParam(title);
+  if (decodedTitleMaybe === null) {
+    return NextResponse.json({ error: "Invalid title parameter" }, { status: 400 });
+  }
+  const decodedTitle = decodedTitleMaybe;
 
   const training = await prisma.trainingData.update({
     where: { trainingTitle: decodedTitle },
@@ -254,7 +267,11 @@ export async function DELETE(
     return handleAuthError(error);
   }
   const { title } = await params;
-  const decodedTitle = decodeURIComponent(title);
+  const decodedTitleMaybe = safeDecodeParam(title);
+  if (decodedTitleMaybe === null) {
+    return NextResponse.json({ error: "Invalid title parameter" }, { status: 400 });
+  }
+  const decodedTitle = decodedTitleMaybe;
 
   // Find any parent OLX rows that included this title as a sub-item, so we
   // can recompute them after the cascade delete.

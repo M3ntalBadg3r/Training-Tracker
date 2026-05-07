@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, handleAuthError } from "@/lib/auth";
+import { requireSuperAdmin, handleAuthError } from "@/lib/auth";
 import { verifyCronSignature } from "@/lib/cron-auth";
 import { generateBackupZip } from "../route";
 import path from "path";
@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
 
   if (!isCronAuthed) {
     try {
-      await requireAuth(request, "Admin");
+      await requireSuperAdmin(request);
     } catch (error) {
       return handleAuthError(error);
     }

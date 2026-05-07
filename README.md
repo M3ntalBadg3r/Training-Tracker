@@ -198,7 +198,11 @@ The `.env` file requires:
 | Variable | Description |
 |----------|-------------|
 | `DATABASE_URL` | PostgreSQL connection string |
-| `JWT_SECRET` | Secret key for JWT token signing (minimum 32 characters recommended) |
+| `JWT_SECRET` | Secret key for JWT token signing (minimum 32 characters required) |
+| `ENCRYPTION_KEY` | 64-character hex string (32 bytes) used to encrypt secrets at rest — TOTP shared secrets and OAuth/SMTP credentials. Generate with `openssl rand -hex 32`. **After enabling**, a SuperAdmin must POST `/api/admin/security/encrypt-secrets` once to seal any pre-existing rows. |
+| `CRON_SECRET` | *(Optional)* Required only when using the auto-backup / auto-export shell scripts. Generate with `openssl rand -hex 32`. |
+| `APP_BASE_URL` | *(Recommended in production)* Canonical externally-resolvable origin (e.g. `https://tracker.example.com`). Used to build OAuth redirect URIs without trusting `X-Forwarded-Host` headers. |
+| `TRUSTED_PROXIES` | *(Recommended in production)* Comma-separated list of trusted reverse-proxy IPs whose `X-Forwarded-For` entries are stripped when extracting the real client IP for rate limiting. Defaults to `127.0.0.1,::1`. |
 | `GITHUB_TOKEN` | *(Optional)* GitHub personal access token — required for update checks **and git pulls** on private repositories |
 
 #### Setting up GITHUB_TOKEN

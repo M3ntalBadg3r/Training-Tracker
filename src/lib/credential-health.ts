@@ -1,4 +1,5 @@
 import prisma from "@/lib/prisma";
+import { sealConfig, openConfig } from "@/lib/crypto";
 import {
   PROVIDER_CONFIG,
   isCloudProvider,
@@ -6,6 +7,31 @@ import {
   isAuthError,
   type CloudProvider,
 } from "@/lib/oauth-providers";
+
+/**
+ * Read the (decrypted) config object for a provider. Centralised so callers
+ * can't accidentally read the raw column.
+ */
+export async function readCredentialConfig(
+  provider: string,
+): Promise<Record<string, unknown> | null> {
+  const cred = await prisma.exportCredential.findUnique({ where: { provider } });
+  if (!cred) return null;
+  return openConfig(cred.config);
+}
+
+/** Seal + persist a credential config. Upserts the row. */
+export async function writeCredentialConfig(
+  provider: string,
+  config: Record<string, unknown>,
+): Promise<void> {
+  const sealed = sealConfig(config);
+  await prisma.exportCredential.upsert({
+    where: { provider },
+    create: { provider, config: sealed as object },
+    update: { config: sealed as object },
+  });
+}
 
 const SMTP_PROVIDER = "email";
 const ALL_TRACKED_PROVIDERS = [...Object.keys(PROVIDER_CONFIG), SMTP_PROVIDER] as const;
@@ -61,7 +87,7 @@ export async function probeCredential(provider: string): Promise<ProbeResult> {
     return { status: "failed", error: "Credentials not configured" };
   }
 
-  const config = cred.config as Record<string, unknown>;
+  const config = openConfig(cred.config);
   const refreshToken = typeof config.refreshToken === "string" ? config.refreshToken : "";
   const clientId = typeof config.clientId === "string" ? config.clientId : "";
   const clientSecret = typeof config.clientSecret === "string" ? config.clientSecret : "";
@@ -96,7 +122,7 @@ export async function probeCredential(provider: string): Promise<ProbeResult> {
 async function probeEmail(): Promise<ProbeResult> {
   const cred = await prisma.exportCredential.findUnique({ where: { provider: "email" } });
   if (!cred) return { status: "failed", error: "Credentials not configured" };
-  const config = cred.config as Record<string, unknown>;
+  const config = openConfig(cred.config);
 
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -164,11 +190,12 @@ async function fetchProviderUserInfo(
 export async function persistRefreshToken(provider: string, refreshToken: string): Promise<void> {
   const cred = await prisma.exportCredential.findUnique({ where: { provider } });
   if (!cred) return;
-  const config = cred.config as Record<string, unknown>;
+  const config = openConfig(cred.config);
   if (config.refreshToken === refreshToken) return;
+  const sealed = sealConfig({ ...config, refreshToken });
   await prisma.exportCredential.update({
     where: { provider },
-    data: { config: { ...config, refreshToken } as object },
+    data: { config: sealed as object },
   });
 }
 
