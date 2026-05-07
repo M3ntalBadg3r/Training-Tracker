@@ -29,7 +29,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const user = await prisma.user.findUnique({ where: { username } });
+    // Usernames are stored lowercase so login is case-insensitive.
+    const normalizedUsername = String(username).toLowerCase();
+    const user = await prisma.user.findUnique({ where: { username: normalizedUsername } });
     if (!user) {
       return NextResponse.json(
         { error: "Invalid username or password" },
@@ -58,18 +60,33 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // If an admin has flagged the user with mustEnableMfa and they don't yet
+    // have MFA enabled, issue a session-locked cookie. proxy.ts will pin them
+    // to /setup-mfa until they enrol.
+    const pendingMfaEnrollment = user.mustEnableMfa && !user.mfaEnabled;
+
     const token = await createToken({
       sub: user.id,
       username: user.username,
       role: user.role,
       displayName: user.displayName,
+      pendingMfaEnrollment,
     });
+
+    // Fire-and-forget last-login update so we don't add DB latency to login.
+    void prisma.user
+      .update({
+        where: { id: user.id },
+        data: { lastLoginAt: new Date(), lastLoginIp: ip },
+      })
+      .catch((err) => console.error("Failed to update last-login fields:", err));
 
     const response = NextResponse.json({
       id: user.id,
       username: user.username,
       role: user.role,
       displayName: user.displayName,
+      pendingMfaEnrollment,
     });
 
     setAuthCookie(response, token);

@@ -823,11 +823,19 @@ const helpSections: Record<string, HelpSection> = {
 
         <h3>Features</h3>
         <ul>
-          <li><strong>Add User</strong> &mdash; Create a new account with username, display name, password, role, and (for non-SuperAdmin roles) the companies they can see.</li>
-          <li><strong>Edit User</strong> &mdash; Change display name, role, or company assignments.</li>
+          <li><strong>Add User</strong> &mdash; Create a new account with username, display name, password, role, and (for non-SuperAdmin roles) the companies they can see. The <strong>Require MFA at first login</strong> checkbox is on by default; the new user will be locked to the MFA enrolment page until they set up an authenticator.</li>
+          <li><strong>Edit User</strong> &mdash; Change display name, role, or company assignments. Tick <strong>Require MFA at next login</strong> to force an existing user to enrol in MFA on their next session.</li>
           <li><strong>Reset Password</strong> &mdash; Set a new password for any user.</li>
           <li><strong>Disable MFA</strong> &mdash; Turn off multi-factor authentication for a user.</li>
           <li><strong>Delete User</strong> &mdash; Remove a user account. You cannot delete yourself or the last admin.</li>
+        </ul>
+
+        <h3>Columns</h3>
+        <ul>
+          <li><strong>Username</strong> &mdash; Stored in lowercase. Login is case-insensitive (typing <code>Alice</code>, <code>alice</code>, or <code>ALICE</code> all match the same account).</li>
+          <li><strong>MFA</strong> &mdash; <em>Enabled</em> (green) when the user has set up an authenticator, <em>Required</em> (amber) when an admin has flagged the user with <strong>mustEnableMfa</strong> but they haven't enrolled yet, otherwise <em>Disabled</em>.</li>
+          <li><strong>Last login</strong> &mdash; Date and time of the most recent successful login (24-hour format).</li>
+          <li><strong>Last IP</strong> &mdash; Source IP of the most recent login, taken from the <code>X-Forwarded-For</code> header.</li>
         </ul>
 
         <h3>Password Requirements</h3>
@@ -841,7 +849,8 @@ const helpSections: Record<string, HelpSection> = {
         <p>
           Users can enable TOTP-based MFA using an authenticator app (Google Authenticator, Authy, etc.).
           When enabled, a 6-digit code is required after entering the password during login.
-          Admins can disable MFA for any user from this page.
+          Admins can disable MFA for any user from this page, or force enrolment with the
+          <strong>Require MFA</strong> checkboxes in the Add and Edit User modals.
         </p>
       </>
     ),

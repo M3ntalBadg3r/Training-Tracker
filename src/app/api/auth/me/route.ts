@@ -16,6 +16,7 @@ export async function GET(request: NextRequest) {
       role: true,
       displayName: true,
       mfaEnabled: true,
+      mustEnableMfa: true,
     },
   });
 
@@ -23,5 +24,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
 
-  return NextResponse.json(user);
+  return NextResponse.json({
+    ...user,
+    pendingMfaEnrollment: authUser.pendingMfaEnrollment === true,
+  });
 }
