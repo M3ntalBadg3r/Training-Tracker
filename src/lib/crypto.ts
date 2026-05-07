@@ -121,3 +121,43 @@ export function isSealedConfig(stored: unknown): boolean {
     (stored as Record<string, unknown>).__enc === "v1"
   );
 }
+
+// --- Binary buffer envelope (used for backup .zip archives) ---------------
+//
+// Layout: <4-byte magic 'TT01'> <12-byte IV> <16-byte authTag> <ciphertext>
+// `isEncryptedBuffer` lets restore detect an encrypted archive without
+// trusting the filename alone, so a renamed file still decrypts correctly.
+
+const BACKUP_MAGIC = Buffer.from("TT01", "ascii");
+
+export function isEncryptedBuffer(buf: Buffer): boolean {
+  return buf.length > BACKUP_MAGIC.length && buf.subarray(0, BACKUP_MAGIC.length).equals(BACKUP_MAGIC);
+}
+
+/** AES-256-GCM encrypt a binary buffer with the configured ENCRYPTION_KEY. */
+export function encryptBuffer(plain: Buffer): Buffer {
+  const key = getKey();
+  const iv = crypto.randomBytes(IV_LENGTH);
+  const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
+  const ciphertext = Buffer.concat([cipher.update(plain), cipher.final()]);
+  const authTag = cipher.getAuthTag();
+  return Buffer.concat([BACKUP_MAGIC, iv, authTag, ciphertext]);
+}
+
+/** Decrypt a buffer produced by encryptBuffer. Throws on tampering / wrong key. */
+export function decryptBuffer(blob: Buffer): Buffer {
+  if (!isEncryptedBuffer(blob)) {
+    throw new Error("Buffer is not in the expected encrypted format (magic header missing)");
+  }
+  const key = getKey();
+  const headerLen = BACKUP_MAGIC.length;
+  if (blob.length < headerLen + IV_LENGTH + TAG_LENGTH) {
+    throw new Error("Encrypted buffer is too short — possibly corrupt");
+  }
+  const iv = blob.subarray(headerLen, headerLen + IV_LENGTH);
+  const authTag = blob.subarray(headerLen + IV_LENGTH, headerLen + IV_LENGTH + TAG_LENGTH);
+  const ciphertext = blob.subarray(headerLen + IV_LENGTH + TAG_LENGTH);
+  const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
+  decipher.setAuthTag(authTag);
+  return Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+}

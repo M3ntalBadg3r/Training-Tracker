@@ -7,28 +7,10 @@ const nextConfig: NextConfig = {
     UPDATE_CHANNEL: process.env.UPDATE_CHANNEL || "stable",
   },
   async headers() {
-    // Content-Security-Policy. Next.js App Router uses inline <script> tags
-    // for streaming + hydrating React Server Components, so script-src must
-    // allow 'unsafe-inline' until we wire up nonce-based CSP via proxy.ts.
-    // Tailwind v4 + Recharts emit inline styles too, hence 'unsafe-inline'
-    // for style-src. 'unsafe-eval' is only relaxed in development for HMR.
-    const scriptSrc =
-      process.env.NODE_ENV === "production"
-        ? "'self' 'unsafe-inline'"
-        : "'self' 'unsafe-eval' 'unsafe-inline'";
-    const csp = [
-      "default-src 'self'",
-      `script-src ${scriptSrc}`,
-      "style-src 'self' 'unsafe-inline'",
-      "img-src 'self' data: blob:",
-      "font-src 'self' data:",
-      "connect-src 'self'",
-      "frame-ancestors 'none'",
-      "base-uri 'self'",
-      "form-action 'self'",
-      "object-src 'none'",
-    ].join("; ");
-
+    // Content-Security-Policy is set per-request from src/proxy.ts so that
+    // every response carries a fresh nonce that Next.js uses to sign its
+    // inline hydration scripts. The other security headers below are
+    // request-shape independent so they live here.
     return [
       {
         source: "/(.*)",
@@ -44,7 +26,6 @@ const nextConfig: NextConfig = {
             key: "Permissions-Policy",
             value: "camera=(), microphone=(), geolocation=()",
           },
-          { key: "Content-Security-Policy", value: csp },
         ],
       },
     ];

@@ -9,7 +9,7 @@ import {
 } from "@/lib/oauth-state";
 import { sealConfig, openConfig } from "@/lib/crypto";
 
-function htmlPage(opts: { provider: string; status: "ok" | "error"; message: string }): string {
+function htmlPage(opts: { provider: string; status: "ok" | "error"; message: string; nonce: string }): string {
   const payload = JSON.stringify({
     type: "tt-oauth",
     provider: opts.provider,
@@ -18,6 +18,9 @@ function htmlPage(opts: { provider: string; status: "ok" | "error"; message: str
   });
   const heading = opts.status === "ok" ? "Connected" : "Connection failed";
   const colour = opts.status === "ok" ? "#16a34a" : "#dc2626";
+  // The nonce comes from proxy.ts via the x-nonce request header and matches
+  // the per-request CSP header so the inline <script> below is allowed.
+  const nonceAttr = opts.nonce ? ` nonce="${opts.nonce}"` : "";
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -34,7 +37,7 @@ function htmlPage(opts: { provider: string; status: "ok" | "error"; message: str
   <p>${opts.message}</p>
   <p>You can close this window.</p>
   <button onclick="window.close()">Close window</button>
-  <script>
+  <script${nonceAttr}>
     try {
       if (window.opener && !window.opener.closed) {
         window.opener.postMessage(${payload}, window.location.origin);
@@ -48,8 +51,9 @@ function htmlPage(opts: { provider: string; status: "ok" | "error"; message: str
 </html>`;
 }
 
-function htmlResponse(provider: string, status: "ok" | "error", message: string, code = 200): NextResponse {
-  const response = new NextResponse(htmlPage({ provider, status, message }), {
+function htmlResponse(request: NextRequest, provider: string, status: "ok" | "error", message: string, code = 200): NextResponse {
+  const nonce = request.headers.get("x-nonce") ?? "";
+  const response = new NextResponse(htmlPage({ provider, status, message, nonce }), {
     status: code,
     headers: { "Content-Type": "text/html; charset=utf-8" },
   });
@@ -65,7 +69,7 @@ export async function GET(
   const { provider } = await params;
 
   if (!isCloudProvider(provider)) {
-    return htmlResponse(provider, "error", "Unknown provider.", 400);
+    return htmlResponse(request, provider, "error", "Unknown provider.", 400);
   }
 
   const url = new URL(request.url);
@@ -75,36 +79,36 @@ export async function GET(
   const errorDesc = url.searchParams.get("error_description");
 
   if (errorParam) {
-    return htmlResponse(provider, "error", errorDesc || errorParam, 400);
+    return htmlResponse(request, provider, "error", errorDesc || errorParam, 400);
   }
   if (!code || !state) {
-    return htmlResponse(provider, "error", "Missing 'code' or 'state' from provider.", 400);
+    return htmlResponse(request, provider, "error", "Missing 'code' or 'state' from provider.", 400);
   }
 
   const stateCookie = request.cookies.get(OAUTH_STATE_COOKIE)?.value;
   if (!stateCookie || stateCookie !== state) {
-    return htmlResponse(provider, "error", "State mismatch — please retry the connection from Training Tracker.", 400);
+    return htmlResponse(request, provider, "error", "State mismatch — please retry the connection from Training Tracker.", 400);
   }
   const verified = await verifyOAuthState(stateCookie, provider);
   if (!verified) {
-    return htmlResponse(provider, "error", "State token invalid or expired — please retry.", 400);
+    return htmlResponse(request, provider, "error", "State token invalid or expired — please retry.", 400);
   }
 
   const cred = await prisma.exportCredential.findUnique({ where: { provider } });
   if (!cred) {
-    return htmlResponse(provider, "error", "No pending credential found. Please retry from Training Tracker.", 400);
+    return htmlResponse(request, provider, "error", "No pending credential found. Please retry from Training Tracker.", 400);
   }
 
   let pendingConfig: Record<string, unknown>;
   try {
     pendingConfig = openConfig(cred.config);
   } catch {
-    return htmlResponse(provider, "error", "Stored credential could not be decrypted (encryption key missing or rotated).", 500);
+    return htmlResponse(request, provider, "error", "Stored credential could not be decrypted (encryption key missing or rotated).", 500);
   }
   const clientId = typeof pendingConfig.clientId === "string" ? pendingConfig.clientId : "";
   const clientSecret = typeof pendingConfig.clientSecret === "string" ? pendingConfig.clientSecret : "";
   if (!clientId || !clientSecret) {
-    return htmlResponse(provider, "error", "Pending credential is missing Client ID or Secret.", 400);
+    return htmlResponse(request, provider, "error", "Pending credential is missing Client ID or Secret.", 400);
   }
 
   const redirectUri = getRedirectUri(request, provider);
@@ -140,9 +144,9 @@ export async function GET(
       },
     });
 
-    return htmlResponse(provider, "ok", "Training Tracker is now connected.");
+    return htmlResponse(request, provider, "ok", "Training Tracker is now connected.");
   } catch (err) {
     const message = err instanceof Error ? err.message : "Token exchange failed";
-    return htmlResponse(provider, "error", message, 400);
+    return htmlResponse(request, provider, "error", message, 400);
   }
 }

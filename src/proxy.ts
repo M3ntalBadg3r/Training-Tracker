@@ -89,17 +89,71 @@ function isMfaEnrollmentAllowed(pathname: string): boolean {
   );
 }
 
+// --- CSP nonce ---------------------------------------------------------
+//
+// Generated per request and propagated two ways:
+//   1) as the `x-nonce` request header so Next.js stamps it onto its own
+//      hydration <script> tags automatically;
+//   2) as the response-side `Content-Security-Policy` header that whitelists
+//      `'nonce-XXX'` plus `'strict-dynamic'`, so further scripts loaded by
+//      the nonce'd hydration entry point inherit trust without needing
+//      'unsafe-inline'.
+//
+// Edge runtime — Web Crypto only (no node:crypto).
+function generateNonce(): string {
+  const arr = new Uint8Array(16);
+  crypto.getRandomValues(arr);
+  // base64 encode
+  let bin = "";
+  for (const b of arr) bin += String.fromCharCode(b);
+  // btoa is available in Edge runtime
+  return btoa(bin);
+}
+
+function buildCsp(nonce: string): string {
+  // 'strict-dynamic' lets nonce'd entry scripts pull in further bundles
+  // without needing 'self'/'unsafe-inline'. Style-src keeps 'unsafe-inline'
+  // because Tailwind v4 + Recharts emit inline styles at runtime.
+  return [
+    "default-src 'self'",
+    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`,
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob:",
+    "font-src 'self' data:",
+    "connect-src 'self'",
+    "frame-ancestors 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "object-src 'none'",
+  ].join("; ");
+}
+
+// Wrap NextResponse.next() so every passthrough carries the nonce on
+// request (for Next to consume) and the CSP on response.
+function passThrough(request: NextRequest, nonce: string, csp: string): NextResponse {
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set("x-nonce", nonce);
+  const response = NextResponse.next({
+    request: { headers: requestHeaders },
+  });
+  response.headers.set("Content-Security-Policy", csp);
+  return response;
+}
+
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Allow static assets
+  const nonce = generateNonce();
+  const csp = buildCsp(nonce);
+
+  // Allow static assets — no CSP needed (images/css don't execute scripts).
   if (isStaticAsset(pathname)) {
     return NextResponse.next();
   }
 
   // Allow public paths (login, setup, and their API routes)
   if (isPublicPath(pathname)) {
-    return NextResponse.next();
+    return passThrough(request, nonce, csp);
   }
 
   // Allow cron-triggered endpoints with valid HMAC signature
@@ -112,7 +166,7 @@ export async function proxy(request: NextRequest) {
   if (isCronRequest) {
     const signature = request.headers.get("x-cron-signature");
     if (verifyCronSignature(signature)) {
-      return NextResponse.next();
+      return passThrough(request, nonce, csp);
     }
     // Fall through to normal JWT auth if signature is invalid
   }
@@ -176,7 +230,7 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
-  return NextResponse.next();
+  return passThrough(request, nonce, csp);
 }
 
 export const config = {

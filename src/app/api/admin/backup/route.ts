@@ -2,6 +2,66 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma, { type PrismaTransactionClient } from "@/lib/prisma";
 import JSZip from "jszip";
 import { requireSuperAdmin, handleAuthError } from "@/lib/auth";
+import {
+  encryptBuffer,
+  decryptBuffer,
+  isEncryptedBuffer,
+  isEncryptionConfigured,
+} from "@/lib/crypto";
+
+/**
+ * Wraps generateBackupZip with envelope encryption (AES-256-GCM, keyed by
+ * ENCRYPTION_KEY) when configured. Returns the bytes ready to write to disk
+ * or stream to the client, plus the filename that should be used (the
+ * ".zip.enc" suffix is the on-disk discriminator; isEncryptedBuffer() is the
+ * authoritative check during restore).
+ */
+export async function generateBackupArchive(): Promise<{
+  buffer: Buffer;
+  timestamp: string;
+  filename: string;
+  encrypted: boolean;
+  contentType: string;
+}> {
+  const { buffer, timestamp } = await generateBackupZip();
+  const zipBuf = Buffer.from(buffer);
+  if (isEncryptionConfigured()) {
+    const enc = encryptBuffer(zipBuf);
+    return {
+      buffer: enc,
+      timestamp,
+      filename: `training-tracker-backup-${timestamp}.zip.enc`,
+      encrypted: true,
+      contentType: "application/octet-stream",
+    };
+  }
+  return {
+    buffer: zipBuf,
+    timestamp,
+    filename: `training-tracker-backup-${timestamp}.zip`,
+    encrypted: false,
+    contentType: "application/zip",
+  };
+}
+
+/**
+ * Decrypt-if-needed loader for a backup archive. Accepts either:
+ *  - a raw ZIP buffer (legacy / unencrypted deployments), or
+ *  - an envelope-encrypted buffer (magic 'TT01' + IV + tag + ciphertext)
+ * and returns the inner ZIP bytes ready for JSZip.loadAsync.
+ */
+export async function loadBackupArchive(input: ArrayBuffer | Buffer): Promise<Buffer> {
+  const buf = Buffer.isBuffer(input) ? input : Buffer.from(input);
+  if (isEncryptedBuffer(buf)) {
+    if (!isEncryptionConfigured()) {
+      throw new Error(
+        "Archive is encrypted but ENCRYPTION_KEY is not configured. Set ENCRYPTION_KEY to the same value used when the backup was created."
+      );
+    }
+    return decryptBuffer(buf);
+  }
+  return buf;
+}
 
 export async function generateBackupZip(): Promise<{
   buffer: ArrayBuffer;
@@ -49,12 +109,12 @@ export async function GET(request: NextRequest) {
     return handleAuthError(error);
   }
 
-  const { buffer, timestamp } = await generateBackupZip();
+  const { buffer, filename, contentType } = await generateBackupArchive();
 
-  return new NextResponse(new Blob([buffer]), {
+  return new NextResponse(new Blob([new Uint8Array(buffer)]), {
     headers: {
-      "Content-Type": "application/zip",
-      "Content-Disposition": `attachment; filename="training-tracker-backup-${timestamp}.zip"`,
+      "Content-Type": contentType,
+      "Content-Disposition": `attachment; filename="${filename}"`,
     },
   });
 }
@@ -73,7 +133,16 @@ export async function POST(request: NextRequest) {
   }
 
   const arrayBuffer = await file.arrayBuffer();
-  const zip = await JSZip.loadAsync(arrayBuffer);
+  let zipBytes: Buffer;
+  try {
+    zipBytes = await loadBackupArchive(arrayBuffer);
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Failed to read archive" },
+      { status: 400 }
+    );
+  }
+  const zip = await JSZip.loadAsync(zipBytes);
 
   // Validate required files exist
   const requiredFiles = [

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSuperAdmin, handleAuthError } from "@/lib/auth";
 import { verifyCronSignature } from "@/lib/cron-auth";
-import { generateBackupZip } from "../route";
+import { generateBackupArchive } from "../route";
 import path from "path";
 import fs from "fs";
 
@@ -25,7 +25,7 @@ function enforceRetention(backupPath: string, retentionCount: number) {
 
   const files = fs
     .readdirSync(backupPath)
-    .filter((f) => f.endsWith(".zip"))
+    .filter((f) => f.endsWith(".zip") || f.endsWith(".zip.enc"))
     .map((f) => ({
       name: f,
       mtime: fs.statSync(path.join(backupPath, f)).mtime.getTime(),
@@ -70,11 +70,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { buffer, timestamp } = await generateBackupZip();
-    const filename = `training-tracker-backup-${timestamp}.zip`;
+    const { buffer, filename } = await generateBackupArchive();
     const filePath = path.join(config.backupPath, filename);
 
-    fs.writeFileSync(filePath, Buffer.from(buffer));
+    fs.writeFileSync(filePath, buffer);
 
     // Enforce retention
     enforceRetention(config.backupPath, config.retentionCount);

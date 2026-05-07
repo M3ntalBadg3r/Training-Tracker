@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
 
     const entries = fs.readdirSync(backupPath, { withFileTypes: true });
     const files = entries
-      .filter((e) => e.isFile() && e.name.endsWith(".zip"))
+      .filter((e) => e.isFile() && (e.name.endsWith(".zip") || e.name.endsWith(".zip.enc")))
       .map((e) => {
         const filePath = path.join(backupPath, e.name);
         const stats = fs.statSync(filePath);
@@ -38,6 +38,7 @@ export async function GET(request: NextRequest) {
           name: e.name,
           size: stats.size,
           created: stats.mtime.toISOString(),
+          encrypted: e.name.endsWith(".zip.enc"),
         };
       })
       .sort((a, b) => new Date(b.created).getTime() - new Date(a.created).getTime());
@@ -63,7 +64,7 @@ export async function DELETE(request: NextRequest) {
 
     // Prevent path traversal
     const safeName = path.basename(filename);
-    if (safeName !== filename || !safeName.endsWith(".zip")) {
+    if (safeName !== filename || !(safeName.endsWith(".zip") || safeName.endsWith(".zip.enc"))) {
       return NextResponse.json({ error: "Invalid filename" }, { status: 400 });
     }
 
