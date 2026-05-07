@@ -50,12 +50,35 @@ export function checkRateLimit(
 }
 
 /**
- * Extract client IP from a request, using X-Forwarded-For if available.
+ * Extract client IP from a request.
+ *
+ * `X-Forwarded-For` is only trustworthy when the application sits behind a
+ * reverse proxy that overwrites it. Naively trusting the first entry lets
+ * any internet-reachable client spoof a unique IP and bypass per-IP rate
+ * limits. To be conservative we walk the XFF list from the right (closest
+ * to the server) and return the first hop that is NOT in TRUSTED_PROXIES.
+ *
+ * Configure TRUSTED_PROXIES in .env as a comma-separated list of trusted
+ * proxy IPs (e.g. "127.0.0.1,::1,10.0.0.5"). Leaving it at the default
+ * loopback set is appropriate for the typical single-host deployment fronted
+ * by nginx/Apache.
  */
 export function getClientIp(request: Request): string {
+  const trusted = (process.env.TRUSTED_PROXIES ?? "127.0.0.1,::1")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
   const forwarded = request.headers.get("x-forwarded-for");
   if (forwarded) {
-    return forwarded.split(",")[0].trim();
+    const hops = forwarded
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .reverse();
+    for (const ip of hops) {
+      if (!trusted.includes(ip)) return ip;
+    }
   }
   return "unknown";
 }

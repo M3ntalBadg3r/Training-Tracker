@@ -51,7 +51,27 @@ export const OAUTH_STATE_COOKIE_OPTIONS = {
   maxAge: OAUTH_STATE_TTL_SECONDS,
 };
 
+/**
+ * Build the OAuth callback URL.
+ *
+ * Prefers APP_BASE_URL (the deployment's canonical, externally-resolvable
+ * origin) so the redirect URI is not influenced by attacker-controlled
+ * `X-Forwarded-Host` / `X-Forwarded-Proto` headers when the app is reachable
+ * outside its reverse proxy. Falls back to the request headers when
+ * APP_BASE_URL is not set (typical of local dev), but logs a warning so the
+ * deployment caveat is visible.
+ */
 export function getRedirectUri(req: NextRequest, provider: string): string {
+  const base = process.env.APP_BASE_URL?.trim();
+  if (base) {
+    return `${base.replace(/\/$/, "")}${OAUTH_STATE_PATH}/${provider}/callback`;
+  }
+  if (process.env.NODE_ENV === "production") {
+    console.warn(
+      "[oauth] APP_BASE_URL is not set; deriving the redirect URI from request headers. " +
+        "Set APP_BASE_URL in .env to avoid host-spoofing attacks via X-Forwarded-Host.",
+    );
+  }
   const proto =
     req.headers.get("x-forwarded-proto") ??
     new URL(req.url).protocol.replace(":", "");

@@ -90,6 +90,12 @@ export async function POST(request: NextRequest) {
     };
   };
 
+  if (Array.isArray(rows) && rows.length > 25_000) {
+    return NextResponse.json(
+      { error: "Too many rows in a single import (max 25,000)." },
+      { status: 413 }
+    );
+  }
   if (!rows || !columnMapping?.trainingTitle || !columnMapping?.fullTitle) {
     return NextResponse.json(
       { error: "Missing rows or required column mapping (trainingTitle, fullTitle)" },

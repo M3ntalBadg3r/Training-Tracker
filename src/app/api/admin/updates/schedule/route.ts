@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, handleAuthError } from "@/lib/auth";
+import { requireSuperAdmin, handleAuthError } from "@/lib/auth";
 import path from "path";
 import fs from "fs";
 import { execSync } from "child_process";
@@ -36,7 +36,7 @@ function buildCronExpression(config: ScheduleConfig): string {
 
 export async function GET(request: NextRequest) {
   try {
-    await requireAuth(request, "Admin");
+    await requireSuperAdmin(request);
   } catch (error) {
     return handleAuthError(error);
   }
@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    await requireAuth(request, "Admin");
+    await requireSuperAdmin(request);
   } catch (error) {
     return handleAuthError(error);
   }

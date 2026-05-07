@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma, { type PrismaTransactionClient } from "@/lib/prisma";
 import JSZip from "jszip";
-import { requireAuth, handleAuthError } from "@/lib/auth";
+import { requireSuperAdmin, handleAuthError } from "@/lib/auth";
+import { loadBackupArchive } from "../route";
 import path from "path";
 import fs from "fs";
 
@@ -18,7 +19,7 @@ function getBackupPath(): string {
 
 export async function POST(request: NextRequest) {
   try {
-    await requireAuth(request, "Admin");
+    await requireSuperAdmin(request);
   } catch (error) {
     return handleAuthError(error);
   }
@@ -31,7 +32,7 @@ export async function POST(request: NextRequest) {
 
     // Prevent path traversal
     const safeName = path.basename(filename);
-    if (safeName !== filename || !safeName.endsWith(".zip")) {
+    if (safeName !== filename || !(safeName.endsWith(".zip") || safeName.endsWith(".zip.enc"))) {
       return NextResponse.json({ error: "Invalid filename" }, { status: 400 });
     }
 
@@ -43,7 +44,16 @@ export async function POST(request: NextRequest) {
     }
 
     const fileBuffer = fs.readFileSync(filePath);
-    const zip = await JSZip.loadAsync(fileBuffer);
+    let zipBytes: Buffer;
+    try {
+      zipBytes = await loadBackupArchive(fileBuffer);
+    } catch (err) {
+      return NextResponse.json(
+        { error: err instanceof Error ? err.message : "Failed to read archive" },
+        { status: 400 }
+      );
+    }
+    const zip = await JSZip.loadAsync(zipBytes);
 
     // Validate required files
     const requiredFiles = [

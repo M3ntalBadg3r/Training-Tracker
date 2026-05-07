@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { requireAuth, handleAuthError } from "@/lib/auth";
+import { requireSuperAdmin, handleAuthError } from "@/lib/auth";
 
 interface RawRow {
   programName?: string;
@@ -59,7 +59,7 @@ function resolveTrainingType(raw: string): string | null {
 
 export async function POST(request: NextRequest) {
   try {
-    await requireAuth(request, "Admin");
+    await requireSuperAdmin(request);
   } catch (error) {
     return handleAuthError(error);
   }
@@ -70,6 +70,12 @@ export async function POST(request: NextRequest) {
 
   if (!Array.isArray(rows) || rows.length === 0) {
     return NextResponse.json({ error: "No rows provided" }, { status: 400 });
+  }
+  if (rows.length > 10_000) {
+    return NextResponse.json(
+      { error: "Too many rows in a single import (max 10,000)." },
+      { status: 413 }
+    );
   }
 
   // Pre-fetch training data (fullTitle → trainingTitle) for resolution

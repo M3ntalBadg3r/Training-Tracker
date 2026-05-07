@@ -4,6 +4,7 @@ import {
   getAuthFromRequest,
   generateMfaSecret,
   generateMfaQrCode,
+  sealMfaSecret,
 } from "@/lib/auth";
 
 // POST: Generate MFA secret + QR code for the current user
@@ -28,10 +29,12 @@ export async function POST(request: NextRequest) {
   const { secret, uri } = generateMfaSecret(user.username);
   const qrCode = await generateMfaQrCode(uri);
 
-  // Store the secret temporarily (not enabled yet until verified)
+  // Store the secret temporarily (not enabled yet until verified). The
+  // returned `secret` is the base32 string the authenticator app needs to
+  // see; what we persist is the encrypted form.
   await prisma.user.update({
     where: { id: user.id },
-    data: { mfaSecret: secret },
+    data: { mfaSecret: sealMfaSecret(secret) },
   });
 
   return NextResponse.json({ qrCode, secret });

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma, { type PrismaTransactionClient } from "@/lib/prisma";
-import { isActive, formatDate, trainingTypeLabel, functionTypeLabel } from "@/lib/utils";
+import { isActive, formatDate, trainingTypeLabel, functionTypeLabel, safeDecodeParam } from "@/lib/utils";
 import { requireAuth, handleAuthError } from "@/lib/auth";
 import { canAccessCompany, getAuthorizedCompanyIds } from "@/lib/company-scope";
 
@@ -16,7 +16,10 @@ export async function GET(
   }
 
   const { email } = await params;
-  const decodedEmail = decodeURIComponent(email);
+  const decodedEmail = safeDecodeParam(email);
+  if (decodedEmail === null) {
+    return NextResponse.json({ error: "Invalid email parameter" }, { status: 400 });
+  }
 
   const student = await prisma.student.findUnique({
     where: { email: decodedEmail },
@@ -112,7 +115,10 @@ export async function PUT(
     return handleAuthError(error);
   }
   const { email } = await params;
-  const decodedEmail = decodeURIComponent(email);
+  const decodedEmail = safeDecodeParam(email);
+  if (decodedEmail === null) {
+    return NextResponse.json({ error: "Invalid email parameter" }, { status: 400 });
+  }
   const body = await request.json();
 
   // Theatre is intentionally not accepted from the client — it's derived
@@ -213,7 +219,10 @@ export async function DELETE(
     return handleAuthError(error);
   }
   const { email } = await params;
-  const decodedEmail = decodeURIComponent(email);
+  const decodedEmail = safeDecodeParam(email);
+  if (decodedEmail === null) {
+    return NextResponse.json({ error: "Invalid email parameter" }, { status: 400 });
+  }
 
   const existing = await prisma.student.findUnique({ where: { email: decodedEmail } });
   if (!existing) return NextResponse.json({ error: "Student not found" }, { status: 404 });

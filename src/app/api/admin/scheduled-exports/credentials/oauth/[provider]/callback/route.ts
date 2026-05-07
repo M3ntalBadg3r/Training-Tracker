@@ -7,6 +7,7 @@ import {
   OAUTH_STATE_COOKIE,
   OAUTH_STATE_COOKIE_OPTIONS,
 } from "@/lib/oauth-state";
+import { sealConfig, openConfig } from "@/lib/crypto";
 
 function htmlPage(opts: { provider: string; status: "ok" | "error"; message: string }): string {
   const payload = JSON.stringify({
@@ -94,7 +95,12 @@ export async function GET(
     return htmlResponse(provider, "error", "No pending credential found. Please retry from Training Tracker.", 400);
   }
 
-  const pendingConfig = cred.config as Record<string, unknown>;
+  let pendingConfig: Record<string, unknown>;
+  try {
+    pendingConfig = openConfig(cred.config);
+  } catch {
+    return htmlResponse(provider, "error", "Stored credential could not be decrypted (encryption key missing or rotated).", 500);
+  }
   const clientId = typeof pendingConfig.clientId === "string" ? pendingConfig.clientId : "";
   const clientSecret = typeof pendingConfig.clientSecret === "string" ? pendingConfig.clientSecret : "";
   if (!clientId || !clientSecret) {
@@ -122,10 +128,11 @@ export async function GET(
     if (typeof pendingConfig.folderPath === "string") finalConfig.folderPath = pendingConfig.folderPath;
 
     const now = new Date();
+    const sealed = sealConfig(finalConfig);
     await prisma.exportCredential.update({
       where: { provider },
       data: {
-        config: finalConfig as object,
+        config: sealed as object,
         lastSuccessAt: now,
         lastCheckedAt: now,
         lastCheckStatus: "ok",

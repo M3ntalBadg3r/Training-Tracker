@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma, { type PrismaTransactionClient } from "@/lib/prisma";
-import { requireAuth, handleAuthError, requireSuperAdmin } from "@/lib/auth";
+import { handleAuthError, requireSuperAdmin } from "@/lib/auth";
+import { safeDecodeParam } from "@/lib/utils";
 
 export async function PUT(
   request: NextRequest,
@@ -12,7 +13,10 @@ export async function PUT(
     return handleAuthError(error);
   }
   const { country } = await params;
-  const decodedCountry = decodeURIComponent(country);
+  const decodedCountry = safeDecodeParam(country);
+  if (decodedCountry === null) {
+    return NextResponse.json({ error: "Invalid country parameter" }, { status: 400 });
+  }
   const body = await request.json();
 
   const newCountry = body.country?.trim();
@@ -86,7 +90,10 @@ export async function DELETE(
     return handleAuthError(error);
   }
   const { country } = await params;
-  const decodedCountry = decodeURIComponent(country);
+  const decodedCountry = safeDecodeParam(country);
+  if (decodedCountry === null) {
+    return NextResponse.json({ error: "Invalid country parameter" }, { status: 400 });
+  }
 
   await prisma.regionData.delete({ where: { country: decodedCountry } });
 

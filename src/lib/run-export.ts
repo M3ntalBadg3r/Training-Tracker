@@ -6,7 +6,11 @@ import prisma from "@/lib/prisma";
 import { fetchReportData, type ReportType } from "@/lib/report-queries";
 import { generateExportBuffer, getFileExtension, getMimeType } from "@/lib/server-export";
 import { deliverLocal, deliverEmail, deliverGoogleDrive, deliverBox, deliverOneDrive } from "@/lib/export-destinations";
-import { markCredentialSuccess, markCredentialFailure } from "@/lib/credential-health";
+import {
+  markCredentialSuccess,
+  markCredentialFailure,
+  readCredentialConfig,
+} from "@/lib/credential-health";
 import type { ScheduledExport } from "@prisma/client";
 
 function buildFilename(schedule: ScheduledExport): string {
@@ -18,8 +22,7 @@ function buildFilename(schedule: ScheduledExport): string {
 }
 
 async function getCredential(provider: string): Promise<Record<string, unknown> | null> {
-  const cred = await prisma.exportCredential.findUnique({ where: { provider } });
-  return cred ? (cred.config as Record<string, unknown>) : null;
+  return readCredentialConfig(provider);
 }
 
 function requireRefreshToken(provider: string, cred: Record<string, unknown>): string {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, handleAuthError } from "@/lib/auth";
 import prisma from "@/lib/prisma";
+import { openConfig, sealConfig } from "@/lib/crypto";
 
 const VALID_PROVIDERS = ["email", "google-drive", "box", "onedrive"];
 const SENSITIVE_KEYS = ["password", "clientSecret", "refreshToken", "accessToken"];
@@ -15,7 +16,21 @@ export async function GET(request: NextRequest) {
   const credentials = await prisma.exportCredential.findMany();
   // Return non-sensitive config fields; indicate which sensitive fields are set
   const configured = credentials.map((c: typeof credentials[number]) => {
-    const cfg = c.config as Record<string, unknown>;
+    let cfg: Record<string, unknown> = {};
+    try {
+      cfg = openConfig(c.config);
+    } catch {
+      // Decryption failure (missing/rotated key, corrupt blob): treat as "no
+      // public config visible" but still surface the row so the admin can
+      // re-save it. Mark hasSecrets empty.
+      return {
+        provider: c.provider,
+        updatedAt: c.updatedAt,
+        config: {},
+        hasSecrets: [],
+        decryptError: true,
+      };
+    }
     const publicConfig: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(cfg)) {
       if (!SENSITIVE_KEYS.includes(k)) publicConfig[k] = v;
@@ -49,19 +64,20 @@ export async function POST(request: NextRequest) {
     }
 
     // Preserve existing sensitive fields if the incoming value is blank
-    const mergedConfig: Record<string, string | boolean> = { ...config };
+    const mergedConfig: Record<string, unknown> = { ...config };
     const existing = await prisma.exportCredential.findUnique({ where: { provider } });
     if (existing) {
-      const old = existing.config as Record<string, string | boolean>;
+      const old = openConfig(existing.config) as Record<string, unknown>;
       for (const key of SENSITIVE_KEYS) {
         if (!mergedConfig[key] && old[key]) mergedConfig[key] = old[key];
       }
     }
 
+    const sealed = sealConfig(mergedConfig);
     const record = await prisma.exportCredential.upsert({
       where: { provider },
-      create: { provider, config: mergedConfig },
-      update: { config: mergedConfig },
+      create: { provider, config: sealed as object },
+      update: { config: sealed as object },
     });
 
     return NextResponse.json({ success: true, provider: record.provider, updatedAt: record.updatedAt });

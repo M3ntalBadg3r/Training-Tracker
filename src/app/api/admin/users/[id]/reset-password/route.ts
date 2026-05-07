@@ -1,15 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { requireAuth, handleAuthError, hashPassword, validatePassword } from "@/lib/auth";
+import {
+  requireSuperAdmin,
+  handleAuthError,
+  hashPassword,
+  validatePassword,
+  verifyPassword,
+  verifyMfaToken,
+} from "@/lib/auth";
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 
-// POST: Reset a user's password (admin only)
+// POST: Reset another user's password.
+//
+// Restricted to SuperAdmin (matches the proxy.ts gating for
+// /api/admin/users) and additionally requires the calling SuperAdmin to
+// re-authenticate with their own password and, if they have MFA enabled,
+// a current TOTP code. Without step-up auth, a stolen admin cookie would
+// be enough to rotate every account's password.
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  let auth;
   try {
-    await requireAuth(request, "Admin");
+    auth = await requireSuperAdmin(request);
   } catch (error) {
     return handleAuthError(error);
   }
@@ -30,7 +44,11 @@ export async function POST(
   }
 
   const body = await request.json();
-  const { password } = body;
+  const { password, adminPassword, adminMfaCode } = body as {
+    password?: string;
+    adminPassword?: string;
+    adminMfaCode?: string;
+  };
 
   if (!password) {
     return NextResponse.json(
@@ -41,6 +59,30 @@ export async function POST(
   const passwordError = validatePassword(password);
   if (passwordError) {
     return NextResponse.json({ error: passwordError }, { status: 400 });
+  }
+
+  if (!adminPassword) {
+    return NextResponse.json(
+      { error: "Your current password is required to reset another user's password" },
+      { status: 400 }
+    );
+  }
+
+  const me = await prisma.user.findUnique({ where: { id: auth.sub } });
+  if (!me) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const adminPasswordValid = await verifyPassword(adminPassword, me.passwordHash);
+  if (!adminPasswordValid) {
+    return NextResponse.json({ error: "Invalid password" }, { status: 401 });
+  }
+  if (me.mfaEnabled && me.mfaSecret) {
+    if (!adminMfaCode || !verifyMfaToken(me.mfaSecret, adminMfaCode)) {
+      return NextResponse.json(
+        { error: "MFA code required" },
+        { status: 401 }
+      );
+    }
   }
 
   const passwordHash = await hashPassword(password);

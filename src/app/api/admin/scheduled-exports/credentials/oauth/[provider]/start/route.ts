@@ -12,6 +12,7 @@ import {
   OAUTH_STATE_COOKIE,
   OAUTH_STATE_COOKIE_OPTIONS,
 } from "@/lib/oauth-state";
+import { sealConfig, openConfig } from "@/lib/crypto";
 
 interface StartBody {
   clientId?: string;
@@ -70,16 +71,22 @@ export async function POST(
   // wizard doesn't accidentally wipe a working credential.
   const existing = await prisma.exportCredential.findUnique({ where: { provider } });
   if (existing) {
-    const existingConfig = existing.config as Record<string, unknown>;
-    if (typeof existingConfig.refreshToken === "string") {
-      pendingConfig.previousRefreshToken = existingConfig.refreshToken;
+    try {
+      const existingConfig = openConfig(existing.config);
+      if (typeof existingConfig.refreshToken === "string") {
+        pendingConfig.previousRefreshToken = existingConfig.refreshToken;
+      }
+    } catch {
+      // Existing blob can't be decrypted (e.g. wrong key); ignore and let
+      // the new flow overwrite it.
     }
   }
 
+  const sealed = sealConfig(pendingConfig);
   await prisma.exportCredential.upsert({
     where: { provider },
-    update: { config: pendingConfig as object },
-    create: { provider, config: pendingConfig as object },
+    update: { config: sealed as object },
+    create: { provider, config: sealed as object },
   });
 
   const authUrl = buildAuthUrl({

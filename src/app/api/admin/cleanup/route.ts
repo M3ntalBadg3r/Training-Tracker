@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { requireAuth, handleAuthError } from "@/lib/auth";
+import { requireSuperAdmin, handleAuthError } from "@/lib/auth";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const NUMBERS_REGEX = /[0-9]/;
@@ -107,7 +107,7 @@ function fixName(fullName: string, email: string): string {
 
 export async function GET(request: NextRequest) {
   try {
-    await requireAuth(request, "Admin");
+    await requireSuperAdmin(request);
   } catch (error) {
     return handleAuthError(error);
   }
@@ -135,7 +135,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    await requireAuth(request, "Admin");
+    await requireSuperAdmin(request);
   } catch (error) {
     return handleAuthError(error);
   }

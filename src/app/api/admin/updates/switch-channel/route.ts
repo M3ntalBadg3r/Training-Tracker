@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, handleAuthError } from "@/lib/auth";
+import { requireSuperAdmin, handleAuthError } from "@/lib/auth";
 import { spawn } from "child_process";
 import path from "path";
 import fs from "fs";
@@ -15,7 +15,7 @@ function parseVersionNumber(version: string): number {
 
 export async function POST(request: NextRequest) {
   try {
-    await requireAuth(request, "Admin");
+    await requireSuperAdmin(request);
   } catch (error) {
     return handleAuthError(error);
   }

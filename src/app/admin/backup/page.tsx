@@ -183,8 +183,8 @@ export default function BackupPage() {
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] ?? null;
-    if (file && !file.name.endsWith(".zip")) {
-      setResult({ type: "error", message: "Please select a .zip backup file." });
+    if (file && !(file.name.endsWith(".zip") || file.name.endsWith(".zip.enc"))) {
+      setResult({ type: "error", message: "Please select a .zip or .zip.enc backup file." });
       setSelectedFile(null);
       return;
     }
@@ -455,7 +455,7 @@ export default function BackupPage() {
             <input
               ref={fileInputRef}
               type="file"
-              accept=".zip"
+              accept=".zip,.zip.enc"
               onChange={handleFileSelect}
               disabled={restoring}
               className="hidden"
