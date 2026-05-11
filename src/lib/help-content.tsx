@@ -223,10 +223,12 @@ const helpSections: Record<string, HelpSection> = {
           matching students are hidden.
         </p>
         <p>
-          Filters are saved in the page URL, so navigating into a training and
-          pressing <strong>Back</strong> restores them. Use the{" "}
-          <strong>Export</strong> button to download the current (filtered)
-          catalogue as CSV, Excel, or PDF.
+          All filters — including the table&apos;s own search box, column
+          filters, and sort order — are saved in the page URL, so navigating
+          into a training and pressing <strong>Back</strong> restores the
+          full view. Use the <strong>Export</strong> button to download the
+          currently visible rows (after every filter, search, and sort is
+          applied) as CSV, Excel, or PDF.
         </p>
         <p>
           Click <strong>View Students</strong> on any row to see which students

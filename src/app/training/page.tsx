@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useMemo, Suspense } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { Download } from "lucide-react";
 import PageHeader from "@/components/layout/PageHeader";
-import DataTable from "@/components/data-table/DataTable";
+import DataTable, { DataTableState } from "@/components/data-table/DataTable";
 import { ColumnDef, TrainingAvailableRow } from "@/types";
 import { trainingTypeLabel, functionTypeLabel } from "@/lib/utils";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
@@ -61,6 +61,7 @@ function TrainingPageInner() {
   const searchParams = useSearchParams();
   const { selected, loading: scopeLoading } = useCompanyScope();
   const [training, setTraining] = useState<TrainingAvailableRow[]>([]);
+  const [visibleRows, setVisibleRows] = useState<TrainingAvailableRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastImport, setLastImport] = useState<string | null>(null);
   const [filterOptions, setFilterOptions] = useState<FilterOptions>({ theatres: [], regions: [], countries: [] });
@@ -71,6 +72,26 @@ function TrainingPageInner() {
   const region = searchParams.get("region") ?? "";
   const country = searchParams.get("country") ?? "";
   const activeOnly = searchParams.get("active") === "true";
+
+  // DataTable state is also mirrored to the URL: `q`/`qCol` for the global
+  // search, `sort`/`sortDir` for column sort, and any `f_<columnKey>` keys
+  // for per-column filters. These seed the table on mount; the table emits
+  // changes via onStateChange below, which writes them back to the URL.
+  const initialSearchTerm = searchParams.get("q") ?? "";
+  const initialSearchColumn = searchParams.get("qCol") ?? "all";
+  const initialSortColumn = searchParams.get("sort") ?? undefined;
+  const initialSortDirRaw = searchParams.get("sortDir");
+  const initialSortDirection: "asc" | "desc" | undefined =
+    initialSortDirRaw === "asc" || initialSortDirRaw === "desc" ? initialSortDirRaw : undefined;
+  const initialColumnFilters = useMemo<Record<string, string>>(() => {
+    const out: Record<string, string> = {};
+    searchParams.forEach((value, key) => {
+      if (key.startsWith("f_") && value) out[key.slice(2)] = value;
+    });
+    return out;
+  }, [searchParams]);
+  // initialColumnFilters is intentionally memoised on searchParams so that
+  // identity changes only when the URL itself changes (not on every render).
 
   const updateFilter = useCallback(
     (patch: Record<string, string | null>) => {
@@ -99,10 +120,47 @@ function TrainingPageInner() {
       .then((res) => res.json())
       .then((data) => {
         setTraining(data);
+        // Reset the visible-rows snapshot used by Export. DataTable will
+        // re-emit a filtered slice on its next render via onStateChange.
+        setVisibleRows(data);
         setLoading(false);
       })
       .catch(() => setLoading(false));
   }, [theatre, region, country, activeOnly, selected, scopeLoading]);
+
+  const handleTableStateChange = useCallback(
+    (state: DataTableState, rows: TrainingAvailableRow[]) => {
+      setVisibleRows(rows);
+      const params = new URLSearchParams(searchParams.toString());
+      // Clear any previously-set DataTable params so removed filters disappear
+      // from the URL.
+      params.delete("q");
+      params.delete("qCol");
+      params.delete("sort");
+      params.delete("sortDir");
+      for (const key of Array.from(params.keys())) {
+        if (key.startsWith("f_")) params.delete(key);
+      }
+      if (state.searchTerm) params.set("q", state.searchTerm);
+      if (state.searchColumn && state.searchColumn !== "all") params.set("qCol", state.searchColumn);
+      if (state.sortColumn) {
+        params.set("sort", state.sortColumn);
+        params.set("sortDir", state.sortDirection);
+      }
+      for (const [key, value] of Object.entries(state.columnFilters)) {
+        if (value) params.set(`f_${key}`, value);
+      }
+      const qs = params.toString();
+      const next = qs ? `${pathname}?${qs}` : pathname;
+      // Avoid pushing identical URLs into history (router.replace would still
+      // trigger a re-render and re-emit, causing a tight loop).
+      const current = searchParams.toString();
+      if (qs !== current) {
+        router.replace(next, { scroll: false });
+      }
+    },
+    [searchParams, pathname, router]
+  );
 
   useEffect(() => {
     fetchTraining();
@@ -125,7 +183,7 @@ function TrainingPageInner() {
 
   const exportData = useMemo(
     () =>
-      training.map((r) => ({
+      visibleRows.map((r) => ({
         fullTitle: r.fullTitle,
         trainingType: trainingTypeLabel(r.trainingType),
         productType: r.productType,
@@ -133,7 +191,7 @@ function TrainingPageInner() {
         link: r.link ?? "",
         studentsTaken: r.studentsTaken,
       })),
-    [training]
+    [visibleRows]
   );
 
   const exportColumns: { key: keyof (typeof exportData)[0]; header: string }[] = [
@@ -218,7 +276,7 @@ function TrainingPageInner() {
             </button>
           )}
         </div>
-        {training.length > 0 && (
+        {visibleRows.length > 0 && (
           <div className="relative">
             <button
               onClick={() => setShowExportMenu((prev) => !prev)}
@@ -264,6 +322,12 @@ function TrainingPageInner() {
       <DataTable<TrainingAvailableRow>
         data={training}
         columns={columns}
+        initialSearchTerm={initialSearchTerm}
+        initialSearchColumn={initialSearchColumn}
+        initialColumnFilters={initialColumnFilters}
+        initialSortColumn={initialSortColumn}
+        initialSortDirection={initialSortDirection}
+        onStateChange={handleTableStateChange}
         rowAction={{
           label: "View Students",
           onClick: (row) => {

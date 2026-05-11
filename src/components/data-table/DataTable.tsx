@@ -1,9 +1,17 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useDebounce } from "@/hooks/useDebounce";
 import { ColumnDef } from "@/types";
 import { ChevronUp, ChevronDown, Search, ChevronLeft, ChevronRight } from "lucide-react";
+
+export interface DataTableState {
+  searchTerm: string;
+  searchColumn: string;
+  columnFilters: Record<string, string>;
+  sortColumn: string | null;
+  sortDirection: "asc" | "desc";
+}
 
 interface DataTableProps<T> {
   data: T[];
@@ -12,6 +20,12 @@ interface DataTableProps<T> {
   defaultPageSize?: number;
   defaultSortColumn?: string;
   defaultSortDirection?: "asc" | "desc";
+  initialSearchTerm?: string;
+  initialSearchColumn?: string;
+  initialColumnFilters?: Record<string, string>;
+  initialSortColumn?: string;
+  initialSortDirection?: "asc" | "desc";
+  onStateChange?: (state: DataTableState, visibleRows: T[]) => void;
   rowAction?: {
     label: string;
     onClick: (row: T) => void;
@@ -34,15 +48,25 @@ export default function DataTable<T extends Record<string, any>>({
   defaultPageSize = 50,
   defaultSortColumn,
   defaultSortDirection = "asc",
+  initialSearchTerm,
+  initialSearchColumn,
+  initialColumnFilters,
+  initialSortColumn,
+  initialSortDirection,
+  onStateChange,
   rowAction,
   rowDelete,
   rowEdit,
 }: DataTableProps<T>) {
-  const [searchTerm, setSearchTerm] = useState("");
-  const [searchColumn, setSearchColumn] = useState("all");
-  const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
-  const [sortColumn, setSortColumn] = useState<string | null>(defaultSortColumn ?? null);
-  const [sortDirection, setSortDirection] = useState<"asc" | "desc">(defaultSortDirection);
+  const [searchTerm, setSearchTerm] = useState(initialSearchTerm ?? "");
+  const [searchColumn, setSearchColumn] = useState(initialSearchColumn ?? "all");
+  const [columnFilters, setColumnFilters] = useState<Record<string, string>>(initialColumnFilters ?? {});
+  const [sortColumn, setSortColumn] = useState<string | null>(
+    initialSortColumn ?? defaultSortColumn ?? null
+  );
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">(
+    initialSortDirection ?? defaultSortDirection
+  );
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(defaultPageSize);
 
@@ -101,6 +125,14 @@ export default function DataTable<T extends Record<string, any>>({
     return result;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, debouncedSearch, searchColumn, columnFilters, sortColumn, sortDirection]);
+
+  useEffect(() => {
+    if (!onStateChange) return;
+    onStateChange(
+      { searchTerm: debouncedSearch, searchColumn, columnFilters, sortColumn, sortDirection },
+      filteredData
+    );
+  }, [filteredData, debouncedSearch, searchColumn, columnFilters, sortColumn, sortDirection, onStateChange]);
 
   const totalPages = Math.max(1, Math.ceil(filteredData.length / pageSize));
   const safePage = Math.min(currentPage, totalPages);
