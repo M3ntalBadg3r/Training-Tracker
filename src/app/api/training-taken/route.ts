@@ -48,6 +48,7 @@ export async function GET(request: NextRequest) {
   const theatre = searchParams.get("theatre");
   const region = searchParams.get("region");
   const country = searchParams.get("country");
+  const activeOnly = searchParams.get("active") === "true";
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const studentWhere: Record<string, any> = {};
@@ -60,6 +61,7 @@ export async function GET(request: NextRequest) {
   const trainingTaken = await prisma.trainingTaken.findMany({
     where: {
       trainingTitle: { in: trainingTitles },
+      ...(activeOnly ? { expiryDate: { gte: new Date() } } : {}),
       ...(Object.keys(studentWhere).length > 0 ? { student: studentWhere } : {}),
     },
     include: {

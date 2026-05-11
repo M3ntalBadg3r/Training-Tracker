@@ -216,9 +216,19 @@ const helpSections: Record<string, HelpSection> = {
         <p>
           Use the <strong>Theatre</strong>, <strong>Region</strong>, and{" "}
           <strong>Country</strong> dropdowns above the table to filter trainings
-          by student location. When filters are active, the Students Taken count
-          reflects only students matching the selected filters, and trainings
-          with no matching students are hidden.
+          by student location. Tick <strong>Active only</strong> to restrict
+          the Students Taken count to students whose training has not expired.
+          When filters are active, the Students Taken count reflects only
+          students matching the selected filters, and trainings with no
+          matching students are hidden.
+        </p>
+        <p>
+          All filters — including the table&apos;s own search box, column
+          filters, and sort order — are saved in the page URL, so navigating
+          into a training and pressing <strong>Back</strong> restores the
+          full view. Use the <strong>Export</strong> button to download the
+          currently visible rows (after every filter, search, and sort is
+          applied) as CSV, Excel, or PDF.
         </p>
         <p>
           Click <strong>View Students</strong> on any row to see which students

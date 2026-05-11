@@ -36,6 +36,7 @@ export default function TrainingTakenPage({
   const theatre = searchParams.get("theatre");
   const region = searchParams.get("region");
   const country = searchParams.get("country");
+  const activeOnly = searchParams.get("active") === "true";
   const urlCompanyId = searchParams.get("companyId");
   const hasLocationFilters = !!(theatre || region || country);
   const router = useRouter();
@@ -80,6 +81,7 @@ export default function TrainingTakenPage({
     if (theatre) url.searchParams.set("theatre", theatre);
     if (region) url.searchParams.set("region", region);
     if (country) url.searchParams.set("country", country);
+    if (activeOnly) url.searchParams.set("active", "true");
     // Prefer URL-passed companyId (from training page navigation), fall back to context selection
     const companyId = urlCompanyId ?? (selected !== "all" ? String(selected) : null);
     if (companyId) url.searchParams.set("companyId", companyId);
@@ -90,7 +92,7 @@ export default function TrainingTakenPage({
         setLoading(false);
       })
       .catch(() => setLoading(false));
-  }, [fullTitle, trainingType, theatre, region, country, urlCompanyId, selected, scopeLoading]);
+  }, [fullTitle, trainingType, theatre, region, country, activeOnly, urlCompanyId, selected, scopeLoading]);
 
   // For OLX parents, fetch the sub-item list to display nested under this view.
   useEffect(() => {
@@ -123,12 +125,13 @@ export default function TrainingTakenPage({
   return (
     <div>
       <PageHeader title={fullTitle} showBack helpSlug="training-detail" />
-      {hasLocationFilters && (
+      {(hasLocationFilters || activeOnly) && (
         <div className="flex items-center gap-2 mb-3 text-sm text-gray-600">
           <span>Filtered by:</span>
           {theatre && <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded">{theatre}</span>}
           {region && <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded">{region}</span>}
           {country && <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded">{country}</span>}
+          {activeOnly && <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded">Active only</span>}
         </div>
       )}
       <div className="flex items-center justify-between mb-4">
@@ -217,6 +220,7 @@ export default function TrainingTakenPage({
                           if (theatre) params.set("theatre", theatre);
                           if (region) params.set("region", region);
                           if (country) params.set("country", country);
+                          if (activeOnly) params.set("active", "true");
                           const cid = urlCompanyId ?? (selected !== "all" ? String(selected) : null);
                           if (cid) params.set("companyId", cid);
                           router.push(`/training/${encodeURIComponent(s.fullTitle)}?${params.toString()}`);
