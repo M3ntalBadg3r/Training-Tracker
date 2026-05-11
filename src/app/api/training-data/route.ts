@@ -17,6 +17,7 @@ export async function GET(request: NextRequest) {
   const theatre = searchParams.get("theatre");
   const region = searchParams.get("region");
   const country = searchParams.get("country");
+  const activeOnly = searchParams.get("active") === "true";
 
   const allowed = await getAuthorizedCompanyIds(auth.sub, auth.role);
   const companyFilter = resolveCompanyFilter(allowed, searchParams.get("companyId"));
@@ -27,6 +28,7 @@ export async function GET(request: NextRequest) {
   const hasLocationFilters = !!(theatre || region || country);
   // Need student data when location-filtering or when scoping by company
   const needsStudentData = hasLocationFilters || companyFilter !== null;
+  const now = new Date();
 
   const trainingData = await prisma.trainingData.findMany({
     // Hide OLX sub-items from the top-level catalog — they're shown nested
@@ -60,6 +62,7 @@ export async function GET(request: NextRequest) {
 
   // Helper to check if a training-taken record's student matches all active filters
   const matchesFilter = (t: (typeof trainingData)[number]["trainingsTaken"][number]): boolean => {
+    if (activeOnly && t.expiryDate < now) return false;
     if (!needsStudentData) return true;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const student = (t as any).student;
@@ -102,7 +105,7 @@ export async function GET(request: NextRequest) {
   }
 
   let results = Array.from(grouped.values());
-  if (hasLocationFilters) {
+  if (hasLocationFilters || activeOnly) {
     results = results.filter((r) => r.studentsTaken > 0);
   }
   return NextResponse.json(results);

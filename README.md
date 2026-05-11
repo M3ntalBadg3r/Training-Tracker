@@ -324,6 +324,8 @@ The table displays:
 - Link (if available)
 - Students Taken (count of unique students who completed this training)
 
+Filter the catalogue by **Theatre**, **Region**, **Country**, and **Active only** (restrict Students Taken to students whose training has not expired). Filters are mirrored to the URL, so navigating into a training and pressing **Back** restores them. Use the **Export** button to download the current (filtered) catalogue as CSV, Excel, or PDF.
+
 Click **View Students** on any row to see which students have completed that training.
 
 ---
