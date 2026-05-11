@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, Suspense } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { Download } from "lucide-react";
 import PageHeader from "@/components/layout/PageHeader";
@@ -55,7 +55,7 @@ const columns: ColumnDef<TrainingAvailableRow>[] = [
   },
 ];
 
-export default function TrainingPage() {
+function TrainingPageInner() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -279,5 +279,19 @@ export default function TrainingPage() {
         }}
       />
     </div>
+  );
+}
+
+export default function TrainingPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center h-64">
+          <div className="text-gray-500">Loading training data...</div>
+        </div>
+      }
+    >
+      <TrainingPageInner />
+    </Suspense>
   );
 }
