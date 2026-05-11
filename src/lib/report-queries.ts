@@ -29,6 +29,9 @@ export interface TrainingRecordRow {
   country: string;
   trainingTitle: string;
   trainingType: string;
+  // Untransformed trainingType for callers that need to key off the raw
+  // enum value (e.g. /training export intersecting with DataTable rows).
+  rawTrainingType: string;
   productType: string;
   function: string;
   completedDate: string;
@@ -99,6 +102,83 @@ async function fetchAllTrainingRecords(companyId?: number | null): Promise<Train
     country: tt.student.country,
     trainingTitle: tt.trainingData.fullTitle,
     trainingType: TYPE_LABELS[tt.trainingData.trainingType] ?? tt.trainingData.trainingType,
+    rawTrainingType: tt.trainingData.trainingType,
+    productType: tt.trainingData.productType,
+    function: FUNCTION_LABELS[tt.trainingData.function] ?? tt.trainingData.function,
+    completedDate: tt.completedDate.toISOString().split("T")[0],
+    expiryDate: tt.expiryDate.toISOString().split("T")[0],
+    active: tt.expiryDate > now ? "Yes" : "No",
+  }));
+}
+
+export async function fetchTrainingsWithStudents(opts: {
+  companyIds?: number[] | null;
+  theatre?: string | null;
+  region?: string | null;
+  country?: string | null;
+  activeOnly?: boolean;
+}): Promise<TrainingRecordRow[]> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const studentWhere: Record<string, any> = {};
+  if (opts.theatre) studentWhere.theatre = opts.theatre;
+  if (opts.country) studentWhere.country = opts.country;
+  if (opts.region) studentWhere.regionData = { region: opts.region };
+  if (opts.companyIds && opts.companyIds.length > 0) {
+    studentWhere.companyId = { in: opts.companyIds };
+  }
+
+  const rawRecords = await prisma.trainingTaken.findMany({
+    where: {
+      trainingData: { trainingType: { not: "OLXSubItem" } },
+      ...(Object.keys(studentWhere).length > 0 ? { student: studentWhere } : {}),
+    },
+    include: {
+      trainingData: {
+        select: {
+          fullTitle: true,
+          trainingType: true,
+          productType: true,
+          function: true,
+        },
+      },
+      student: {
+        select: {
+          fullName: true,
+          theatre: true,
+          country: true,
+          regionData: { select: { region: true } },
+        },
+      },
+    },
+  });
+
+  // Most-recent-per-(email, fullTitle, trainingType) dedup.
+  const dedupeMap = new Map<string, (typeof rawRecords)[number]>();
+  for (const tt of rawRecords) {
+    const key = `${tt.email}::${tt.trainingData.fullTitle}::${tt.trainingData.trainingType}`;
+    const existing = dedupeMap.get(key);
+    if (!existing || tt.completedDate > existing.completedDate) {
+      dedupeMap.set(key, tt);
+    }
+  }
+
+  const now = new Date();
+  let rows = Array.from(dedupeMap.values());
+  // Apply activeOnly *after* dedup so "active" means the student's latest
+  // completion is still active, not "some older completion was active".
+  if (opts.activeOnly) {
+    rows = rows.filter((tt) => tt.expiryDate > now);
+  }
+
+  return rows.map((tt) => ({
+    fullName: tt.student.fullName,
+    email: tt.email,
+    theatre: tt.student.theatre,
+    region: tt.student.regionData?.region ?? "",
+    country: tt.student.country,
+    trainingTitle: tt.trainingData.fullTitle,
+    trainingType: TYPE_LABELS[tt.trainingData.trainingType] ?? tt.trainingData.trainingType,
+    rawTrainingType: tt.trainingData.trainingType,
     productType: tt.trainingData.productType,
     function: FUNCTION_LABELS[tt.trainingData.function] ?? tt.trainingData.function,
     completedDate: tt.completedDate.toISOString().split("T")[0],
