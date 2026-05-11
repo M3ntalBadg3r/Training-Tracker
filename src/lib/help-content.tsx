@@ -228,7 +228,10 @@ const helpSections: Record<string, HelpSection> = {
           into a training and pressing <strong>Back</strong> restores the
           full view. Use the <strong>Export</strong> button to download the
           currently visible rows (after every filter, search, and sort is
-          applied) as CSV, Excel, or PDF.
+          applied) as CSV, Excel, or PDF. The menu offers two variants:{" "}
+          <strong>Catalogue</strong> (one row per training, like the table)
+          and <strong>Catalogue with students</strong> (one row per training
+          × student — every holder of every visible training).
         </p>
         <p>
           Click <strong>View Students</strong> on any row to see which students

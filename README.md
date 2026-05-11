@@ -324,7 +324,7 @@ The table displays:
 - Link (if available)
 - Students Taken (count of unique students who completed this training)
 
-Filter the catalogue by **Theatre**, **Region**, **Country**, and **Active only** (restrict Students Taken to students whose training has not expired). The table's own search box, column filters, and sort order are also mirrored to the URL, so navigating into a training and pressing **Back** restores everything — page-level filters and table state. Use the **Export** button to download the **currently visible** rows (i.e. after every filter, search, and sort is applied) as CSV, Excel, or PDF.
+Filter the catalogue by **Theatre**, **Region**, **Country**, and **Active only** (restrict Students Taken to students whose training has not expired). The table's own search box, column filters, and sort order are also mirrored to the URL, so navigating into a training and pressing **Back** restores everything — page-level filters and table state. Use the **Export** button to download the **currently visible** rows (i.e. after every filter, search, and sort is applied) as CSV, Excel, or PDF — the menu offers two variants: **Catalogue** (one row per training, like the table view) and **Catalogue with students** (one row per training × student, useful for handing a partner / manager a full holders list).
 
 Click **View Students** on any row to see which students have completed that training.
 

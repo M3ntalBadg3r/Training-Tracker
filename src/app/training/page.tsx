@@ -180,6 +180,91 @@ function TrainingPageInner() {
   }, []);
 
   const [showExportMenu, setShowExportMenu] = useState(false);
+  const [exportLoading, setExportLoading] = useState(false);
+
+  // Set of "fullTitle::trainingType" keys for fast intersection with the
+  // student-join response. Encoded with raw trainingType to match the
+  // `rawTrainingType` returned by the server.
+  const visibleKeySet = useMemo(
+    () => new Set(visibleRows.map((r) => `${r.fullTitle}::${r.trainingType}`)),
+    [visibleRows]
+  );
+
+  const runExportWithStudents = useCallback(
+    async (format: "csv" | "excel" | "pdf") => {
+      setExportLoading(true);
+      try {
+        const params = new URLSearchParams();
+        if (theatre) params.set("theatre", theatre);
+        if (region) params.set("region", region);
+        if (country) params.set("country", country);
+        if (activeOnly) params.set("active", "true");
+        const qs = params.toString();
+        const base = `/api/training-data/with-students${qs ? `?${qs}` : ""}`;
+        const res = await fetch(withCompany(base, selected));
+        if (!res.ok) throw new Error(`Export request failed (${res.status})`);
+        const allRows: Array<{
+          fullName: string;
+          email: string;
+          theatre: string;
+          region: string;
+          country: string;
+          trainingTitle: string;
+          trainingType: string;
+          rawTrainingType: string;
+          productType: string;
+          function: string;
+          completedDate: string;
+          expiryDate: string;
+          active: string;
+        }> = await res.json();
+
+        const rows = allRows
+          .filter((r) => visibleKeySet.has(`${r.trainingTitle}::${r.rawTrainingType}`))
+          .map((r) => ({
+            fullTitle: r.trainingTitle,
+            trainingType: r.trainingType,
+            productType: r.productType,
+            function: r.function,
+            fullName: r.fullName,
+            email: r.email,
+            theatre: r.theatre,
+            region: r.region,
+            country: r.country,
+            completedDate: r.completedDate,
+            expiryDate: r.expiryDate,
+            active: r.active,
+          }));
+
+        const cols: { key: keyof (typeof rows)[0]; header: string }[] = [
+          { key: "fullTitle", header: "Full Title" },
+          { key: "trainingType", header: "Training Type" },
+          { key: "productType", header: "Product Type" },
+          { key: "function", header: "Function" },
+          { key: "fullName", header: "Full Name" },
+          { key: "email", header: "Email" },
+          { key: "theatre", header: "Theatre" },
+          { key: "region", header: "Region" },
+          { key: "country", header: "Country" },
+          { key: "completedDate", header: "Completed Date" },
+          { key: "expiryDate", header: "Expiry Date" },
+          { key: "active", header: "Active" },
+        ];
+
+        const filename = "training-with-students";
+        if (format === "csv") exportToCsv(rows, cols, filename);
+        else if (format === "excel") exportToExcel(rows, cols, filename);
+        else exportToPdf(rows, cols, filename);
+      } catch (err) {
+        console.error(err);
+        alert("Export failed. Please try again.");
+      } finally {
+        setExportLoading(false);
+        setShowExportMenu(false);
+      }
+    },
+    [theatre, region, country, activeOnly, selected, visibleKeySet]
+  );
 
   const exportData = useMemo(
     () =>
@@ -285,13 +370,16 @@ function TrainingPageInner() {
               <Download size={16} /> Export
             </button>
             {showExportMenu && (
-              <div className="absolute right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[140px]">
+              <div className="absolute right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[220px] py-1">
+                <div className="text-xs uppercase tracking-wide text-gray-500 px-4 pt-2 pb-1">
+                  Catalogue
+                </div>
                 <button
                   onClick={() => {
                     exportToCsv(exportData, exportColumns, "training");
                     setShowExportMenu(false);
                   }}
-                  className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-t-lg"
+                  className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100"
                 >
                   Export as CSV
                 </button>
@@ -309,9 +397,34 @@ function TrainingPageInner() {
                     exportToPdf(exportData, exportColumns, "training");
                     setShowExportMenu(false);
                   }}
-                  className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-b-lg"
+                  className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100"
                 >
                   Export as PDF
+                </button>
+                <div className="border-t border-gray-100 my-1" />
+                <div className="text-xs uppercase tracking-wide text-gray-500 px-4 pt-2 pb-1">
+                  Catalogue with students
+                </div>
+                <button
+                  disabled={exportLoading}
+                  onClick={() => runExportWithStudents("csv")}
+                  className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 disabled:opacity-50 disabled:cursor-wait"
+                >
+                  {exportLoading ? "Preparing…" : "Export as CSV"}
+                </button>
+                <button
+                  disabled={exportLoading}
+                  onClick={() => runExportWithStudents("excel")}
+                  className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 disabled:opacity-50 disabled:cursor-wait"
+                >
+                  {exportLoading ? "Preparing…" : "Export as Excel"}
+                </button>
+                <button
+                  disabled={exportLoading}
+                  onClick={() => runExportWithStudents("pdf")}
+                  className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 disabled:opacity-50 disabled:cursor-wait"
+                >
+                  {exportLoading ? "Preparing…" : "Export as PDF"}
                 </button>
               </div>
             )}
