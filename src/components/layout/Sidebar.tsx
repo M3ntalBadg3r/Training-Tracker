@@ -123,7 +123,7 @@ export default function Sidebar() {
         collapsed ? "w-16" : "w-56"
       }`}
     >
-      <div className="flex items-center justify-between p-4 border-b border-slate-700">
+      <div className="shrink-0 flex items-center justify-between p-4 border-b border-slate-700">
         {!collapsed && (
           <h1 className="text-lg font-bold whitespace-nowrap">
             Training Tracker
@@ -137,7 +137,7 @@ export default function Sidebar() {
           {collapsed ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}
         </button>
       </div>
-      <nav className="flex-1 py-4">
+      <nav className="flex-1 min-h-0 overflow-y-auto py-4">
         {navItems.map((item) => {
           const isActive =
             pathname === item.href || pathname.startsWith(item.href + "/");
@@ -366,7 +366,7 @@ export default function Sidebar() {
         )}
       </nav>
       {/* User info + logout */}
-      <div className="border-t border-slate-700 p-3">
+      <div className="shrink-0 border-t border-slate-700 p-3">
         {collapsed ? (
           <div className="flex flex-col items-center gap-1">
             <Link
