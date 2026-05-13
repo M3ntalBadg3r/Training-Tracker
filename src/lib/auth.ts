@@ -1,6 +1,8 @@
 import { SignJWT, jwtVerify } from "jose";
 import bcrypt from "bcryptjs";
 import { NextRequest, NextResponse } from "next/server";
+import { TOTP, Secret } from "otpauth";
+import QRCode from "qrcode";
 import {
   encryptString,
   decryptString,
@@ -177,8 +179,6 @@ export function generateMfaSecret(username: string): {
   secret: string;
   uri: string;
 } {
-  // Dynamic import workaround: otpauth uses named export TOTP
-  const { TOTP, Secret } = require("otpauth") as typeof import("otpauth");
   const secret = new Secret();
   const totp = new TOTP({
     issuer: "Training Tracker",
@@ -195,7 +195,6 @@ export function generateMfaSecret(username: string): {
 }
 
 export async function generateMfaQrCode(uri: string): Promise<string> {
-  const QRCode = require("qrcode") as typeof import("qrcode");
   return QRCode.toDataURL(uri);
 }
 
@@ -216,7 +215,6 @@ export function openMfaSecret(stored: string): string {
 
 export function verifyMfaToken(storedSecret: string, token: string): boolean {
   const base32 = openMfaSecret(storedSecret);
-  const { TOTP, Secret } = require("otpauth") as typeof import("otpauth");
   const totp = new TOTP({
     issuer: "Training Tracker",
     label: "user",
