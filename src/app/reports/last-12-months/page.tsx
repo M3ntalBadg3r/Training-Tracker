@@ -361,6 +361,7 @@ export default function AchievementOverTimePage() {
               setFilterBucket(null);
             }}
             placeholder="Pick a date range"
+            align="start"
           />
         )}
       </div>
