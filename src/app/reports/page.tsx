@@ -36,8 +36,8 @@ const TILES = [
   },
   {
     href: "/reports/last-12-months",
-    title: "Last 12 Months",
-    description: "Training records completed in the last 12 months, with prior-year comparison",
+    title: "Achievement over time",
+    description: "Training records over a chosen time range (1/3/6/12 months or custom), with prior-period comparison",
     Icon: CalendarDays,
   },
   {

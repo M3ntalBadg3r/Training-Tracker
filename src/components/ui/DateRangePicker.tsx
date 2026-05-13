@@ -15,6 +15,7 @@ interface Props {
   onChange: (next: DateRangeValue) => void;
   placeholder?: string;
   className?: string;
+  align?: "start" | "end";
 }
 
 const PRESETS: { label: string; range: () => DateRangeValue }[] = [
@@ -63,7 +64,7 @@ function formatShort(d: Date): string {
   return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
 }
 
-export default function DateRangePicker({ value, onChange, placeholder = "Date range", className = "" }: Props) {
+export default function DateRangePicker({ value, onChange, placeholder = "Date range", className = "", align = "end" }: Props) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -119,7 +120,7 @@ export default function DateRangePicker({ value, onChange, placeholder = "Date r
         )}
       </button>
       {open && (
-        <div className="absolute z-30 mt-1 right-0 bg-white border border-gray-200 rounded-lg shadow-lg p-3 flex gap-3">
+        <div className={`absolute z-40 mt-1 ${align === "start" ? "left-0" : "right-0"} bg-white border border-gray-200 rounded-lg shadow-lg p-3 flex gap-3`}>
           <div className="flex flex-col gap-1 border-r border-gray-200 pr-3 min-w-[140px]">
             {PRESETS.map((p) => (
               <button

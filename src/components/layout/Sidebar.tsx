@@ -68,7 +68,7 @@ const reportSubItems = [
   { href: "/reports/by-product-type", label: "By Product Type", icon: BarChart2 },
   { href: "/reports/by-function", label: "By Function", icon: Briefcase },
   { href: "/reports/expiring-soon", label: "Expiring Soon", icon: Clock },
-  { href: "/reports/last-12-months", label: "Last 12 Months", icon: CalendarDays },
+  { href: "/reports/last-12-months", label: "Achievement over time", icon: CalendarDays },
   { href: "/reports/trained-not-certified", label: "Trained Not Certified", icon: AlertCircle },
   { href: "/reports/coverage", label: "Coverage", icon: Target },
   { href: "/reports/catalogue-health", label: "Catalogue Health", icon: BookOpen },
