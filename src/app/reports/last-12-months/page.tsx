@@ -408,18 +408,37 @@ export default function AchievementOverTimePage() {
             )}
           </div>
           <ResponsiveContainer width="100%" height={300}>
-            <ComposedChart data={chartData} onClick={((e: unknown) => {
-              const payload = (e as { activePayload?: { payload: { bucketKey?: string } }[] })?.activePayload;
-              const k = payload?.[0]?.payload?.bucketKey;
-              if (k) setFilterBucket(k);
-            }) as never}>
+            <ComposedChart data={chartData}>
               <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
               <XAxis dataKey="label" tick={{ fontSize: 11, fill: chart.axis }} stroke={chart.axis} angle={-35} textAnchor="end" height={50} />
               <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: chart.axis }} stroke={chart.axis} />
               <Tooltip contentStyle={tooltipStyle(chart)} />
               <Legend />
-              <Area type="monotone" dataKey="This period" fill={chart.typeColor("Certification")} stroke={chart.typeColor("Certification")} fillOpacity={0.3} />
-              <Line type="monotone" dataKey="Prior period" stroke={chart.axis} strokeDasharray="4 4" strokeWidth={2} dot={{ r: 2 }} />
+              <Area
+                type="monotone"
+                dataKey="This period"
+                fill={chart.typeColor("Certification")}
+                stroke={chart.typeColor("Certification")}
+                fillOpacity={0.3}
+                style={{ cursor: "pointer" }}
+                onClick={((d: unknown) => {
+                  const k = (d as { bucketKey?: string })?.bucketKey;
+                  if (k) setFilterBucket(k);
+                }) as never}
+              />
+              <Line
+                type="monotone"
+                dataKey="Prior period"
+                stroke={chart.axis}
+                strokeDasharray="4 4"
+                strokeWidth={2}
+                dot={{ r: 2 }}
+                style={{ cursor: "pointer" }}
+                onClick={((d: unknown) => {
+                  const k = (d as { bucketKey?: string })?.bucketKey;
+                  if (k) setFilterBucket(k);
+                }) as never}
+              />
             </ComposedChart>
           </ResponsiveContainer>
           <p className="text-xs text-gray-400 mt-2">Click a point to filter the table to that {bucketLabel}</p>
