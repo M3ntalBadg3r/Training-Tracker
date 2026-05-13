@@ -102,9 +102,9 @@ const helpSections: Record<string, HelpSection> = {
               </td>
             </tr>
             <tr>
-              <td><strong>Achieved Over Last 12 Months</strong></td>
+              <td><strong>Achievement Over Time</strong></td>
               <td>Line chart</td>
-              <td>Monthly trend of completions over the past year</td>
+              <td>Trend of completions over a selectable time range (1/3/6/12 months or custom), with prior-period comparison</td>
             </tr>
           </tbody>
         </table>
@@ -378,8 +378,8 @@ const helpSections: Record<string, HelpSection> = {
         <h3>Expiring Soon</h3>
         <p>Horizon bar showing records expiring within 1/3/6/12 months, plus a theatre × month stacked bar showing where the cliff falls.</p>
 
-        <h3>Last 12 Months</h3>
-        <p>Monthly area chart with a dashed prior-year comparison line, plus a top-10 leaderboard of trainings by completion count. Click a month to filter.</p>
+        <h3>Achievement Over Time</h3>
+        <p>Area chart of completions with a dashed prior-period comparison line, plus a top-10 leaderboard of trainings by completion count. Pick a preset time range (12, 6, 3, or 1 month) or a custom date range; the chart automatically buckets by day, week, or month based on the window. Click a point to filter the table to that bucket. Type/theatre filters update the chart as well as the table.</p>
 
         <h3>Trained But Not Certified</h3>
         <p>Gap funnel by product (ILT completed → ILT still active) plus the top theatres/regions/countries with gaps.</p>

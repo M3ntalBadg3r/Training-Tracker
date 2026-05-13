@@ -275,7 +275,7 @@ Four summary cards are displayed at the top:
 | **By Product Type** | Bar chart | Breakdown of Certifications, Accreditations, and ILT by product (Cortex, SASE, Cloud, Strata, Foundation) |
 | **By Function** | Bar chart | Breakdown by function (Sales, Pre-Sales, Deployments) |
 | **Expiring Soon** | Bar chart | Number of trainings expiring within 1, 3, and 6 months |
-| **Achieved Over Last 12 Months** | Line chart | Monthly trend of completions over the past year |
+| **Achievement Over Time** | Line chart | Trend of completions over a selectable range (1/3/6/12 months or custom), with prior-period comparison |
 
 Each chart is clickable — clicking a chart navigates to its corresponding detailed report in the **Reports** section.
 
@@ -380,9 +380,9 @@ Same shape as By Product Type, with the function dimension (Sales, Pre-Sales, De
 
 Horizon bar showing records expiring within 1 / 3 / 6 / 12 months, plus a stacked theatre × month bar showing where expiry pressure clusters. Filter window is selectable up to 12 months.
 
-### Last 12 Months
+### Achievement Over Time
 
-Monthly area chart of completions with a dashed prior-year comparison line, plus a top-10 leaderboard of most-completed trainings. Click a month to filter the table.
+Area chart of completions with a dashed prior-period comparison line, plus a top-10 leaderboard of most-completed trainings. Pick a preset time range (12, 6, 3, or 1 month) or a custom date range; the chart automatically buckets by day, week, or month depending on the window length. Click a bucket to filter the table to that day/week/month. Type and theatre filters update the chart as well as the table.
 
 ### Trained But Not Certified
 
@@ -591,7 +591,7 @@ Click **Add Schedule** and configure:
 | Field | Description |
 |-------|-------------|
 | **Name** | A descriptive label for this schedule |
-| **Report** | Which report to export (Trained but Not Certified, By Product Type, By Function, Expiring Soon, Achieved in Last 12 Months) |
+| **Report** | Which report to export (Trained but Not Certified, By Product Type, By Function, Expiring Soon, Achievement Over Time) |
 | **Format** | CSV, Excel (XLSX), or PDF |
 | **Destination** | Where to deliver the file |
 | **Schedule** | Daily / Weekly / Monthly at a specified time |

@@ -6,13 +6,13 @@ import Link from "next/link";
 import PageHeader from "@/components/layout/PageHeader";
 import KpiStrip from "@/components/ui/KpiStrip";
 import GroupedRows from "@/components/data-table/GroupedRows";
+import DateRangePicker, { DateRangeValue } from "@/components/ui/DateRangePicker";
 import { useChartTheme, tooltipStyle } from "@/lib/chart-theme";
 import { groupRows, GroupByMode } from "@/lib/group-by";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
 import { Search, Download, ArrowLeft, Award, ShieldCheck, GraduationCap, TrendingUp } from "lucide-react";
 import {
-  AreaChart,
   Area,
   XAxis,
   YAxis,
@@ -41,6 +41,16 @@ interface TrainingRecordRow {
 
 const TYPES = ["Certification", "Accreditation", "Instructor-Led Training", "OLX"] as const;
 
+type RangePreset = "12m" | "6m" | "3m" | "1m" | "custom";
+
+const RANGE_PRESETS: { value: RangePreset; label: string; months: number | null }[] = [
+  { value: "12m", label: "Last 12 months", months: 12 },
+  { value: "6m", label: "Last 6 months", months: 6 },
+  { value: "3m", label: "Last 3 months", months: 3 },
+  { value: "1m", label: "Last 1 month", months: 1 },
+  { value: "custom", label: "Custom range", months: null },
+];
+
 function typeBadgeClass(t: string): string {
   if (t === "Certification") return "bg-blue-100 text-blue-800";
   if (t === "Accreditation") return "bg-emerald-100 text-emerald-800";
@@ -66,11 +76,53 @@ function ExportMenu({ data, columns, filename }: { data: Record<string, unknown>
   );
 }
 
+function startOfDay(d: Date): Date {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x;
+}
+
+function endOfDay(d: Date): Date {
+  const x = new Date(d);
+  x.setHours(23, 59, 59, 999);
+  return x;
+}
+
+function addMonths(d: Date, n: number): Date {
+  const x = new Date(d);
+  x.setMonth(x.getMonth() + n);
+  return x;
+}
+
+function addDays(d: Date, n: number): Date {
+  const x = new Date(d);
+  x.setDate(x.getDate() + n);
+  return x;
+}
+
 function monthKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
-export default function Last12MonthsPage() {
+function dayKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function weekStart(d: Date): Date {
+  const x = startOfDay(d);
+  const day = x.getDay();
+  const diff = (day + 6) % 7; // Monday-start week
+  x.setDate(x.getDate() - diff);
+  return x;
+}
+
+function weekKey(d: Date): string {
+  return dayKey(weekStart(d));
+}
+
+type Granularity = "day" | "week" | "month";
+
+export default function AchievementOverTimePage() {
   const router = useRouter();
   const chart = useChartTheme();
   const [trainingRecords, setTrainingRecords] = useState<TrainingRecordRow[]>([]);
@@ -79,8 +131,11 @@ export default function Last12MonthsPage() {
   const [search, setSearch] = useState("");
   const [filterType, setFilterType] = useState("");
   const [filterTheatre, setFilterTheatre] = useState("");
-  const [filterMonth, setFilterMonth] = useState<string | null>(null);
+  const [filterBucket, setFilterBucket] = useState<string | null>(null);
   const [groupBy, setGroupBy] = useState<GroupByMode | null>(null);
+
+  const [rangePreset, setRangePreset] = useState<RangePreset>("12m");
+  const [customRange, setCustomRange] = useState<DateRangeValue>({ from: null, to: null });
 
   const now = useMemo(() => new Date(), []);
   const companyScope = useCompanyScope();
@@ -97,60 +152,126 @@ export default function Last12MonthsPage() {
   const types = useMemo(() => [...new Set(trainingRecords.map((r) => r.trainingType))].filter(Boolean).sort(), [trainingRecords]);
   const theatres = useMemo(() => [...new Set(trainingRecords.map((r) => r.theatre))].filter(Boolean).sort(), [trainingRecords]);
 
-  const last12Start = useMemo(() => new Date(now.getFullYear(), now.getMonth() - 11, 1), [now]);
-  const prior12Start = useMemo(() => new Date(now.getFullYear() - 1, now.getMonth() - 11, 1), [now]);
+  // Resolve current window
+  const { windowStart, windowEnd } = useMemo(() => {
+    if (rangePreset === "custom") {
+      const from = customRange.from ? startOfDay(customRange.from) : startOfDay(addMonths(now, -12));
+      const to = customRange.to ? endOfDay(customRange.to) : endOfDay(now);
+      return { windowStart: from, windowEnd: to };
+    }
+    const months = RANGE_PRESETS.find((p) => p.value === rangePreset)?.months ?? 12;
+    const start = new Date(now.getFullYear(), now.getMonth() - (months - 1), 1);
+    return { windowStart: startOfDay(start), windowEnd: endOfDay(now) };
+  }, [rangePreset, customRange, now]);
 
+  // Prior window — same length immediately before windowStart
+  const { priorStart, priorEnd } = useMemo(() => {
+    const lenMs = windowEnd.getTime() - windowStart.getTime();
+    const priorE = new Date(windowStart.getTime() - 1);
+    const priorS = new Date(priorE.getTime() - lenMs);
+    return { priorStart: priorS, priorEnd: priorE };
+  }, [windowStart, windowEnd]);
+
+  // Decide bucket granularity based on window length
+  const granularity: Granularity = useMemo(() => {
+    const days = Math.max(1, Math.round((windowEnd.getTime() - windowStart.getTime()) / 86400000));
+    if (days <= 35) return "day";
+    if (days <= 100) return "week";
+    return "month";
+  }, [windowStart, windowEnd]);
+
+  const bucketKey = useMemo(() => {
+    if (granularity === "day") return dayKey;
+    if (granularity === "week") return weekKey;
+    return monthKey;
+  }, [granularity]);
+
+  // Records filtered for the table (window + search + type + theatre + bucket click)
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
     return trainingRecords.filter((r) => {
       const completed = new Date(r.completedDate);
-      if (completed < last12Start || completed > now) return false;
+      if (completed < windowStart || completed > windowEnd) return false;
       if (search && !r.fullName.toLowerCase().includes(q) && !r.email.toLowerCase().includes(q)) return false;
       if (filterType && r.trainingType !== filterType) return false;
       if (filterTheatre && r.theatre !== filterTheatre) return false;
-      if (filterMonth && monthKey(completed) !== filterMonth) return false;
+      if (filterBucket && bucketKey(completed) !== filterBucket) return false;
       return true;
     });
-  }, [trainingRecords, search, filterType, filterTheatre, filterMonth, last12Start, now]);
+  }, [trainingRecords, search, filterType, filterTheatre, filterBucket, windowStart, windowEnd, bucketKey]);
 
-  // Build last 12 months and prior 12 months series
-  const months = useMemo(() => {
+  // Records used to build the chart — same filters as the table EXCEPT bucket click
+  const chartRecords = useMemo(() => {
+    const q = search.toLowerCase();
+    return trainingRecords.filter((r) => {
+      if (search && !r.fullName.toLowerCase().includes(q) && !r.email.toLowerCase().includes(q)) return false;
+      if (filterType && r.trainingType !== filterType) return false;
+      if (filterTheatre && r.theatre !== filterTheatre) return false;
+      return true;
+    });
+  }, [trainingRecords, search, filterType, filterTheatre]);
+
+  // Build bucket axis for the chart
+  const buckets = useMemo(() => {
     const out: { key: string; label: string; date: Date }[] = [];
-    for (let i = 0; i < 12; i++) {
-      const d = new Date(last12Start);
-      d.setMonth(last12Start.getMonth() + i);
-      out.push({
-        key: monthKey(d),
-        label: d.toLocaleDateString("en-GB", { month: "short", year: "2-digit" }),
-        date: d,
-      });
+    if (granularity === "month") {
+      const start = new Date(windowStart.getFullYear(), windowStart.getMonth(), 1);
+      let d = start;
+      while (d <= windowEnd) {
+        out.push({
+          key: monthKey(d),
+          label: d.toLocaleDateString("en-GB", { month: "short", year: "2-digit" }),
+          date: new Date(d),
+        });
+        d = addMonths(d, 1);
+      }
+    } else if (granularity === "week") {
+      let d = weekStart(windowStart);
+      while (d <= windowEnd) {
+        out.push({
+          key: weekKey(d),
+          label: d.toLocaleDateString("en-GB", { day: "2-digit", month: "short" }),
+          date: new Date(d),
+        });
+        d = addDays(d, 7);
+      }
+    } else {
+      let d = startOfDay(windowStart);
+      while (d <= windowEnd) {
+        out.push({
+          key: dayKey(d),
+          label: d.toLocaleDateString("en-GB", { day: "2-digit", month: "short" }),
+          date: new Date(d),
+        });
+        d = addDays(d, 1);
+      }
     }
     return out;
-  }, [last12Start]);
+  }, [windowStart, windowEnd, granularity]);
 
-  const monthlyData = useMemo(() => {
+  const chartData = useMemo(() => {
     const counts = new Map<string, number>();
     const priorCounts = new Map<string, number>();
-    for (const r of trainingRecords) {
+    const shiftMs = windowStart.getTime() - priorStart.getTime();
+    for (const r of chartRecords) {
       const completed = new Date(r.completedDate);
-      const k = monthKey(completed);
-      if (completed >= last12Start && completed <= now) {
+      if (completed >= windowStart && completed <= windowEnd) {
+        const k = bucketKey(completed);
         counts.set(k, (counts.get(k) ?? 0) + 1);
-      } else if (completed >= prior12Start && completed < last12Start) {
-        // align prior period to last12 month positions
-        const aligned = new Date(completed);
-        aligned.setFullYear(completed.getFullYear() + 1);
-        const ak = monthKey(aligned);
+      } else if (completed >= priorStart && completed <= priorEnd) {
+        // Align prior period onto the current axis by shifting forward by the window length
+        const aligned = new Date(completed.getTime() + shiftMs);
+        const ak = bucketKey(aligned);
         priorCounts.set(ak, (priorCounts.get(ak) ?? 0) + 1);
       }
     }
-    return months.map((m) => ({
-      monthKey: m.key,
-      label: m.label,
-      "This year": counts.get(m.key) ?? 0,
-      "Prior year": priorCounts.get(m.key) ?? 0,
+    return buckets.map((b) => ({
+      bucketKey: b.key,
+      label: b.label,
+      "This period": counts.get(b.key) ?? 0,
+      "Prior period": priorCounts.get(b.key) ?? 0,
     }));
-  }, [trainingRecords, months, last12Start, prior12Start, now]);
+  }, [chartRecords, buckets, bucketKey, windowStart, windowEnd, priorStart, priorEnd]);
 
   const topTitles = useMemo(() => {
     const m = new Map<string, number>();
@@ -162,24 +283,27 @@ export default function Last12MonthsPage() {
   }, [filtered]);
 
   const kpis = useMemo(() => {
-    const thisYearTotal = monthlyData.reduce((s, m) => s + (m["This year"] as number), 0);
-    const priorYearTotal = monthlyData.reduce((s, m) => s + (m["Prior year"] as number), 0);
-    const change = priorYearTotal === 0 ? 0 : ((thisYearTotal - priorYearTotal) / priorYearTotal) * 100;
+    const thisPeriodTotal = chartData.reduce((s, m) => s + (m["This period"] as number), 0);
+    const priorPeriodTotal = chartData.reduce((s, m) => s + (m["Prior period"] as number), 0);
+    const change = priorPeriodTotal === 0 ? 0 : ((thisPeriodTotal - priorPeriodTotal) / priorPeriodTotal) * 100;
     return {
       total: filtered.length,
       cert: filtered.filter((r) => r.trainingType === "Certification").length,
       accred: filtered.filter((r) => r.trainingType === "Accreditation").length,
       ilt: filtered.filter((r) => r.trainingType === "Instructor-Led Training").length,
       olx: filtered.filter((r) => r.trainingType === "OLX").length,
-      thisYearTotal,
-      priorYearTotal,
+      thisPeriodTotal,
+      priorPeriodTotal,
       change,
     };
-  }, [filtered, monthlyData]);
+  }, [filtered, chartData]);
 
   void TYPES;
 
   const grouped = useMemo(() => groupRows(filtered, groupBy ?? "theatre"), [filtered, groupBy]);
+
+  const granularityLabel = granularity === "day" ? "Daily" : granularity === "week" ? "Weekly" : "Monthly";
+  const bucketLabel = granularity === "day" ? "day" : granularity === "week" ? "week" : "month";
 
   const exportColumns = [
     { key: "fullName", header: "Full Name" },
@@ -213,11 +337,37 @@ export default function Last12MonthsPage() {
           <ArrowLeft size={14} /> Reports
         </Link>
       </div>
-      <PageHeader title="Achieved Over Last 12 Months" helpSlug="reports" />
+      <PageHeader title="Achievement over time" helpSlug="reports" />
+
+      <div className="flex flex-wrap items-center gap-3 mb-4">
+        <span className="text-sm font-medium text-gray-700">Time range:</span>
+        <select
+          value={rangePreset}
+          onChange={(e) => {
+            setRangePreset(e.target.value as RangePreset);
+            setFilterBucket(null);
+          }}
+          className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white"
+        >
+          {RANGE_PRESETS.map((p) => (
+            <option key={p.value} value={p.value}>{p.label}</option>
+          ))}
+        </select>
+        {rangePreset === "custom" && (
+          <DateRangePicker
+            value={customRange}
+            onChange={(v) => {
+              setCustomRange(v);
+              setFilterBucket(null);
+            }}
+            placeholder="Pick a date range"
+          />
+        )}
+      </div>
 
       <KpiStrip
         cards={[
-          { label: "This Year", value: kpis.thisYearTotal, icon: TrendingUp, tone: "blue", hint: `${kpis.change >= 0 ? "+" : ""}${kpis.change.toFixed(1)}% vs prior` },
+          { label: "This Period", value: kpis.thisPeriodTotal, icon: TrendingUp, tone: "blue", hint: `${kpis.change >= 0 ? "+" : ""}${kpis.change.toFixed(1)}% vs prior` },
           { label: "Certifications", value: kpis.cert, icon: Award, tone: "indigo" },
           { label: "Accreditations", value: kpis.accred, icon: ShieldCheck, tone: "emerald" },
           { label: "ILTs", value: kpis.ilt, icon: GraduationCap, tone: "amber" },
@@ -228,27 +378,27 @@ export default function Last12MonthsPage() {
       <section className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
         <div className="lg:col-span-2 bg-white rounded-lg border border-gray-200 p-5">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-base font-semibold text-gray-900">Monthly Completions vs Prior Year</h3>
-            {filterMonth && (
-              <button onClick={() => setFilterMonth(null)} className="text-xs text-blue-600 hover:underline">Clear month filter</button>
+            <h3 className="text-base font-semibold text-gray-900">{granularityLabel} Completions vs Prior Period</h3>
+            {filterBucket && (
+              <button onClick={() => setFilterBucket(null)} className="text-xs text-blue-600 hover:underline">Clear {bucketLabel} filter</button>
             )}
           </div>
           <ResponsiveContainer width="100%" height={300}>
-            <ComposedChart data={monthlyData} onClick={((e: unknown) => {
-              const payload = (e as { activePayload?: { payload: { monthKey?: string } }[] })?.activePayload;
-              const k = payload?.[0]?.payload?.monthKey;
-              if (k) setFilterMonth(k);
+            <ComposedChart data={chartData} onClick={((e: unknown) => {
+              const payload = (e as { activePayload?: { payload: { bucketKey?: string } }[] })?.activePayload;
+              const k = payload?.[0]?.payload?.bucketKey;
+              if (k) setFilterBucket(k);
             }) as never}>
               <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
               <XAxis dataKey="label" tick={{ fontSize: 11, fill: chart.axis }} stroke={chart.axis} angle={-35} textAnchor="end" height={50} />
               <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: chart.axis }} stroke={chart.axis} />
               <Tooltip contentStyle={tooltipStyle(chart)} />
               <Legend />
-              <Area type="monotone" dataKey="This year" fill={chart.typeColor("Certification")} stroke={chart.typeColor("Certification")} fillOpacity={0.3} />
-              <Line type="monotone" dataKey="Prior year" stroke={chart.axis} strokeDasharray="4 4" strokeWidth={2} dot={{ r: 2 }} />
+              <Area type="monotone" dataKey="This period" fill={chart.typeColor("Certification")} stroke={chart.typeColor("Certification")} fillOpacity={0.3} />
+              <Line type="monotone" dataKey="Prior period" stroke={chart.axis} strokeDasharray="4 4" strokeWidth={2} dot={{ r: 2 }} />
             </ComposedChart>
           </ResponsiveContainer>
-          <p className="text-xs text-gray-400 mt-2">Click a point to filter the table to that month</p>
+          <p className="text-xs text-gray-400 mt-2">Click a point to filter the table to that {bucketLabel}</p>
         </div>
         <div className="bg-white rounded-lg border border-gray-200 p-5">
           <h3 className="text-base font-semibold text-gray-900 mb-4">Top 10 Trainings</h3>
@@ -275,7 +425,7 @@ export default function Last12MonthsPage() {
 
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-wrap gap-2">
-          <p className="text-sm text-gray-500">Training records completed in the last 12 months</p>
+          <p className="text-sm text-gray-500">Training records completed in the selected range</p>
           <span className="text-sm font-medium text-gray-500">{filtered.length} result{filtered.length !== 1 ? "s" : ""}</span>
         </div>
         <div className="px-6 py-4">
@@ -285,7 +435,7 @@ export default function Last12MonthsPage() {
                 <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                 <input type="text" placeholder="Search by name or email..." value={search} onChange={(e) => setSearch(e.target.value)} className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg" />
               </div>
-              <ExportMenu data={exportRows as never} columns={exportColumns} filename="achieved-last-12-months" />
+              <ExportMenu data={exportRows as never} columns={exportColumns} filename="achievement-over-time" />
             </div>
             <div className="flex flex-wrap gap-3">
               <select value={filterType} onChange={(e) => setFilterType(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
@@ -327,7 +477,7 @@ export default function Last12MonthsPage() {
                 groups={grouped}
                 groupBy={groupBy}
                 colSpanTotal={13}
-                emptyMessage="No records found from the last 12 months."
+                emptyMessage="No records found in the selected range."
                 renderRow={(row, idx) => (
                   <tr key={`${row.email}-${row.trainingTitle}-${idx}`} className="border-b hover:bg-gray-50">
                     <td className="px-4 py-3">{row.fullName}</td>
