@@ -412,8 +412,17 @@ export default function AchievementOverTimePage() {
               data={chartData}
               style={{ cursor: "pointer" }}
               onClick={((state: unknown) => {
-                const idx = (state as { activeIndex?: number })?.activeIndex;
-                if (typeof idx === "number" && chartData[idx]) {
+                // recharts v3 returns activeIndex as a string (see
+                // combineActiveTooltipIndex.js → `return String(clampedIndex)`),
+                // even though the .d.ts says number | TooltipIndex | undefined.
+                const raw = (state as { activeIndex?: unknown })?.activeIndex;
+                const idx =
+                  typeof raw === "number"
+                    ? raw
+                    : typeof raw === "string" && raw !== ""
+                      ? Number(raw)
+                      : NaN;
+                if (Number.isFinite(idx) && chartData[idx]) {
                   setFilterBucket(chartData[idx].bucketKey);
                 }
               }) as never}
