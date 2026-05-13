@@ -408,7 +408,16 @@ export default function AchievementOverTimePage() {
             )}
           </div>
           <ResponsiveContainer width="100%" height={300}>
-            <ComposedChart data={chartData}>
+            <ComposedChart
+              data={chartData}
+              style={{ cursor: "pointer" }}
+              onClick={((state: unknown) => {
+                const idx = (state as { activeIndex?: number })?.activeIndex;
+                if (typeof idx === "number" && chartData[idx]) {
+                  setFilterBucket(chartData[idx].bucketKey);
+                }
+              }) as never}
+            >
               <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
               <XAxis dataKey="label" tick={{ fontSize: 11, fill: chart.axis }} stroke={chart.axis} angle={-35} textAnchor="end" height={50} />
               <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: chart.axis }} stroke={chart.axis} />
@@ -420,11 +429,6 @@ export default function AchievementOverTimePage() {
                 fill={chart.typeColor("Certification")}
                 stroke={chart.typeColor("Certification")}
                 fillOpacity={0.3}
-                style={{ cursor: "pointer" }}
-                onClick={((d: unknown) => {
-                  const k = (d as { bucketKey?: string })?.bucketKey;
-                  if (k) setFilterBucket(k);
-                }) as never}
               />
               <Line
                 type="monotone"
@@ -433,11 +437,6 @@ export default function AchievementOverTimePage() {
                 strokeDasharray="4 4"
                 strokeWidth={2}
                 dot={{ r: 2 }}
-                style={{ cursor: "pointer" }}
-                onClick={((d: unknown) => {
-                  const k = (d as { bucketKey?: string })?.bucketKey;
-                  if (k) setFilterBucket(k);
-                }) as never}
               />
             </ComposedChart>
           </ResponsiveContainer>
