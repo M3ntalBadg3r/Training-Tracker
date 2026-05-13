@@ -152,17 +152,37 @@ export default function AchievementOverTimePage() {
   const types = useMemo(() => [...new Set(trainingRecords.map((r) => r.trainingType))].filter(Boolean).sort(), [trainingRecords]);
   const theatres = useMemo(() => [...new Set(trainingRecords.map((r) => r.theatre))].filter(Boolean).sort(), [trainingRecords]);
 
-  // Resolve current window
-  const { windowStart, windowEnd } = useMemo(() => {
+  // Earliest completion date in the current dataset — used to tighten the
+  // chart axis when the window has no lower bound ("All time").
+  const earliestCompleted = useMemo(() => {
+    let min: number | null = null;
+    for (const r of trainingRecords) {
+      const t = new Date(r.completedDate).getTime();
+      if (Number.isFinite(t) && (min === null || t < min)) min = t;
+    }
+    return min === null ? null : new Date(min);
+  }, [trainingRecords]);
+
+  // Resolve current window. Null from/to mean "no constraint", matching the
+  // DateRangePicker "All time" preset and filterByRange() semantics.
+  const { windowStart, windowEnd, isAllTime } = useMemo(() => {
     if (rangePreset === "custom") {
-      const from = customRange.from ? startOfDay(customRange.from) : startOfDay(addMonths(now, -12));
+      const noFrom = !customRange.from;
+      const from = customRange.from ? startOfDay(customRange.from) : new Date(0);
       const to = customRange.to ? endOfDay(customRange.to) : endOfDay(now);
-      return { windowStart: from, windowEnd: to };
+      return { windowStart: from, windowEnd: to, isAllTime: noFrom };
     }
     const months = RANGE_PRESETS.find((p) => p.value === rangePreset)?.months ?? 12;
     const start = new Date(now.getFullYear(), now.getMonth() - (months - 1), 1);
-    return { windowStart: startOfDay(start), windowEnd: endOfDay(now) };
+    return { windowStart: startOfDay(start), windowEnd: endOfDay(now), isAllTime: false };
   }, [rangePreset, customRange, now]);
+
+  // For axis rendering only, start the chart at the earliest record rather
+  // than 1970 when the window is "All time".
+  const axisStart = useMemo(() => {
+    if (isAllTime && earliestCompleted) return startOfDay(earliestCompleted);
+    return windowStart;
+  }, [isAllTime, earliestCompleted, windowStart]);
 
   // Prior window — same length immediately before windowStart
   const { priorStart, priorEnd } = useMemo(() => {
@@ -172,13 +192,14 @@ export default function AchievementOverTimePage() {
     return { priorStart: priorS, priorEnd: priorE };
   }, [windowStart, windowEnd]);
 
-  // Decide bucket granularity based on window length
+  // Decide bucket granularity based on the visible axis span (uses axisStart
+  // so "All time" buckets at the real data span, not 1970→now).
   const granularity: Granularity = useMemo(() => {
-    const days = Math.max(1, Math.round((windowEnd.getTime() - windowStart.getTime()) / 86400000));
+    const days = Math.max(1, Math.round((windowEnd.getTime() - axisStart.getTime()) / 86400000));
     if (days <= 35) return "day";
     if (days <= 100) return "week";
     return "month";
-  }, [windowStart, windowEnd]);
+  }, [axisStart, windowEnd]);
 
   const bucketKey = useMemo(() => {
     if (granularity === "day") return dayKey;
@@ -211,11 +232,13 @@ export default function AchievementOverTimePage() {
     });
   }, [trainingRecords, search, filterType, filterTheatre]);
 
-  // Build bucket axis for the chart
+  // Build bucket axis for the chart. Use axisStart (the earliest record when
+  // "All time" is selected) so we don't render decades of empty leading
+  // buckets back to 1970.
   const buckets = useMemo(() => {
     const out: { key: string; label: string; date: Date }[] = [];
     if (granularity === "month") {
-      const start = new Date(windowStart.getFullYear(), windowStart.getMonth(), 1);
+      const start = new Date(axisStart.getFullYear(), axisStart.getMonth(), 1);
       let d = start;
       while (d <= windowEnd) {
         out.push({
@@ -226,7 +249,7 @@ export default function AchievementOverTimePage() {
         d = addMonths(d, 1);
       }
     } else if (granularity === "week") {
-      let d = weekStart(windowStart);
+      let d = weekStart(axisStart);
       while (d <= windowEnd) {
         out.push({
           key: weekKey(d),
@@ -236,7 +259,7 @@ export default function AchievementOverTimePage() {
         d = addDays(d, 7);
       }
     } else {
-      let d = startOfDay(windowStart);
+      let d = startOfDay(axisStart);
       while (d <= windowEnd) {
         out.push({
           key: dayKey(d),
@@ -247,7 +270,7 @@ export default function AchievementOverTimePage() {
       }
     }
     return out;
-  }, [windowStart, windowEnd, granularity]);
+  }, [axisStart, windowEnd, granularity]);
 
   const chartData = useMemo(() => {
     const counts = new Map<string, number>();
@@ -337,7 +360,7 @@ export default function AchievementOverTimePage() {
           <ArrowLeft size={14} /> Reports
         </Link>
       </div>
-      <PageHeader title="Achievement over time" helpSlug="reports" />
+      <PageHeader title="Achievement Over Time" helpSlug="reports" />
 
       <div className="flex flex-wrap items-center gap-3 mb-4">
         <span className="text-sm font-medium text-gray-700">Time range:</span>
@@ -385,18 +408,45 @@ export default function AchievementOverTimePage() {
             )}
           </div>
           <ResponsiveContainer width="100%" height={300}>
-            <ComposedChart data={chartData} onClick={((e: unknown) => {
-              const payload = (e as { activePayload?: { payload: { bucketKey?: string } }[] })?.activePayload;
-              const k = payload?.[0]?.payload?.bucketKey;
-              if (k) setFilterBucket(k);
-            }) as never}>
+            <ComposedChart
+              data={chartData}
+              style={{ cursor: "pointer" }}
+              onClick={((state: unknown) => {
+                // recharts v3 returns activeIndex as a string (see
+                // combineActiveTooltipIndex.js → `return String(clampedIndex)`),
+                // even though the .d.ts says number | TooltipIndex | undefined.
+                const raw = (state as { activeIndex?: unknown })?.activeIndex;
+                const idx =
+                  typeof raw === "number"
+                    ? raw
+                    : typeof raw === "string" && raw !== ""
+                      ? Number(raw)
+                      : NaN;
+                if (Number.isFinite(idx) && chartData[idx]) {
+                  setFilterBucket(chartData[idx].bucketKey);
+                }
+              }) as never}
+            >
               <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
               <XAxis dataKey="label" tick={{ fontSize: 11, fill: chart.axis }} stroke={chart.axis} angle={-35} textAnchor="end" height={50} />
               <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: chart.axis }} stroke={chart.axis} />
               <Tooltip contentStyle={tooltipStyle(chart)} />
               <Legend />
-              <Area type="monotone" dataKey="This period" fill={chart.typeColor("Certification")} stroke={chart.typeColor("Certification")} fillOpacity={0.3} />
-              <Line type="monotone" dataKey="Prior period" stroke={chart.axis} strokeDasharray="4 4" strokeWidth={2} dot={{ r: 2 }} />
+              <Area
+                type="monotone"
+                dataKey="This period"
+                fill={chart.typeColor("Certification")}
+                stroke={chart.typeColor("Certification")}
+                fillOpacity={0.3}
+              />
+              <Line
+                type="monotone"
+                dataKey="Prior period"
+                stroke={chart.axis}
+                strokeDasharray="4 4"
+                strokeWidth={2}
+                dot={{ r: 2 }}
+              />
             </ComposedChart>
           </ResponsiveContainer>
           <p className="text-xs text-gray-400 mt-2">Click a point to filter the table to that {bucketLabel}</p>
