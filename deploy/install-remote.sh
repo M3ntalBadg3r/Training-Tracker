@@ -33,9 +33,17 @@ echo "  Channel: ${UPDATE_CHANNEL}"
 echo "  Branch:  ${BRANCH}"
 echo ""
 
-# Check for root
+# Needs root. A saved-file invocation can re-exec under sudo; a piped
+# invocation (curl ... | bash) has no script file to re-exec, so instruct the
+# user to pipe into sudo instead.
 if [ "$(id -u)" -ne 0 ]; then
-    echo "Error: This script must be run as root."
+    if [ -f "$0" ] && command -v sudo >/dev/null 2>&1; then
+        echo "Not running as root — re-executing under sudo..."
+        exec sudo -E bash "$0" "$@"
+    fi
+    echo "ERROR: This script must be run as root." >&2
+    echo "       Piped install: curl -sSL <url> | sudo bash" >&2
+    echo "       (append '-s -- --dev' after 'sudo bash' for the dev channel)" >&2
     exit 1
 fi
 

@@ -2,6 +2,14 @@
 # Training Tracker - Automatic Update
 # Checks for a new version and applies it if available.
 # Designed to be called from cron.
+# Needs root — re-execs under sudo when run manually by a non-root user.
+if [ "$(id -u)" -ne 0 ]; then
+    if command -v sudo >/dev/null 2>&1; then
+        exec sudo -E bash "$0" "$@"
+    fi
+    echo "ERROR: This script must be run as root and sudo is not available." >&2
+    exit 1
+fi
 
 APP_DIR="${1:-/opt/training-tracker}"
 LOG_FILE="/var/log/training-tracker-updates.log"

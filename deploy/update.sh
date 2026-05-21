@@ -1,8 +1,17 @@
 #!/bin/bash
-# Training Tracker - Update Script for LXC containers
+# Training Tracker - Update Script for LXC containers or VMs
 # Creates a pre-update backup, performs the update, and automatically
 # rolls back on failure.
-# Run as root
+# Needs root — re-execs under sudo when run by a non-root user (e.g. on a VM).
+if [ "$(id -u)" -ne 0 ]; then
+    if command -v sudo >/dev/null 2>&1; then
+        echo "Not running as root — re-executing under sudo..."
+        exec sudo -E bash "$0" "$@"
+    fi
+    echo "ERROR: This script must be run as root and sudo is not available." >&2
+    echo "       Re-run as root, or install sudo." >&2
+    exit 1
+fi
 
 APP_DIR="/opt/training-tracker"
 BACKUP_DIR="${APP_DIR}/.update-backup"

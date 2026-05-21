@@ -38,7 +38,7 @@ Built with Next.js, React, PostgreSQL, and Prisma.
 
 ## Getting Started
 
-The `deploy/` directory contains scripts for installing and updating Training Tracker on a Debian-based Linux server or LXC container. Both scripts should be run as **root**.
+The `deploy/` directory contains scripts for installing and updating Training Tracker on a Debian-based Linux server, **LXC container, or VM**. The scripts need root privileges: on an LXC you are normally root already, while on a VM you typically log in as a regular user — in that case the scripts **automatically re-exec themselves under `sudo`**, so no manual elevation is required. (If `sudo` is not installed, they exit with a clear message.) The app itself runs as **root** on both LXC and VM, so the in-app updater and the scheduled cron jobs behave identically in either environment.
 
 ### Quick Install (curl)
 
@@ -54,7 +54,7 @@ To install the **dev channel** (tracks the `dev` branch and receives pre-release
 curl -sSL https://raw.githubusercontent.com/M3ntalBadg3r/Training-Tracker/master/deploy/install-remote.sh | bash -s -- --dev
 ```
 
-This downloads the repository, installs all dependencies, sets up the database, and starts the application. Must be run as **root**.
+This downloads the repository, installs all dependencies, sets up the database, and starts the application. On a VM where you are not root, pipe into `sudo` instead — `curl -sSL <url> | sudo bash` (a piped script has no file for the installer to re-exec, so the elevation must happen at the pipe). Append `-s -- --dev` after `sudo bash` for the dev channel.
 
 ### Installation Script
 
