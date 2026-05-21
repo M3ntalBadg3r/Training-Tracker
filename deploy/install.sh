@@ -1,8 +1,19 @@
 #!/bin/bash
-set -e
 
-# Training Tracker - Installation Script for Debian-based LXC containers
-# Run as root (LXC containers typically run as root directly)
+# Training Tracker - Installation Script for Debian-based LXC containers or VMs
+# Needs root. On an LXC you are usually root already; on a VM you typically log
+# in as a normal user, so re-exec under sudo when not root.
+if [ "$(id -u)" -ne 0 ]; then
+    if command -v sudo >/dev/null 2>&1; then
+        echo "Not running as root — re-executing under sudo..."
+        exec sudo -E bash "$0" "$@"
+    fi
+    echo "ERROR: This script must be run as root and sudo is not available." >&2
+    echo "       Re-run as root, or install sudo." >&2
+    exit 1
+fi
+
+set -e
 
 APP_DIR="/opt/training-tracker"
 DB_NAME="training_tracker"

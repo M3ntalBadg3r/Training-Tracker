@@ -38,7 +38,7 @@ Built with Next.js, React, PostgreSQL, and Prisma.
 
 ## Getting Started
 
-The `deploy/` directory contains scripts for installing and updating Training Tracker on a Debian-based Linux server or LXC container. Both scripts should be run as **root**.
+The `deploy/` directory contains scripts for installing and updating Training Tracker on a Debian-based Linux server, **LXC container, or VM**. The scripts need root privileges: on an LXC you are normally root already, while on a VM you typically log in as a regular user — in that case the scripts **automatically re-exec themselves under `sudo`**, so no manual elevation is required. (If `sudo` is not installed, they exit with a clear message.) The app itself runs as **root** on both LXC and VM, so the in-app updater and the scheduled cron jobs behave identically in either environment.
 
 ### Quick Install (curl)
 
@@ -54,7 +54,7 @@ To install the **dev channel** (tracks the `dev` branch and receives pre-release
 curl -sSL https://raw.githubusercontent.com/M3ntalBadg3r/Training-Tracker/master/deploy/install-remote.sh | bash -s -- --dev
 ```
 
-This downloads the repository, installs all dependencies, sets up the database, and starts the application. Must be run as **root**.
+This downloads the repository, installs all dependencies, sets up the database, and starts the application. On a VM where you are not root, pipe into `sudo` instead — `curl -sSL <url> | sudo bash` (a piped script has no file for the installer to re-exec, so the elevation must happen at the pipe). Append `-s -- --dev` after `sudo bash` for the dev channel.
 
 ### Installation Script
 
@@ -293,14 +293,16 @@ Navigate to **Students** in the sidebar to view all students in a table with col
 - Region
 - Country
 
-Click **View** on any row to open the student's detailed record. Admins can click **Add Student** in the page header to create a student manually (Full Name, Email, Company, Country) without running an import. Country is a dropdown limited to entries in **Region Data** that have a Theatre assigned — Theatre and Region are auto-derived from the chosen country and shown read-only. To use a country that doesn't appear in the dropdown, ask a SuperAdmin to add it (with a Theatre) on the Region Data page first.
+Click **View** on any row to open the student's detailed record. The table's search, column filters, and sort order are mirrored to the URL, so opening a student and pressing **Back** restores the list exactly as you left it. Admins can click **Add Student** in the page header to create a student manually (Full Name, Email, Company, Country) without running an import. Country is a dropdown limited to entries in **Region Data** that have a Theatre assigned — Theatre and Region are auto-derived from the chosen country and shown read-only. To use a country that doesn't appear in the dropdown, ask a SuperAdmin to add it (with a Theatre) on the Region Data page first.
 
 ### Student Detail
 
 The student detail page shows:
 
 - **Contact Information** — Full Name, Email, Theatre, Country, and Region. Click **Edit** to modify Full Name, Email, or Country. Theatre and Region are auto-derived from the selected country (read-only). If the student's current country has no Theatre yet (post-migration), the dropdown shows it with a "needs theatre" suffix — switch to a configured country, or ask a SuperAdmin to set the Theatre in Region Data. Changes are previewed in a confirmation modal before saving.
-- **Training Records** — A table of all trainings completed by the student, including Title (with link if available), Type, Product, Function, Completed Date, and Active status.
+- **Summary Badges** — Counts of active Certifications, Accreditations, Instructor-Led Trainings, and OLX completed, plus an **Expiring in 6 Months** badge counting the student's active Certifications and Accreditations whose expiry falls within the next six months.
+- **Achievement Over Time** — A chart of the student's completed training per month across their full history.
+- **Training Records** — A table of all trainings completed by the student, including Title (with link if available), Type, Product, Function, Completed Date, Expiry Date, and Active status.
 
 While in edit mode, admins can also:
 

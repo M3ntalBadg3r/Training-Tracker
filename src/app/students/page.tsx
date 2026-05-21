@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import PageHeader from "@/components/layout/PageHeader";
-import DataTable from "@/components/data-table/DataTable";
+import DataTable, { type DataTableState } from "@/components/data-table/DataTable";
 import Modal from "@/components/ui/Modal";
 import { ColumnDef, CountryOption, StudentRow } from "@/types";
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -12,10 +12,58 @@ import { Plus } from "lucide-react";
 
 interface CompanyOption { id: number; name: string }
 
-export default function StudentsPage() {
+function StudentsPageInner() {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { isAdmin } = useAuth();
   const companyScope = useCompanyScope();
+
+  // Table state is mirrored to the URL so it survives navigating into a
+  // student record and pressing Back.
+  const initialSearchTerm = searchParams.get("q") ?? "";
+  const initialSearchColumn = searchParams.get("qCol") ?? "all";
+  const initialSortColumn = searchParams.get("sort") ?? undefined;
+  const initialSortDirRaw = searchParams.get("sortDir");
+  const initialSortDirection: "asc" | "desc" | undefined =
+    initialSortDirRaw === "asc" || initialSortDirRaw === "desc"
+      ? initialSortDirRaw
+      : undefined;
+  const initialColumnFilters = useMemo<Record<string, string>>(() => {
+    const out: Record<string, string> = {};
+    searchParams.forEach((value, key) => {
+      if (key.startsWith("f_") && value) out[key.slice(2)] = value;
+    });
+    return out;
+  }, [searchParams]);
+
+  const handleTableStateChange = useCallback(
+    (state: DataTableState) => {
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete("q");
+      params.delete("qCol");
+      params.delete("sort");
+      params.delete("sortDir");
+      for (const key of Array.from(params.keys())) {
+        if (key.startsWith("f_")) params.delete(key);
+      }
+      if (state.searchTerm) params.set("q", state.searchTerm);
+      if (state.searchColumn && state.searchColumn !== "all")
+        params.set("qCol", state.searchColumn);
+      if (state.sortColumn) {
+        params.set("sort", state.sortColumn);
+        params.set("sortDir", state.sortDirection);
+      }
+      for (const [key, value] of Object.entries(state.columnFilters)) {
+        if (value) params.set(`f_${key}`, value);
+      }
+      const qs = params.toString();
+      if (qs !== searchParams.toString()) {
+        router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+      }
+    },
+    [searchParams, pathname, router]
+  );
   const [students, setStudents] = useState<(StudentRow & { companyName?: string | null })[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastImport, setLastImport] = useState<string | null>(null);
@@ -178,6 +226,12 @@ export default function StudentsPage() {
         data={students}
         columns={columns}
         defaultSortColumn="fullName"
+        initialSearchTerm={initialSearchTerm}
+        initialSearchColumn={initialSearchColumn}
+        initialColumnFilters={initialColumnFilters}
+        initialSortColumn={initialSortColumn}
+        initialSortDirection={initialSortDirection}
+        onStateChange={handleTableStateChange}
         rowAction={{
           label: "View",
           onClick: (row) => router.push(`/students/${encodeURIComponent(row.email)}`),
@@ -282,5 +336,19 @@ export default function StudentsPage() {
         </div>
       </Modal>
     </div>
+  );
+}
+
+export default function StudentsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center h-64">
+          <div className="text-gray-500">Loading students...</div>
+        </div>
+      }
+    >
+      <StudentsPageInner />
+    </Suspense>
   );
 }
