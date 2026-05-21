@@ -122,7 +122,9 @@ const helpSections: Record<string, HelpSection> = {
         </p>
         <p>
           Click <strong>View</strong> on any row to open the student&apos;s
-          detailed record.
+          detailed record. Your search, column filters, and sort order are kept
+          in the page URL, so opening a student and pressing <strong>Back</strong>
+          restores the list exactly as you left it.
         </p>
         <p>
           Admins can click <strong>Add Student</strong> to create a student
