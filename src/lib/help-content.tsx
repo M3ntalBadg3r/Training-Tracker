@@ -155,9 +155,22 @@ const helpSections: Record<string, HelpSection> = {
             before saving.
           </li>
           <li>
+            <strong>Summary Badges</strong> &mdash; Counts of active
+            Certifications, Accreditations, Instructor-Led Trainings, and OLX
+            completed, plus an <strong>Expiring in 6 Months</strong> badge
+            counting the student&apos;s active Certifications and Accreditations
+            whose expiry falls within the next six months.
+          </li>
+          <li>
+            <strong>Achievement Over Time</strong> &mdash; A chart of the
+            student&apos;s completed training per month across their full
+            history, so you can see when they earned their qualifications.
+          </li>
+          <li>
             <strong>Training Records</strong> &mdash; A table of all trainings
             completed by the student, including Title (with link if available),
-            Type, Product, Function, Completed Date, and Active status.
+            Type, Product, Function, Completed Date, Expiry Date, and Active
+            status.
           </li>
         </ul>
         <p>

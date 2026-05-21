@@ -300,7 +300,9 @@ Click **View** on any row to open the student's detailed record. Admins can clic
 The student detail page shows:
 
 - **Contact Information** — Full Name, Email, Theatre, Country, and Region. Click **Edit** to modify Full Name, Email, or Country. Theatre and Region are auto-derived from the selected country (read-only). If the student's current country has no Theatre yet (post-migration), the dropdown shows it with a "needs theatre" suffix — switch to a configured country, or ask a SuperAdmin to set the Theatre in Region Data. Changes are previewed in a confirmation modal before saving.
-- **Training Records** — A table of all trainings completed by the student, including Title (with link if available), Type, Product, Function, Completed Date, and Active status.
+- **Summary Badges** — Counts of active Certifications, Accreditations, Instructor-Led Trainings, and OLX completed, plus an **Expiring in 6 Months** badge counting the student's active Certifications and Accreditations whose expiry falls within the next six months.
+- **Achievement Over Time** — A chart of the student's completed training per month across their full history.
+- **Training Records** — A table of all trainings completed by the student, including Title (with link if available), Type, Product, Function, Completed Date, Expiry Date, and Active status.
 
 While in edit mode, admins can also:
 

@@ -22,9 +22,20 @@ import {
   GraduationCap,
   Plus,
   Trash2,
+  CalendarClock,
 } from "lucide-react";
+import {
+  ResponsiveContainer,
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+} from "recharts";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { trainingTypeLabel, formatDate } from "@/lib/utils";
+import { useChartTheme, tooltipStyle } from "@/lib/chart-theme";
 
 interface PendingAdd {
   tempId: number;
@@ -58,6 +69,7 @@ const trainingColumns: ColumnDef<StudentTrainingRow>[] = [
   { key: "productType", header: "Product" },
   { key: "function", header: "Function" },
   { key: "completedDate", header: "Date Completed" },
+  { key: "expiryDate", header: "Expiry Date" },
   {
     key: "active",
     header: "Active",
@@ -65,6 +77,14 @@ const trainingColumns: ColumnDef<StudentTrainingRow>[] = [
     accessor: (row) => (row.active ? "Yes" : "No"),
   },
 ];
+
+function monthKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function addMonths(d: Date, n: number): Date {
+  return new Date(d.getFullYear(), d.getMonth() + n, 1);
+}
 
 function toIsoDate(formatted: string): string {
   const d = new Date(formatted);
@@ -483,6 +503,34 @@ export default function StudentRecordPage({
     return [...pending, ...real];
   }, [student, deletedTrainingIds, pendingAdds, pendingEdits]);
 
+  const chart = useChartTheme();
+
+  const chartData = useMemo(() => {
+    const counts = new Map<string, number>();
+    let earliest: Date | null = null;
+    for (const t of visibleTrainings) {
+      const d = new Date(t.completedDate);
+      if (isNaN(d.getTime())) continue;
+      const k = monthKey(d);
+      counts.set(k, (counts.get(k) ?? 0) + 1);
+      if (!earliest || d < earliest) earliest = d;
+    }
+    if (!earliest) return [];
+    const out: { key: string; label: string; Completions: number }[] = [];
+    let d = new Date(earliest.getFullYear(), earliest.getMonth(), 1);
+    const end = new Date();
+    while (d <= end) {
+      const k = monthKey(d);
+      out.push({
+        key: k,
+        label: d.toLocaleDateString("en-GB", { month: "short", year: "2-digit" }),
+        Completions: counts.get(k) ?? 0,
+      });
+      d = addMonths(d, 1);
+    }
+    return out;
+  }, [visibleTrainings]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -513,6 +561,16 @@ export default function StudentRecordPage({
     (t) => t.trainingType === "OLX" && t.active
   ).length;
 
+  const sixMonthsOut = new Date();
+  sixMonthsOut.setMonth(sixMonthsOut.getMonth() + 6);
+  const expiringSoon = visibleTrainings.filter(
+    (t) =>
+      (t.trainingType === "Certification" ||
+        t.trainingType === "Accreditation") &&
+      t.active &&
+      new Date(t.expiryDate) <= sixMonthsOut
+  ).length;
+
   const statCards = [
     {
       label: "Certifications Earned",
@@ -541,6 +599,13 @@ export default function StudentRecordPage({
       icon: GraduationCap,
       color: "bg-sky-50",
       iconColor: "text-sky-500",
+    },
+    {
+      label: "Expiring in 6 Months",
+      value: expiringSoon,
+      icon: CalendarClock,
+      color: "bg-rose-50",
+      iconColor: "text-rose-500",
     },
   ];
 
@@ -680,7 +745,7 @@ export default function StudentRecordPage({
       </div>
 
       {/* Stat Cards */}
-      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
         {statCards.map((card) => {
           const Icon = card.icon;
           return (
@@ -698,6 +763,46 @@ export default function StudentRecordPage({
             </div>
           );
         })}
+      </section>
+
+      {/* Achievement Over Time */}
+      <section className="bg-white rounded-lg border border-gray-200 p-5 mb-6">
+        <h3 className="text-base font-semibold text-gray-900 mb-4">
+          Achievement Over Time
+        </h3>
+        {chartData.length === 0 ? (
+          <p className="text-sm text-gray-500">
+            No completed training to chart yet.
+          </p>
+        ) : (
+          <ResponsiveContainer width="100%" height={300}>
+            <AreaChart data={chartData}>
+              <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
+              <XAxis
+                dataKey="label"
+                tick={{ fontSize: 11, fill: chart.axis }}
+                stroke={chart.axis}
+                angle={-35}
+                textAnchor="end"
+                height={50}
+              />
+              <YAxis
+                allowDecimals={false}
+                tick={{ fontSize: 12, fill: chart.axis }}
+                stroke={chart.axis}
+              />
+              <Tooltip contentStyle={tooltipStyle(chart)} />
+              <Area
+                type="monotone"
+                dataKey="Completions"
+                stroke={chart.typeColor("Certification")}
+                fill={chart.typeColor("Certification")}
+                fillOpacity={0.3}
+                strokeWidth={2}
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        )}
       </section>
 
       {/* Training Table Header */}
