@@ -131,6 +131,7 @@ export default function AchievementOverTimePage() {
   const [search, setSearch] = useState("");
   const [filterType, setFilterType] = useState("");
   const [filterTheatre, setFilterTheatre] = useState("");
+  const [filterFunction, setFilterFunction] = useState("");
   const [filterBucket, setFilterBucket] = useState<string | null>(null);
   const [groupBy, setGroupBy] = useState<GroupByMode | null>(null);
 
@@ -151,6 +152,7 @@ export default function AchievementOverTimePage() {
 
   const types = useMemo(() => [...new Set(trainingRecords.map((r) => r.trainingType))].filter(Boolean).sort(), [trainingRecords]);
   const theatres = useMemo(() => [...new Set(trainingRecords.map((r) => r.theatre))].filter(Boolean).sort(), [trainingRecords]);
+  const functions = useMemo(() => [...new Set(trainingRecords.map((r) => r.function))].filter(Boolean).sort(), [trainingRecords]);
 
   // Earliest completion date in the current dataset — used to tighten the
   // chart axis when the window has no lower bound ("All time").
@@ -216,10 +218,11 @@ export default function AchievementOverTimePage() {
       if (search && !r.fullName.toLowerCase().includes(q) && !r.email.toLowerCase().includes(q)) return false;
       if (filterType && r.trainingType !== filterType) return false;
       if (filterTheatre && r.theatre !== filterTheatre) return false;
+      if (filterFunction && r.function !== filterFunction) return false;
       if (filterBucket && bucketKey(completed) !== filterBucket) return false;
       return true;
     });
-  }, [trainingRecords, search, filterType, filterTheatre, filterBucket, windowStart, windowEnd, bucketKey]);
+  }, [trainingRecords, search, filterType, filterTheatre, filterFunction, filterBucket, windowStart, windowEnd, bucketKey]);
 
   // Records used to build the chart — same filters as the table EXCEPT bucket click
   const chartRecords = useMemo(() => {
@@ -228,9 +231,10 @@ export default function AchievementOverTimePage() {
       if (search && !r.fullName.toLowerCase().includes(q) && !r.email.toLowerCase().includes(q)) return false;
       if (filterType && r.trainingType !== filterType) return false;
       if (filterTheatre && r.theatre !== filterTheatre) return false;
+      if (filterFunction && r.function !== filterFunction) return false;
       return true;
     });
-  }, [trainingRecords, search, filterType, filterTheatre]);
+  }, [trainingRecords, search, filterType, filterTheatre, filterFunction]);
 
   // Build bucket axis for the chart. Use axisStart (the earliest record when
   // "All time" is selected) so we don't render decades of empty leading
@@ -496,6 +500,10 @@ export default function AchievementOverTimePage() {
               <select value={filterTheatre} onChange={(e) => setFilterTheatre(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
                 <option value="">All Theatres</option>
                 {theatres.map((t) => <option key={t} value={t}>{t}</option>)}
+              </select>
+              <select value={filterFunction} onChange={(e) => setFilterFunction(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                <option value="">All Functions</option>
+                {functions.map((f) => <option key={f} value={f}>{f}</option>)}
               </select>
               <select value={groupBy ?? ""} onChange={(e) => setGroupBy((e.target.value as GroupByMode) || null)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
                 <option value="">No Grouping</option>
