@@ -396,7 +396,7 @@ Active-training-holder share of population per theatre / region / country bucket
 
 ### Theatre / Region / Country Comparison
 
-Compares geographies side by side. A single toggle switches the whole report between **Theatre**, **Region**, and **Country**. The matrix table lists, per geography: **headcount** (student population), counts of **Certifications / Accreditations / ILTs / OLX**, **total** trainings, **trainings per student**, and active trainings **expiring** in the next 3 and 6 months — every column sortable, with a totals row. The chart panel compares geographies by training type, function, or product (grouped bars) or plots completions **over time** (one line per geography, top 8 by volume). A time-range preset (3 / 6 / 12 months / all time) plus Function / Product / Type filters narrow both the table and the chart. Counts respect the time range; the expiring columns always look forward from today.
+Compares geographies side by side. A single toggle switches the whole report between **Theatre**, **Region**, and **Country**. The matrix table lists, per geography: **headcount** (student population), counts of **Certifications / Accreditations / ILTs / OLX**, **total** trainings, **trainings per student**, and active trainings **expiring** in the next 3 and 6 months — every column sortable, with a totals row. The chart panel compares geographies by training type, function, or product (grouped bars) or plots completions **over time** (one line per geography, top 8 by volume). A time-range preset (3 / 6 / 12 months, all time, or a custom date range) plus Function / Product / Type filters narrow both the table and the chart. Counts respect the time range; the expiring columns always look forward from today.
 
 ### Training Catalogue Health
 

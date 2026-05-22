@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import PageHeader from "@/components/layout/PageHeader";
 import KpiStrip from "@/components/ui/KpiStrip";
+import DateRangePicker, { DateRangeValue } from "@/components/ui/DateRangePicker";
 import { useChartTheme, tooltipStyle } from "@/lib/chart-theme";
 import { resolveBucket, GroupByMode, GROUP_BY_LABEL } from "@/lib/group-by";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
@@ -45,13 +46,14 @@ interface StudentRow {
   region: string | null;
 }
 
-type RangePreset = "12m" | "6m" | "3m" | "all";
+type RangePreset = "12m" | "6m" | "3m" | "all" | "custom";
 
 const RANGE_PRESETS: { value: RangePreset; label: string; months: number | null }[] = [
   { value: "12m", label: "Last 12 months", months: 12 },
   { value: "6m", label: "Last 6 months", months: 6 },
   { value: "3m", label: "Last 3 months", months: 3 },
   { value: "all", label: "All time", months: null },
+  { value: "custom", label: "Custom range", months: null },
 ];
 
 type CompareMode = "type" | "function" | "product" | "time";
@@ -79,6 +81,18 @@ type SortKey =
 
 function monthKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function startOfDay(d: Date): Date {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x;
+}
+
+function endOfDay(d: Date): Date {
+  const x = new Date(d);
+  x.setHours(23, 59, 59, 999);
+  return x;
 }
 
 function addMonths(d: Date, n: number): Date {
@@ -128,6 +142,7 @@ export default function ComparisonPage() {
 
   const [geoMode, setGeoMode] = useState<GroupByMode>("theatre");
   const [rangePreset, setRangePreset] = useState<RangePreset>("12m");
+  const [customRange, setCustomRange] = useState<DateRangeValue>({ from: null, to: null });
   const [filterFunction, setFilterFunction] = useState("");
   const [filterProduct, setFilterProduct] = useState("");
   const [filterType, setFilterType] = useState("");
@@ -156,14 +171,21 @@ export default function ComparisonPage() {
   const products = useMemo(() => [...new Set(records.map((r) => r.productType))].filter(Boolean).sort(), [records]);
   const types = useMemo(() => [...new Set(records.map((r) => r.trainingType))].filter(Boolean).sort(), [records]);
 
-  // Lower bound for the completion time-range (null = all time).
-  const windowStart = useMemo(() => {
-    const months = RANGE_PRESETS.find((p) => p.value === rangePreset)?.months ?? null;
-    if (months === null) return null;
+  // Completion time-range bounds. windowStart null = no lower bound (all time);
+  // windowEnd defaults to now unless a custom upper bound is set.
+  const { windowStart, windowEnd } = useMemo(() => {
+    if (rangePreset === "custom") {
+      return {
+        windowStart: customRange.from ? startOfDay(customRange.from) : null,
+        windowEnd: customRange.to ? endOfDay(customRange.to) : now,
+      };
+    }
+    if (rangePreset === "all") return { windowStart: null, windowEnd: now };
+    const months = RANGE_PRESETS.find((p) => p.value === rangePreset)?.months ?? 12;
     const d = new Date(now.getFullYear(), now.getMonth() - (months - 1), 1);
     d.setHours(0, 0, 0, 0);
-    return d;
-  }, [rangePreset, now]);
+    return { windowStart: d, windowEnd: now };
+  }, [rangePreset, customRange, now]);
 
   // Records passing the function/product/type filters (used everywhere). The
   // time-range is applied separately so expiring-soon can ignore it.
@@ -210,7 +232,7 @@ export default function ComparisonPage() {
       const row = ensure(bucket);
 
       const completed = new Date(r.completedDate);
-      const inWindow = !windowStart || completed >= windowStart;
+      const inWindow = (!windowStart || completed >= windowStart) && completed <= windowEnd;
       if (inWindow) {
         row.total += 1;
         if (r.trainingType === "Certification") row.cert += 1;
@@ -233,7 +255,7 @@ export default function ComparisonPage() {
       row.perStudent = row.headcount > 0 ? row.total / row.headcount : 0;
     }
     return Array.from(map.values());
-  }, [filteredRecords, headcountByBucket, geoMode, windowStart, now, exp3Cutoff, exp6Cutoff]);
+  }, [filteredRecords, headcountByBucket, geoMode, windowStart, windowEnd, now, exp3Cutoff, exp6Cutoff]);
 
   const sortedMetrics = useMemo(() => {
     const arr = [...metrics];
@@ -267,9 +289,12 @@ export default function ComparisonPage() {
 
   // Records within the completion window (for the chart breakdowns).
   const windowedRecords = useMemo(() => {
-    if (!windowStart) return filteredRecords;
-    return filteredRecords.filter((r) => new Date(r.completedDate) >= windowStart);
-  }, [filteredRecords, windowStart]);
+    return filteredRecords.filter((r) => {
+      const d = new Date(r.completedDate);
+      if (windowStart && d < windowStart) return false;
+      return d <= windowEnd;
+    });
+  }, [filteredRecords, windowStart, windowEnd]);
 
   // Top buckets by total trainings, used to cap chart series for readability.
   const topBuckets = useMemo(() => {
@@ -312,7 +337,7 @@ export default function ComparisonPage() {
     })();
     const months: { key: string; label: string }[] = [];
     let d = new Date(start.getFullYear(), start.getMonth(), 1);
-    const end = new Date(now.getFullYear(), now.getMonth(), 1);
+    const end = new Date(windowEnd.getFullYear(), windowEnd.getMonth(), 1);
     while (d <= end) {
       months.push({ key: monthKey(d), label: d.toLocaleDateString("en-GB", { month: "short", year: "2-digit" }) });
       d = addMonths(d, 1);
@@ -332,7 +357,7 @@ export default function ComparisonPage() {
       ...series.reduce((o, s) => ({ ...o, [s]: counts.get(m.key)?.[s] ?? 0 }), {}),
     }));
     return { rows, series };
-  }, [compareMode, windowedRecords, geoMode, windowStart, topBuckets, now]);
+  }, [compareMode, windowedRecords, geoMode, windowStart, windowEnd, topBuckets, now]);
 
   const geoLabel = GROUP_BY_LABEL[geoMode];
 
@@ -390,6 +415,9 @@ export default function ComparisonPage() {
         <select value={rangePreset} onChange={(e) => setRangePreset(e.target.value as RangePreset)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white">
           {RANGE_PRESETS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
         </select>
+        {rangePreset === "custom" && (
+          <DateRangePicker value={customRange} onChange={setCustomRange} placeholder="Pick a date range" align="start" />
+        )}
         <select value={filterFunction} onChange={(e) => setFilterFunction(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
           <option value="">All Functions</option>
           {functions.map((f) => <option key={f} value={f}>{f}</option>)}
