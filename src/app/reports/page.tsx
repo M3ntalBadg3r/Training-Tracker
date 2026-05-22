@@ -13,6 +13,7 @@ import {
   BookOpen,
   TrendingUp,
   RefreshCw,
+  Scale,
 } from "lucide-react";
 
 const TILES = [
@@ -51,6 +52,12 @@ const TILES = [
     title: "Coverage / Compliance",
     description: "Active training holders by theatre, region, or country, as a share of population",
     Icon: Target,
+  },
+  {
+    href: "/reports/comparison",
+    title: "Theatre / Region / Country Comparison",
+    description: "Compare geographies side by side — counts, trainings per student, breakdowns by type/function/product, and trends over time",
+    Icon: Scale,
   },
   {
     href: "/reports/catalogue-health",
