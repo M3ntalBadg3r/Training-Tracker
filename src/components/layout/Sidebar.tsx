@@ -36,6 +36,7 @@ import {
   Building2,
   Target,
   TrendingUp,
+  Scale,
 } from "lucide-react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useTheme } from "@/components/theme/ThemeProvider";
@@ -71,6 +72,7 @@ const reportSubItems = [
   { href: "/reports/last-12-months", label: "Achievement Over Time", icon: CalendarDays },
   { href: "/reports/trained-not-certified", label: "Trained Not Certified", icon: AlertCircle },
   { href: "/reports/coverage", label: "Coverage", icon: Target },
+  { href: "/reports/comparison", label: "Comparison", icon: Scale },
   { href: "/reports/catalogue-health", label: "Catalogue Health", icon: BookOpen },
   { href: "/reports/program-compliance-trend", label: "Compliance Trend", icon: TrendingUp },
   { href: "/reports/renewal-forecast", label: "Renewal Forecast", icon: RefreshCw },

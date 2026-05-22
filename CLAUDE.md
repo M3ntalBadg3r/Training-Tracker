@@ -33,7 +33,7 @@ src/
     dashboard/    # Dashboard page (metrics + charts)
     students/     # Student list + [email] detail page
     training/     # Training catalog + [fullTitle] detail page
-    reports/      # Index page + 9 reports: by-product-type, by-function, expiring-soon, last-12-months, trained-not-certified, coverage, catalogue-health, program-compliance-trend, renewal-forecast
+    reports/      # Index page + 10 reports: by-product-type, by-function, expiring-soon, last-12-months, trained-not-certified, coverage, comparison (theatre/region/country side-by-side matrix + chart, client-side over training-records + students), catalogue-health, program-compliance-trend, renewal-forecast
     account/      # User account page (profile, MFA setup)
     admin/        # Admin pages (region-data, training-data, backup, import, users, companies, cleanup, updates, scheduled-exports, program-data) and SuperAdmin-only API: api/admin/security/encrypt-secrets seals plaintext mfaSecret + ExportCredential.config rows once after ENCRYPTION_KEY is provisioned.
     programs/     # Partner program compliance dashboards
