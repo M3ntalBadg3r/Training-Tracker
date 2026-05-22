@@ -406,6 +406,23 @@ const helpSections: Record<string, HelpSection> = {
           amber / green at 40% and 80% thresholds.
         </p>
 
+        <h3>Theatre / Region / Country Comparison</h3>
+        <p>
+          Compare geographies side by side. A single toggle switches the whole
+          report between Theatre, Region, and Country. The matrix table shows,
+          per geography: headcount (student population), counts of
+          Certifications / Accreditations / ILTs / OLX, total trainings,
+          trainings per student, and the number of active trainings expiring in
+          the next 3 and 6 months. Every column is sortable and a totals row
+          summarises all geographies. The chart panel above the table compares
+          geographies by training type, function, or product (grouped bars), or
+          plots completions over time (one line per geography). The time-range
+          preset (3 / 6 / 12 months, all time, or a custom date range) and the Function / Product /
+          Type filters narrow both the table and the chart. Counts respect the
+          selected time range; the expiring columns always look forward from
+          today.
+        </p>
+
         <h3>Training Catalogue Health</h3>
         <p>
           Per-training metrics (total completions, last-12-month completions,
