@@ -394,7 +394,7 @@ const helpSections: Record<string, HelpSection> = {
         <p>Horizon bar showing records expiring within 1/3/6/12 months, plus a theatre × month stacked bar showing where the cliff falls.</p>
 
         <h3>Achievement Over Time</h3>
-        <p>Area chart of completions with a dashed prior-period comparison line, plus a top-10 leaderboard of trainings by completion count. Pick a preset time range (12, 6, 3, or 1 month) or a custom date range; the chart automatically buckets by day, week, or month based on the window. Click a point to filter the table to that bucket. Type/theatre/function filters update the chart as well as the table.</p>
+        <p>Area chart of completions with a dashed prior-period comparison line, plus a top-10 leaderboard of trainings by completion count. Pick a preset time range (12, 6, 3, or 1 month) or a custom date range; the chart automatically buckets by day, week, or month based on the window. Click a point to filter the table to that bucket. Type/theatre/function/region/product filters update the chart as well as the table.</p>
 
         <h3>Trained But Not Certified</h3>
         <p>Gap funnel by product (ILT completed → ILT still active) plus the top theatres/regions/countries with gaps.</p>
