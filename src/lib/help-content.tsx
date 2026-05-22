@@ -417,7 +417,7 @@ const helpSections: Record<string, HelpSection> = {
           summarises all geographies. The chart panel above the table compares
           geographies by training type, function, or product (grouped bars), or
           plots completions over time (one line per geography). The time-range
-          preset (3 / 6 / 12 months / all time) and the Function / Product /
+          preset (3 / 6 / 12 months, all time, or a custom date range) and the Function / Product /
           Type filters narrow both the table and the chart. Counts respect the
           selected time range; the expiring columns always look forward from
           today.
