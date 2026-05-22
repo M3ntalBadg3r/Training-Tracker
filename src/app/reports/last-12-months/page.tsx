@@ -132,6 +132,8 @@ export default function AchievementOverTimePage() {
   const [filterType, setFilterType] = useState("");
   const [filterTheatre, setFilterTheatre] = useState("");
   const [filterFunction, setFilterFunction] = useState("");
+  const [filterRegion, setFilterRegion] = useState("");
+  const [filterProduct, setFilterProduct] = useState("");
   const [filterBucket, setFilterBucket] = useState<string | null>(null);
   const [groupBy, setGroupBy] = useState<GroupByMode | null>(null);
 
@@ -153,6 +155,8 @@ export default function AchievementOverTimePage() {
   const types = useMemo(() => [...new Set(trainingRecords.map((r) => r.trainingType))].filter(Boolean).sort(), [trainingRecords]);
   const theatres = useMemo(() => [...new Set(trainingRecords.map((r) => r.theatre))].filter(Boolean).sort(), [trainingRecords]);
   const functions = useMemo(() => [...new Set(trainingRecords.map((r) => r.function))].filter(Boolean).sort(), [trainingRecords]);
+  const regions = useMemo(() => [...new Set(trainingRecords.map((r) => r.region))].filter(Boolean).sort(), [trainingRecords]);
+  const products = useMemo(() => [...new Set(trainingRecords.map((r) => r.productType))].filter(Boolean).sort(), [trainingRecords]);
 
   // Earliest completion date in the current dataset — used to tighten the
   // chart axis when the window has no lower bound ("All time").
@@ -219,10 +223,12 @@ export default function AchievementOverTimePage() {
       if (filterType && r.trainingType !== filterType) return false;
       if (filterTheatre && r.theatre !== filterTheatre) return false;
       if (filterFunction && r.function !== filterFunction) return false;
+      if (filterRegion && r.region !== filterRegion) return false;
+      if (filterProduct && r.productType !== filterProduct) return false;
       if (filterBucket && bucketKey(completed) !== filterBucket) return false;
       return true;
     });
-  }, [trainingRecords, search, filterType, filterTheatre, filterFunction, filterBucket, windowStart, windowEnd, bucketKey]);
+  }, [trainingRecords, search, filterType, filterTheatre, filterFunction, filterRegion, filterProduct, filterBucket, windowStart, windowEnd, bucketKey]);
 
   // Records used to build the chart — same filters as the table EXCEPT bucket click
   const chartRecords = useMemo(() => {
@@ -232,9 +238,11 @@ export default function AchievementOverTimePage() {
       if (filterType && r.trainingType !== filterType) return false;
       if (filterTheatre && r.theatre !== filterTheatre) return false;
       if (filterFunction && r.function !== filterFunction) return false;
+      if (filterRegion && r.region !== filterRegion) return false;
+      if (filterProduct && r.productType !== filterProduct) return false;
       return true;
     });
-  }, [trainingRecords, search, filterType, filterTheatre, filterFunction]);
+  }, [trainingRecords, search, filterType, filterTheatre, filterFunction, filterRegion, filterProduct]);
 
   // Build bucket axis for the chart. Use axisStart (the earliest record when
   // "All time" is selected) so we don't render decades of empty leading
@@ -504,6 +512,14 @@ export default function AchievementOverTimePage() {
               <select value={filterFunction} onChange={(e) => setFilterFunction(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
                 <option value="">All Functions</option>
                 {functions.map((f) => <option key={f} value={f}>{f}</option>)}
+              </select>
+              <select value={filterRegion} onChange={(e) => setFilterRegion(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                <option value="">All Regions</option>
+                {regions.map((r) => <option key={r} value={r}>{r}</option>)}
+              </select>
+              <select value={filterProduct} onChange={(e) => setFilterProduct(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                <option value="">All Products</option>
+                {products.map((p) => <option key={p} value={p}>{p}</option>)}
               </select>
               <select value={groupBy ?? ""} onChange={(e) => setGroupBy((e.target.value as GroupByMode) || null)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
                 <option value="">No Grouping</option>
