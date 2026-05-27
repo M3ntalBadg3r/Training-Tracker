@@ -9,13 +9,43 @@ import {
   AlertTriangle,
   Search,
   CheckCircle,
+  CalendarClock,
 } from "lucide-react";
+import { formatDate, trainingTypeLabel } from "@/lib/utils";
 
 interface StudentIssue {
   email: string;
   fullName: string;
   issues: string[];
   suggestedName: string;
+}
+
+interface FutureDateRow {
+  id: number;
+  email: string;
+  fullName: string;
+  trainingTitle: string;
+  fullTitle: string;
+  trainingType: string;
+  completedDate: string;
+  expiryDate: string;
+}
+
+interface FutureDatesResponse {
+  items: FutureDateRow[];
+  today: string;
+}
+
+function addTwoYearsIso(iso: string): string {
+  // iso is "YYYY-MM-DD". Mirror computeExpiryDate (date-fns addYears) for preview.
+  const [y, m, d] = iso.split("-").map((n) => parseInt(n, 10));
+  if (!y || !m || !d) return "";
+  const dt = new Date(y, m - 1, d);
+  dt.setFullYear(dt.getFullYear() + 2);
+  const yy = dt.getFullYear();
+  const mm = String(dt.getMonth() + 1).padStart(2, "0");
+  const dd = String(dt.getDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
 }
 
 const ISSUE_LABELS: Record<string, { label: string; color: string }> = {
@@ -90,6 +120,16 @@ export default function DataCleanUpPage() {
   const [fixing, setFixing] = useState(false);
   const [fixResult, setFixResult] = useState<{ count: number } | null>(null);
 
+  // Future completion dates scan
+  const [futureOpen, setFutureOpen] = useState(true);
+  const [futureScanning, setFutureScanning] = useState(false);
+  const [futureScanned, setFutureScanned] = useState(false);
+  const [futureRows, setFutureRows] = useState<FutureDateRow[]>([]);
+  const [futureToday, setFutureToday] = useState<string>("");
+  const [pendingDates, setPendingDates] = useState<Record<number, string>>({});
+  const [savingId, setSavingId] = useState<number | null>(null);
+  const [rowError, setRowError] = useState<Record<number, string>>({});
+
   // Wipe data
   const [showWipeConfirm, setShowWipeConfirm] = useState(false);
   const [wipeText, setWipeText] = useState("");
@@ -158,6 +198,61 @@ export default function DataCleanUpPage() {
       }
       return next;
     });
+  };
+
+  const handleFutureScan = async () => {
+    setFutureScanning(true);
+    setRowError({});
+    try {
+      const res = await fetch("/api/admin/cleanup/future-dates");
+      if (res.ok) {
+        const data: FutureDatesResponse = await res.json();
+        setFutureRows(data.items);
+        setFutureToday(data.today);
+        setPendingDates(
+          Object.fromEntries(data.items.map((r) => [r.id, r.completedDate]))
+        );
+        setFutureScanned(true);
+      }
+    } finally {
+      setFutureScanning(false);
+    }
+  };
+
+  const handleFutureSave = async (row: FutureDateRow) => {
+    const newDate = pendingDates[row.id];
+    if (!newDate || newDate === row.completedDate) return;
+    setSavingId(row.id);
+    setRowError((prev) => {
+      const next = { ...prev };
+      delete next[row.id];
+      return next;
+    });
+    try {
+      const res = await fetch(`/api/training-taken/${row.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ completedDate: newDate }),
+      });
+      if (!res.ok) {
+        let msg = "Save failed";
+        try {
+          const j = await res.json();
+          if (j?.error) msg = j.error;
+        } catch {}
+        setRowError((prev) => ({ ...prev, [row.id]: msg }));
+        return;
+      }
+      // Remove row from the list — it's no longer "future" (or at least has been resolved by the user).
+      setFutureRows((prev) => prev.filter((r) => r.id !== row.id));
+      setPendingDates((prev) => {
+        const next = { ...prev };
+        delete next[row.id];
+        return next;
+      });
+    } finally {
+      setSavingId(null);
+    }
   };
 
   const handleWipe = async () => {
@@ -334,6 +429,141 @@ export default function DataCleanUpPage() {
                     </tbody>
                   </table>
                 </div>
+              )}
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* Future Completion Dates */}
+      <section className="mb-8">
+        <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+          <button
+            onClick={() => setFutureOpen((prev) => !prev)}
+            className="w-full flex items-center gap-3 px-6 py-4 text-left hover:bg-gray-50 transition-colors"
+          >
+            {futureOpen ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Future Completion Dates</h2>
+              <p className="text-sm text-gray-500">
+                Find training records whose completed date is after today
+              </p>
+            </div>
+            {futureScanned && (
+              <span className="ml-auto text-sm font-medium text-gray-500 bg-gray-100 px-3 py-1 rounded-full">
+                {futureRows.length} record{futureRows.length !== 1 ? "s" : ""} found
+              </span>
+            )}
+          </button>
+
+          {futureOpen && (
+            <div className="border-t border-gray-200 px-6 py-4">
+              <div className="flex items-center gap-3 mb-4">
+                <button
+                  onClick={handleFutureScan}
+                  disabled={futureScanning}
+                  className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                >
+                  <Search size={16} />
+                  {futureScanning ? "Scanning..." : "Scan for Issues"}
+                </button>
+                {futureScanned && futureToday && (
+                  <span className="text-sm text-gray-500 flex items-center gap-1.5">
+                    <CalendarClock size={14} />
+                    Today is {formatDate(futureToday)} — flagging any completed date after this.
+                  </span>
+                )}
+              </div>
+
+              {futureScanned && futureRows.length === 0 && (
+                <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-800">
+                  <CheckCircle size={16} />
+                  No records with a future completed date.
+                </div>
+              )}
+
+              {futureScanned && futureRows.length > 0 && (
+                <>
+                  <p className="text-sm text-gray-600 mb-3">
+                    Each completed date below is editable. Saving updates the record
+                    immediately and recomputes the expiry as completed + 2 years. No automated
+                    fix is applied — choose the correct date for each row.
+                  </p>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="bg-gray-50 border-b">
+                          <th className="px-4 py-3 text-left font-semibold">Student</th>
+                          <th className="px-4 py-3 text-left font-semibold">Training</th>
+                          <th className="px-4 py-3 text-left font-semibold">Completed Date</th>
+                          <th className="px-4 py-3 text-left font-semibold">Expiry (preview)</th>
+                          <th className="px-4 py-3 text-left font-semibold">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {futureRows.map((row) => {
+                          const current = pendingDates[row.id] ?? row.completedDate;
+                          const isFuture = !!futureToday && current > futureToday;
+                          const isDirty = current !== row.completedDate;
+                          const previewExpiry = current ? addTwoYearsIso(current) : "";
+                          const err = rowError[row.id];
+                          return (
+                            <tr key={row.id} className="border-b hover:bg-gray-50 align-top">
+                              <td className="px-4 py-3">
+                                <div className="font-medium text-gray-900">{row.fullName}</div>
+                                <div className="text-xs text-gray-500">{row.email}</div>
+                              </td>
+                              <td className="px-4 py-3">
+                                <div className="text-gray-900">{row.fullTitle}</div>
+                                <div className="text-xs text-gray-500">
+                                  {trainingTypeLabel(row.trainingType)}
+                                </div>
+                              </td>
+                              <td className="px-4 py-3">
+                                <input
+                                  type="date"
+                                  value={current}
+                                  onChange={(e) =>
+                                    setPendingDates((prev) => ({
+                                      ...prev,
+                                      [row.id]: e.target.value,
+                                    }))
+                                  }
+                                  className={`px-2 py-1 text-sm rounded border focus:outline-none focus:ring-2 ${
+                                    isFuture
+                                      ? "bg-amber-50 border-amber-400 text-amber-900 ring-1 ring-amber-300 focus:ring-amber-500"
+                                      : "bg-white border-gray-300 focus:ring-blue-500"
+                                  }`}
+                                  aria-label={`Completed date for ${row.fullName} / ${row.fullTitle}`}
+                                />
+                                {isFuture && (
+                                  <div className="text-xs text-amber-700 mt-1">
+                                    Future date
+                                  </div>
+                                )}
+                                {err && (
+                                  <div className="text-xs text-red-600 mt-1">{err}</div>
+                                )}
+                              </td>
+                              <td className="px-4 py-3 text-gray-600">
+                                {previewExpiry ? formatDate(previewExpiry) : "—"}
+                              </td>
+                              <td className="px-4 py-3">
+                                <button
+                                  onClick={() => handleFutureSave(row)}
+                                  disabled={!isDirty || savingId === row.id}
+                                  className="px-3 py-1.5 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+                                >
+                                  {savingId === row.id ? "Saving..." : "Save"}
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
               )}
             </div>
           )}
