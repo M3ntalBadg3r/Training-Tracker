@@ -617,6 +617,23 @@ const helpSections: Record<string, HelpSection> = {
           click <strong>Fix Selected</strong>.
         </p>
 
+        <h3>Future Completion Dates</h3>
+        <p>
+          Click <strong>Scan for Issues</strong> to list every training record
+          whose <strong>Completed Date</strong> is later than today. These rows
+          are usually data-entry mistakes &mdash; a course cannot be completed
+          in the future. They also inflate dashboard counts and push expiry
+          dates out by two years from the wrong starting point.
+        </p>
+        <p>
+          Each row&apos;s completed date is shown as an editable date input
+          (highlighted in amber while it is still in the future). Pick the
+          correct date and click <strong>Save</strong> on that row to commit
+          the change. There is no automated fix &mdash; every correction is
+          made manually, one row at a time. Saving recomputes the expiry as
+          completed + 2 years.
+        </p>
+
         <h3>Wipe All Data</h3>
         <p>
           The <strong>Danger Zone</strong> at the bottom of this page allows you

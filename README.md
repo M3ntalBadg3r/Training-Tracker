@@ -680,6 +680,12 @@ Click **Scan for Issues** to check all student records for problems in the Full 
 
 Results are shown with issues highlighted inline. The **Suggested Fix** column is an editable field, so you can override the suggested name before applying it. By default no rows are selected after a scan — tick the rows you want to fix (or use the issue filter chips to bulk-select), then click **Fix Selected**.
 
+#### Future Completion Dates
+
+Click **Scan for Issues** under **Future Completion Dates** to list every training record whose `Completed Date` is later than today (server time). These are typically data-entry mistakes — a certification, accreditation, or ILT cannot be completed in the future, and a future date also pushes the auto-computed expiry (`completedDate + 2 years`) out by the same amount.
+
+Each row's completed date is shown as an editable date input, highlighted in amber while it is still in the future. Pick the correct date and click **Save** on that row to commit the change. There is no automated fix — every correction is made manually, one row at a time. Saving recomputes the expiry to completed + 2 years and re-evaluates any OLX parent the row may belong to.
+
 #### Wipe All Data
 
 The **Danger Zone** at the bottom of the Data Clean-Up page allows you to permanently delete all students, training records, training data, and region data. Type `WIPE` to confirm. **This cannot be undone.**
