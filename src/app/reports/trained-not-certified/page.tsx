@@ -10,6 +10,7 @@ import { useChartTheme, tooltipStyle } from "@/lib/chart-theme";
 import { groupRows, GroupByMode, resolveBucket } from "@/lib/group-by";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
+import { useDateFormat } from "@/components/date-format/DateFormatProvider";
 import { Search, Download, ArrowLeft, AlertCircle, Award, GraduationCap, Users } from "lucide-react";
 import {
   BarChart,
@@ -56,6 +57,7 @@ function ExportMenu({ data, columns, filename }: { data: Record<string, unknown>
 export default function TrainedNotCertifiedPage() {
   const router = useRouter();
   const chart = useChartTheme();
+  const { formatDate } = useDateFormat();
   const [reportData, setReportData] = useState<TrainedNotCertifiedRow[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -157,7 +159,7 @@ export default function TrainedNotCertifiedPage() {
   ];
   const exportRows = filteredData.map((r) => ({
     ...r,
-    iltCompletedDate: new Date(r.iltCompletedDate).toLocaleDateString(),
+    iltCompletedDate: formatDate(r.iltCompletedDate),
     iltActive: r.iltActive ? "Yes" : "No",
   }));
 
@@ -302,7 +304,7 @@ export default function TrainedNotCertifiedPage() {
                     <td className="px-4 py-3">{row.country || "-"}</td>
                     <td className="px-4 py-3">{row.iltFullTitle}</td>
                     <td className="px-4 py-3">{row.iltProductType}</td>
-                    <td className="px-4 py-3">{new Date(row.iltCompletedDate).toLocaleDateString()}</td>
+                    <td className="px-4 py-3">{formatDate(row.iltCompletedDate)}</td>
                     <td className="px-4 py-3">
                       <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${row.iltActive ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>
                         {row.iltActive ? "Yes" : "No"}

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import PageHeader from "@/components/layout/PageHeader";
 import Modal from "@/components/ui/Modal";
 import { Plus, Pencil, Trash2, KeyRound, ShieldOff } from "lucide-react";
-import { formatDateTime } from "@/lib/utils";
+import { useDateFormat } from "@/components/date-format/DateFormatProvider";
 
 interface CompanyOption {
   id: number;
@@ -31,6 +31,7 @@ const ROLE_BADGE: Record<string, string> = {
 };
 
 export default function UserManagementPage() {
+  const { formatDateTime } = useDateFormat();
   const [users, setUsers] = useState<UserRow[]>([]);
   const [companies, setCompanies] = useState<CompanyOption[]>([]);
   const [loading, setLoading] = useState(true);

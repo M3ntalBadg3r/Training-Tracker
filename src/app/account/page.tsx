@@ -4,12 +4,25 @@ import { useState, useEffect } from "react";
 import PageHeader from "@/components/layout/PageHeader";
 import Modal from "@/components/ui/Modal";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { ShieldCheck, ShieldOff, KeyRound } from "lucide-react";
+import { ShieldCheck, ShieldOff, KeyRound, CalendarDays, CheckCircle } from "lucide-react";
+import { useDateFormat } from "@/components/date-format/DateFormatProvider";
+import { DATE_FORMATS, formatDateWith, type DateFormat } from "@/lib/date-format";
 
 export default function AccountPage() {
   const { user } = useAuth();
+  const { userFormat, systemFormat, setUserFormat } = useDateFormat();
   const [mfaEnabled, setMfaEnabled] = useState(false);
   const [loading, setLoading] = useState(true);
+
+  // "system" means inherit; otherwise the override is one of DATE_FORMATS.
+  const [pendingFormat, setPendingFormat] = useState<DateFormat | "system">(userFormat ?? "system");
+  const [savingFormat, setSavingFormat] = useState(false);
+  const [formatSaved, setFormatSaved] = useState(false);
+  const [formatError, setFormatError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setPendingFormat(userFormat ?? "system");
+  }, [userFormat]);
 
   // MFA Setup state
   const [showMfaSetup, setShowMfaSetup] = useState(false);
@@ -104,6 +117,29 @@ export default function AccountPage() {
     setMfaEnabled(false);
   };
 
+  const handleSaveFormat = async () => {
+    setSavingFormat(true);
+    setFormatError(null);
+    setFormatSaved(false);
+    try {
+      const next = pendingFormat === "system" ? null : pendingFormat;
+      const res = await fetch("/api/account/preferences", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dateFormat: next }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setFormatError(data.error || "Failed to save");
+        return;
+      }
+      setUserFormat(next);
+      setFormatSaved(true);
+    } finally {
+      setSavingFormat(false);
+    }
+  };
+
   const handleChangePassword = async () => {
     setChangePasswordError("");
     setChangePasswordSuccess(false);
@@ -161,6 +197,82 @@ export default function AccountPage() {
               <p className="font-medium text-gray-900">{user?.role}</p>
             </div>
           </div>
+        </div>
+
+        {/* Display Date Format Section */}
+        <div className="bg-white rounded-lg border border-gray-200 p-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-2 flex items-center gap-2">
+            <CalendarDays size={18} className="text-gray-500" />
+            Display Date Format
+          </h2>
+          <p className="text-sm text-gray-500 mb-4">
+            Choose how dates are shown across the app. This only changes your view;
+            the data is stored in a format-neutral way and other users keep their
+            own preference.
+          </p>
+
+          <div className="space-y-2">
+            <label
+              className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${
+                pendingFormat === "system" ? "border-blue-500 bg-blue-50" : "border-gray-200 hover:border-gray-300"
+              }`}
+            >
+              <input
+                type="radio"
+                name="userDateFormat"
+                checked={pendingFormat === "system"}
+                onChange={() => setPendingFormat("system")}
+                className="text-blue-600"
+              />
+              <div className="flex-1">
+                <div className="text-sm font-medium text-gray-900">Use system default</div>
+                <div className="text-xs text-gray-500">
+                  Currently: {systemFormat} (e.g. {formatDateWith(new Date(Date.UTC(2026, 4, 27)), systemFormat)})
+                </div>
+              </div>
+            </label>
+            {DATE_FORMATS.map((opt) => (
+              <label
+                key={opt}
+                className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${
+                  pendingFormat === opt ? "border-blue-500 bg-blue-50" : "border-gray-200 hover:border-gray-300"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="userDateFormat"
+                  checked={pendingFormat === opt}
+                  onChange={() => setPendingFormat(opt)}
+                  className="text-blue-600"
+                />
+                <div className="flex-1">
+                  <div className="text-sm font-medium text-gray-900">{opt}</div>
+                  <div className="text-xs text-gray-500">
+                    Example: {formatDateWith(new Date(Date.UTC(2026, 4, 27)), opt)}
+                  </div>
+                </div>
+              </label>
+            ))}
+          </div>
+
+          {formatError && (
+            <div className="mt-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2">
+              {formatError}
+            </div>
+          )}
+          {formatSaved && (
+            <div className="mt-3 flex items-center gap-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-lg p-2">
+              <CheckCircle size={14} /> Saved.
+            </div>
+          )}
+
+          <button
+            onClick={handleSaveFormat}
+            disabled={savingFormat || pendingFormat === (userFormat ?? "system")}
+            className="mt-4 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {savingFormat ? "Saving..." : "Save Preference"}
+          </button>
         </div>
 
         {/* Change Password Section */}

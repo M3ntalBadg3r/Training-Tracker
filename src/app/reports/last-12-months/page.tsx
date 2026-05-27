@@ -11,6 +11,7 @@ import { useChartTheme, tooltipStyle } from "@/lib/chart-theme";
 import { groupRows, GroupByMode } from "@/lib/group-by";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
+import { useDateFormat } from "@/components/date-format/DateFormatProvider";
 import { Search, Download, ArrowLeft, Award, ShieldCheck, GraduationCap, TrendingUp } from "lucide-react";
 import {
   Area,
@@ -125,6 +126,7 @@ type Granularity = "day" | "week" | "month";
 export default function AchievementOverTimePage() {
   const router = useRouter();
   const chart = useChartTheme();
+  const { formatDate } = useDateFormat();
   const [trainingRecords, setTrainingRecords] = useState<TrainingRecordRow[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -356,8 +358,8 @@ export default function AchievementOverTimePage() {
   ];
   const exportRows = filtered.map((r) => ({
     ...r,
-    completedDate: new Date(r.completedDate).toLocaleDateString(),
-    expiryDate: new Date(r.expiryDate).toLocaleDateString(),
+    completedDate: formatDate(r.completedDate),
+    expiryDate: formatDate(r.expiryDate),
     active: r.active ? "Yes" : "No",
   }));
 
@@ -568,8 +570,8 @@ export default function AchievementOverTimePage() {
                     </td>
                     <td className="px-4 py-3">{row.productType}</td>
                     <td className="px-4 py-3">{row.function}</td>
-                    <td className="px-4 py-3">{new Date(row.completedDate).toLocaleDateString()}</td>
-                    <td className="px-4 py-3">{new Date(row.expiryDate).toLocaleDateString()}</td>
+                    <td className="px-4 py-3">{formatDate(row.completedDate)}</td>
+                    <td className="px-4 py-3">{formatDate(row.expiryDate)}</td>
                     <td className="px-4 py-3">
                       <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${row.active ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>
                         {row.active ? "Yes" : "No"}

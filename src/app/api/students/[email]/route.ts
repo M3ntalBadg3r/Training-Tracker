@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma, { type PrismaTransactionClient } from "@/lib/prisma";
-import { isActive, formatDate, trainingTypeLabel, functionTypeLabel, safeDecodeParam } from "@/lib/utils";
+import { isActive, trainingTypeLabel, functionTypeLabel, safeDecodeParam } from "@/lib/utils";
 import { requireAuth, handleAuthError } from "@/lib/auth";
 import { canAccessCompany, getAuthorizedCompanyIds } from "@/lib/company-scope";
 
@@ -91,8 +91,8 @@ export async function GET(
         trainingType: trainingTypeLabel(t.trainingData.trainingType),
         productType: t.trainingData.productType,
         function: functionTypeLabel(t.trainingData.function),
-        completedDate: formatDate(t.completedDate),
-        expiryDate: formatDate(t.expiryDate),
+        completedDate: t.completedDate.toISOString(),
+        expiryDate: t.expiryDate.toISOString(),
         active: isActive(t.expiryDate),
         isSubItem,
         rolledUpUnderParent,

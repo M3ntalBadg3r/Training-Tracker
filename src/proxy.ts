@@ -42,6 +42,8 @@ const SUPER_ADMIN_PREFIXES = [
   "/api/admin/companies",
   "/admin/region-data",
   "/admin/training-data",
+  "/admin/system-settings",
+  "/api/admin/system-settings",
   "/api/admin/specialisations",
   "/admin/program-data",
   "/api/admin/program-data",

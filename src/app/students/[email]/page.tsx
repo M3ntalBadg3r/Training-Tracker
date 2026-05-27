@@ -34,7 +34,9 @@ import {
   Tooltip,
 } from "recharts";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { trainingTypeLabel, formatDate } from "@/lib/utils";
+import { trainingTypeLabel } from "@/lib/utils";
+import { useDateFormat } from "@/components/date-format/DateFormatProvider";
+import DatePicker from "@/components/ui/DatePicker";
 import { useChartTheme, tooltipStyle } from "@/lib/chart-theme";
 
 interface PendingAdd {
@@ -47,36 +49,50 @@ interface PendingAdd {
   completedDate: string; // ISO yyyy-mm-dd from <input type="date">
 }
 
-const trainingColumns: ColumnDef<StudentTrainingRow>[] = [
-  {
-    key: "fullTitle",
-    header: "Title",
-    render: (row) =>
-      row.link ? (
-        <a
-          href={row.link}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-blue-600 hover:underline"
-        >
-          {row.fullTitle}
-        </a>
-      ) : (
-        <span>{row.fullTitle}</span>
-      ),
-  },
-  { key: "trainingType", header: "Type" },
-  { key: "productType", header: "Product" },
-  { key: "function", header: "Function" },
-  { key: "completedDate", header: "Date Completed" },
-  { key: "expiryDate", header: "Expiry Date" },
-  {
-    key: "active",
-    header: "Active",
-    render: (row) => <Badge active={row.active} />,
-    accessor: (row) => (row.active ? "Yes" : "No"),
-  },
-];
+function buildTrainingColumns(
+  formatDate: (value: string | Date | null | undefined) => string
+): ColumnDef<StudentTrainingRow>[] {
+  return [
+    {
+      key: "fullTitle",
+      header: "Title",
+      render: (row) =>
+        row.link ? (
+          <a
+            href={row.link}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-600 hover:underline"
+          >
+            {row.fullTitle}
+          </a>
+        ) : (
+          <span>{row.fullTitle}</span>
+        ),
+    },
+    { key: "trainingType", header: "Type" },
+    { key: "productType", header: "Product" },
+    { key: "function", header: "Function" },
+    {
+      key: "completedDate",
+      header: "Date Completed",
+      render: (row) => formatDate(row.completedDate),
+      accessor: (row) => row.completedDate,
+    },
+    {
+      key: "expiryDate",
+      header: "Expiry Date",
+      render: (row) => formatDate(row.expiryDate),
+      accessor: (row) => row.expiryDate,
+    },
+    {
+      key: "active",
+      header: "Active",
+      render: (row) => <Badge active={row.active} />,
+      accessor: (row) => (row.active ? "Yes" : "No"),
+    },
+  ];
+}
 
 function monthKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
@@ -86,13 +102,11 @@ function addMonths(d: Date, n: number): Date {
   return new Date(d.getFullYear(), d.getMonth() + n, 1);
 }
 
-function toIsoDate(formatted: string): string {
-  const d = new Date(formatted);
-  if (isNaN(d.getTime())) return "";
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
+// Slice the date-only portion off an ISO 8601 string (yyyy-mm-dd...). Returns
+// an empty string for null / malformed input so the picker treats it as empty.
+function isoDateOnly(value: string | null | undefined): string {
+  if (!value) return "";
+  return value.length >= 10 ? value.slice(0, 10) : "";
 }
 
 export default function StudentRecordPage({
@@ -103,7 +117,9 @@ export default function StudentRecordPage({
   const resolvedParams = use(params);
   const email = decodeURIComponent(resolvedParams.email);
   const { isAdmin } = useAuth();
+  const { formatDate } = useDateFormat();
   const router = useRouter();
+  const trainingColumns = useMemo(() => buildTrainingColumns(formatDate), [formatDate]);
 
   const [student, setStudent] = useState<StudentRecord | null>(null);
   const [loading, setLoading] = useState(true);
@@ -371,7 +387,7 @@ export default function StudentRecordPage({
       setEditingTraining({
         id: row.id,
         fullTitle: row.fullTitle,
-        completedDate: pendingEdits[row.id] ?? toIsoDate(row.completedDate),
+        completedDate: pendingEdits[row.id] ?? isoDateOnly(row.completedDate),
       });
     }
     setEditTrainingError("");
@@ -462,6 +478,11 @@ export default function StudentRecordPage({
 
   const visibleTrainings = useMemo<StudentTrainingRow[]>(() => {
     if (!student) return [];
+    const isoExpiry = (iso: string): string => {
+      const d = new Date(iso);
+      d.setFullYear(d.getFullYear() + 2);
+      return d.toISOString();
+    };
     const real = student.trainings
       .filter((t) => !deletedTrainingIds.includes(t.id))
       // Hide OLX sub-items whose parent has been completed — they're
@@ -472,14 +493,8 @@ export default function StudentRecordPage({
         if (!overrideIso) return t;
         return {
           ...t,
-          completedDate: formatDate(overrideIso),
-          expiryDate: formatDate(
-            new Date(
-              new Date(overrideIso).setFullYear(
-                new Date(overrideIso).getFullYear() + 2
-              )
-            )
-          ),
+          completedDate: new Date(overrideIso).toISOString(),
+          expiryDate: isoExpiry(overrideIso),
           active: new Date(overrideIso) >= new Date(new Date().setFullYear(new Date().getFullYear() - 2)),
         };
       });
@@ -490,14 +505,8 @@ export default function StudentRecordPage({
       trainingType: trainingTypeLabel(p.trainingType),
       productType: p.productType,
       function: p.function,
-      completedDate: formatDate(p.completedDate),
-      expiryDate: formatDate(
-        new Date(
-          new Date(p.completedDate).setFullYear(
-            new Date(p.completedDate).getFullYear() + 2
-          )
-        )
-      ),
+      completedDate: new Date(p.completedDate).toISOString(),
+      expiryDate: isoExpiry(p.completedDate),
       active: true,
     }));
     return [...pending, ...real];
@@ -994,16 +1003,11 @@ export default function StudentRecordPage({
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Completed Date
             </label>
-            <input
-              type="date"
+            <DatePicker
               value={addTrainingForm.completedDate}
-              onChange={(e) =>
-                setAddTrainingForm((f) => ({
-                  ...f,
-                  completedDate: e.target.value,
-                }))
+              onChange={(next) =>
+                setAddTrainingForm((f) => ({ ...f, completedDate: next }))
               }
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
             />
             <p className="text-xs text-gray-400 mt-1">
               Expiry is automatically set to two years after the completed date.
@@ -1062,15 +1066,11 @@ export default function StudentRecordPage({
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Completed Date
             </label>
-            <input
-              type="date"
+            <DatePicker
               value={editingTraining?.completedDate ?? ""}
-              onChange={(e) =>
-                setEditingTraining((cur) =>
-                  cur ? { ...cur, completedDate: e.target.value } : cur
-                )
+              onChange={(next) =>
+                setEditingTraining((cur) => (cur ? { ...cur, completedDate: next } : cur))
               }
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
             />
             <p className="text-xs text-gray-400 mt-1">
               Expiry is automatically recalculated as two years after this date.

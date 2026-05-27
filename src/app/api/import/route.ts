@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { computeExpiryDate, parseDate } from "@/lib/utils";
+import { computeExpiryDate } from "@/lib/utils";
 import { requireAuth, handleAuthError } from "@/lib/auth";
 import { canAccessCompany, getAuthorizedCompanyIds, isSuperAdmin } from "@/lib/company-scope";
 import { recomputeParentsForMany } from "@/lib/olx";
+import { detectFormat, isDateFormat, parseDateWith, type DateFormat } from "@/lib/date-format";
+import { getSystemDateFormat } from "@/lib/system-settings";
 
 interface ImportRow {
   fullName: string;
@@ -38,10 +40,13 @@ export async function POST(request: NextRequest) {
     return handleAuthError(error);
   }
   const body = await request.json();
-  const { rows, columnMapping, defaultCompanyId } = body as {
+  const { rows, columnMapping, defaultCompanyId, dateFormatOverride } = body as {
     rows: Record<string, string>[];
     columnMapping: Record<string, string>;
     defaultCompanyId?: number;
+    // Per-import override: when the UI confirms a format-mismatch warning, it
+    // resubmits with this field set. Validated against the allowed list below.
+    dateFormatOverride?: string;
   };
 
   if (!rows || !columnMapping) {
@@ -59,6 +64,67 @@ export async function POST(request: NextRequest) {
       { status: 413 }
     );
   }
+
+  // ─── Determine the effective date format for this import ────────────────
+  // 1. Sample the completedDate column and detect the most likely format.
+  // 2. Compare against the system default. If the per-import override matches
+  //    the detected format, use it. Otherwise, if there's a conflict, return
+  //    a 409 with the evidence so the UI can prompt the user.
+  const systemDateFormat = await getSystemDateFormat();
+  const overrideFormat = isDateFormat(dateFormatOverride) ? dateFormatOverride : null;
+  const completedColumn = columnMapping.completedDate;
+  const sampledValues = completedColumn
+    ? rows.map((r) => r[completedColumn] ?? "").filter((v) => typeof v === "string")
+    : [];
+  const detection = detectFormat(sampledValues);
+
+  // Conflict: cells force a format that disagrees with the assumed format
+  // (the override if provided, otherwise the system default).
+  const assumed: DateFormat = overrideFormat ?? systemDateFormat;
+  if (
+    detection.format &&
+    detection.format !== assumed &&
+    detection.conflicts.length === 0
+  ) {
+    const sampleConflicts: { row: number; value: string }[] = [];
+    if (completedColumn) {
+      for (let i = 0; i < rows.length && sampleConflicts.length < 5; i++) {
+        const raw = rows[i][completedColumn];
+        if (typeof raw !== "string") continue;
+        const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(raw.trim());
+        if (!m) continue;
+        const a = Number(m[1]);
+        const b = Number(m[2]);
+        const fitsAssumed =
+          assumed === "DD/MM/YYYY"
+            ? a >= 1 && a <= 31 && b >= 1 && b <= 12
+            : a >= 1 && a <= 12 && b >= 1 && b <= 31;
+        if (!fitsAssumed) sampleConflicts.push({ row: i + 2, value: raw.trim() });
+      }
+    }
+    return NextResponse.json(
+      {
+        error: "dateFormatMismatch",
+        assumedFormat: assumed,
+        detectedFormat: detection.format,
+        sampleConflicts,
+      },
+      { status: 409 }
+    );
+  }
+
+  // Internal conflicts (some cells force DD/MM, others MM/DD) → also bail.
+  if (detection.conflicts.length === 2) {
+    return NextResponse.json(
+      {
+        error: "dateFormatInconsistent",
+        message: "Date column contains values in both DD/MM/YYYY and MM/DD/YYYY formats.",
+      },
+      { status: 409 }
+    );
+  }
+
+  const effectiveFormat: DateFormat = assumed;
 
   const allowedCompanyIds = await getAuthorizedCompanyIds(auth.sub, auth.role);
   const callerIsSuperAdmin = isSuperAdmin(auth.role);
@@ -95,8 +161,15 @@ export async function POST(request: NextRequest) {
     trainingsAutoCreated: 0,
     companiesCreated: 0,
     companyConflicts: 0,
+    dateFormatUsed: effectiveFormat,
     errors: [] as string[],
   };
+
+  if (detection.ambiguous && sampledValues.length > 0) {
+    summary.errors.push(
+      `All dates fit both DD/MM/YYYY and MM/DD/YYYY — parsed as ${effectiveFormat} (the ${overrideFormat ? "override for this import" : "system default"}).`
+    );
+  }
 
   // Track (email, trainingTitle) pairs for OLX parent recomputation after
   // the loop. We can't know yet which titles are sub-items; we'll filter at
@@ -143,10 +216,10 @@ export async function POST(request: NextRequest) {
       continue;
     }
 
-    const completedDate = parseDate(row.completedDate);
+    const completedDate = parseDateWith(row.completedDate, effectiveFormat);
     if (!completedDate) {
       summary.errors.push(
-        `Row ${rowNum}: Invalid date format "${row.completedDate}" for ${row.email}`
+        `Row ${rowNum}: Invalid date "${row.completedDate}" — expected ${effectiveFormat} for ${row.email}`
       );
       continue;
     }
