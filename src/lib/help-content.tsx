@@ -361,13 +361,16 @@ const helpSections: Record<string, HelpSection> = {
           <strong>Day/month-swapped Excel dates</strong> &mdash; re-saving an
           <code>MM/DD</code> file in a <code>DD/MM</code>-locale Excel can
           silently transpose the day and month of its native date cells (a true
-          <code>2026-01-12</code> becomes a stored <code>2026-12-01</code>). When
-          every native date cell in the Completed Date column has a day of 12 or
-          less &mdash; a genuine column reaches 31 &mdash; the import pauses and
-          shows a confirmation modal with sample corrections. Choose
-          <strong>Yes, correct them</strong> to swap the values back, or
-          <strong>Import as-is</strong> if the dates are genuinely correct. Text
-          date cells are unaffected.
+          <code>2026-01-12</code> becomes a stored <code>2026-12-01</code>,
+          landing in the future). When a native date cell in the Completed Date
+          column decodes to a future date that swapping would fix, the import
+          pauses and shows a confirmation modal with sample corrections. Choose
+          <strong>Yes, correct them</strong> to repair the transposed dates, or
+          <strong>Import as-is</strong> if the dates are genuinely correct. Each
+          cell is only swapped when the corrected value isn&apos;t in the future,
+          so genuinely-correct recent dates (and any day above 12) are left
+          untouched &mdash; mixed files are handled. Text date cells are
+          unaffected.
         </p>
 
         <h3>Theatre handling</h3>

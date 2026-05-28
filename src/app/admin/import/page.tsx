@@ -17,7 +17,7 @@ interface DateFormatMismatch {
 }
 
 interface ExcelDateSwap {
-  nativeCount: number;
+  fixableCount: number;
   samples: { stored: string; corrected: string }[];
 }
 
@@ -167,41 +167,53 @@ export default function ImportPage() {
     if (file) parseFile(file);
   };
 
+  const todayIso = () => new Date().toISOString().slice(0, 10);
+
   // A bare integer in a date cell is an Excel date serial (native date cell read
   // via raw:true) — decode it to ISO. Text dates pass through untouched for the
   // server's format-aware parser. When `unswap` is set, native serials have had
-  // their day/month transposed by an upstream Excel locale round-trip, so we
-  // restore them.
+  // their day/month transposed by an upstream Excel locale round-trip; we swap a
+  // serial back only when the swapped date is valid and not in the future. A
+  // completion date can never be in the future, so if swapping would produce a
+  // future date the decoded value is the genuine one (e.g. a recent entry like
+  // 2026-05-06 whose swap 2026-06-05 hasn't happened yet). day > 12 serials
+  // can't be swapped and are left as decoded.
   const resolveDateCell = (raw: string, unswap: boolean): string => {
     const v = (raw ?? "").trim();
     if (/^\d+$/.test(v)) {
       const iso = excelSerialToIso(Number(v), date1904);
-      if (iso) return unswap ? swapMonthDayIso(iso) ?? iso : iso;
+      if (!iso) return raw;
+      if (unswap) {
+        const swapped = swapMonthDayIso(iso);
+        if (swapped && swapped <= todayIso()) return swapped;
+      }
+      return iso;
     }
     return raw;
   };
 
-  // Detect the day/month-swap signature: a column of native Excel date serials
-  // whose decoded day-of-month is NEVER > 12. A genuine date column reaches days
-  // up to 31, so all-days-≤-12 means month and day have been transposed.
+  // Detect the day/month-swap corruption by its symptom: a native Excel date
+  // serial that decodes to a FUTURE date but whose swap is a valid non-future
+  // date. Completion dates can't be in the future, so a future-decoding native
+  // cell that swapping fixes is unambiguous evidence the day and month were
+  // transposed. Clean files (no future completion dates) never trigger this.
   const detectExcelDateSwap = (): ExcelDateSwap | null => {
     const dateCol = columnMapping.completedDate;
     if (!dateCol) return null;
-    let nativeCount = 0;
+    const today = todayIso();
+    let fixableCount = 0;
     const samples: { stored: string; corrected: string }[] = [];
     for (const r of rows) {
       const v = (r[dateCol] ?? "").trim();
       if (!/^\d+$/.test(v)) continue;
       const iso = excelSerialToIso(Number(v), date1904);
-      if (!iso) continue;
-      const day = Number(iso.slice(8, 10));
-      if (day > 12) return null; // genuine date present — not the swap signature
-      nativeCount++;
-      const corrected = swapMonthDayIso(iso);
-      if (corrected && samples.length < 3) samples.push({ stored: iso, corrected });
+      if (!iso || iso <= today) continue; // only future-decoding native cells
+      const swapped = swapMonthDayIso(iso);
+      if (!swapped || swapped > today) continue; // swap must actually fix it
+      fixableCount++;
+      if (samples.length < 3) samples.push({ stored: iso, corrected: swapped });
     }
-    if (nativeCount < 5) return null;
-    return { nativeCount, samples };
+    return fixableCount >= 1 ? { fixableCount, samples } : null;
   };
 
   const runImport = async (override: string | null, unswap: boolean) => {
@@ -694,12 +706,13 @@ export default function ImportPage() {
       >
         <div className="space-y-3 text-sm">
           <p className="text-gray-700">
-            This file&apos;s native Excel date cells (
-            <span className="font-semibold">{swapPrompt?.nativeCount}</span> of them)
-            all have a day of the month of 12 or less, which means their{" "}
+            <span className="font-semibold">{swapPrompt?.fixableCount}</span> native
+            Excel date {swapPrompt?.fixableCount === 1 ? "cell decodes" : "cells decode"} to
+            a date in the future, which means their{" "}
             <span className="font-semibold">day and month have been transposed</span> —
             a known side effect of opening and saving the file in an Excel set to a
-            different regional date format.
+            different regional date format. Other transposed dates in the column are
+            corrected too; genuine recent dates are left untouched.
           </p>
           {swapPrompt && swapPrompt.samples.length > 0 && (
             <div>
