@@ -174,3 +174,16 @@ export function excelSerialToIso(serial: number, date1904 = false): string | nul
   const day = String(d.getUTCDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
 }
+
+/**
+ * Transpose month/day of an ISO date when the day is a valid month (1–12).
+ * Used to recover native Excel date cells that an upstream DD/MM-locale Excel
+ * round-trip silently swapped. Returns null when the day can't become a month.
+ */
+export function swapMonthDayIso(iso: string): string | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!m) return null;
+  const day = Number(m[3]);
+  if (day < 1 || day > 12) return null; // can't become a month
+  return `${m[1]}-${m[3]}-${m[2]}`;
+}

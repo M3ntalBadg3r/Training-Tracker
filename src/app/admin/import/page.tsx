@@ -8,12 +8,17 @@ import { ImportSummary } from "@/types";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { excelSerialToIso } from "@/lib/date-format";
+import { excelSerialToIso, swapMonthDayIso } from "@/lib/date-format";
 
 interface DateFormatMismatch {
   assumedFormat: string;
   detectedFormat: string;
   sampleConflicts: { row: number; value: string }[];
+}
+
+interface ExcelDateSwap {
+  fixableCount: number;
+  samples: { stored: string; corrected: string }[];
 }
 
 const TARGET_FIELDS = [
@@ -52,6 +57,11 @@ export default function ImportPage() {
   const [dateFormatOverride, setDateFormatOverride] = useState<string | null>(null);
   // Excel workbooks store dates as numeric serials; this flag selects the epoch.
   const [date1904, setDate1904] = useState(false);
+  // A DD/MM-locale Excel round-trip can silently transpose native date cells'
+  // day and month. When detected we prompt the user to un-swap them on import.
+  const [unswapExcelDates, setUnswapExcelDates] = useState(false);
+  const [swapPrompt, setSwapPrompt] = useState<ExcelDateSwap | null>(null);
+  const [swapAcknowledged, setSwapAcknowledged] = useState(false);
 
   useEffect(() => {
     fetch("/api/companies")
@@ -157,19 +167,56 @@ export default function ImportPage() {
     if (file) parseFile(file);
   };
 
+  const todayIso = () => new Date().toISOString().slice(0, 10);
+
   // A bare integer in a date cell is an Excel date serial (native date cell read
   // via raw:true) — decode it to ISO. Text dates pass through untouched for the
-  // server's format-aware parser.
-  const resolveDateCell = (raw: string): string => {
+  // server's format-aware parser. When `unswap` is set, native serials have had
+  // their day/month transposed by an upstream Excel locale round-trip; we swap a
+  // serial back only when the swapped date is valid and not in the future. A
+  // completion date can never be in the future, so if swapping would produce a
+  // future date the decoded value is the genuine one (e.g. a recent entry like
+  // 2026-05-06 whose swap 2026-06-05 hasn't happened yet). day > 12 serials
+  // can't be swapped and are left as decoded.
+  const resolveDateCell = (raw: string, unswap: boolean): string => {
     const v = (raw ?? "").trim();
     if (/^\d+$/.test(v)) {
       const iso = excelSerialToIso(Number(v), date1904);
-      if (iso) return iso;
+      if (!iso) return raw;
+      if (unswap) {
+        const swapped = swapMonthDayIso(iso);
+        if (swapped && swapped <= todayIso()) return swapped;
+      }
+      return iso;
     }
     return raw;
   };
 
-  const runImport = async (override: string | null) => {
+  // Detect the day/month-swap corruption by its symptom: a native Excel date
+  // serial that decodes to a FUTURE date but whose swap is a valid non-future
+  // date. Completion dates can't be in the future, so a future-decoding native
+  // cell that swapping fixes is unambiguous evidence the day and month were
+  // transposed. Clean files (no future completion dates) never trigger this.
+  const detectExcelDateSwap = (): ExcelDateSwap | null => {
+    const dateCol = columnMapping.completedDate;
+    if (!dateCol) return null;
+    const today = todayIso();
+    let fixableCount = 0;
+    const samples: { stored: string; corrected: string }[] = [];
+    for (const r of rows) {
+      const v = (r[dateCol] ?? "").trim();
+      if (!/^\d+$/.test(v)) continue;
+      const iso = excelSerialToIso(Number(v), date1904);
+      if (!iso || iso <= today) continue; // only future-decoding native cells
+      const swapped = swapMonthDayIso(iso);
+      if (!swapped || swapped > today) continue; // swap must actually fix it
+      fixableCount++;
+      if (samples.length < 3) samples.push({ stored: iso, corrected: swapped });
+    }
+    return fixableCount >= 1 ? { fixableCount, samples } : null;
+  };
+
+  const runImport = async (override: string | null, unswap: boolean) => {
     setStep("importing");
     setError(null);
     try {
@@ -177,7 +224,7 @@ export default function ImportPage() {
       // sending; the server then sees ISO for native dates + text for the rest.
       const dateCol = columnMapping.completedDate;
       const outRows = dateCol
-        ? rows.map((r) => ({ ...r, [dateCol]: resolveDateCell(r[dateCol]) }))
+        ? rows.map((r) => ({ ...r, [dateCol]: resolveDateCell(r[dateCol], unswap) }))
         : rows;
       const res = await fetch("/api/import", {
         method: "POST",
@@ -254,7 +301,18 @@ export default function ImportPage() {
     }
 
     setDateFormatOverride(null);
-    await runImport(null);
+
+    // Before importing, check for the day/month-swap signature in native Excel
+    // date cells and prompt once. Text dates are handled by the format pipeline.
+    if (!swapAcknowledged) {
+      const ev = detectExcelDateSwap();
+      if (ev) {
+        setSwapPrompt(ev);
+        return;
+      }
+    }
+
+    await runImport(null, unswapExcelDates);
   };
 
   const handleAcceptDetectedFormat = async () => {
@@ -262,7 +320,14 @@ export default function ImportPage() {
     const next = formatMismatch.detectedFormat;
     setDateFormatOverride(next);
     setFormatMismatch(null);
-    await runImport(next);
+    await runImport(next, unswapExcelDates);
+  };
+
+  const handleSwapChoice = async (unswap: boolean) => {
+    setUnswapExcelDates(unswap);
+    setSwapAcknowledged(true);
+    setSwapPrompt(null);
+    await runImport(null, unswap);
   };
 
   const reset = () => {
@@ -276,6 +341,9 @@ export default function ImportPage() {
     setFormatMismatch(null);
     setDateFormatOverride(null);
     setDate1904(false);
+    setUnswapExcelDates(false);
+    setSwapPrompt(null);
+    setSwapAcknowledged(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
@@ -420,7 +488,7 @@ export default function ImportPage() {
                         <tr key={idx} className="border-b">
                           {TARGET_FIELDS.map((f) => {
                             const cell = columnMapping[f.key] ? row[columnMapping[f.key]] : "";
-                            const display = f.key === "completedDate" ? resolveDateCell(cell) : cell;
+                            const display = f.key === "completedDate" ? resolveDateCell(cell, unswapExcelDates) : cell;
                             return (
                               <td key={f.key} className="px-3 py-2 text-gray-600">
                                 {display || "-"}
@@ -605,6 +673,65 @@ export default function ImportPage() {
             Cancel and update the system default in Admin &rarr; System Settings if you&apos;d
             rather change it permanently. Continuing uses the detected format for this
             import only — the system default stays unchanged.
+          </p>
+        </div>
+      </Modal>
+
+      <Modal
+        open={!!swapPrompt}
+        onClose={() => setSwapPrompt(null)}
+        title="Day/month-swapped Excel dates detected"
+        actions={
+          <>
+            <button
+              onClick={() => setSwapPrompt(null)}
+              className="px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => handleSwapChoice(false)}
+              className="px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300"
+            >
+              Import as-is
+            </button>
+            <button
+              onClick={() => handleSwapChoice(true)}
+              className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              Yes, correct them
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-3 text-sm">
+          <p className="text-gray-700">
+            <span className="font-semibold">{swapPrompt?.fixableCount}</span> native
+            Excel date {swapPrompt?.fixableCount === 1 ? "cell decodes" : "cells decode"} to
+            a date in the future, which means their{" "}
+            <span className="font-semibold">day and month have been transposed</span> —
+            a known side effect of opening and saving the file in an Excel set to a
+            different regional date format. Other transposed dates in the column are
+            corrected too; genuine recent dates are left untouched.
+          </p>
+          {swapPrompt && swapPrompt.samples.length > 0 && (
+            <div>
+              <p className="text-gray-500 mb-1">Examples of the correction:</p>
+              <ul className="text-xs bg-gray-50 border border-gray-200 rounded-lg p-2 max-h-32 overflow-y-auto">
+                {swapPrompt.samples.map((s) => (
+                  <li key={s.stored} className="text-gray-700">
+                    <span className="font-mono">{s.stored}</span> &rarr;{" "}
+                    <span className="font-mono">{s.corrected}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <p className="text-xs text-gray-500">
+            Text date cells are not affected and continue through the usual format
+            detection. Choose <span className="font-semibold">Yes, correct them</span>{" "}
+            to swap the day and month back, or <span className="font-semibold">Import
+            as-is</span> if these dates are genuinely correct.
           </p>
         </div>
       </Modal>
