@@ -357,6 +357,18 @@ const helpSections: Record<string, HelpSection> = {
           serial like <code>46147</code>). They&apos;re unambiguous, so the
           format prompt above only applies to genuine text dates and CSV cells.
         </p>
+        <p>
+          <strong>Day/month-swapped Excel dates</strong> &mdash; re-saving an
+          <code>MM/DD</code> file in a <code>DD/MM</code>-locale Excel can
+          silently transpose the day and month of its native date cells (a true
+          <code>2026-01-12</code> becomes a stored <code>2026-12-01</code>). When
+          every native date cell in the Completed Date column has a day of 12 or
+          less &mdash; a genuine column reaches 31 &mdash; the import pauses and
+          shows a confirmation modal with sample corrections. Choose
+          <strong>Yes, correct them</strong> to swap the values back, or
+          <strong>Import as-is</strong> if the dates are genuinely correct. Text
+          date cells are unaffected.
+        </p>
 
         <h3>Theatre handling</h3>
         <p>

@@ -371,6 +371,8 @@ Rows that fail to parse against the chosen format are reported per-row with the 
 
 **Native Excel dates:** When importing `.xlsx`/`.xls`, cells that Excel stores as real dates (rather than text) are read by their true underlying value and converted automatically — regardless of how they happen to be displayed in the sheet (e.g. `m/d/yy`, or an unformatted serial like `46147`). These never need the format prompt because their value is unambiguous. The format detection above therefore only applies to genuine **text** date cells (and all CSV cells).
 
+**Day/month-swapped Excel dates:** Opening and re-saving an `MM/DD` file in an Excel set to a `DD/MM` locale can silently transpose the day and month of its native date cells (e.g. a true `2026-01-12` becomes a stored `2026-12-01`). The import detects this signature — when **every** native date cell in the Completed Date column has a day of the month of 12 or less (a genuine column reaches days up to 31) — and pauses to show a confirmation modal with sample corrections (`stored → corrected`). Choose **Yes, correct them** to swap the day and month back, or **Import as-is** if the dates are genuinely correct. Text date cells are unaffected and still flow through the format detection above.
+
 ---
 
 ## Reports
