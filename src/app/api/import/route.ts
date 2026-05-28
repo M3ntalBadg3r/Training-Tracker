@@ -180,8 +180,20 @@ export async function POST(request: NextRequest) {
   const mappedRows: ImportRow[] = rows.map((row) => {
     const rawEmail = (row[columnMapping.email] || "").trim();
     const email = rawEmail.toLowerCase();
+    // Name: prefer an explicit Full Name; otherwise merge First + Last; otherwise
+    // derive from the email local part. Resolved per-row so a file with all three
+    // columns (or a Full Name file with blank rows) degrades gracefully.
     const rawFullName = (row[columnMapping.fullName] || "").trim();
-    const fullName = rawFullName ? titleCase(rawFullName) : deriveFullName(email);
+    const rawFirst = (columnMapping.firstName ? row[columnMapping.firstName] || "" : "").trim();
+    const rawLast = (columnMapping.lastName ? row[columnMapping.lastName] || "" : "").trim();
+    let fullName: string;
+    if (rawFullName) {
+      fullName = titleCase(rawFullName);
+    } else if (rawFirst || rawLast) {
+      fullName = titleCase(`${rawFirst} ${rawLast}`.replace(/\s+/g, " ").trim());
+    } else {
+      fullName = deriveFullName(email);
+    }
     const company = (columnMapping.company ? (row[columnMapping.company] || "").trim() : "");
 
     return {

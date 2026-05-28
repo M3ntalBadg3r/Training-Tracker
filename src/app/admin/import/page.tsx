@@ -16,7 +16,9 @@ interface DateFormatMismatch {
 }
 
 const TARGET_FIELDS = [
-  { key: "fullName", label: "Full Name", required: true },
+  { key: "fullName", label: "Full Name", required: false },
+  { key: "firstName", label: "First Name", required: false },
+  { key: "lastName", label: "Last Name", required: false },
   { key: "email", label: "Email Address", required: true },
   { key: "theatre", label: "Theatre", required: true },
   { key: "country", label: "Country", required: true },
@@ -200,6 +202,15 @@ export default function ImportPage() {
       return;
     }
 
+    // Name is an either-or: a Full Name column, OR both First Name and Last Name.
+    const hasName =
+      !!columnMapping.fullName ||
+      (!!columnMapping.firstName && !!columnMapping.lastName);
+    if (!hasName) {
+      setError("Map a Full Name column, or both First Name and Last Name.");
+      return;
+    }
+
     // If the file has no Company column, a default company is required.
     if (!columnMapping.company && !defaultCompanyId) {
       setError(
@@ -291,9 +302,11 @@ export default function ImportPage() {
 
             <h3 className="text-lg font-semibold mb-4">Map Columns</h3>
             <p className="text-sm text-gray-600 mb-4">
-              Map the columns from your file to the required fields. The Company
-              column is optional — if a row has no value, the default company below
-              will be used.
+              Map the columns from your file to the required fields. For the name,
+              map either a <strong>Full Name</strong> column, or both{" "}
+              <strong>First Name</strong> and <strong>Last Name</strong> (they&apos;ll
+              be merged). The Company column is optional — if a row has no value, the
+              default company below will be used.
             </p>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

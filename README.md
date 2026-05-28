@@ -340,7 +340,7 @@ Navigate to **Import** in the sidebar to bulk-import student training records fr
 
 1. **Upload** — Drag and drop or click to select a `.csv`, `.xls`, or `.xlsx` file.
 2. **Column Mapping** — The system auto-maps columns where possible. Manually adjust any unmatched columns. Required fields are:
-   - Full Name
+   - Name — map **either** a single **Full Name** column **or** both **First Name** and **Last Name** (split names are merged into one record)
    - Email Address
    - Theatre
    - Country
@@ -355,7 +355,8 @@ During import, the following cleansing rules are applied automatically:
 
 - **Email** — Converted to lowercase.
 - **Full Name** — Leading/trailing spaces are removed and each word is capitalised (e.g. `jOHN sMITH` becomes `John Smith`).
-- **Empty Full Name** — If the Full Name field is blank, the system looks at the email address. If the local part (before the `@`) contains two words separated by a full stop (e.g. `jane.doe@company.com`), it uses those as the name (`Jane Doe`). Otherwise, the full email address is used as the name.
+- **First Name + Last Name** — When the file maps separate First Name and Last Name columns instead of a Full Name, the two are merged (`John` + `Smith` → `John Smith`) and capitalised the same way. If a row also has a Full Name value, that explicit value wins for that row.
+- **Empty Full Name** — If no name value is present for a row, the system looks at the email address. If the local part (before the `@`) contains two words separated by a full stop (e.g. `jane.doe@company.com`), it uses those as the name (`Jane Doe`). Otherwise, the full email address is used as the name.
 
 ### Date Format Detection
 

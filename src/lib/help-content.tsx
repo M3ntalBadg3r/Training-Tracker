@@ -294,8 +294,12 @@ const helpSections: Record<string, HelpSection> = {
           <li>
             <strong>Column Mapping</strong> &mdash; The system auto-maps columns
             where possible. Manually adjust any unmatched columns. Required
-            fields are: Full Name, Email Address, Theatre, Country, Training
-            Title, and Completed Date.
+            fields are: a name, Email Address, Theatre, Country, Training Title,
+            and Completed Date. For the name, map <strong>either</strong> a single{" "}
+            <strong>Full Name</strong> column <strong>or</strong> both{" "}
+            <strong>First Name</strong> and <strong>Last Name</strong> &mdash; split
+            names are merged into one record (and an explicit Full Name value wins
+            on any row that has both).
           </li>
           <li>
             <strong>Processing</strong> &mdash; The system imports the data,
