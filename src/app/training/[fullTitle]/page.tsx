@@ -9,6 +9,7 @@ import Badge from "@/components/ui/Badge";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import { ColumnDef, TrainingTakenRow } from "@/types";
 import { useCompanyScope } from "@/components/company/CompanyScopeProvider";
+import { useDateFormat } from "@/components/date-format/DateFormatProvider";
 
 const columns: ColumnDef<TrainingTakenRow>[] = [
   { key: "fullName", header: "Full Name" },
@@ -41,6 +42,7 @@ export default function TrainingTakenPage({
   const hasLocationFilters = !!(theatre || region || country);
   const router = useRouter();
   const { selected, loading: scopeLoading } = useCompanyScope();
+  const { formatDate } = useDateFormat();
 
   const [students, setStudents] = useState<TrainingTakenRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -55,11 +57,11 @@ export default function TrainingTakenPage({
         theatre: s.theatre,
         region: s.region,
         country: s.country,
-        completedDate: s.completedDate,
-        expiryDate: s.expiryDate,
+        completedDate: formatDate(s.completedDate),
+        expiryDate: formatDate(s.expiryDate),
         active: s.active ? "Yes" : "No",
       })),
-    [students]
+    [students, formatDate]
   );
 
   const exportColumns: { key: keyof (typeof exportData)[0]; header: string }[] = [

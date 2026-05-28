@@ -199,11 +199,28 @@ model User {
   mustEnableMfa  Boolean       @default(false) @map("must_enable_mfa")
   lastLoginAt    DateTime?     @map("last_login_at")
   lastLoginIp    String?       @map("last_login_ip")
+  dateFormat     String?       @map("date_format")
   createdAt      DateTime      @default(now()) @map("created_at")
   updatedAt      DateTime      @updatedAt @map("updated_at")
   companies      UserCompany[]
 
+  systemSettingsUpdated SystemSetting[] @relation("SystemSettingUpdatedBy")
+
   @@map("users")
+}
+
+// Singleton: always id = 1. Stores system-wide preferences (currently just
+// the default date format). Application code must upsert with id: 1; the
+// migration also adds a CHECK constraint as defence-in-depth.
+model SystemSetting {
+  id          Int      @id @default(1)
+  dateFormat  String   @default("DD/MM/YYYY") @map("date_format")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  updatedById Int?     @map("updated_by_id")
+
+  updatedBy User? @relation("SystemSettingUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@map("system_settings")
 }
 
 model ScheduledExport {

@@ -2,14 +2,24 @@
 
 import { useEffect, useState, useRef } from "react";
 import PageHeader from "@/components/layout/PageHeader";
+import Modal from "@/components/ui/Modal";
 import { Upload, FileSpreadsheet, CheckCircle, AlertCircle } from "lucide-react";
 import { ImportSummary } from "@/types";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { excelSerialToIso } from "@/lib/date-format";
+
+interface DateFormatMismatch {
+  assumedFormat: string;
+  detectedFormat: string;
+  sampleConflicts: { row: number; value: string }[];
+}
 
 const TARGET_FIELDS = [
-  { key: "fullName", label: "Full Name", required: true },
+  { key: "fullName", label: "Full Name", required: false },
+  { key: "firstName", label: "First Name", required: false },
+  { key: "lastName", label: "Last Name", required: false },
   { key: "email", label: "Email Address", required: true },
   { key: "theatre", label: "Theatre", required: true },
   { key: "country", label: "Country", required: true },
@@ -37,6 +47,11 @@ export default function ImportPage() {
 
   const [companies, setCompanies] = useState<CompanyOption[]>([]);
   const [defaultCompanyId, setDefaultCompanyId] = useState<number | "">("");
+
+  const [formatMismatch, setFormatMismatch] = useState<DateFormatMismatch | null>(null);
+  const [dateFormatOverride, setDateFormatOverride] = useState<string | null>(null);
+  // Excel workbooks store dates as numeric serials; this flag selects the epoch.
+  const [date1904, setDate1904] = useState(false);
 
   useEffect(() => {
     fetch("/api/companies")
@@ -76,6 +91,7 @@ export default function ImportPage() {
         try {
           const data = new Uint8Array(e.target?.result as ArrayBuffer);
           const workbook = XLSX.read(data, { type: "array" });
+          setDate1904(!!workbook.Workbook?.WBProps?.date1904);
           const sheet = workbook.Sheets[workbook.SheetNames[0]];
           // Read header row separately to capture ALL columns, even those empty in the first data rows
           const allRows = XLSX.utils.sheet_to_json<string[]>(sheet, {
@@ -87,9 +103,21 @@ export default function ImportPage() {
             return;
           }
           const hdrs = (allRows[0] || []).map((h) => String(h).trim()).filter(Boolean);
-          const jsonData = XLSX.utils.sheet_to_json<Record<string, string>>(sheet, {
-            raw: false,
+          // raw:true so native Excel date cells surface as their numeric serial
+          // (e.g. 44385) instead of a flattened display string like "7/8/21".
+          // We stringify every value here and decode date serials later, once
+          // the user has mapped the completed-date column (resolveDateCell).
+          const rawData = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
+            raw: true,
             defval: "",
+          });
+          const jsonData: Record<string, string>[] = rawData.map((r) => {
+            const out: Record<string, string> = {};
+            for (const key of Object.keys(r)) {
+              const v = r[key];
+              out[key] = v instanceof Date ? v.toISOString().slice(0, 10) : v == null ? "" : String(v);
+            }
+            return out;
           });
           setHeaders(hdrs);
           setRows(jsonData);
@@ -129,38 +157,59 @@ export default function ImportPage() {
     if (file) parseFile(file);
   };
 
-  const handleImport = async () => {
-    // Validate all required fields are mapped
-    const missingFields = TARGET_FIELDS.filter(
-      (f) => f.required && !columnMapping[f.key]
-    );
-    if (missingFields.length > 0) {
-      setError(
-        `Please map the following fields: ${missingFields.map((f) => f.label).join(", ")}`
-      );
-      return;
+  // A bare integer in a date cell is an Excel date serial (native date cell read
+  // via raw:true) — decode it to ISO. Text dates pass through untouched for the
+  // server's format-aware parser.
+  const resolveDateCell = (raw: string): string => {
+    const v = (raw ?? "").trim();
+    if (/^\d+$/.test(v)) {
+      const iso = excelSerialToIso(Number(v), date1904);
+      if (iso) return iso;
     }
+    return raw;
+  };
 
-    // If the file has no Company column, a default company is required.
-    if (!columnMapping.company && !defaultCompanyId) {
-      setError(
-        "Please pick a default company for rows that don't include one (or map a Company column)."
-      );
-      return;
-    }
-
+  const runImport = async (override: string | null) => {
     setStep("importing");
     setError(null);
-
     try {
+      // Decode Excel date serials in the mapped completed-date column before
+      // sending; the server then sees ISO for native dates + text for the rest.
+      const dateCol = columnMapping.completedDate;
+      const outRows = dateCol
+        ? rows.map((r) => ({ ...r, [dateCol]: resolveDateCell(r[dateCol]) }))
+        : rows;
       const res = await fetch("/api/import", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rows, columnMapping, defaultCompanyId: defaultCompanyId || undefined }),
+        body: JSON.stringify({
+          rows: outRows,
+          columnMapping,
+          defaultCompanyId: defaultCompanyId || undefined,
+          ...(override ? { dateFormatOverride: override } : {}),
+        }),
       });
 
+      if (res.status === 409) {
+        const data = await res.json();
+        if (data?.error === "dateFormatMismatch") {
+          setFormatMismatch({
+            assumedFormat: data.assumedFormat,
+            detectedFormat: data.detectedFormat,
+            sampleConflicts: Array.isArray(data.sampleConflicts) ? data.sampleConflicts : [],
+          });
+          setStep("mapping");
+          return;
+        }
+        if (data?.error === "dateFormatInconsistent") {
+          setError(data.message || "Date column has mixed formats — clean the file and retry.");
+          setStep("mapping");
+          return;
+        }
+      }
+
       if (!res.ok) {
-        const errorData = await res.json();
+        const errorData = await res.json().catch(() => ({}));
         setError(errorData.error || "Import failed");
         setStep("mapping");
         return;
@@ -175,6 +224,47 @@ export default function ImportPage() {
     }
   };
 
+  const handleImport = async () => {
+    // Validate all required fields are mapped
+    const missingFields = TARGET_FIELDS.filter(
+      (f) => f.required && !columnMapping[f.key]
+    );
+    if (missingFields.length > 0) {
+      setError(
+        `Please map the following fields: ${missingFields.map((f) => f.label).join(", ")}`
+      );
+      return;
+    }
+
+    // Name is an either-or: a Full Name column, OR both First Name and Last Name.
+    const hasName =
+      !!columnMapping.fullName ||
+      (!!columnMapping.firstName && !!columnMapping.lastName);
+    if (!hasName) {
+      setError("Map a Full Name column, or both First Name and Last Name.");
+      return;
+    }
+
+    // If the file has no Company column, a default company is required.
+    if (!columnMapping.company && !defaultCompanyId) {
+      setError(
+        "Please pick a default company for rows that don't include one (or map a Company column)."
+      );
+      return;
+    }
+
+    setDateFormatOverride(null);
+    await runImport(null);
+  };
+
+  const handleAcceptDetectedFormat = async () => {
+    if (!formatMismatch) return;
+    const next = formatMismatch.detectedFormat;
+    setDateFormatOverride(next);
+    setFormatMismatch(null);
+    await runImport(next);
+  };
+
   const reset = () => {
     setStep("upload");
     setFileName("");
@@ -183,6 +273,9 @@ export default function ImportPage() {
     setColumnMapping({});
     setSummary(null);
     setError(null);
+    setFormatMismatch(null);
+    setDateFormatOverride(null);
+    setDate1904(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
@@ -244,9 +337,11 @@ export default function ImportPage() {
 
             <h3 className="text-lg font-semibold mb-4">Map Columns</h3>
             <p className="text-sm text-gray-600 mb-4">
-              Map the columns from your file to the required fields. The Company
-              column is optional — if a row has no value, the default company below
-              will be used.
+              Map the columns from your file to the required fields. For the name,
+              map either a <strong>Full Name</strong> column, or both{" "}
+              <strong>First Name</strong> and <strong>Last Name</strong> (they&apos;ll
+              be merged). The Company column is optional — if a row has no value, the
+              default company below will be used.
             </p>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -323,13 +418,15 @@ export default function ImportPage() {
                     <tbody>
                       {rows.slice(0, 5).map((row, idx) => (
                         <tr key={idx} className="border-b">
-                          {TARGET_FIELDS.map((f) => (
-                            <td key={f.key} className="px-3 py-2 text-gray-600">
-                              {columnMapping[f.key]
-                                ? row[columnMapping[f.key]] || "-"
-                                : "-"}
-                            </td>
-                          ))}
+                          {TARGET_FIELDS.map((f) => {
+                            const cell = columnMapping[f.key] ? row[columnMapping[f.key]] : "";
+                            const display = f.key === "completedDate" ? resolveDateCell(cell) : cell;
+                            return (
+                              <td key={f.key} className="px-3 py-2 text-gray-600">
+                                {display || "-"}
+                              </td>
+                            );
+                          })}
                         </tr>
                       ))}
                     </tbody>
@@ -400,6 +497,13 @@ export default function ImportPage() {
               </div>
             </div>
 
+            {summary.dateFormatUsed && (
+              <p className="mb-3 text-xs text-gray-500">
+                Dates parsed as <span className="font-mono">{summary.dateFormatUsed}</span>
+                {dateFormatOverride ? " (override for this import)" : ""}.
+              </p>
+            )}
+
             {(summary.companiesCreated ?? 0) > 0 && (
               <div className="mb-3 flex items-start gap-3 bg-blue-50 border border-blue-200 rounded-lg p-4">
                 <CheckCircle size={18} className="text-blue-600 mt-0.5 shrink-0" />
@@ -456,6 +560,54 @@ export default function ImportPage() {
           </button>
         </div>
       )}
+
+      <Modal
+        open={!!formatMismatch}
+        onClose={() => setFormatMismatch(null)}
+        title="Date format mismatch"
+        actions={
+          <>
+            <button
+              onClick={() => setFormatMismatch(null)}
+              className="px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleAcceptDetectedFormat}
+              className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              Use {formatMismatch?.detectedFormat} for this import
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-3 text-sm">
+          <p className="text-gray-700">
+            The system is configured for{" "}
+            <span className="font-semibold">{formatMismatch?.assumedFormat}</span>{" "}
+            but this file looks like{" "}
+            <span className="font-semibold">{formatMismatch?.detectedFormat}</span>.
+          </p>
+          {formatMismatch && formatMismatch.sampleConflicts.length > 0 && (
+            <div>
+              <p className="text-gray-500 mb-1">Cells that don&apos;t fit {formatMismatch.assumedFormat}:</p>
+              <ul className="text-xs bg-gray-50 border border-gray-200 rounded-lg p-2 max-h-32 overflow-y-auto">
+                {formatMismatch.sampleConflicts.map((c) => (
+                  <li key={`${c.row}-${c.value}`} className="text-gray-700">
+                    Row {c.row}: <span className="font-mono">{c.value}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <p className="text-xs text-gray-500">
+            Cancel and update the system default in Admin &rarr; System Settings if you&apos;d
+            rather change it permanently. Continuing uses the detected format for this
+            import only — the system default stays unchanged.
+          </p>
+        </div>
+      </Modal>
     </div>
   );
 }

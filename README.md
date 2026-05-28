@@ -340,7 +340,7 @@ Navigate to **Import** in the sidebar to bulk-import student training records fr
 
 1. **Upload** — Drag and drop or click to select a `.csv`, `.xls`, or `.xlsx` file.
 2. **Column Mapping** — The system auto-maps columns where possible. Manually adjust any unmatched columns. Required fields are:
-   - Full Name
+   - Name — map **either** a single **Full Name** column **or** both **First Name** and **Last Name** (split names are merged into one record)
    - Email Address
    - Theatre
    - Country
@@ -355,7 +355,21 @@ During import, the following cleansing rules are applied automatically:
 
 - **Email** — Converted to lowercase.
 - **Full Name** — Leading/trailing spaces are removed and each word is capitalised (e.g. `jOHN sMITH` becomes `John Smith`).
-- **Empty Full Name** — If the Full Name field is blank, the system looks at the email address. If the local part (before the `@`) contains two words separated by a full stop (e.g. `jane.doe@company.com`), it uses those as the name (`Jane Doe`). Otherwise, the full email address is used as the name.
+- **First Name + Last Name** — When the file maps separate First Name and Last Name columns instead of a Full Name, the two are merged (`John` + `Smith` → `John Smith`) and capitalised the same way. If a row also has a Full Name value, that explicit value wins for that row.
+- **Empty Full Name** — If no name value is present for a row, the system looks at the email address. If the local part (before the `@`) contains two words separated by a full stop (e.g. `jane.doe@company.com`), it uses those as the name (`Jane Doe`). Otherwise, the full email address is used as the name.
+
+### Date Format Detection
+
+Dates in the file are parsed strictly against the **system default date format** (set in **Admin → System Settings**). The import inspects the Completed Date column before committing any rows:
+
+- **Match** — every cell fits the system default. The import runs silently.
+- **Ambiguous** — every cell happens to fit both `DD/MM/YYYY` and `MM/DD/YYYY` (e.g. all days are 1–12). The import runs using the system default and adds a single line to the summary so you know the file couldn't be disambiguated.
+- **Mismatch** — at least one cell forces the other format (e.g. month=15 in a system set to `DD/MM/YYYY`). The import pauses and shows a modal: **"This file looks like MM/DD/YYYY. Use it for this import?"** Accept to override for that import only; cancel and either fix the file or change the system default.
+- **Internal conflict** — different cells force different formats (some `13/01/2025`, others `01/15/2025`). The import is rejected; clean the file and retry.
+
+Rows that fail to parse against the chosen format are reported per-row with the expected format in the error message, rather than silently producing a wrong-date row.
+
+**Native Excel dates:** When importing `.xlsx`/`.xls`, cells that Excel stores as real dates (rather than text) are read by their true underlying value and converted automatically — regardless of how they happen to be displayed in the sheet (e.g. `m/d/yy`, or an unformatted serial like `46147`). These never need the format prompt because their value is unambiguous. The format detection above therefore only applies to genuine **text** date cells (and all CSV cells).
 
 ---
 
@@ -485,6 +499,16 @@ Navigate to **Admin > Users** to manage user accounts.
 - **Reset Password** — Set a new password for any user.
 - **Disable MFA** — Turn off multi-factor authentication for a user.
 - **Delete User** — Remove a user account. Cannot delete yourself or the last admin.
+
+### System Settings (SuperAdmin only)
+
+**Admin → System Settings** controls instance-wide defaults that apply to every user who hasn't set a personal override.
+
+- **Default Date Format** — `DD/MM/YYYY` or `MM/DD/YYYY`. Used for:
+  - Parsing dates during CSV / Excel imports (the import flow detects format mismatches and prompts before committing — see **Import Data → Date Format Detection**).
+  - Displaying dates throughout the app for users who haven't picked a personal preference.
+
+Individual users override their display preference on the **My Account** page (Sidebar → username avatar → Display Date Format). The stored data is format-neutral; the format only affects parsing on input and rendering on output, so changing it is non-destructive and reversible.
 
 ### Backup & Restore
 

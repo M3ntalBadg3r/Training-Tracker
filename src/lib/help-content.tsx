@@ -294,8 +294,12 @@ const helpSections: Record<string, HelpSection> = {
           <li>
             <strong>Column Mapping</strong> &mdash; The system auto-maps columns
             where possible. Manually adjust any unmatched columns. Required
-            fields are: Full Name, Email Address, Theatre, Country, Training
-            Title, and Completed Date.
+            fields are: a name, Email Address, Theatre, Country, Training Title,
+            and Completed Date. For the name, map <strong>either</strong> a single{" "}
+            <strong>Full Name</strong> column <strong>or</strong> both{" "}
+            <strong>First Name</strong> and <strong>Last Name</strong> &mdash; split
+            names are merged into one record (and an explicit Full Name value wins
+            on any row that has both).
           </li>
           <li>
             <strong>Processing</strong> &mdash; The system imports the data,
@@ -310,6 +314,49 @@ const helpSections: Record<string, HelpSection> = {
             Data.
           </li>
         </ol>
+
+        <h3>Date Format Detection</h3>
+        <p>
+          Dates in the Completed Date column are parsed against the{" "}
+          <strong>system default date format</strong> (set in Admin &gt; System Settings).
+          Before any rows are committed, the import inspects the column:
+        </p>
+        <ul>
+          <li>
+            <strong>Match</strong> &mdash; every cell fits the system default. The import runs silently.
+          </li>
+          <li>
+            <strong>Ambiguous</strong> &mdash; every cell happens to fit both{" "}
+            <code>DD/MM/YYYY</code> and <code>MM/DD/YYYY</code> (e.g. all day numbers
+            are 1&ndash;12). The import runs using the system default and adds a single
+            line to the summary so you know the file couldn&apos;t be disambiguated.
+          </li>
+          <li>
+            <strong>Mismatch</strong> &mdash; at least one cell forces the other
+            format (e.g. month=15 in a system set to <code>DD/MM/YYYY</code>). A modal
+            appears: <em>&quot;This file looks like MM/DD/YYYY. Use it for this import?&quot;</em>{" "}
+            Accept to override for that import only; cancel and either fix the file
+            or change the system default.
+          </li>
+          <li>
+            <strong>Internal conflict</strong> &mdash; different cells force different
+            formats (some <code>13/01/2025</code>, others <code>01/15/2025</code>).
+            The import is rejected; clean the file and retry.
+          </li>
+        </ul>
+        <p>
+          Rows that fail to parse against the chosen format are reported
+          per-row with the expected format shown in the error message, rather
+          than silently producing a wrong-date row.
+        </p>
+        <p>
+          <strong>Native Excel dates</strong> &mdash; in <code>.xlsx</code>/
+          <code>.xls</code> files, cells that Excel stores as real dates (not
+          text) are read by their true value and converted automatically, no
+          matter how they&apos;re displayed (e.g. <code>m/d/yy</code> or a raw
+          serial like <code>46147</code>). They&apos;re unambiguous, so the
+          format prompt above only applies to genuine text dates and CSV cells.
+        </p>
 
         <h3>Theatre handling</h3>
         <p>
@@ -922,7 +969,16 @@ const helpSections: Record<string, HelpSection> = {
     title: "My Account",
     content: (
       <>
-        <p>View your account information and manage security settings.</p>
+        <p>View your account information and manage security and display settings.</p>
+
+        <h3>Display Date Format</h3>
+        <p>
+          Choose how dates are shown to you across the app &mdash; pick{" "}
+          <code>DD/MM/YYYY</code>, <code>MM/DD/YYYY</code>, or leave it set to
+          <strong> Use system default</strong> to follow whatever the SuperAdmin has
+          configured for the instance. Your choice only affects your view; the data
+          itself is stored format-neutrally and other users keep their own preference.
+        </p>
 
         <h3>Change Password</h3>
         <p>
@@ -949,6 +1005,41 @@ const helpSections: Record<string, HelpSection> = {
         <p>
           Click <strong>Disable MFA</strong> and enter your password to confirm.
           An admin can also disable MFA for any user from the User Management page.
+        </p>
+      </>
+    ),
+  },
+
+  "system-settings": {
+    title: "System Settings",
+    content: (
+      <>
+        <p>
+          SuperAdmin-only page for instance-wide defaults. Settings here apply to
+          every user unless they override the value on their own <strong>My Account</strong> page.
+        </p>
+
+        <h3>Default Date Format</h3>
+        <p>
+          Choose between <code>DD/MM/YYYY</code> (UK / EU) and <code>MM/DD/YYYY</code> (US).
+          The setting controls two things:
+        </p>
+        <ul>
+          <li>
+            <strong>Imports</strong> &mdash; CSV / Excel uploads parse Completed Date cells
+            against this format. If the file&apos;s dates clearly use the other format (e.g.
+            month=15 in a system set to <code>DD/MM/YYYY</code>), the import pauses and
+            asks before continuing &mdash; see <strong>Import &gt; Date Format Detection</strong>.
+          </li>
+          <li>
+            <strong>Display</strong> &mdash; dates throughout the app render in this format
+            for any user who hasn&apos;t set their own preference.
+          </li>
+        </ul>
+        <p>
+          Changing the setting is non-destructive: stored data is format-neutral, so
+          switching back and forth only changes how dates are parsed and shown going
+          forward.
         </p>
       </>
     ),

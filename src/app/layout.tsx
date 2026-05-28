@@ -4,6 +4,7 @@ import AuthProvider from "@/components/auth/AuthProvider";
 import ThemeProvider from "@/components/theme/ThemeProvider";
 import AppShell from "@/components/layout/AppShell";
 import CompanyScopeProvider from "@/components/company/CompanyScopeProvider";
+import DateFormatProvider from "@/components/date-format/DateFormatProvider";
 
 export const metadata: Metadata = {
   title: "Training Tracker",
@@ -20,9 +21,11 @@ export default function RootLayout({
       <body className="antialiased">
         <ThemeProvider>
           <AuthProvider>
-            <CompanyScopeProvider>
-              <AppShell>{children}</AppShell>
-            </CompanyScopeProvider>
+            <DateFormatProvider>
+              <CompanyScopeProvider>
+                <AppShell>{children}</AppShell>
+              </CompanyScopeProvider>
+            </DateFormatProvider>
           </AuthProvider>
         </ThemeProvider>
       </body>

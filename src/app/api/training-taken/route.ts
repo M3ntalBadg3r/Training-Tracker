@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { TrainingType } from "@prisma/client";
-import { isActive, formatDate, parseDate, computeExpiryDate } from "@/lib/utils";
+import { isActive, parseDate, computeExpiryDate } from "@/lib/utils";
 import { requireAuth, handleAuthError } from "@/lib/auth";
 import { canAccessCompany, getAuthorizedCompanyIds, resolveCompanyFilter } from "@/lib/company-scope";
 import { recomputeParentsForSubItem } from "@/lib/olx";
@@ -88,8 +88,8 @@ export async function GET(request: NextRequest) {
     region: t.student.regionData?.region ?? "",
     country: t.student.country,
     active: isActive(t.expiryDate),
-    completedDate: formatDate(t.completedDate),
-    expiryDate: formatDate(t.expiryDate),
+    completedDate: t.completedDate.toISOString(),
+    expiryDate: t.expiryDate.toISOString(),
   }));
 
   return NextResponse.json(result);

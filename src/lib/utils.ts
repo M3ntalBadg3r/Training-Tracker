@@ -25,31 +25,27 @@ export function isActive(expiryDate: Date): boolean {
   return new Date(expiryDate) >= new Date();
 }
 
-export function formatDate(date: Date | string): string {
-  const d = new Date(date);
-  return d.toLocaleDateString("en-GB", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
-}
+// Date display formatting now lives in src/lib/date-format.ts. Server-side
+// code should call `formatDateWith` with the result of `getSystemDateFormat()`;
+// client code should call the `useDateFormat()` hook for per-user preference.
 
-export function formatDateTime(date: Date | string): string {
-  const d = new Date(date);
-  return d.toLocaleString("en-GB", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
-}
+const ISO_DATE_ONLY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
+/**
+ * Strict ISO yyyy-mm-dd parser. Used for dates submitted from the in-app
+ * date picker (which always emits ISO) and the manual training-taken API.
+ * The CSV import flow uses `parseDateWith` from lib/date-format with an
+ * explicit format hint — this function intentionally rejects everything else
+ * so that ambiguous slash dates can't slip into the DB undetected.
+ */
 export function parseDate(dateStr: string): Date | null {
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return null;
-  return d;
+  if (!ISO_DATE_ONLY_RE.test(dateStr)) return null;
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d));
+  if (date.getUTCFullYear() !== y || date.getUTCMonth() !== m - 1 || date.getUTCDate() !== d) {
+    return null;
+  }
+  return date;
 }
 
 export function trainingTypeLabel(value: string): string {

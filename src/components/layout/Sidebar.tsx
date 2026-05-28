@@ -37,6 +37,7 @@ import {
   Target,
   TrendingUp,
   Scale,
+  SlidersHorizontal,
 } from "lucide-react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useTheme } from "@/components/theme/ThemeProvider";
@@ -53,6 +54,7 @@ const adminSubItems: { href: string; label: string; icon: typeof Users; superAdm
   { href: "/admin/program-data", label: "Program Data", icon: ClipboardList, superAdminOnly: true },
   { href: "/admin/training-data", label: "Training Data", icon: BookOpen, superAdminOnly: true },
   { href: "/admin/region-data", label: "Region Data", icon: Globe, superAdminOnly: true },
+  { href: "/admin/system-settings", label: "System Settings", icon: SlidersHorizontal, superAdminOnly: true },
   { href: "/admin/cleanup", label: "Data Clean-Up", icon: Sparkles, superAdminOnly: true },
   { href: "/admin/backup", label: "Backup", icon: HardDrive, superAdminOnly: true },
   { href: "/admin/import", label: "Import", icon: Upload },
