@@ -369,6 +369,8 @@ Dates in the file are parsed strictly against the **system default date format**
 
 Rows that fail to parse against the chosen format are reported per-row with the expected format in the error message, rather than silently producing a wrong-date row.
 
+**Native Excel dates:** When importing `.xlsx`/`.xls`, cells that Excel stores as real dates (rather than text) are read by their true underlying value and converted automatically — regardless of how they happen to be displayed in the sheet (e.g. `m/d/yy`, or an unformatted serial like `46147`). These never need the format prompt because their value is unambiguous. The format detection above therefore only applies to genuine **text** date cells (and all CSV cells).
+
 ---
 
 ## Reports

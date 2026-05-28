@@ -156,3 +156,21 @@ export function toIsoDate(value: Date): string {
   const d = String(value.getDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
 }
+
+/**
+ * Decode an Excel date serial number to ISO yyyy-mm-dd. Excel stores dates as a
+ * day count from its epoch; native date cells read with `raw: true` surface as
+ * these serials. Gated to a sane modern range (~1954–2119) so an ordinary
+ * integer is never mistaken for a date. Honors the workbook's 1904 epoch flag.
+ * Returns null when out of range or invalid.
+ */
+export function excelSerialToIso(serial: number, date1904 = false): string | null {
+  if (!Number.isFinite(serial) || serial < 20000 || serial > 80000) return null;
+  const epochOffset = date1904 ? 24107 : 25569; // days from the Excel epoch to 1970-01-01
+  const d = new Date(Math.round((serial - epochOffset) * 86_400 * 1000));
+  if (!Number.isFinite(d.getTime())) return null;
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(d.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}

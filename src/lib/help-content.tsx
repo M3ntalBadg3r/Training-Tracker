@@ -349,6 +349,14 @@ const helpSections: Record<string, HelpSection> = {
           per-row with the expected format shown in the error message, rather
           than silently producing a wrong-date row.
         </p>
+        <p>
+          <strong>Native Excel dates</strong> &mdash; in <code>.xlsx</code>/
+          <code>.xls</code> files, cells that Excel stores as real dates (not
+          text) are read by their true value and converted automatically, no
+          matter how they&apos;re displayed (e.g. <code>m/d/yy</code> or a raw
+          serial like <code>46147</code>). They&apos;re unambiguous, so the
+          format prompt above only applies to genuine text dates and CSV cells.
+        </p>
 
         <h3>Theatre handling</h3>
         <p>

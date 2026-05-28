@@ -8,6 +8,7 @@ import { ImportSummary } from "@/types";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { excelSerialToIso } from "@/lib/date-format";
 
 interface DateFormatMismatch {
   assumedFormat: string;
@@ -49,6 +50,8 @@ export default function ImportPage() {
 
   const [formatMismatch, setFormatMismatch] = useState<DateFormatMismatch | null>(null);
   const [dateFormatOverride, setDateFormatOverride] = useState<string | null>(null);
+  // Excel workbooks store dates as numeric serials; this flag selects the epoch.
+  const [date1904, setDate1904] = useState(false);
 
   useEffect(() => {
     fetch("/api/companies")
@@ -88,6 +91,7 @@ export default function ImportPage() {
         try {
           const data = new Uint8Array(e.target?.result as ArrayBuffer);
           const workbook = XLSX.read(data, { type: "array" });
+          setDate1904(!!workbook.Workbook?.WBProps?.date1904);
           const sheet = workbook.Sheets[workbook.SheetNames[0]];
           // Read header row separately to capture ALL columns, even those empty in the first data rows
           const allRows = XLSX.utils.sheet_to_json<string[]>(sheet, {
@@ -99,9 +103,21 @@ export default function ImportPage() {
             return;
           }
           const hdrs = (allRows[0] || []).map((h) => String(h).trim()).filter(Boolean);
-          const jsonData = XLSX.utils.sheet_to_json<Record<string, string>>(sheet, {
-            raw: false,
+          // raw:true so native Excel date cells surface as their numeric serial
+          // (e.g. 44385) instead of a flattened display string like "7/8/21".
+          // We stringify every value here and decode date serials later, once
+          // the user has mapped the completed-date column (resolveDateCell).
+          const rawData = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
+            raw: true,
             defval: "",
+          });
+          const jsonData: Record<string, string>[] = rawData.map((r) => {
+            const out: Record<string, string> = {};
+            for (const key of Object.keys(r)) {
+              const v = r[key];
+              out[key] = v instanceof Date ? v.toISOString().slice(0, 10) : v == null ? "" : String(v);
+            }
+            return out;
           });
           setHeaders(hdrs);
           setRows(jsonData);
@@ -141,15 +157,33 @@ export default function ImportPage() {
     if (file) parseFile(file);
   };
 
+  // A bare integer in a date cell is an Excel date serial (native date cell read
+  // via raw:true) — decode it to ISO. Text dates pass through untouched for the
+  // server's format-aware parser.
+  const resolveDateCell = (raw: string): string => {
+    const v = (raw ?? "").trim();
+    if (/^\d+$/.test(v)) {
+      const iso = excelSerialToIso(Number(v), date1904);
+      if (iso) return iso;
+    }
+    return raw;
+  };
+
   const runImport = async (override: string | null) => {
     setStep("importing");
     setError(null);
     try {
+      // Decode Excel date serials in the mapped completed-date column before
+      // sending; the server then sees ISO for native dates + text for the rest.
+      const dateCol = columnMapping.completedDate;
+      const outRows = dateCol
+        ? rows.map((r) => ({ ...r, [dateCol]: resolveDateCell(r[dateCol]) }))
+        : rows;
       const res = await fetch("/api/import", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          rows,
+          rows: outRows,
           columnMapping,
           defaultCompanyId: defaultCompanyId || undefined,
           ...(override ? { dateFormatOverride: override } : {}),
@@ -241,6 +275,7 @@ export default function ImportPage() {
     setError(null);
     setFormatMismatch(null);
     setDateFormatOverride(null);
+    setDate1904(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
@@ -383,13 +418,15 @@ export default function ImportPage() {
                     <tbody>
                       {rows.slice(0, 5).map((row, idx) => (
                         <tr key={idx} className="border-b">
-                          {TARGET_FIELDS.map((f) => (
-                            <td key={f.key} className="px-3 py-2 text-gray-600">
-                              {columnMapping[f.key]
-                                ? row[columnMapping[f.key]] || "-"
-                                : "-"}
-                            </td>
-                          ))}
+                          {TARGET_FIELDS.map((f) => {
+                            const cell = columnMapping[f.key] ? row[columnMapping[f.key]] : "";
+                            const display = f.key === "completedDate" ? resolveDateCell(cell) : cell;
+                            return (
+                              <td key={f.key} className="px-3 py-2 text-gray-600">
+                                {display || "-"}
+                              </td>
+                            );
+                          })}
                         </tr>
                       ))}
                     </tbody>
