@@ -11,7 +11,8 @@ import {
   CheckCircle,
   CalendarClock,
 } from "lucide-react";
-import { formatDate, trainingTypeLabel } from "@/lib/utils";
+import { trainingTypeLabel } from "@/lib/utils";
+import { useDateFormat } from "@/components/date-format/DateFormatProvider";
 
 interface StudentIssue {
   email: string;
@@ -111,6 +112,7 @@ function HighlightedName({ fullName, issues }: { fullName: string; issues: strin
 }
 
 export default function DataCleanUpPage() {
+  const { formatDate } = useDateFormat();
   // Student data scan
   const [studentOpen, setStudentOpen] = useState(true);
   const [scanning, setScanning] = useState(false);
