@@ -339,12 +339,12 @@ Navigate to **Import** in the sidebar to bulk-import student training records fr
 ### Import Workflow
 
 1. **Upload** — Drag and drop or click to select a `.csv`, `.xls`, or `.xlsx` file.
-2. **Column Mapping** — The system auto-maps columns where possible. Manually adjust any unmatched columns. Required fields are:
+2. **Column Mapping** — The system auto-maps columns where possible, recognising common header variants (e.g. `Email`/`Email Address`, `Theatre`/`Theater`, `Completed Date`/`Completion date`/`Date Completed`, and `Cert/Training`/`Title`/`ILT Name`/`Cert`). Manually adjust any unmatched columns. The name dropdowns and preview columns adapt to the file: if it has only a **Full Name** column the First/Last fields are hidden, if it has **First Name** + **Last Name** (no full name) the Full Name field is hidden, and if it has both (or neither) all are shown. Required fields are:
    - Name — map **either** a single **Full Name** column **or** both **First Name** and **Last Name** (split names are merged into one record)
    - Email Address
    - Theatre
    - Country
-   - Training Title
+   - Cert/Training
    - Completed Date
 3. **Processing** — The system imports the data, creating students and training records as needed.
 4. **Summary** — A summary shows counts of students created/updated, trainings imported/skipped, and any errors.
@@ -733,7 +733,7 @@ Each entry specifies a requirement within a program:
 | **Training** | The specific training required (filtered by the selected Type) |
 | **Quantity Required** | For Country/Theatre: number of people needed. For Global: number of compliant theatres needed. |
 
-The page includes search, filtering by all fields, sorting, and export to CSV/Excel/PDF.
+The page includes search, filtering by all fields, sorting, and export to CSV/Excel/PDF. Requirements can also be bulk-imported via the **Import** dialog, which accepts a CSV/Excel file by drag-and-drop onto the drop zone or by clicking to browse.
 
 ---
 

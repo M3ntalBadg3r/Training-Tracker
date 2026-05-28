@@ -1370,7 +1370,15 @@ export default function ProgramDataPage() {
               </button>
               <span className="text-xs text-gray-500">CSV template with example rows</span>
             </div>
-            <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
+            <div
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault();
+                const f = e.dataTransfer.files?.[0];
+                if (f) handleImportFile(f);
+              }}
+              className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center"
+            >
               <Upload size={32} className="mx-auto mb-3 text-gray-400" />
               <p className="text-sm text-gray-600 mb-3">Drop a file here or click to browse</p>
               <label className="cursor-pointer">

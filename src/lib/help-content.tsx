@@ -293,13 +293,19 @@ const helpSections: Record<string, HelpSection> = {
           </li>
           <li>
             <strong>Column Mapping</strong> &mdash; The system auto-maps columns
-            where possible. Manually adjust any unmatched columns. Required
-            fields are: a name, Email Address, Theatre, Country, Training Title,
-            and Completed Date. For the name, map <strong>either</strong> a single{" "}
-            <strong>Full Name</strong> column <strong>or</strong> both{" "}
-            <strong>First Name</strong> and <strong>Last Name</strong> &mdash; split
-            names are merged into one record (and an explicit Full Name value wins
-            on any row that has both).
+            where possible, recognising common header variants (e.g.{" "}
+            <code>Email</code>/<code>Email Address</code>, <code>Theatre</code>/
+            <code>Theater</code>, <code>Completion date</code>/<code>Date
+            Completed</code>, and <code>ILT Name</code>/<code>Cert</code> for the{" "}
+            <strong>Cert/Training</strong> field). Manually adjust any unmatched
+            columns. Required fields are: a name, Email Address, Theatre, Country,
+            Cert/Training, and Completed Date. For the name, map{" "}
+            <strong>either</strong> a single <strong>Full Name</strong> column{" "}
+            <strong>or</strong> both <strong>First Name</strong> and{" "}
+            <strong>Last Name</strong> &mdash; split names are merged into one
+            record (and an explicit Full Name value wins on any row that has
+            both). The name dropdowns and preview columns adapt to your file:
+            whichever name style it uses is shown, and the other is hidden.
           </li>
           <li>
             <strong>Processing</strong> &mdash; The system imports the data,
