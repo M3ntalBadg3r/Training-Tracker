@@ -22,16 +22,18 @@ interface ExcelDateSwap {
 }
 
 const TARGET_FIELDS = [
-  { key: "fullName", label: "Full Name", required: false },
-  { key: "firstName", label: "First Name", required: false },
-  { key: "lastName", label: "Last Name", required: false },
-  { key: "email", label: "Email Address", required: true },
-  { key: "theatre", label: "Theatre", required: true },
-  { key: "country", label: "Country", required: true },
-  { key: "title", label: "Title", required: true },
-  { key: "completedDate", label: "Completed Date", required: true },
-  { key: "company", label: "Company", required: false },
+  { key: "fullName", label: "Full Name", required: false, aliases: ["Full Name"] },
+  { key: "firstName", label: "First Name", required: false, aliases: ["First Name"] },
+  { key: "lastName", label: "Last Name", required: false, aliases: ["Last Name"] },
+  { key: "email", label: "Email Address", required: true, aliases: ["Email Address", "Email"] },
+  { key: "theatre", label: "Theatre", required: true, aliases: ["Theatre", "Theater"] },
+  { key: "country", label: "Country", required: true, aliases: ["Country"] },
+  { key: "title", label: "Cert/Training", required: true, aliases: ["Cert/Training", "Title", "ILT Name", "Cert"] },
+  { key: "completedDate", label: "Completed Date", required: true, aliases: ["Completed Date", "Completion date", "Date Completed"] },
+  { key: "company", label: "Company", required: false, aliases: ["Company"] },
 ];
+
+type NameMode = "full" | "firstLast" | "both";
 
 interface CompanyOption { id: number; name: string }
 
@@ -62,6 +64,14 @@ export default function ImportPage() {
   const [unswapExcelDates, setUnswapExcelDates] = useState(false);
   const [swapPrompt, setSwapPrompt] = useState<ExcelDateSwap | null>(null);
   const [swapAcknowledged, setSwapAcknowledged] = useState(false);
+  // Which name columns the file appears to have; drives field/column visibility.
+  const [nameMode, setNameMode] = useState<NameMode>("both");
+
+  const visibleFields = TARGET_FIELDS.filter((f) => {
+    if (f.key === "firstName" || f.key === "lastName") return nameMode !== "full";
+    if (f.key === "fullName") return nameMode !== "firstLast";
+    return true;
+  });
 
   useEffect(() => {
     fetch("/api/companies")
@@ -144,16 +154,20 @@ export default function ImportPage() {
   };
 
   const autoMapColumns = (hdrs: string[]) => {
+    const norm = (s: string) => s.toLowerCase().replace(/[^a-z]/g, "");
     const mapping: Record<string, string> = {};
     for (const field of TARGET_FIELDS) {
-      const match = hdrs.find(
-        (h) =>
-          h.toLowerCase().replace(/[^a-z]/g, "") ===
-          field.label.toLowerCase().replace(/[^a-z]/g, "")
-      );
+      const wanted = field.aliases.map(norm);
+      const match = hdrs.find((h) => wanted.includes(norm(h)));
       if (match) mapping[field.key] = match;
     }
     setColumnMapping(mapping);
+
+    const hasFull = !!mapping.fullName;
+    const hasFirstLast = !!mapping.firstName && !!mapping.lastName;
+    if (hasFull && !hasFirstLast) setNameMode("full");
+    else if (hasFirstLast && !hasFull) setNameMode("firstLast");
+    else setNameMode("both");
   };
 
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
@@ -344,6 +358,7 @@ export default function ImportPage() {
     setUnswapExcelDates(false);
     setSwapPrompt(null);
     setSwapAcknowledged(false);
+    setNameMode("both");
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
@@ -413,7 +428,7 @@ export default function ImportPage() {
             </p>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {TARGET_FIELDS.map((field) => (
+              {visibleFields.map((field) => (
                 <div key={field.key} className="flex items-center gap-3">
                   <label className="w-40 text-sm font-medium text-gray-700">
                     {field.label}
@@ -476,7 +491,7 @@ export default function ImportPage() {
                   <table className="w-full text-xs border border-gray-200">
                     <thead>
                       <tr className="bg-gray-50">
-                        {TARGET_FIELDS.map((f) => (
+                        {visibleFields.map((f) => (
                           <th key={f.key} className="px-3 py-2 text-left border-b">
                             {f.label}
                           </th>
@@ -486,7 +501,7 @@ export default function ImportPage() {
                     <tbody>
                       {rows.slice(0, 5).map((row, idx) => (
                         <tr key={idx} className="border-b">
-                          {TARGET_FIELDS.map((f) => {
+                          {visibleFields.map((f) => {
                             const cell = columnMapping[f.key] ? row[columnMapping[f.key]] : "";
                             const display = f.key === "completedDate" ? resolveDateCell(cell, unswapExcelDates) : cell;
                             return (
