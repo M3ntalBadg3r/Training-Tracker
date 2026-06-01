@@ -35,10 +35,9 @@ src/
     training/     # Training catalog + [fullTitle] detail page
     reports/      # Index page + 10 reports: by-product-type, by-function, expiring-soon, last-12-months, trained-not-certified, coverage, comparison (theatre/region/country side-by-side matrix + chart, client-side over training-records + students), catalogue-health, program-compliance-trend, renewal-forecast
     account/      # User account page (profile, MFA setup)
-    admin/        # Admin pages (region-data, training-data, backup, import, users, companies, system-settings, cleanup, updates, scheduled-exports, program-data) and SuperAdmin-only API: api/admin/security/encrypt-secrets seals plaintext mfaSecret + ExportCredential.config rows once after ENCRYPTION_KEY is provisioned.
-    programs/     # Partner program compliance dashboards
-      aps/        # Authorized Professional Services (APS) compliance dashboard
-      global-diamond/  # Global Diamond compliance dashboard
+    admin/        # Admin pages (region-data, training-data, product-types, backup, import, users, companies, system-settings, cleanup, updates, scheduled-exports, program-data) and SuperAdmin-only API: api/admin/security/encrypt-secrets seals plaintext mfaSecret + ExportCredential.config rows once after ENCRYPTION_KEY is provisioned.
+    programs/     # Partner program compliance dashboards (data-driven)
+      [programName]/  # Single dynamic dashboard for any program in ProgramData; auto-adapts sections to the program's configured levels (Country/Region/Theatre/Global) and shows a per-theatre breakdown when a requirement has minimumPerTheatre. GET /api/programs lists programs (feeds index + sidebar); GET /api/programs/[programName] returns compliance data + a `meta` block.
     login/        # Login page
     setup/        # First-run setup wizard
     setup-mfa/    # Forced MFA enrolment page (chromeless; reached when JWT carries `pendingMfaEnrollment` claim)
@@ -52,6 +51,7 @@ src/
     date-format/  # DateFormatProvider (per-user + system date format context, useDateFormat hook)
     data-table/   # Generic DataTable (search, sort, filter, paginate) + GroupedRows (grouped tbody with subtotals + expand/collapse)
     admin/        # Admin-only widgets: ProviderCredentialWizard, CredentialHealthBanner, UpdateAvailableBanner (dashboard "update available" alert, SuperAdmin-only, session-dismissible)
+    programs/     # ProgramCompliance.tsx — shared presentational pieces for the dynamic program dashboard (ComplianceTable matrix, SpecialisationCard + per-theatre breakdown, ExportMenu, LoadingSpinner)
   hooks/          # useDebounce
   proxy.ts       # Route protection (auth + role checks). Note: in Next.js 16+ the official middleware filename is `proxy.ts` (formerly `middleware.ts`).
   lib/
@@ -67,7 +67,8 @@ src/
     olx.ts        # OLX parent-completion materialization (recomputeParentsForStudent / ForSubItem / ForMany / AllStudentsForParent)
     chart-theme.ts # useChartTheme() hook — theme-aware Recharts axis/grid/tooltip + COLORS palette
     group-by.ts    # rollUp(country, region, theatre) + groupRows() — country->region->theatre rollup with theatre fallback for null/'unknown' regions
-    program-compliance.ts # Shared compliance calculations (email-set queries, OR-logic union, per-theatre breakdown) used by APS, Global Diamond, and Program Compliance Trend
+    program-compliance.ts # Shared compliance calculations (email-set queries, OR-logic union, per-theatre breakdown) used by the dynamic program dashboard and Program Compliance Trend
+    product-types.ts # ProductType table helpers: getProductTypeNames, resolveProductTypeId (case-insensitive), getDefaultProductTypeId/ensureDefaultProductTypeId, and prepareBackupRestore (normalises backup data, incl. pre-migration enum-string archives)
     export.ts     # CSV/Excel/PDF export utilities (browser-side, triggers download)
     server-export.ts  # Server-side CSV/Excel/PDF generation (returns Buffer)
     report-queries.ts # Server-side Prisma queries for each report type
@@ -90,7 +91,8 @@ deploy/           # install.sh, update.sh, install-remote.sh, perform-update.sh,
 - **Student** — PK: `email`. Fields: fullName, theatre, country, companyId (FK → Company.id, NOT NULL). `theatre` is denormalized from `RegionData.theatre`: it's set on create/edit by looking up the country, and the student forms surface it as a read-only auto-derived field.
 - **Company** — PK: `id`. Fields: name (unique). Tenants: students, scheduled exports, and (via `UserCompany`) Admin/User access lists are all scoped per-company.
 - **UserCompany** — Composite PK: (userId, companyId). Many-to-many between non-SuperAdmin users and the companies they can see. SuperAdmins are not represented in this table; they implicitly have access to every company.
-- **TrainingData** — PK: `trainingTitle`. Fields: fullTitle (display name), trainingType, productType, function, link, certification[]. OLX parents and OLX sub-items are both stored here; the parent ↔ sub-item membership lives in `OlxSubItemRelation`. Only `Certification`, `InstructorLedTraining`, and `OLX` rows can carry certifications — sub-items have an empty array.
+- **TrainingData** — PK: `trainingTitle`. Fields: fullTitle (display name), trainingType, productTypeId (FK → ProductType.id, NOT NULL), function, link, certification[]. OLX parents and OLX sub-items are both stored here; the parent ↔ sub-item membership lives in `OlxSubItemRelation`. Only `Certification`, `InstructorLedTraining`, and `OLX` rows can carry certifications — sub-items have an empty array.
+- **ProductType** — PK: `id` (auto-increment). Fields: name (unique). Admin-managed list (replaced the old `ProductType` enum) of product categories assigned to training data. Referenced by TrainingData via `productTypeId` with `ON DELETE RESTRICT` (a type in use can't be deleted). Managed at `/admin/product-types`; resolve/list helpers live in `lib/product-types.ts`.
 - **TrainingTaken** — FK: email → Student, trainingTitle → TrainingData. Fields: completedDate, expiryDate (auto: +2 years). When a student completes every sub-item of an OLX parent, the system materialises a `TrainingTaken` row on the parent with `completedDate` = the latest sub-item date and `expiryDate` = +2 years; this row is removed if the student later loses any sub-item completion. A "single-item OLX" is just an OLX parent with no sub-items — it's treated as a normal training row.
 - **OlxSubItemRelation** — Composite PK: (parentTrainingTitle, subItemTrainingTitle). Many-to-many between an OLX parent and its sub-items (a sub-item may belong to multiple parents). Cascade deletes from either side.
 - **RegionData** — PK: `country`. Fields: region, theatre (nullable). Theatre is the source of truth for a country's theatre — student add/edit forms only show countries with a populated theatre, and student imports flag (and override) any row whose theatre disagrees.
@@ -99,13 +101,13 @@ deploy/           # install.sh, update.sh, install-remote.sh, perform-update.sh,
 - **ScheduledExport** — PK: `id`. Fields: name, companyId (FK → Company.id, NOT NULL — the export only includes data for this company), reportType, format, destination, config (JSON), enabled, frequency, time, dayOfWeek?, dayOfMonth?, lastRunAt?, lastStatus?, lastError?.
 - **ExportCredential** — PK: `id`, unique: `provider`. Fields: provider, config (JSON), lastCheckedAt?, lastCheckStatus? (`"ok"` | `"expired"` | `"failed"`), lastCheckError?, lastSuccessAt?. Stores SMTP/OAuth credentials per delivery provider; the health columns drive the dashboard banner and per-card status badge. Cloud providers (`google-drive`, `box`, `onedrive`) all use OAuth refresh-token flows captured by the wizard at `/admin/scheduled-exports`; OneDrive is delegated (uploads to the connecting user's `/me/drive`).
 - **Specialisation** — PK: `id` (auto-increment). Fields: name (unique). Admin-managed list of product specialisations for partner programs.
-- **ProgramData** — PK: `id` (auto-increment). FK: specialisationId → Specialisation, trainingTitle → TrainingData. Fields: programName, level (ProgramLevel enum), trainingType?, trainingTitle?, quantityRequired, minimumPerTheatre?. Training fields are nullable (null = "count compliant theatres" mode for APS-style Global entries). minimumPerTheatre is used by Global Diamond for per-theatre minimum enforcement. Has many ProgramDataAlternative (OR logic alternatives).
+- **ProgramData** — PK: `id` (auto-increment). FK: specialisationId → Specialisation, trainingTitle → TrainingData. Fields: programName, level (ProgramLevel enum), trainingType?, trainingTitle?, quantityRequired, minimumPerTheatre?. Training fields are nullable (null = "count compliant theatres" mode for Global entries). minimumPerTheatre drives the per-theatre minimum enforcement and the per-theatre breakdown UI. Each distinct `programName` automatically surfaces as a dashboard at `/programs/[programName]`. Has many ProgramDataAlternative (OR logic alternatives).
 - **ProgramDataAlternative** — PK: `id` (auto-increment). FK: programDataId → ProgramData (cascade delete), trainingTitle → TrainingData (cascade delete). Fields: trainingType, trainingTitle. Stores alternative trainings that also satisfy a ProgramData requirement (OR logic). Students with any alternative training count toward the requirement's quantity.
 
 ### Enums
 - **TrainingType**: `Certification`, `Accreditation`, `InstructorLedTraining`, `OLX`, `OLXSubItem`
-- **ProductType**: `Cortex`, `SASE`, `Cloud`, `Strata`, `Foundation`
 - **FunctionType**: `Sales`, `PreSales`, `Deployments`
+- (Product types are no longer an enum — see the `ProductType` model above.)
 - **Role**: `SuperAdmin` (full access, can manage companies/users/system), `Admin` (scoped to assigned companies; can edit data within scope but cannot manage users/companies/region-data/training-data/backup/cleanup/updates), `User` (read-only, scoped to assigned companies)
 - **ProgramLevel**: `Country`, `Theatre`, `Global`
 
@@ -127,10 +129,10 @@ deploy/           # install.sh, update.sh, install-remote.sh, perform-update.sh,
 - Cron endpoints (auto-backup, scheduled-exports) authenticate via HMAC-SHA256 signatures using `CRON_SECRET` env var (`lib/cron-auth.ts`).
 - Security headers (HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy, Content-Security-Policy) are set in `next.config.ts`. CSP uses `script-src 'self' 'unsafe-inline'` because Next.js 16 App Router emits inline hydration scripts and loads chunks via non-nonced `<script src="/_next/static/...">` tags on statically-rendered pages. Stricter nonce/strict-dynamic CSP is tracked as future work — see audit plan; would require force-dynamic rendering and per-page nonce wiring.
 - Secrets at rest: `User.mfaSecret` and `ExportCredential.config` are sealed with AES-256-GCM via `lib/crypto.ts` (envelope format `enc:v1:<base64>`). `ENCRYPTION_KEY` (64 hex chars) is required. After provisioning the key, a SuperAdmin POSTs `/api/admin/security/encrypt-secrets` once to seal any pre-existing plaintext rows; the endpoint is idempotent.
-- Backup archives are encrypted at rest when `ENCRYPTION_KEY` is configured: `generateBackupArchive()` wraps the JSZip output with `encryptBuffer()` from `lib/crypto.ts` (4-byte magic `TT01` + IV + GCM tag + ciphertext) and the file is saved as `*.zip.enc`. `loadBackupArchive()` detects the magic and decrypts before handing bytes to JSZip, so older `*.zip` archives still restore. Backups already exclude `passwordHash` and `mfaSecret`; the encryption protects the remaining PII (Students, TrainingTaken, Companies).
+- Backup archives are encrypted at rest when `ENCRYPTION_KEY` is configured: `generateBackupArchive()` wraps the JSZip output with `encryptBuffer()` from `lib/crypto.ts` (4-byte magic `TT01` + IV + GCM tag + ciphertext) and the file is saved as `*.zip.enc`. `loadBackupArchive()` detects the magic and decrypts before handing bytes to JSZip, so older `*.zip` archives still restore. Backups already exclude `passwordHash` and `mfaSecret`; the encryption protects the remaining PII (Students, TrainingTaken, Companies). The archive also includes `product_types.json` (restored before `training_data` so the `productTypeId` FK resolves); `lib/product-types.ts:prepareBackupRestore` reconstructs product types from older pre-migration archives that stored a `productType` enum string.
 - Step-up auth: an Admin/SuperAdmin disabling another user's MFA (`/api/auth/mfa/disable`) or resetting another user's password (`/api/admin/users/[id]/reset-password` — SuperAdmin-only) must re-authenticate with their own password and, if MFA is enabled on their account, a current TOTP code.
 - OAuth redirect URI: built from `APP_BASE_URL` when set, otherwise from request headers. Configure `APP_BASE_URL` in production so the URI is not influenced by `X-Forwarded-Host`.
-- All admin paths in `proxy.ts`'s `SUPER_ADMIN_PREFIXES` (users, companies, region/training/program data, system-settings, specialisations, backup, cleanup, updates, wipe, security) also enforce SuperAdmin in their handlers via `requireSuperAdmin` for defense-in-depth.
+- All admin paths in `proxy.ts`'s `SUPER_ADMIN_PREFIXES` (users, companies, region/training/program data, product-types, system-settings, specialisations, backup, cleanup, updates, wipe, security) also enforce SuperAdmin in their handlers via `requireSuperAdmin` for defense-in-depth.
 
 ## Coding Conventions
 

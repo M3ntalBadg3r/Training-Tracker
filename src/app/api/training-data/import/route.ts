@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { TrainingType, ProductType, FunctionType } from "@prisma/client";
+import { TrainingType, FunctionType } from "@prisma/client";
 import { requireAuth, handleAuthError, requireSuperAdmin } from "@/lib/auth";
 import { recomputeAllStudentsForParent } from "@/lib/olx";
 
 const VALID_TRAINING_TYPES = new Set(Object.values(TrainingType));
-const VALID_PRODUCT_TYPES = new Set(Object.values(ProductType));
 const VALID_FUNCTION_TYPES = new Set(Object.values(FunctionType));
 
 // Maps for human-readable labels → enum values
@@ -25,14 +24,6 @@ const TRAINING_TYPE_MAP: Record<string, TrainingType> = {
   olxsubitem: TrainingType.OLXSubItem,
 };
 
-const PRODUCT_TYPE_MAP: Record<string, ProductType> = {
-  cortex: ProductType.Cortex,
-  sase: ProductType.SASE,
-  cloud: ProductType.Cloud,
-  strata: ProductType.Strata,
-  foundation: ProductType.Foundation,
-};
-
 const FUNCTION_TYPE_MAP: Record<string, FunctionType> = {
   sales: FunctionType.Sales,
   "pre-sales": FunctionType.PreSales,
@@ -46,13 +37,6 @@ function parseTrainingType(val: string | undefined): TrainingType | null {
   const trimmed = val.trim();
   if (VALID_TRAINING_TYPES.has(trimmed as TrainingType)) return trimmed as TrainingType;
   return TRAINING_TYPE_MAP[trimmed.toLowerCase()] ?? null;
-}
-
-function parseProductType(val: string | undefined): ProductType | null {
-  if (!val) return null;
-  const trimmed = val.trim();
-  if (VALID_PRODUCT_TYPES.has(trimmed as ProductType)) return trimmed as ProductType;
-  return PRODUCT_TYPE_MAP[trimmed.toLowerCase()] ?? null;
 }
 
 function parseFunctionType(val: string | undefined): FunctionType | null {
@@ -114,9 +98,27 @@ export async function POST(request: NextRequest) {
   const parentLinks: { subItem: string; parent: string }[] = [];
   const affectedParents = new Set<string>();
 
+  // Product types are an admin-managed table; load them once and resolve names
+  // (case-insensitive) to ids. Unknown values are reported per-row rather than
+  // silently coerced.
+  const productTypeRows = await prisma.productType.findMany({
+    select: { id: true, name: true },
+    orderBy: { name: "asc" },
+  });
+  const productTypeByName = new Map<string, number>(
+    productTypeRows.map((pt: { id: number; name: string }) => [pt.name.toLowerCase(), pt.id])
+  );
+  const parseProductTypeId = (val: string | undefined): number | null => {
+    if (!val) return null;
+    return productTypeByName.get(val.trim().toLowerCase()) ?? null;
+  };
+
   // Parse default values
   const defaultTrainingType = parseTrainingType(defaults?.trainingType) ?? TrainingType.Certification;
-  const defaultProductType = parseProductType(defaults?.productType) ?? ProductType.Cortex;
+  // Default product type: the import-level default if resolvable, else the
+  // alphabetically-first configured product type. May be null if none exist.
+  const defaultProductTypeId =
+    parseProductTypeId(defaults?.productType) ?? productTypeRows[0]?.id ?? null;
   const defaultFunctionType = parseFunctionType(defaults?.function) ?? FunctionType.Sales;
 
   for (let i = 0; i < rows.length; i++) {
@@ -143,8 +145,26 @@ export async function POST(request: NextRequest) {
     const rawFunction = columnMapping.function ? row[columnMapping.function]?.trim() : undefined;
 
     let trainingType = parseTrainingType(rawTrainingType) ?? defaultTrainingType;
-    const productType = parseProductType(rawProductType) ?? defaultProductType;
     const functionType = parseFunctionType(rawFunction) ?? defaultFunctionType;
+
+    // Resolve product type: an explicit (but unknown) cell is an error; an
+    // empty cell falls back to the default. No default at all is an error.
+    let productTypeId: number;
+    if (rawProductType) {
+      const resolved = parseProductTypeId(rawProductType);
+      if (resolved === null) {
+        errors.push(`Row ${rowNum}: Unknown product type "${rawProductType}" for "${trainingTitle}"`);
+        skipped++;
+        continue;
+      }
+      productTypeId = resolved;
+    } else if (defaultProductTypeId !== null) {
+      productTypeId = defaultProductTypeId;
+    } else {
+      errors.push(`Row ${rowNum}: No product type for "${trainingTitle}" and no product types are configured`);
+      skipped++;
+      continue;
+    }
 
     // OLX sub-item parents: comma-separated list. Presence forces type to OLXSubItem.
     const rawParents = columnMapping.parentTrainingTitle
@@ -174,7 +194,7 @@ export async function POST(request: NextRequest) {
         const changed =
           existing.fullTitle !== fullTitle ||
           existing.trainingType !== trainingType ||
-          existing.productType !== productType ||
+          existing.productTypeId !== productTypeId ||
           existing.function !== functionType ||
           existing.link !== link ||
           JSON.stringify(existing.certification) !== JSON.stringify(certification);
@@ -182,7 +202,7 @@ export async function POST(request: NextRequest) {
         if (changed) {
           await prisma.trainingData.update({
             where: { trainingTitle },
-            data: { fullTitle, trainingType, productType, function: functionType, link, certification },
+            data: { fullTitle, trainingType, productTypeId, function: functionType, link, certification },
           });
           updated++;
         } else {
@@ -194,7 +214,7 @@ export async function POST(request: NextRequest) {
             trainingTitle,
             fullTitle,
             trainingType,
-            productType,
+            productTypeId,
             function: functionType,
             link,
             certification,

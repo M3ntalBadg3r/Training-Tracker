@@ -9,7 +9,7 @@ type TrainingRecord = {
   expiryDate: Date;
   trainingData: {
     trainingType: string;
-    productType: string;
+    productType: { name: string };
     function: string;
     fullTitle: string;
   };
@@ -28,16 +28,15 @@ function computeChartData(allTrainingTaken: TrainingRecord[]) {
   const now = new Date();
 
   // --- Breakdown by Product Type ---
-  const productTypes = ["Cortex", "SASE", "Cloud", "Strata", "Foundation"];
+  // Product types are an admin-managed list, so derive the buckets from the
+  // data rather than a fixed set.
   const byProductType: Record<string, { Certification: number; Accreditation: number; "Instructor-Led Training": number; OLX: number }> = {};
-  for (const pt of productTypes) {
-    byProductType[pt] = { Certification: 0, Accreditation: 0, "Instructor-Led Training": 0, OLX: 0 };
-  }
   for (const tt of allTrainingTaken) {
-    const pt = tt.trainingData.productType;
-    if (byProductType[pt]) {
-      byProductType[pt][getTypeLabel(tt.trainingData.trainingType)]++;
+    const pt = tt.trainingData.productType.name;
+    if (!byProductType[pt]) {
+      byProductType[pt] = { Certification: 0, Accreditation: 0, "Instructor-Led Training": 0, OLX: 0 };
     }
+    byProductType[pt][getTypeLabel(tt.trainingData.trainingType)]++;
   }
 
   // --- Breakdown by Function ---
@@ -104,7 +103,9 @@ function computeChartData(allTrainingTaken: TrainingRecord[]) {
   }
 
   return {
-    byProductType: productTypes.map((pt) => ({ name: pt, ...byProductType[pt] })),
+    byProductType: Object.entries(byProductType)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([name, counts]) => ({ name, ...counts })),
     byFunction: Object.entries(byFunction).map(([name, counts]) => ({ name, ...counts })),
     expiring: Object.entries(expiryBuckets).map(([name, counts]) => ({ name, ...counts })),
     monthlyAchieved,
@@ -158,7 +159,7 @@ export async function GET(request: NextRequest) {
   const totalStudents = await prisma.student.count({ where: studentWhere });
 
   const rawTrainingTaken = await prisma.trainingTaken.findMany({
-    include: { trainingData: true },
+    include: { trainingData: { include: { productType: { select: { name: true } } } } },
     where: {
       // Sub-items roll up into the parent OLX. Exclude them from dashboard
       // counts to avoid double-counting.

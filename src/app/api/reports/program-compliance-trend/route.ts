@@ -17,9 +17,9 @@ import {
  * requirement plus an aggregate compliance ratio for the specialisation
  * (sum of attained, capped at sum of required).
  *
- * For tractability we evaluate at the Global level for both APS Global and
- * Global Diamond — the full country/theatre breakdown would be expensive over
- * 12 snapshots and isn't typically asked of trend reports.
+ * For tractability we evaluate at the Global level for each program — the full
+ * country/theatre breakdown would be expensive over 12 snapshots and isn't
+ * typically asked of trend reports.
  */
 export async function GET(request: NextRequest) {
   let auth;

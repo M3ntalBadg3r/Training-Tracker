@@ -24,7 +24,6 @@ import * as XLSX from "xlsx";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 
 const TRAINING_TYPES = ["Certification", "Accreditation", "InstructorLedTraining", "OLX", "OLXSubItem"];
-const PRODUCT_TYPES = ["Cortex", "SASE", "Cloud", "Strata", "Foundation"];
 const FUNCTION_TYPES = ["Sales", "PreSales", "Deployments"];
 
 const TRAINING_TYPE_LABELS: Record<string, string> = {
@@ -58,14 +57,6 @@ const TRAINING_TYPE_ALIASES: Record<string, string> = {
   olxsubitem: "OLXSubItem",
 };
 
-const PRODUCT_TYPE_ALIASES: Record<string, string> = {
-  cortex: "Cortex",
-  sase: "SASE",
-  cloud: "Cloud",
-  strata: "Strata",
-  foundation: "Foundation",
-};
-
 const FUNCTION_TYPE_ALIASES: Record<string, string> = {
   sales: "Sales",
   "pre-sales": "PreSales",
@@ -77,11 +68,6 @@ const FUNCTION_TYPE_ALIASES: Record<string, string> = {
 function resolveTrainingType(val: string): string | null {
   if (TRAINING_TYPES.includes(val)) return val;
   return TRAINING_TYPE_ALIASES[val.toLowerCase()] ?? null;
-}
-
-function resolveProductType(val: string): string | null {
-  if (PRODUCT_TYPES.includes(val)) return val;
-  return PRODUCT_TYPE_ALIASES[val.toLowerCase()] ?? null;
 }
 
 function resolveFunctionType(val: string): string | null {
@@ -118,12 +104,14 @@ interface UnrecognizedValue {
 
 export default function TrainingDataPage() {
   const [trainingList, setTrainingList] = useState<TrainingDataRow[]>([]);
+  // Product types are an admin-managed list, fetched at mount.
+  const [productTypes, setProductTypes] = useState<string[]>([]);
   const [showAddTraining, setShowAddTraining] = useState(false);
   const [newTraining, setNewTraining] = useState({
     trainingTitle: "",
     fullTitle: "",
     trainingType: "Certification",
-    productType: "Cortex",
+    productType: "",
     function: "Sales",
     link: "",
     certification: [] as string[],
@@ -131,6 +119,13 @@ export default function TrainingDataPage() {
     parents: [] as string[],
   });
   const [loading, setLoading] = useState(true);
+
+  // Case-insensitive resolution of a raw product-type cell against the
+  // configured list. Returns the canonical name or null when unknown.
+  const resolveProductType = (val: string): string | null => {
+    const match = productTypes.find((p) => p.toLowerCase() === val.trim().toLowerCase());
+    return match ?? null;
+  };
   const [lastImport, setLastImport] = useState<string | null>(null);
   const [showExportMenu, setShowExportMenu] = useState(false);
 
@@ -148,10 +143,10 @@ export default function TrainingDataPage() {
     { key: "trainingTitle", header: "Training Title", filterable: true },
     { key: "trainingType", header: "Type", filterable: true, filterOptions: TRAINING_TYPES, labelMap: TRAINING_TYPE_LABELS },
     { key: "link", header: "Link", filterable: false },
-    { key: "productType", header: "Product", filterable: true, filterOptions: PRODUCT_TYPES },
+    { key: "productType", header: "Product", filterable: true, filterOptions: productTypes },
     { key: "function", header: "Function", filterable: true, filterOptions: FUNCTION_TYPES, labelMap: FUNCTION_TYPE_LABELS },
     { key: "certification", header: "Certification", filterable: true },
-  ], []);
+  ], [productTypes]);
 
   const getCellValue = (row: TrainingDataRow, key: string): string => {
     if (key === "certification") return row.certification?.join(", ") || "";
@@ -286,7 +281,7 @@ export default function TrainingDataPage() {
   const [columnMapping, setColumnMapping] = useState<Record<string, string>>({});
   const [defaults, setDefaults] = useState({
     trainingType: "Certification",
-    productType: "Cortex",
+    productType: "",
     function: "Sales",
   });
   const [importSummary, setImportSummary] = useState<ImportSummary | null>(null);
@@ -354,6 +349,7 @@ export default function TrainingDataPage() {
   useEffect(() => {
     fetchRawTrainingData();
     fetchLastImport();
+    fetchProductTypes();
   }, []);
 
   const fetchRawTrainingData = async () => {
@@ -363,6 +359,19 @@ export default function TrainingDataPage() {
       setTrainingList(data);
     }
     setLoading(false);
+  };
+
+  const fetchProductTypes = async () => {
+    const res = await fetch("/api/admin/product-types");
+    if (res.ok) {
+      const data: { name: string }[] = await res.json();
+      const names = data.map((p) => p.name);
+      setProductTypes(names);
+      if (names.length > 0) {
+        setNewTraining((prev) => (prev.productType ? prev : { ...prev, productType: names[0] }));
+        setDefaults((prev) => (prev.productType ? prev : { ...prev, productType: names[0] }));
+      }
+    }
   };
 
   const handleAddTraining = async () => {
@@ -378,7 +387,7 @@ export default function TrainingDataPage() {
         trainingTitle: "",
         fullTitle: "",
         trainingType: "Certification",
-        productType: "Cortex",
+        productType: productTypes[0] ?? "",
         function: "Sales",
         link: "",
         certification: [],
@@ -536,7 +545,7 @@ export default function TrainingDataPage() {
       }
       for (const [val, count] of counts) {
         if (!resolveProductType(val)) {
-          ptUnresolved.push({ value: val, count, mappedTo: PRODUCT_TYPES[0] });
+          ptUnresolved.push({ value: val, count, mappedTo: productTypes[0] ?? "" });
         }
       }
     }
@@ -646,7 +655,7 @@ export default function TrainingDataPage() {
     setHeaders([]);
     setRows([]);
     setColumnMapping({});
-    setDefaults({ trainingType: "Certification", productType: "Cortex", function: "Sales" });
+    setDefaults({ trainingType: "Certification", productType: productTypes[0] ?? "", function: "Sales" });
     setImportSummary(null);
     setImportError(null);
     setUnresolvedTrainingTypes([]);
@@ -781,7 +790,8 @@ export default function TrainingDataPage() {
           <div className="flex justify-end mb-3">
             <button
               onClick={() => {
-                const csv = "Training Title,Full Title,Training Type,Product Type,Function,Link,Certification,Parent Training Title\nMY-CERT-001,My Certification Name,Certification,Cortex,Sales,,,\nMY-OLX-PARENT,My OLX Course,OLX,Cortex,Sales,,My Cert,\nMY-OLX-SUB-1,Sub-Item 1,OLX Sub-Item,Cortex,Sales,,,MY-OLX-PARENT";
+                const pt = productTypes[0] ?? "Product Type";
+                const csv = `Training Title,Full Title,Training Type,Product Type,Function,Link,Certification,Parent Training Title\nMY-CERT-001,My Certification Name,Certification,${pt},Sales,,,\nMY-OLX-PARENT,My OLX Course,OLX,${pt},Sales,,My Cert,\nMY-OLX-SUB-1,Sub-Item 1,OLX Sub-Item,${pt},Sales,,,MY-OLX-PARENT`;
                 const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
                 const a = document.createElement("a");
                 a.href = url;
@@ -921,7 +931,7 @@ export default function TrainingDataPage() {
                             }
                             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
                           >
-                            {PRODUCT_TYPES.map((t) => (
+                            {productTypes.map((t) => (
                               <option key={t} value={t}>
                                 {t}
                               </option>
@@ -1102,7 +1112,7 @@ export default function TrainingDataPage() {
                                   }
                                   className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
                                 >
-                                  {PRODUCT_TYPES.map((t) => (
+                                  {productTypes.map((t) => (
                                     <option key={t} value={t}>
                                       {t}
                                     </option>
@@ -1352,7 +1362,7 @@ export default function TrainingDataPage() {
                           <select value={editValues.productType}
                             onChange={(e) => setEditValues((prev) => ({ ...prev, productType: e.target.value }))}
                             className="border border-gray-300 rounded px-2 py-1 text-sm">
-                            {PRODUCT_TYPES.map((pt) => <option key={pt} value={pt}>{pt}</option>)}
+                            {productTypes.map((pt) => <option key={pt} value={pt}>{pt}</option>)}
                           </select>
                         ) : t.productType}
                       </td>
@@ -1556,7 +1566,7 @@ export default function TrainingDataPage() {
                           onChange={(e) => setEditValues((prev) => ({ ...prev, productType: e.target.value }))}
                           className="border border-gray-300 rounded px-2 py-1 text-sm"
                         >
-                          {PRODUCT_TYPES.map((pt) => (
+                          {productTypes.map((pt) => (
                             <option key={pt} value={pt}>{pt}</option>
                           ))}
                         </select>
@@ -1855,7 +1865,7 @@ export default function TrainingDataPage() {
               }
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
             >
-              {PRODUCT_TYPES.map((t) => (
+              {productTypes.map((t) => (
                 <option key={t} value={t}>
                   {t}
                 </option>

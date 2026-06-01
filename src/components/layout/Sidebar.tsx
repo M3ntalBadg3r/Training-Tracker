@@ -26,8 +26,7 @@ import {
   CalendarClock,
   ClipboardList,
   ShieldCheck,
-  Award,
-  Gem,
+  Tag,
   BarChart2,
   Briefcase,
   Clock,
@@ -53,6 +52,7 @@ const adminSubItems: { href: string; label: string; icon: typeof Users; superAdm
   { href: "/admin/companies", label: "Companies", icon: Building2, superAdminOnly: true },
   { href: "/admin/program-data", label: "Program Data", icon: ClipboardList, superAdminOnly: true },
   { href: "/admin/training-data", label: "Training Data", icon: BookOpen, superAdminOnly: true },
+  { href: "/admin/product-types", label: "Product Types", icon: Tag, superAdminOnly: true },
   { href: "/admin/region-data", label: "Region Data", icon: Globe, superAdminOnly: true },
   { href: "/admin/system-settings", label: "System Settings", icon: SlidersHorizontal, superAdminOnly: true },
   { href: "/admin/cleanup", label: "Data Clean-Up", icon: Sparkles, superAdminOnly: true },
@@ -60,11 +60,6 @@ const adminSubItems: { href: string; label: string; icon: typeof Users; superAdm
   { href: "/admin/import", label: "Import", icon: Upload },
   { href: "/admin/scheduled-exports", label: "Export", icon: CalendarClock },
   { href: "/admin/updates", label: "Updates", icon: RefreshCw, superAdminOnly: true },
-];
-
-const programSubItems = [
-  { href: "/programs/aps", label: "APS", icon: Award },
-  { href: "/programs/global-diamond", label: "Global Diamond", icon: Gem },
 ];
 
 const reportSubItems = [
@@ -89,6 +84,22 @@ export default function Sidebar() {
   const [adminOpen, setAdminOpen] = useState(false);
   const [programsOpen, setProgramsOpen] = useState(false);
   const [reportsOpen, setReportsOpen] = useState(false);
+  // Programs submenu is data-driven — one entry per configured program.
+  const [programSubItems, setProgramSubItems] = useState<{ href: string; label: string }[]>([]);
+
+  useEffect(() => {
+    fetch("/api/programs")
+      .then((r) => r.json())
+      .then((d: { programs?: { name: string }[] }) => {
+        setProgramSubItems(
+          (d.programs || []).map((p) => ({
+            href: `/programs/${encodeURIComponent(p.name)}`,
+            label: p.name,
+          }))
+        );
+      })
+      .catch(() => {});
+  }, []);
 
   const isAdminActive = pathname.startsWith("/admin");
   const isProgramsActive = pathname.startsWith("/programs");
@@ -209,7 +220,6 @@ export default function Sidebar() {
                   </Link>
                   {programSubItems.map((item) => {
                     const isActive = pathname === item.href;
-                    const Icon = item.icon;
                     return (
                       <Link
                         key={item.href}
@@ -220,7 +230,7 @@ export default function Sidebar() {
                             : "text-slate-400 hover:text-white hover:bg-slate-800"
                         }`}
                       >
-                        <Icon size={16} className="shrink-0" />
+                        <ShieldCheck size={16} className="shrink-0" />
                         <span>{item.label}</span>
                       </Link>
                     );

@@ -24,6 +24,7 @@ export async function GET(request: NextRequest) {
       trainingType: { in: ["InstructorLedTraining", "OLX"] },
       certification: { isEmpty: false },
     },
+    include: { productType: { select: { name: true } } },
   });
 
   if (iltWithCert.length === 0) {
@@ -110,7 +111,7 @@ export async function GET(request: NextRequest) {
     });
 
     const iltFull = ilt.fullTitle;
-    const iltProduct = ilt.productType;
+    const iltProduct = ilt.productType.name;
     const certFull = ilt.certification.map((c: string) => certFullTitleMap.get(c) || c).join(" or ");
 
     for (const student of students) {

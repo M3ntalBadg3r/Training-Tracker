@@ -30,6 +30,7 @@ export async function GET(
         include: {
           trainingData: {
             include: {
+              productType: { select: { name: true } },
               parentMemberships: { select: { parentTrainingTitle: true } },
               subItemMemberships: { select: { subItemTrainingTitle: true } },
             },
@@ -89,7 +90,7 @@ export async function GET(
         fullTitle: t.trainingData.fullTitle,
         link: t.trainingData.link,
         trainingType: trainingTypeLabel(t.trainingData.trainingType),
-        productType: t.trainingData.productType,
+        productType: t.trainingData.productType.name,
         function: functionTypeLabel(t.trainingData.function),
         completedDate: t.completedDate.toISOString(),
         expiryDate: t.expiryDate.toISOString(),

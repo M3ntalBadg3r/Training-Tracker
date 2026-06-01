@@ -114,62 +114,6 @@ export interface ProgramDataRow {
   alternatives: ProgramDataAlternativeRow[];
 }
 
-export interface APSRequirement {
-  trainingType: string;
-  trainingTitle: string;
-  trainingFullTitle: string;
-  quantityRequired: number;
-  level: string;
-  alternatives: ProgramDataAlternativeRow[];
-}
-
-export interface APSSpecialisation {
-  name: string;
-  requirements: APSRequirement[];
-}
-
-export interface APSAttainedEntry {
-  trainingTitle: string;
-  count: number;
-  students: { fullName: string; email: string; country: string; completedDate: string; expiryDate: string }[];
-}
-
-export interface APSReportData {
-  specialisations: APSSpecialisation[];
-  countryAttained: Record<string, APSAttainedEntry[]>;
-  theatreAttained: Record<string, APSAttainedEntry[]>;
-  globalCompliance: Record<string, number>;
-  countries: string[];
-  theatres: string[];
-}
-
-export interface GlobalDiamondTheatreBreakdown {
-  theatre: string;
-  count: number;
-  compliant: boolean;
-}
-
-export interface GlobalDiamondRequirement {
-  trainingType: string | null;
-  trainingTitle: string | null;
-  trainingFullTitle: string;
-  quantityRequired: number;
-  globalAttained: number;
-  minimumPerTheatre: number | null;
-  theatreBreakdown: GlobalDiamondTheatreBreakdown[] | null;
-  compliant: boolean;
-  alternatives: ProgramDataAlternativeRow[];
-}
-
-export interface GlobalDiamondSpecialisation {
-  name: string;
-  compliant: boolean;
-  requirements: GlobalDiamondRequirement[];
-}
-
-export interface GlobalDiamondReportData {
-  specialisations: GlobalDiamondSpecialisation[];
-}
 
 export interface ColumnDef<T> {
   key: string;

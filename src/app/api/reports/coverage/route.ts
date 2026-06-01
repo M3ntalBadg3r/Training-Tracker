@@ -60,7 +60,7 @@ export async function GET(request: NextRequest) {
     },
     select: {
       email: true,
-      trainingData: { select: { productType: true, trainingType: true } },
+      trainingData: { select: { productType: { select: { name: true } }, trainingType: true } },
     },
   });
 
@@ -76,7 +76,7 @@ export async function GET(request: NextRequest) {
   for (const t of activeTrainings) {
     const bucket = emailToBucket.get(t.email);
     if (!bucket) continue;
-    const product = t.trainingData.productType;
+    const product = t.trainingData.productType.name;
     const type = TYPE_LABELS[t.trainingData.trainingType] ?? t.trainingData.trainingType;
     let byProduct = cube.get(bucket);
     if (!byProduct) { byProduct = new Map(); cube.set(bucket, byProduct); }
