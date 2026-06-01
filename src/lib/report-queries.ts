@@ -236,39 +236,40 @@ export async function fetchTrainedNotCertified(companyId?: number | null): Promi
 
     const iltEmails = Array.from(iltByEmail.keys());
 
-    for (const certTitle of ilt.certification) {
-      const certStudents = await prisma.trainingTaken.findMany({
-        where: { trainingTitle: certTitle, email: { in: iltEmails } },
-        select: { email: true },
-        distinct: ["email"],
+    // Certifications mapped to a training are alternatives (OR): a student is
+    // only "not certified" if they hold NONE of them. Find students holding ANY
+    // mapped cert and flag the rest.
+    const certStudents = await prisma.trainingTaken.findMany({
+      where: { trainingTitle: { in: ilt.certification }, email: { in: iltEmails } },
+      select: { email: true },
+      distinct: ["email"],
+    });
+
+    const certifiedEmails = new Set(certStudents.map((s: typeof certStudents[number]) => s.email));
+    const uncertifiedEmails = iltEmails.filter((e) => !certifiedEmails.has(e));
+    if (uncertifiedEmails.length === 0) continue;
+
+    const students = await prisma.student.findMany({
+      where: { email: { in: uncertifiedEmails } },
+      include: { regionData: true },
+    });
+
+    const certFull = ilt.certification.map((c: string) => certFullTitleMap.get(c) ?? c).join(" or ");
+
+    for (const student of students) {
+      const iltRecord = iltByEmail.get(student.email)!;
+      results.push({
+        fullName: student.fullName,
+        email: student.email,
+        theatre: student.theatre,
+        region: student.regionData?.region ?? "",
+        country: student.country,
+        iltFullTitle: ilt.fullTitle,
+        iltProductType: ilt.productType,
+        certificationFullTitle: certFull,
+        iltCompletedDate: iltRecord.completedDate.toISOString().split("T")[0],
+        iltActive: iltRecord.expiryDate > now ? "Yes" : "No",
       });
-
-      const certifiedEmails = new Set(certStudents.map((s: typeof certStudents[number]) => s.email));
-      const uncertifiedEmails = iltEmails.filter((e) => !certifiedEmails.has(e));
-      if (uncertifiedEmails.length === 0) continue;
-
-      const students = await prisma.student.findMany({
-        where: { email: { in: uncertifiedEmails } },
-        include: { regionData: true },
-      });
-
-      const certFull = certFullTitleMap.get(certTitle) ?? certTitle;
-
-      for (const student of students) {
-        const iltRecord = iltByEmail.get(student.email)!;
-        results.push({
-          fullName: student.fullName,
-          email: student.email,
-          theatre: student.theatre,
-          region: student.regionData?.region ?? "",
-          country: student.country,
-          iltFullTitle: ilt.fullTitle,
-          iltProductType: ilt.productType,
-          certificationFullTitle: certFull,
-          iltCompletedDate: iltRecord.completedDate.toISOString().split("T")[0],
-          iltActive: iltRecord.expiryDate > now ? "Yes" : "No",
-        });
-      }
     }
   }
 
