@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { TrainingType, ProductType, FunctionType } from "@prisma/client";
+import { TrainingType, FunctionType } from "@prisma/client";
 import { requireAuth, handleAuthError, requireSuperAdmin } from "@/lib/auth";
 import { getAuthorizedCompanyIds, resolveCompanyFilter } from "@/lib/company-scope";
 import { recomputeAllStudentsForParent } from "@/lib/olx";
+import { resolveProductTypeId } from "@/lib/product-types";
 
 export async function GET(request: NextRequest) {
   let auth;
@@ -35,6 +36,7 @@ export async function GET(request: NextRequest) {
     // under their parent OLX on the parent's detail page.
     where: { trainingType: { not: "OLXSubItem" } },
     include: {
+      productType: { select: { name: true } },
       trainingsTaken: {
         include: {
           // student: false skips the join for unfiltered SuperAdmin queries (perf opt)
@@ -96,7 +98,7 @@ export async function GET(request: NextRequest) {
       grouped.set(groupKey, {
         fullTitle: td.fullTitle,
         trainingType: td.trainingType,
-        productType: td.productType,
+        productType: td.productType.name,
         function: td.function,
         link: td.link,
         studentsTaken: filteredEmails.size,
@@ -127,6 +129,14 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const productTypeId = await resolveProductTypeId(productType);
+  if (productTypeId === null) {
+    return NextResponse.json(
+      { error: `Unknown product type "${productType}"` },
+      { status: 400 }
+    );
+  }
+
   // Sub-items only have meaning on an OLX parent. Parent membership only
   // makes sense for an OLX sub-item.
   const subItemTitles: string[] = trainingType === "OLX" && Array.isArray(subItems)
@@ -141,7 +151,7 @@ export async function POST(request: NextRequest) {
       trainingTitle,
       fullTitle,
       trainingType: trainingType as TrainingType,
-      productType: productType as ProductType,
+      productTypeId,
       function: fn as FunctionType,
       link: link || null,
       // Only OLX parents may carry certifications.

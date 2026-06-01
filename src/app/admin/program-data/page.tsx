@@ -570,24 +570,24 @@ export default function ProgramDataPage() {
   const downloadTemplate = () => {
     const templateData = [
       {
-        "Program Name": "Global Diamond",
-        "Specialisation": "Cortex XDR",
+        "Program Name": "Example Program",
+        "Specialisation": "Example Specialisation",
         "Level": "Global",
         "Training Type": "Certification",
-        "Training": "Business Consultant - XDR",
+        "Training": "Example Certification",
         "Quantity Required": 30,
         "Minimum per Theatre": 6,
         "Alternatives": "",
       },
       {
-        "Program Name": "APS",
-        "Specialisation": "Cortex XDR",
+        "Program Name": "Example Program",
+        "Specialisation": "Example Specialisation",
         "Level": "Country",
         "Training Type": "Certification",
-        "Training": "Business Consultant - XDR",
+        "Training": "Example Certification",
         "Quantity Required": 2,
         "Minimum per Theatre": "",
-        "Alternatives": "XSIAM Select|Another Training",
+        "Alternatives": "Alternative Training A|Alternative Training B",
       },
     ];
     const templateCols = [
@@ -1312,7 +1312,7 @@ export default function ProgramDataPage() {
               type="text"
               value={newSpecName}
               onChange={(e) => setNewSpecName(e.target.value)}
-              placeholder="e.g., Cortex XDR"
+              placeholder="e.g., a product or solution area"
               className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
             />
           </div>
@@ -1335,7 +1335,7 @@ export default function ProgramDataPage() {
               type="text"
               value={newProgramName}
               onChange={(e) => setNewProgramName(e.target.value)}
-              placeholder="e.g., Authorized Professional Services (APS)"
+              placeholder="e.g., Partner Compliance Program"
               className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
             />
           </div>
@@ -1406,7 +1406,7 @@ export default function ProgramDataPage() {
             )}
             <div className="pt-1 text-xs text-gray-500 space-y-1">
               <p><strong>Expected columns:</strong> Program Name, Specialisation, Level, Training Type, Training, Quantity Required, Minimum per Theatre</p>
-              <p>Training Type and Training are optional for Global-level rows with no specific training (APS-style).</p>
+              <p>Training Type and Training are optional for Global-level rows with no specific training (these count compliant theatres).</p>
               <p>Specialisations are auto-created if they don&apos;t already exist.</p>
             </div>
           </div>

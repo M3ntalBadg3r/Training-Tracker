@@ -8,6 +8,7 @@ import {
   isEncryptedBuffer,
   isEncryptionConfigured,
 } from "@/lib/crypto";
+import { prepareBackupRestore } from "@/lib/product-types";
 
 /**
  * Wraps generateBackupZip with envelope encryption (AES-256-GCM, keyed by
@@ -67,8 +68,9 @@ export async function generateBackupZip(): Promise<{
   buffer: ArrayBuffer;
   timestamp: string;
 }> {
-  const [regionData, trainingData, students, trainingTaken, importMetadata, users] =
+  const [productTypes, regionData, trainingData, students, trainingTaken, importMetadata, users] =
     await Promise.all([
+      prisma.productType.findMany({ orderBy: { id: "asc" } }),
       prisma.regionData.findMany({ orderBy: { country: "asc" } }),
       prisma.trainingData.findMany({ orderBy: { trainingTitle: "asc" } }),
       prisma.student.findMany({ orderBy: { email: "asc" } }),
@@ -86,6 +88,7 @@ export async function generateBackupZip(): Promise<{
       2
     )
   );
+  zip.file("product_types.json", JSON.stringify(productTypes, null, 2));
   zip.file("region_data.json", JSON.stringify(regionData, null, 2));
   zip.file("training_data.json", JSON.stringify(trainingData, null, 2));
   zip.file("students.json", JSON.stringify(students, null, 2));
@@ -166,10 +169,19 @@ export async function POST(request: NextRequest) {
     return JSON.parse(content);
   };
 
+  const productTypesFile = zip.file("product_types.json");
+  const productTypesJson = productTypesFile ? await readJson("product_types.json") : null;
   const regionData = await readJson("region_data.json");
-  const trainingData = await readJson("training_data.json");
+  const trainingDataJson = await readJson("training_data.json");
   const students = await readJson("students.json");
   const trainingTaken = await readJson("training_taken.json");
+
+  // Reconcile product types (new archive) or synthesise them from the old
+  // enum-string shape so pre-migration backups still restore.
+  const { productTypeRows, trainingDataRows: trainingData } = prepareBackupRestore(
+    productTypesJson,
+    trainingDataJson
+  );
 
   const importMetadataFile = zip.file("import_metadata.json");
   const importMetadata = importMetadataFile
@@ -184,10 +196,14 @@ export async function POST(request: NextRequest) {
     await tx.trainingTaken.deleteMany({});
     await tx.student.deleteMany({});
     await tx.trainingData.deleteMany({});
+    await tx.productType.deleteMany({});
     await tx.regionData.deleteMany({});
     await tx.importMetadata.deleteMany({});
     await tx.user.deleteMany({});
 
+    if (productTypeRows.length > 0) {
+      await tx.productType.createMany({ data: productTypeRows });
+    }
     if (regionData.length > 0) {
       await tx.regionData.createMany({ data: regionData });
     }

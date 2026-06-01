@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
       ...(companyFilter ? { student: { companyId: { in: companyFilter } } } : {}),
     },
     include: {
-      trainingData: { select: { fullTitle: true, productType: true, trainingType: true } },
+      trainingData: { select: { fullTitle: true, productType: { select: { name: true } }, trainingType: true } },
     },
     orderBy: [{ email: "asc" }, { trainingTitle: "asc" }, { completedDate: "asc" }],
   });
@@ -59,7 +59,7 @@ export async function GET(request: NextRequest) {
     timelines.get(k)!.push({
       completedDate: r.completedDate,
       expiryDate: r.expiryDate,
-      productType: r.trainingData.productType,
+      productType: r.trainingData.productType.name,
     });
   }
 
@@ -72,7 +72,7 @@ export async function GET(request: NextRequest) {
 
   // We need fullTitle <-> product links — derive from the records we have.
   const fullTitleProduct = new Map<string, string>();
-  for (const r of records) fullTitleProduct.set(r.trainingData.fullTitle, r.trainingData.productType);
+  for (const r of records) fullTitleProduct.set(r.trainingData.fullTitle, r.trainingData.productType.name);
 
   const NINETY_DAYS = 90 * 24 * 60 * 60 * 1000;
 

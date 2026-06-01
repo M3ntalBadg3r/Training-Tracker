@@ -1,6 +1,6 @@
 /**
- * Shared compliance calculation utilities used by the APS and Global Diamond
- * program dashboards and the Program Compliance Trend report.
+ * Shared compliance calculation utilities used by the data-driven program
+ * dashboards and the Program Compliance Trend report.
  *
  * The data model centres on ProgramData rows, each of which may have
  * ProgramDataAlternative children (OR logic — any of {primary, ...alternatives}

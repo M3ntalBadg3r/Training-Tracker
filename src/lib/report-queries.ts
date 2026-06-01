@@ -69,7 +69,7 @@ async function fetchAllTrainingRecords(companyId?: number | null): Promise<Train
         select: {
           fullTitle: true,
           trainingType: true,
-          productType: true,
+          productType: { select: { name: true } },
           function: true,
         },
       },
@@ -103,7 +103,7 @@ async function fetchAllTrainingRecords(companyId?: number | null): Promise<Train
     trainingTitle: tt.trainingData.fullTitle,
     trainingType: TYPE_LABELS[tt.trainingData.trainingType] ?? tt.trainingData.trainingType,
     rawTrainingType: tt.trainingData.trainingType,
-    productType: tt.trainingData.productType,
+    productType: tt.trainingData.productType.name,
     function: FUNCTION_LABELS[tt.trainingData.function] ?? tt.trainingData.function,
     completedDate: tt.completedDate.toISOString().split("T")[0],
     expiryDate: tt.expiryDate.toISOString().split("T")[0],
@@ -137,7 +137,7 @@ export async function fetchTrainingsWithStudents(opts: {
         select: {
           fullTitle: true,
           trainingType: true,
-          productType: true,
+          productType: { select: { name: true } },
           function: true,
         },
       },
@@ -179,7 +179,7 @@ export async function fetchTrainingsWithStudents(opts: {
     trainingTitle: tt.trainingData.fullTitle,
     trainingType: TYPE_LABELS[tt.trainingData.trainingType] ?? tt.trainingData.trainingType,
     rawTrainingType: tt.trainingData.trainingType,
-    productType: tt.trainingData.productType,
+    productType: tt.trainingData.productType.name,
     function: FUNCTION_LABELS[tt.trainingData.function] ?? tt.trainingData.function,
     completedDate: tt.completedDate.toISOString().split("T")[0],
     expiryDate: tt.expiryDate.toISOString().split("T")[0],
@@ -198,6 +198,7 @@ export async function fetchTrainedNotCertified(companyId?: number | null): Promi
       trainingType: { in: ["InstructorLedTraining", "OLX"] },
       certification: { isEmpty: false },
     },
+    include: { productType: { select: { name: true } } },
   });
   if (iltWithCert.length === 0) return [];
 
@@ -265,7 +266,7 @@ export async function fetchTrainedNotCertified(companyId?: number | null): Promi
         region: student.regionData?.region ?? "",
         country: student.country,
         iltFullTitle: ilt.fullTitle,
-        iltProductType: ilt.productType,
+        iltProductType: ilt.productType.name,
         certificationFullTitle: certFull,
         iltCompletedDate: iltRecord.completedDate.toISOString().split("T")[0],
         iltActive: iltRecord.expiryDate > now ? "Yes" : "No",

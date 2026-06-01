@@ -68,7 +68,7 @@ const TILES = [
   {
     href: "/reports/program-compliance-trend",
     title: "Program Compliance Trend",
-    description: "Monthly snapshots of APS and Global Diamond compliance over the last 12 months",
+    description: "Monthly snapshots of program compliance over the last 12 months",
     Icon: TrendingUp,
   },
   {

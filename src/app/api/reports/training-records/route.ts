@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
         select: {
           fullTitle: true,
           trainingType: true,
-          productType: true,
+          productType: { select: { name: true } },
           function: true,
         },
       },
@@ -75,7 +75,7 @@ export async function GET(request: NextRequest) {
     country: tt.student.country,
     trainingTitle: tt.trainingData.fullTitle,
     trainingType: TYPE_LABELS[tt.trainingData.trainingType] || tt.trainingData.trainingType,
-    productType: tt.trainingData.productType,
+    productType: tt.trainingData.productType.name,
     function: FUNCTION_LABELS[tt.trainingData.function] || tt.trainingData.function,
     completedDate: tt.completedDate.toISOString(),
     expiryDate: tt.expiryDate.toISOString(),

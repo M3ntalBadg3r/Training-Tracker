@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma, { type PrismaTransactionClient } from "@/lib/prisma";
-import { TrainingType, ProductType, FunctionType } from "@prisma/client";
+import { TrainingType, FunctionType } from "@prisma/client";
 import { handleAuthError, requireSuperAdmin } from "@/lib/auth";
 import { recomputeAllStudentsForParent } from "@/lib/olx";
 import { safeDecodeParam } from "@/lib/utils";
+import { resolveProductTypeId } from "@/lib/product-types";
 
 export async function GET(
   _request: NextRequest,
@@ -156,7 +157,9 @@ export async function PUT(
       );
     }
 
-    const { training, affectedParents } = await prisma.$transaction(async (tx: PrismaTransactionClient) => {
+    let renameResult;
+    try {
+      renameResult = await prisma.$transaction(async (tx: PrismaTransactionClient) => {
       // Update all references in training_taken
       await tx.trainingTaken.updateMany({
         where: { trainingTitle: decodedTitle },
@@ -176,12 +179,19 @@ export async function PUT(
       });
       await tx.trainingData.delete({ where: { trainingTitle: decodedTitle } });
       const trainingType = (body.trainingType as TrainingType) ?? old?.trainingType ?? "Certification";
+      const resolvedProductTypeId = body.productType !== undefined
+        ? await resolveProductTypeId(body.productType)
+        : null;
+      const productTypeId = resolvedProductTypeId ?? old?.productTypeId;
+      if (productTypeId === undefined || productTypeId === null) {
+        throw new Error("UNKNOWN_PRODUCT_TYPE");
+      }
       const created = await tx.trainingData.create({
         data: {
           trainingTitle: newTitle,
           fullTitle: body.fullTitle ?? old?.fullTitle ?? "",
           trainingType,
-          productType: (body.productType as ProductType) ?? old?.productType ?? "Cortex",
+          productTypeId,
           function: (body.function as FunctionType) ?? old?.function ?? "Sales",
           link: body.link !== undefined ? body.link || null : old?.link ?? null,
           certification: trainingType === "OLXSubItem"
@@ -193,13 +203,35 @@ export async function PUT(
       });
       const sync = await syncMemberships(tx, newTitle, trainingType, subItems, parents);
       return { training: created, affectedParents: sync.affectedParents };
-    });
+      });
+    } catch (err) {
+      if (err instanceof Error && err.message === "UNKNOWN_PRODUCT_TYPE") {
+        return NextResponse.json(
+          { error: `Unknown product type "${body.productType}"` },
+          { status: 400 }
+        );
+      }
+      throw err;
+    }
 
+    const { training, affectedParents } = renameResult;
     for (const p of affectedParents) {
       await recomputeAllStudentsForParent(p);
     }
 
     return NextResponse.json(training);
+  }
+
+  let updateProductTypeId: number | undefined;
+  if (body.productType !== undefined) {
+    const resolved = await resolveProductTypeId(body.productType);
+    if (resolved === null) {
+      return NextResponse.json(
+        { error: `Unknown product type "${body.productType}"` },
+        { status: 400 }
+      );
+    }
+    updateProductTypeId = resolved;
   }
 
   const { training, affectedParents } = await prisma.$transaction(async (tx: PrismaTransactionClient) => {
@@ -210,8 +242,8 @@ export async function PUT(
         ...(body.trainingType && {
           trainingType: body.trainingType as TrainingType,
         }),
-        ...(body.productType && {
-          productType: body.productType as ProductType,
+        ...(updateProductTypeId !== undefined && {
+          productTypeId: updateProductTypeId,
         }),
         ...(body.function && { function: body.function as FunctionType }),
         ...(body.link !== undefined && { link: body.link || null }),
