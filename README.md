@@ -29,8 +29,6 @@ Built with Next.js, React, PostgreSQL, and Prisma.
   - [Program Data](#program-data)
   - [Wipe Data](#wipe-data)
 - [Partner Programs](#partner-programs)
-  - [APS Dashboard](#aps-dashboard)
-  - [Global Diamond Dashboard](#global-diamond-dashboard)
 - [Data Model](#data-model)
 - [Exporting Data](#exporting-data)
 
@@ -248,6 +246,10 @@ After that first successful update, the update scripts will automatically keep t
 
 The Dashboard is the default landing page and provides an at-a-glance overview of all training activity.
 
+### Update Notifications
+
+When a newer release is available, **SuperAdmins** see a dismissible blue banner at the top of the Dashboard linking to **Admin → Updates**. Dismissing it hides the banner for the current browser session; it reappears in a new session or as soon as an even newer release is published. Admins and Users do not see this banner.
+
 ### Night Mode
 
 Click the **Moon** icon in the sidebar to toggle night (dark) mode. Click the **Sun** icon to switch back to light mode. Your preference is saved in the browser and persists across sessions.
@@ -272,7 +274,7 @@ Four summary cards are displayed at the top:
 
 | Chart | Type | Description |
 |-------|------|-------------|
-| **By Product Type** | Bar chart | Breakdown of Certifications, Accreditations, and ILT by product (Cortex, SASE, Cloud, Strata, Foundation) |
+| **By Product Type** | Bar chart | Breakdown of Certifications, Accreditations, and ILT by product type (the admin-managed product type list) |
 | **By Function** | Bar chart | Breakdown by function (Sales, Pre-Sales, Deployments) |
 | **Expiring Soon** | Bar chart | Number of trainings expiring within 1, 3, and 6 months |
 | **Achievement Over Time** | Line chart | Trend of completions over a selectable range (1/3/6/12 months or custom), with prior-period comparison |
@@ -420,7 +422,7 @@ Per-training metrics: total completions, last-12-month completions, active stude
 
 ### Program Compliance Trend
 
-Monthly snapshots over the last 12 months for the partner programs configured in **Admin > Program Data** (APS and Global Diamond). For each month-end, the same OR-logic union of primary + alternative trainings used by the live program dashboards is applied with the active-as-of date set to that month-end. Line chart per specialisation shows compliance % over time.
+Monthly snapshots over the last 12 months for the partner programs configured in **Admin > Program Data**. For each month-end, the same OR-logic union of primary + alternative trainings used by the live program dashboards is applied with the active-as-of date set to that month-end. Line chart per specialisation shows compliance % over time.
 
 ### Renewal Forecast
 
@@ -465,7 +467,7 @@ Manage the definitions of all training programs in the system.
 | **Training Title** | Short identifier used internally and during import matching |
 | **Full Title** | Display name shown to users |
 | **Type** | Certification, Accreditation, Instructor-Led Training, OLX, or OLX Sub-Item |
-| **Product** | Cortex, SASE, Cloud, Strata, or Foundation |
+| **Product** | One of the configured product types (managed in Admin > Product Types) |
 | **Function** | Sales, Pre-Sales, or Deployments |
 | **Link** | Optional URL to training resources |
 | **Certification** | Certification mapping (ILT only — see below) |
@@ -489,6 +491,16 @@ The **Certification** column is available for trainings of type **Instructor-Led
 - This mapping is used by the **Trained but not Certified** report to identify students who completed the ILT but haven't obtained the associated Certification(s).
 - Changing the training type away from ILT automatically clears the certification mapping.
 - During import, multiple certifications can be specified as comma-separated values in a single cell.
+
+### Product Types
+
+Navigate to **Admin > Product Types** to manage the list of product types used to categorise training data (shown on the dashboard's *By Product Type* chart and the *By Product Type* report).
+
+- **Add / Rename** — Names must be unique (case-insensitive).
+- **Delete** — Only possible when no training data references the product type. The **Trainings** column shows the current usage count; reassign those trainings first.
+- **Import** — Upload a CSV or Excel file with a single `Name` column to bulk-create product types. The wizard auto-maps the column and shows a preview; names that already exist (case-insensitive) and duplicate rows within the file are skipped rather than duplicated.
+- **Export** — Download the current list as CSV, Excel, or PDF.
+- During a training-data import, product-type cells are matched case-insensitively against this list. Unknown values are reported as per-row errors rather than being silently changed.
 
 ### User Management
 
@@ -726,8 +738,8 @@ Each entry specifies a requirement within a program:
 
 | Field | Description |
 |-------|-------------|
-| **Program Name** | The partner program (e.g., "Authorized Professional Services (APS)") |
-| **Specialisation** | The product specialisation (e.g., "Cortex XDR", "Prisma Access"). Managed via a controlled dropdown — click **+** to add new specialisations. |
+| **Program Name** | The partner program name. Each unique name automatically gets its own dashboard under **Programs**. |
+| **Specialisation** | The product or solution area for this requirement. Managed via a controlled dropdown — click **+** to add new specialisations. |
 | **Level** | Whether the requirement applies at Country, Theatre, or Global level |
 | **Type** | Certification, Accreditation, Instructor-Led Training, OLX, or OLX Sub-Item |
 | **Training** | The specific training required (filtered by the selected Type) |
@@ -739,39 +751,29 @@ The page includes search, filtering by all fields, sorting, and export to CSV/Ex
 
 ## Partner Programs
 
-### APS Dashboard
+Partner programs are **fully data-driven**. Every distinct program name configured in **Admin > Program Data** automatically gets its own compliance dashboard at **Programs > _[name]_** — no code changes are required to add a new program. The dashboard at `/programs/[programName]` auto-adapts to how the program is configured.
 
-Navigate to **Programs > APS** to view compliance for the Authorized Professional Services program.
+### Report sections
 
-Three report views are available:
+The dashboard shows only the sections relevant to the program's configured requirement levels:
 
-| Report | Filter | Shows |
-|--------|--------|-------|
-| **Country Report** | Country dropdown | Number of people per country with each required training vs. the requirement |
-| **Theatre Report** | Theatre dropdown | Number of people per theatre with each required training vs. the requirement |
-| **Global Report** | None | Number of compliant theatres vs. the global requirement |
+| Section | Shown when | Filter | Shows |
+|---------|-----------|--------|-------|
+| **Country Report** | Program has Country-level requirements | Country dropdown | People per country with each required training vs. the requirement |
+| **Region Report** | Program has Country-level requirements | Region dropdown | The same, aggregated across all countries in a region |
+| **Theatre Report** | Program has Theatre-level requirements | Theatre dropdown | People per theatre with each required training vs. the requirement |
+| **Global Report** | Program has Global-level requirements | None | See below |
 
-Each report displays specialisations as columns with grouped rows showing the training name, required count, and attained count. Attained values are colour-coded: **green** if the requirement is met, **red** if not. In the Country and Theatre reports, click **View** on any attained cell to see the list of qualifying students. All reports support export to CSV, Excel, and PDF.
+The Country/Region/Theatre reports display specialisations as columns with grouped rows showing the training name, required count, and attained count. Attained values are colour-coded **green** (met) or **red** (not met). Click **View** on any attained cell to see the qualifying students.
 
-### Global Diamond Dashboard
+### Global report — two presentations
 
-Navigate to **Programs > Global Diamond** to view compliance for the Global Diamond partner program.
+The Global report auto-adapts based on the program's data:
 
-All requirements are evaluated globally — there are no country or theatre selectors. Each specialisation is displayed as a card with a **Compliant** / **Not Compliant** badge. Inside each card, a table lists the training requirements with:
+- **Compliant-theatre count** — when Global rows have no specific training, the report shows how many theatres meet all of a specialisation's theatre-level requirements, against a target number of compliant theatres.
+- **Global count with per-theatre minimums** — when a requirement has a **Minimum per Theatre** value, each specialisation appears as a card with a **Compliant** / **Not Compliant** badge and a global attained/required total. Click the chevron to expand a per-theatre breakdown. The requirement is only **Met** when the global total is reached **and** every theatre meets its minimum.
 
-| Column | Description |
-|--------|-------------|
-| **Training** | Training title and type |
-| **Required (Global)** | Total number of certified people needed globally |
-| **Attained** | Distinct active certifications held globally |
-| **Min/Theatre** | Minimum required per theatre (if applicable) |
-| **Status** | Met or Not Met |
-
-When a requirement has a per-theatre minimum, click the chevron icon to expand a per-theatre breakdown showing each theatre's count and compliance. A requirement is only **Met** if the global total is reached **and** all theatres meet their per-theatre minimum.
-
-Export the full compliance data (including theatre breakdowns) as CSV, Excel, or PDF using the Export button.
-
-Requirements are configured in **Admin > Program Data** using program name **Global Diamond**, level **Global**, with an optional **Minimum per Theatre** value.
+All sections support export to CSV, Excel, and PDF. Alternative trainings (OR logic) configured on a requirement count any qualifying training, deduplicated by student.
 
 ---
 
@@ -789,7 +791,7 @@ Requirements are configured in **Admin > Program Data** using program name **Glo
 
 ### Product Types
 
-Cortex, SASE, Cloud, Strata, Foundation
+Product types are an admin-managed list (not a fixed set), maintained in **Admin > Product Types**. Add, rename, or remove the product types that fit your catalogue; each training is assigned one. Product types in use by training data cannot be deleted until those trainings are reassigned.
 
 ### Function Types
 

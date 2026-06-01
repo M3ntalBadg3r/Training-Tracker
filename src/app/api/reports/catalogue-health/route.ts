@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
         select: {
           fullTitle: true,
           trainingType: true,
-          productType: true,
+          productType: { select: { name: true } },
           function: true,
         },
       },
@@ -79,7 +79,7 @@ export async function GET(request: NextRequest) {
     if (!b) {
       b = {
         fullTitle: ft,
-        productType: r.trainingData.productType,
+        productType: r.trainingData.productType.name,
         trainingType: TYPE_LABELS[r.trainingData.trainingType] ?? r.trainingData.trainingType,
         function: FUNC_LABELS[r.trainingData.function] ?? r.trainingData.function,
         totalCompletions: 0,
@@ -99,7 +99,7 @@ export async function GET(request: NextRequest) {
 
   // Also include trainings with zero completions, so admins can spot dead catalogue items.
   const allTrainings = await prisma.trainingData.findMany({
-    select: { fullTitle: true, productType: true, trainingType: true, function: true },
+    select: { fullTitle: true, productType: { select: { name: true } }, trainingType: true, function: true },
   });
   const seen = new Set<string>(map.keys());
   for (const t of allTrainings) {
@@ -107,7 +107,7 @@ export async function GET(request: NextRequest) {
     seen.add(t.fullTitle);
     map.set(t.fullTitle, {
       fullTitle: t.fullTitle,
-      productType: t.productType,
+      productType: t.productType.name,
       trainingType: TYPE_LABELS[t.trainingType] ?? t.trainingType,
       function: FUNC_LABELS[t.function] ?? t.function,
       totalCompletions: 0,

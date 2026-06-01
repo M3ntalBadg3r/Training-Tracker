@@ -87,7 +87,9 @@ export default function TrainedNotCertifiedPage() {
   const countries = useMemo(() => [...new Set(reportData.map((r) => r.country))].filter(Boolean).sort(), [reportData]);
   const productTypes = useMemo(() => [...new Set(reportData.map((r) => r.iltProductType))].filter(Boolean).sort(), [reportData]);
   const iltTitles = useMemo(() => [...new Set(reportData.map((r) => r.iltFullTitle))].sort(), [reportData]);
-  const certTitles = useMemo(() => [...new Set(reportData.map((r) => r.certificationFullTitle))].sort(), [reportData]);
+  // A row's certificationFullTitle may hold several alternative certs joined
+  // with " or " — list each one individually in the filter dropdown.
+  const certTitles = useMemo(() => [...new Set(reportData.flatMap((r) => r.certificationFullTitle.split(" or ")))].filter(Boolean).sort(), [reportData]);
 
   const filteredData = useMemo(() => {
     const q = searchQuery.toLowerCase();
@@ -98,7 +100,7 @@ export default function TrainedNotCertifiedPage() {
       const matchesCountry = !filterCountry || r.country === filterCountry;
       const matchesProduct = !filterProduct || r.iltProductType === filterProduct;
       const matchesIlt = !filterIlt || r.iltFullTitle === filterIlt;
-      const matchesCert = !filterCert || r.certificationFullTitle === filterCert;
+      const matchesCert = !filterCert || r.certificationFullTitle.split(" or ").includes(filterCert);
       const matchesActive = !filterActive || (filterActive === "yes" ? r.iltActive : !r.iltActive);
       return matchesSearch && matchesTheatre && matchesRegion && matchesCountry && matchesProduct && matchesIlt && matchesCert && matchesActive;
     });

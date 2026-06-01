@@ -14,14 +14,6 @@ enum TrainingType {
   OLXSubItem            @map("OLX Sub-Item")
 }
 
-enum ProductType {
-  Cortex
-  SASE
-  Cloud
-  Strata
-  Foundation
-}
-
 enum FunctionType {
   Sales
   PreSales     @map("Pre-Sales")
@@ -84,12 +76,13 @@ model TrainingData {
   trainingTitle String       @id @map("training_title")
   fullTitle     String       @map("full_title")
   trainingType  TrainingType @map("training_type")
-  productType   ProductType  @map("product_type")
+  productTypeId Int          @map("product_type_id")
   function      FunctionType
   link          String?
   certification String[]      @default([]) @map("certification")
   isIncomplete  Boolean      @default(false) @map("is_incomplete")
 
+  productType             ProductType  @relation(fields: [productTypeId], references: [id])
   trainingsTaken          TrainingTaken[]
   programData             ProgramData[]
   programDataAlternatives ProgramDataAlternative[]
@@ -102,7 +95,17 @@ model TrainingData {
   subItemMemberships OlxSubItemRelation[] @relation("ParentSide")
 
   @@index([fullTitle])
+  @@index([productTypeId])
   @@map("training_data")
+}
+
+model ProductType {
+  id   Int    @id @default(autoincrement())
+  name String @unique
+
+  trainingData TrainingData[]
+
+  @@map("product_types")
 }
 
 // Join table: each row says "the OLX parent <parentTrainingTitle> includes

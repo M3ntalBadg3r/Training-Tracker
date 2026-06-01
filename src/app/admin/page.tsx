@@ -14,6 +14,7 @@ import {
   RefreshCw,
   CalendarClock,
   ClipboardList,
+  Tag,
 } from "lucide-react";
 import { useAuth } from "@/components/auth/AuthProvider";
 
@@ -32,6 +33,7 @@ const ADMIN_CARDS: AdminCard[] = [
   { href: "/admin/companies", title: "Companies", description: "Add, rename, and delete companies", icon: Building2, superAdminOnly: true },
   { href: "/admin/program-data", title: "Program Data", description: "Manage partner program compliance requirements", icon: ClipboardList, superAdminOnly: true },
   { href: "/admin/training-data", title: "Training Data", description: "Manage training programs", icon: BookOpen, superAdminOnly: true },
+  { href: "/admin/product-types", title: "Product Types", description: "Manage the product type list", icon: Tag, superAdminOnly: true },
   { href: "/admin/region-data", title: "Region Data", description: "Manage countries and regions", icon: Globe, superAdminOnly: true },
   { href: "/admin/cleanup", title: "Data Clean-Up", description: "Scan and fix data quality issues", icon: Sparkles, superAdminOnly: true },
   { href: "/admin/backup", title: "Backup & Restore", description: "Export or import system data", icon: HardDrive, superAdminOnly: true },

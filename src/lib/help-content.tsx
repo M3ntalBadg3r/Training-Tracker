@@ -52,6 +52,15 @@ const helpSections: Record<string, HelpSection> = {
           </tbody>
         </table>
 
+        <h3>Update Notifications</h3>
+        <p>
+          When a newer release of Training Tracker is available, <strong>SuperAdmins</strong>
+          see a blue banner at the top of the Dashboard with a link to the
+          <strong> Updates</strong> page. The banner can be dismissed for the current
+          browser session; it returns next session, or sooner if an even newer release
+          appears. Admins and Users never see it.
+        </p>
+
         <h3>Night Mode</h3>
         <p>
           Click the <strong>Moon</strong> icon in the sidebar to switch to night
@@ -86,7 +95,7 @@ const helpSections: Record<string, HelpSection> = {
               <td>Bar chart</td>
               <td>
                 Breakdown of Certifications, Accreditations, and ILT by product
-                (Cortex, SASE, Cloud, Strata, Foundation)
+                type (the admin-managed product type list)
               </td>
             </tr>
             <tr>
@@ -465,7 +474,7 @@ const helpSections: Record<string, HelpSection> = {
         <p>Area chart of completions with a dashed prior-period comparison line, plus a top-10 leaderboard of trainings by completion count. Pick a preset time range (12, 6, 3, or 1 month) or a custom date range; the chart automatically buckets by day, week, or month based on the window. Click a point to filter the table to that bucket. Type/theatre/function/region/product filters update the chart as well as the table.</p>
 
         <h3>Trained But Not Certified</h3>
-        <p>Gap funnel by product (ILT completed → ILT still active) plus the top theatres/regions/countries with gaps.</p>
+        <p>Gap funnel by product (ILT completed → ILT still active) plus the top theatres/regions/countries with gaps. When a training can lead to more than one certification, the options are treated as alternatives (OR): a student is only flagged if they hold none of them, and the &ldquo;Certification Not Obtained&rdquo; column lists every option joined with &ldquo;or&rdquo;.</p>
 
         <h3>Coverage / Compliance</h3>
         <p>
@@ -500,7 +509,7 @@ const helpSections: Record<string, HelpSection> = {
 
         <h3>Program Compliance Trend</h3>
         <p>
-          Monthly snapshots over the last 12 months for APS and Global Diamond.
+          Monthly snapshots over the last 12 months for each configured program.
           A line chart per specialisation shows how compliance % moves over
           time. Filter by program. The same union-of-primary-and-alternatives
           logic used by the live dashboards is applied at each historical
@@ -559,13 +568,12 @@ const helpSections: Record<string, HelpSection> = {
       <>
         <p>
           Tracks monthly compliance over the last 12 months for the partner
-          programs configured in <strong>Admin &gt; Program Data</strong>
-          (APS and Global Diamond).
+          programs configured in <strong>Admin &gt; Program Data</strong>.
         </p>
         <ul>
           <li>For each month-end, the report re-runs the same OR-logic union of primary + alternative trainings used by the live program dashboards, with the active-as-of date set to that month-end.</li>
           <li>For tractability the trend evaluates at the Global level — country/theatre breakdowns remain on the live dashboards.</li>
-          <li>Filter by program to focus on APS or Global Diamond individually.</li>
+          <li>Filter by program to focus on an individual program.</li>
         </ul>
       </>
     ),
@@ -800,7 +808,7 @@ const helpSections: Record<string, HelpSection> = {
             </tr>
             <tr>
               <td><strong>Product</strong></td>
-              <td>Cortex, SASE, Cloud, Strata, or Foundation</td>
+              <td>One of the configured product types (managed in Admin &rsaquo; Product Types)</td>
             </tr>
             <tr>
               <td><strong>Function</strong></td>
@@ -1402,7 +1410,8 @@ const helpSections: Record<string, HelpSection> = {
       <>
         <p>
           The Program Data page lets you define the requirements for partner
-          compliance programs such as Authorized Professional Services (APS).
+          compliance programs. Each distinct program name automatically gets its
+          own dashboard under <strong>Programs</strong>.
         </p>
 
         <h3>Fields</h3>
@@ -1416,11 +1425,11 @@ const helpSections: Record<string, HelpSection> = {
           <tbody>
             <tr>
               <td><strong>Program Name</strong></td>
-              <td>The name of the partner program (e.g., &quot;Authorized Professional Services (APS)&quot;).</td>
+              <td>The name of the partner program. Each unique name gets its own compliance dashboard.</td>
             </tr>
             <tr>
               <td><strong>Specialisation</strong></td>
-              <td>The product specialisation (e.g., &quot;Cortex XDR&quot;, &quot;Prisma Access&quot;). Managed via a controlled list — click + to add new ones.</td>
+              <td>The product or solution area for this requirement. Managed via a controlled list — click + to add new ones.</td>
             </tr>
             <tr>
               <td><strong>Level</strong></td>
@@ -1440,7 +1449,7 @@ const helpSections: Record<string, HelpSection> = {
             </tr>
             <tr>
               <td><strong>Minimum per Theatre</strong></td>
-              <td>Optional. For Global-level requirements with training — the minimum number of certified people required per theatre (used by Global Diamond).</td>
+              <td>Optional. For Global-level requirements with training — the minimum number of certified people required per theatre. When set, the dashboard shows a per-theatre breakdown.</td>
             </tr>
           </tbody>
         </table>
@@ -1449,17 +1458,18 @@ const helpSections: Record<string, HelpSection> = {
         <p>
           Use <strong>Add Requirement</strong> to create a single entry. For Global-level
           requirements, check <strong>No specific training</strong> if the entry counts
-          compliant theatres (APS-style), or leave unchecked to specify a training title
-          (Global Diamond-style).
+          compliant theatres, or leave unchecked to specify a training title with a
+          global quantity (and optional per-theatre minimum).
         </p>
 
         <h3>Alternative Trainings (OR Logic)</h3>
         <p>
           Check <strong>Accept alternative trainings</strong> to specify other
           certifications, accreditations, or trainings that also satisfy a requirement.
-          For example, if a requirement needs 5 people with &quot;XSIAM Engineer&quot;
-          certification, you can add &quot;XSIAM Select&quot; as an alternative — students
-          with either training (or a mix of both) count toward the 5.
+          For example, if a requirement needs 5 people with a particular
+          certification, you can add another equivalent certification as an
+          alternative — students with either training (or a mix of both) count
+          toward the 5.
         </p>
         <p>
           Each alternative has its own Type and Training selection. Students are
@@ -1478,7 +1488,7 @@ const helpSections: Record<string, HelpSection> = {
           Quantity Required, Minimum per Theatre, Alternatives. Column names are matched
           case-insensitively. Specialisations are auto-created if they don&apos;t exist.
           Training is matched by display name against the training catalog. Alternatives
-          are specified as pipe-separated training names (e.g., &quot;XSIAM Select|Another Training&quot;).
+          are specified as pipe-separated training names (e.g., &quot;Training A|Training B&quot;).
         </p>
         <p>
           Use <strong>Validate</strong> to check all rows for errors before committing,
@@ -1493,122 +1503,115 @@ const helpSections: Record<string, HelpSection> = {
       </>
     ),
   },
-  "programs-aps": {
-    title: "APS — Authorized Professional Services",
+  "programs-detail": {
+    title: "Program Compliance Dashboard",
     content: (
       <>
         <p>
-          The APS dashboard shows compliance status for the Authorized
-          Professional Services partner program. It provides four report views.
+          Each program dashboard shows compliance status for a partner program.
+          The dashboard is fully data-driven — it automatically shows the
+          relevant report sections based on how the program is configured in{" "}
+          <strong>Admin &rsaquo; Program Data</strong>. A program with
+          country-level requirements gets Country and Region reports; a program
+          with theatre or global requirements gets Theatre and Global reports.
         </p>
 
-        <h3>Country Report</h3>
+        <h3>Country &amp; Region Reports</h3>
         <p>
-          Select a country to see whether it meets each specialisation&apos;s
-          requirements. Each column represents a specialisation, with rows
-          showing the training name, required count, and attained count.
-          Green means the requirement is met; red means it is not. Click
-          <strong> View</strong> to see the list of qualifying students.
-        </p>
-
-        <h3>Region Report</h3>
-        <p>
-          Same as the Country Report but aggregated across all countries in a
-          region. Select a region to see combined compliance data for every
-          country that belongs to it.
+          Shown when the program has country-level requirements. Select a
+          country (or a region, which aggregates all of its countries) to see
+          whether each specialisation&apos;s requirements are met. Each column is
+          a specialisation, with rows for the training name, required count, and
+          attained count. Green means the requirement is met; red means it is
+          not. Click <strong>View</strong> to list the qualifying students.
         </p>
 
         <h3>Theatre Report</h3>
         <p>
-          Same as the Country Report but aggregated at the theatre level.
-          Select a theatre to view compliance.
+          Shown when the program has theatre-level requirements. Select a theatre
+          to view its compliance.
         </p>
 
         <h3>Global Report</h3>
         <p>
-          Shows how many theatres are fully compliant for each specialisation.
-          A theatre is considered compliant if it meets <em>all</em> theatre-level
-          requirements for that specialisation. The &quot;Required&quot; number
-          is the target number of compliant theatres.
+          Shown when the program has global-level requirements. Two presentations
+          are supported automatically:
         </p>
+        <ul>
+          <li>
+            <strong>Compliant-theatre count</strong> — when global rows have no
+            specific training, the report shows how many theatres meet all of a
+            specialisation&apos;s theatre-level requirements, against a target
+            number of compliant theatres.
+          </li>
+          <li>
+            <strong>Global count with per-theatre minimums</strong> — when a
+            requirement has a per-theatre minimum, each specialisation appears as
+            a card with a global attained/required total and an expandable
+            per-theatre breakdown. The requirement is only met when the global
+            total is reached <em>and</em> every theatre meets its minimum.
+          </li>
+        </ul>
 
         <h3>Alternative Trainings</h3>
         <p>
           If a requirement has alternative trainings configured (OR logic), they
-          appear below the primary training name in blue text. The attained count
-          reflects students with <em>any</em> of the accepted trainings
-          (primary or alternatives), deduplicated by student.
-        </p>
-
-        <h3>Exports</h3>
-        <p>
-          Each report section has an Export button to download the compliance
-          data as CSV, Excel, or PDF.
-        </p>
-      </>
-    ),
-  },
-  "programs-global-diamond": {
-    title: "Global Diamond",
-    content: (
-      <>
-        <p>
-          The Global Diamond dashboard shows compliance status for the Global
-          Diamond partner program. All requirements are evaluated at the global
-          level — there are no country or theatre selectors.
-        </p>
-
-        <h3>Specialisations</h3>
-        <p>
-          Each specialisation appears as a card with a <strong>Compliant</strong>{" "}
-          or <strong>Not Compliant</strong> badge. A specialisation is compliant
-          only when <em>all</em> of its requirements are met.
-        </p>
-
-        <h3>Requirements Table</h3>
-        <p>
-          Each row shows a specific training requirement with:
-        </p>
-        <ul>
-          <li><strong>Training</strong> — the training title and type</li>
-          <li><strong>Required (Global)</strong> — total number of certified people needed globally</li>
-          <li><strong>Attained</strong> — distinct active certifications held globally</li>
-          <li><strong>Min/Theatre</strong> — minimum required per theatre (if applicable)</li>
-          <li><strong>Status</strong> — Met or Not Met</li>
-        </ul>
-
-        <h3>Theatre Breakdown</h3>
-        <p>
-          When a requirement has a per-theatre minimum, a chevron icon appears
-          on the left of the row. Click it to expand a breakdown showing each
-          theatre&apos;s count and whether it meets the minimum.
-        </p>
-        <p>
-          A requirement is only <strong>Met</strong> if the global total is
-          reached <em>and</em> all theatres meet their per-theatre minimum.
-        </p>
-
-        <h3>Alternative Trainings</h3>
-        <p>
-          If a requirement has alternative trainings (OR logic), they appear
-          below the primary training name in blue text. Attained counts and
-          theatre breakdowns reflect students with <em>any</em> accepted
-          training (primary or alternatives), deduplicated by student.
+          appear below the primary training name in blue text. Attained counts
+          reflect students with <em>any</em> of the accepted trainings (primary
+          or alternatives), deduplicated by student.
         </p>
 
         <h3>Export</h3>
         <p>
-          Use the Export button to download all compliance data (including
-          theatre breakdowns) as CSV, Excel, or PDF.
+          Each report section has an Export button to download the compliance
+          data (including theatre breakdowns where present) as CSV, Excel, or
+          PDF.
+        </p>
+      </>
+    ),
+  },
+  "admin-product-types": {
+    title: "Product Types",
+    content: (
+      <>
+        <p>
+          Product types are an admin-managed list used to categorise training
+          data (for example on the dashboard&apos;s &quot;By Product Type&quot;
+          chart and the By Product Type report). Add, rename, or remove the
+          product types that fit your catalogue.
         </p>
 
-        <h3>Configuration</h3>
+        <h3>Adding &amp; Renaming</h3>
         <p>
-          Requirements are managed in{" "}
-          <strong>Admin &rsaquo; Program Data</strong>. Add entries with the
-          program name <strong>Global Diamond</strong>, set the level to{" "}
-          <strong>Global</strong>, select the training, set the global quantity
-          required, and optionally set a &quot;Minimum per Theatre&quot; value.
+          Use <strong>Add Product Type</strong> to create a new entry. Names must
+          be unique (case-insensitive). Renaming a product type updates it
+          everywhere it is referenced.
+        </p>
+
+        <h3>Deleting</h3>
+        <p>
+          A product type can only be deleted when no training data references it.
+          The <strong>Trainings</strong> column shows the current usage count;
+          reassign those trainings to another product type first.
+        </p>
+
+        <h3>Import &amp; Export</h3>
+        <p>
+          Use <strong>Import Product Types</strong> to bulk-create entries from a
+          CSV or Excel file with a single <code>Name</code> column. The wizard
+          auto-maps the column, shows a preview, and reports how many were created
+          versus skipped. Names that already exist (case-insensitive) and
+          duplicates within the file are skipped rather than duplicated.
+          <strong> Export</strong> downloads the current list as CSV, Excel, or
+          PDF.
+        </p>
+
+        <h3>Training-data imports</h3>
+        <p>
+          During a training-data import, product-type cells are matched
+          case-insensitively against this list. Unknown values are reported as
+          per-row errors rather than being silently changed, so keep this list in
+          sync with the values used in your spreadsheets.
         </p>
       </>
     ),

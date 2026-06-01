@@ -3,6 +3,7 @@ import prisma, { type PrismaTransactionClient } from "@/lib/prisma";
 import JSZip from "jszip";
 import { requireSuperAdmin, handleAuthError } from "@/lib/auth";
 import { loadBackupArchive } from "../route";
+import { prepareBackupRestore } from "@/lib/product-types";
 import path from "path";
 import fs from "fs";
 
@@ -77,10 +78,17 @@ export async function POST(request: NextRequest) {
       return JSON.parse(content);
     };
 
+    const productTypesFile = zip.file("product_types.json");
+    const productTypesJson = productTypesFile ? await readJson("product_types.json") : null;
     const regionData = await readJson("region_data.json");
-    const trainingData = await readJson("training_data.json");
+    const trainingDataJson = await readJson("training_data.json");
     const students = await readJson("students.json");
     const trainingTaken = await readJson("training_taken.json");
+
+    const { productTypeRows, trainingDataRows: trainingData } = prepareBackupRestore(
+      productTypesJson,
+      trainingDataJson
+    );
 
     const importMetadataFile = zip.file("import_metadata.json");
     const importMetadata = importMetadataFile
@@ -94,10 +102,14 @@ export async function POST(request: NextRequest) {
       await tx.trainingTaken.deleteMany({});
       await tx.student.deleteMany({});
       await tx.trainingData.deleteMany({});
+      await tx.productType.deleteMany({});
       await tx.regionData.deleteMany({});
       await tx.importMetadata.deleteMany({});
       await tx.user.deleteMany({});
 
+      if (productTypeRows.length > 0) {
+        await tx.productType.createMany({ data: productTypeRows });
+      }
       if (regionData.length > 0) {
         await tx.regionData.createMany({ data: regionData });
       }

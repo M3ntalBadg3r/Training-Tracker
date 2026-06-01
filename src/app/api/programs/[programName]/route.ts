@@ -6,13 +6,28 @@ import {
   countriesInRegion,
   extractTitles,
   getEmailSetsByTitle,
+  getEmailSetsByTitleAndTheatre,
   listTheatres,
   unionAttained,
+  unionAttainedByTheatre,
 } from "@/lib/program-compliance";
 
-const APS_PROGRAM_NAME = "Authorized Professional Services (APS)";
-
-export async function GET(request: NextRequest) {
+/**
+ * Unified, data-driven program compliance endpoint. The program is identified
+ * by the `[programName]` route segment (URL-decoded), so any program configured
+ * in ProgramData gets a dashboard without code changes. This is the union of
+ * the old hardcoded APS and Global Diamond routes:
+ *  - Country / Region / Theatre levels behave like APS (count attained people).
+ *  - The Global level supports both APS "compliant theatre count" semantics and
+ *    Global Diamond per-title global counts with optional per-theatre minimums.
+ *
+ * A `meta` block reports the configured levels and whether any requirement uses
+ * a per-theatre minimum, so the client can render the right sections.
+ */
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ programName: string }> }
+) {
   let auth;
   try {
     auth = await requireAuth(request);
@@ -20,10 +35,24 @@ export async function GET(request: NextRequest) {
     return handleAuthError(error);
   }
 
+  const { programName: rawName } = await params;
+  let programName: string;
+  try {
+    programName = decodeURIComponent(rawName);
+  } catch {
+    return NextResponse.json({ error: "Invalid program name" }, { status: 400 });
+  }
+
   const allowed = await getAuthorizedCompanyIds(auth.sub, auth.role);
   const companyFilter = resolveCompanyFilter(allowed, request.nextUrl.searchParams.get("companyId"));
   if (companyFilter !== null && companyFilter.length === 0) {
-    return NextResponse.json({ specialisations: [], countries: [], regions: [], theatres: [] });
+    return NextResponse.json({
+      specialisations: [],
+      countries: [],
+      regions: [],
+      theatres: [],
+      meta: { levels: [], hasMinimumPerTheatre: false },
+    });
   }
 
   const level = request.nextUrl.searchParams.get("level") || "country";
@@ -39,7 +68,7 @@ export async function GET(request: NextRequest) {
   }
 
   const programData = await prisma.programData.findMany({
-    where: { programName: APS_PROGRAM_NAME },
+    where: { programName },
     include: {
       specialisation: true,
       trainingData: { select: { fullTitle: true } },
@@ -52,11 +81,20 @@ export async function GET(request: NextRequest) {
 
   type ProgramDataRow = typeof programData[number];
 
+  const meta = {
+    levels: [...new Set(programData.map((pd: ProgramDataRow) => pd.level))],
+    hasMinimumPerTheatre: programData.some(
+      (pd: ProgramDataRow) => pd.minimumPerTheatre != null && pd.minimumPerTheatre > 0
+    ),
+  };
+
   if (programData.length === 0) {
     return NextResponse.json({
       specialisations: [],
       countries: [],
+      regions: [],
       theatres: [],
+      meta,
     });
   }
 
@@ -79,7 +117,7 @@ export async function GET(request: NextRequest) {
     const titles = extractTitles(countryReqs);
     const emailSets = await getEmailSetsByTitle(titles, now, { country, companyIds: companyFilter });
     const specialisations = buildSpecialisations(specMap, "Country", emailSets);
-    return NextResponse.json({ specialisations, countries, regions: regionList, theatres: theatreList });
+    return NextResponse.json({ specialisations, countries, regions: regionList, theatres: theatreList, meta });
   }
 
   if (level === "region" && region) {
@@ -90,7 +128,7 @@ export async function GET(request: NextRequest) {
       ? await getEmailSetsByTitle(titles, now, { countries: regionCountries, companyIds: companyFilter })
       : new Map<string, Set<string>>();
     const specialisations = buildSpecialisations(specMap, "Country", emailSets);
-    return NextResponse.json({ specialisations, countries, regions: regionList, theatres: theatreList });
+    return NextResponse.json({ specialisations, countries, regions: regionList, theatres: theatreList, meta });
   }
 
   if (level === "theatre" && theatre) {
@@ -98,11 +136,19 @@ export async function GET(request: NextRequest) {
     const titles = extractTitles(theatreReqs);
     const emailSets = await getEmailSetsByTitle(titles, now, { theatre, companyIds: companyFilter });
     const specialisations = buildSpecialisations(specMap, "Theatre", emailSets);
-    return NextResponse.json({ specialisations, countries, regions: regionList, theatres: theatreList });
+    return NextResponse.json({ specialisations, countries, regions: regionList, theatres: theatreList, meta });
   }
 
   if (level === "global") {
-    const distinctTheatres = await listTheatres(companyFilter);
+    const distinctTheatres = theatreList;
+
+    // Global counts + per-theatre breakdown are needed for Global Diamond-style
+    // requirements that carry a real training title / per-theatre minimum.
+    const allTitles = extractTitles(programData);
+    const globalEmailSets = await getEmailSetsByTitle(allTitles, now, { companyIds: companyFilter });
+    const byTitleAndTheatre = meta.hasMinimumPerTheatre
+      ? await getEmailSetsByTitleAndTheatre(allTitles, now, companyFilter)
+      : new Map<string, Map<string, Set<string>>>();
 
     const globalSpecialisations = [];
 
@@ -112,11 +158,11 @@ export async function GET(request: NextRequest) {
 
       if (globalReqs.length === 0) continue;
 
+      // APS "count of compliant theatres" — a theatre is compliant when it meets
+      // every theatre-level requirement for this specialisation.
       let compliantTheatreCount = 0;
-
       if (theatreReqs.length > 0) {
         const titles = extractTitles(theatreReqs);
-
         for (const t of distinctTheatres) {
           const emailSets = await getEmailSetsByTitle(titles, now, { theatre: t, companyIds: companyFilter });
           const allMet = theatreReqs.every((req: ProgramDataRow) => {
@@ -127,20 +173,48 @@ export async function GET(request: NextRequest) {
         }
       }
 
-      const specReqs = globalReqs.map((req: ProgramDataRow) => ({
-        trainingType: req.trainingType ?? null,
-        trainingTitle: req.trainingTitle ?? null,
-        trainingFullTitle: req.trainingData?.fullTitle ?? "Theatre Compliance",
-        quantityRequired: req.quantityRequired,
-        attained: compliantTheatreCount,
-        alternatives: req.alternatives.map((a) => ({
-          trainingType: a.trainingType,
-          trainingTitle: a.trainingTitle,
-          trainingFullTitle: a.trainingData?.fullTitle ?? "—",
-        })),
-      }));
+      const specReqs = globalReqs.map((req: ProgramDataRow) => {
+        const hasTrainingTitle = req.trainingTitle !== null;
+        const globalAttained = unionAttained(req, globalEmailSets);
+        const minimumPerTheatre = req.minimumPerTheatre ?? null;
 
-      globalSpecialisations.push({ name: specName, requirements: specReqs });
+        let theatreBreakdown: { theatre: string; count: number; compliant: boolean }[] | null = null;
+        if (minimumPerTheatre !== null && minimumPerTheatre > 0) {
+          theatreBreakdown = unionAttainedByTheatre(req, byTitleAndTheatre, distinctTheatres).map((t) => ({
+            theatre: t.theatre,
+            count: t.count,
+            compliant: t.count >= minimumPerTheatre,
+          }));
+        }
+
+        // For title-bearing requirements the "attained" figure is the global
+        // student count; for the APS theatre-compliance placeholder it's the
+        // number of compliant theatres.
+        const attained = hasTrainingTitle ? globalAttained : compliantTheatreCount;
+        const primaryMet = attained >= req.quantityRequired;
+        const theatresMet = theatreBreakdown === null || theatreBreakdown.every((t) => t.compliant);
+        const compliant = primaryMet && theatresMet;
+
+        return {
+          trainingType: req.trainingType ?? null,
+          trainingTitle: req.trainingTitle ?? null,
+          trainingFullTitle: req.trainingData?.fullTitle ?? "Theatre Compliance",
+          quantityRequired: req.quantityRequired,
+          attained,
+          globalAttained,
+          minimumPerTheatre,
+          theatreBreakdown,
+          compliant,
+          alternatives: req.alternatives.map((a: ProgramDataRow["alternatives"][number]) => ({
+            trainingType: a.trainingType,
+            trainingTitle: a.trainingTitle,
+            trainingFullTitle: a.trainingData?.fullTitle ?? "—",
+          })),
+        };
+      });
+
+      const specCompliant = specReqs.every((r) => r.compliant);
+      globalSpecialisations.push({ name: specName, compliant: specCompliant, requirements: specReqs });
     }
 
     return NextResponse.json({
@@ -148,11 +222,12 @@ export async function GET(request: NextRequest) {
       countries,
       regions: regionList,
       theatres: theatreList,
+      meta,
     });
   }
 
   const specialisations = buildSpecialisations(specMap, "Country", new Map());
-  return NextResponse.json({ specialisations, countries, regions: regionList, theatres: theatreList });
+  return NextResponse.json({ specialisations, countries, regions: regionList, theatres: theatreList, meta });
 }
 
 function buildSpecialisations(

@@ -12,6 +12,7 @@ export async function GET(request: NextRequest) {
   const trainingData = await prisma.trainingData.findMany({
     orderBy: { trainingTitle: "asc" },
     include: {
+      productType: { select: { name: true } },
       subItemMemberships: { select: { subItemTrainingTitle: true } },
       parentMemberships: { select: { parentTrainingTitle: true } },
     },
@@ -21,7 +22,7 @@ export async function GET(request: NextRequest) {
     trainingTitle: t.trainingTitle,
     fullTitle: t.fullTitle,
     trainingType: t.trainingType,
-    productType: t.productType,
+    productType: t.productType.name,
     function: t.function,
     link: t.link,
     certification: t.certification,

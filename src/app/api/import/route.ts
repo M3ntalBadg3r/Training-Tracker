@@ -6,6 +6,7 @@ import { canAccessCompany, getAuthorizedCompanyIds, isSuperAdmin } from "@/lib/c
 import { recomputeParentsForMany } from "@/lib/olx";
 import { detectFormat, isDateFormat, parseDateWith, type DateFormat } from "@/lib/date-format";
 import { getSystemDateFormat } from "@/lib/system-settings";
+import { ensureDefaultProductTypeId } from "@/lib/product-types";
 
 interface ImportRow {
   fullName: string;
@@ -207,6 +208,9 @@ export async function POST(request: NextRequest) {
     };
   });
 
+  // Resolved lazily on first auto-create of a training row (see below).
+  let cachedDefaultProductTypeId: number | undefined;
+
   for (let i = 0; i < mappedRows.length; i++) {
     const row = mappedRows[i];
     const rowNum = i + 2;
@@ -372,6 +376,9 @@ export async function POST(request: NextRequest) {
       });
 
       if (!trainingExists) {
+        if (cachedDefaultProductTypeId === undefined) {
+          cachedDefaultProductTypeId = await ensureDefaultProductTypeId();
+        }
         await prisma.trainingData.upsert({
           where: { trainingTitle: row.title },
           update: {},
@@ -379,7 +386,7 @@ export async function POST(request: NextRequest) {
             trainingTitle: row.title,
             fullTitle: row.title,
             trainingType: "Certification",
-            productType: "Cortex",
+            productTypeId: cachedDefaultProductTypeId,
             function: "Sales",
             isIncomplete: true,
           },
