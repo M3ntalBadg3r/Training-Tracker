@@ -51,7 +51,7 @@ src/
     theme/        # ThemeProvider (dark mode context + useTheme hook)
     date-format/  # DateFormatProvider (per-user + system date format context, useDateFormat hook)
     data-table/   # Generic DataTable (search, sort, filter, paginate) + GroupedRows (grouped tbody with subtotals + expand/collapse)
-    admin/        # Admin-only widgets: ProviderCredentialWizard, CredentialHealthBanner
+    admin/        # Admin-only widgets: ProviderCredentialWizard, CredentialHealthBanner, UpdateAvailableBanner (dashboard "update available" alert, SuperAdmin-only, session-dismissible)
   hooks/          # useDebounce
   proxy.ts       # Route protection (auth + role checks). Note: in Next.js 16+ the official middleware filename is `proxy.ts` (formerly `middleware.ts`).
   lib/

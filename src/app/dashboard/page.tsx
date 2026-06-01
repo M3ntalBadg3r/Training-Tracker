@@ -4,6 +4,7 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import PageHeader from "@/components/layout/PageHeader";
 import CredentialHealthBanner from "@/components/admin/CredentialHealthBanner";
+import UpdateAvailableBanner from "@/components/admin/UpdateAvailableBanner";
 import { useCompanyScope } from "@/components/company/CompanyScopeProvider";
 import {
   Users,
@@ -201,6 +202,7 @@ export default function DashboardPage() {
         }
       />
 
+      <UpdateAvailableBanner />
       <CredentialHealthBanner />
 
       {/* Metric Cards */}
