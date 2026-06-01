@@ -52,6 +52,15 @@ const helpSections: Record<string, HelpSection> = {
           </tbody>
         </table>
 
+        <h3>Update Notifications</h3>
+        <p>
+          When a newer release of Training Tracker is available, <strong>SuperAdmins</strong>
+          see a blue banner at the top of the Dashboard with a link to the
+          <strong> Updates</strong> page. The banner can be dismissed for the current
+          browser session; it returns next session, or sooner if an even newer release
+          appears. Admins and Users never see it.
+        </p>
+
         <h3>Night Mode</h3>
         <p>
           Click the <strong>Moon</strong> icon in the sidebar to switch to night

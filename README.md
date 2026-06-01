@@ -248,6 +248,10 @@ After that first successful update, the update scripts will automatically keep t
 
 The Dashboard is the default landing page and provides an at-a-glance overview of all training activity.
 
+### Update Notifications
+
+When a newer release is available, **SuperAdmins** see a dismissible blue banner at the top of the Dashboard linking to **Admin → Updates**. Dismissing it hides the banner for the current browser session; it reappears in a new session or as soon as an even newer release is published. Admins and Users do not see this banner.
+
 ### Night Mode
 
 Click the **Moon** icon in the sidebar to toggle night (dark) mode. Click the **Sun** icon to switch back to light mode. Your preference is saved in the browser and persists across sessions.
