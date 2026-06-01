@@ -95,6 +95,10 @@ export default function ProgramDetailPage() {
   const hasTheatre = meta?.levels.includes("Theatre") ?? false;
   const hasGlobal = meta?.levels.includes("Global") ?? false;
   const gdStyleGlobal = meta?.hasMinimumPerTheatre ?? false;
+  // When the program only has a Global Report (no Country/Region/Theatre
+  // sections), the Global export lives in the page header — between the
+  // company dropdown and the help button — rather than under the heading.
+  const globalOnly = hasGlobal && !hasCountry && !hasTheatre;
 
   // Initial load — fetch metadata + available countries/regions/theatres.
   useEffect(() => {
@@ -299,6 +303,18 @@ export default function ProgramDetailPage() {
 
   const sectionSlug = programName.replace(/[^a-z0-9]+/gi, "-").toLowerCase();
 
+  const renderGlobalExport = (align: "left" | "right") =>
+    globalSpecs.length > 0 ? (
+      <ExportMenu
+        show={showExportGlobal}
+        setShow={setShowExportGlobal}
+        data={gdStyleGlobal ? buildGlobalDiamondExport() : buildExportData(globalSpecs, "Global", "Global")}
+        columns={gdStyleGlobal ? gdExportCols : exportCols}
+        filename={`${sectionSlug}-global`}
+        align={align}
+      />
+    ) : null;
+
   return (
     <div>
       <PageHeader
@@ -317,6 +333,7 @@ export default function ProgramDetailPage() {
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </select>
+            {globalOnly && renderGlobalExport("right")}
           </div>
         }
       />
@@ -504,17 +521,10 @@ export default function ProgramDetailPage() {
           </button>
           {globalOpen && (
             <div className="mt-2">
-              <div className="flex items-center gap-3 mb-4">
-                {globalSpecs.length > 0 && (
-                  <ExportMenu
-                    show={showExportGlobal}
-                    setShow={setShowExportGlobal}
-                    data={gdStyleGlobal ? buildGlobalDiamondExport() : buildExportData(globalSpecs, "Global", "Global")}
-                    columns={gdStyleGlobal ? gdExportCols : exportCols}
-                    filename={`${sectionSlug}-global`}
-                  />
-                )}
-              </div>
+              {/* In a global-only view the export lives in the page header. */}
+              {!globalOnly && globalSpecs.length > 0 && (
+                <div className="flex items-center gap-3 mb-4">{renderGlobalExport("left")}</div>
+              )}
               {globalLoading ? (
                 <LoadingSpinner />
               ) : globalSpecs.length === 0 ? (

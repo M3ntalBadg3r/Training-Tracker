@@ -1595,7 +1595,18 @@ const helpSections: Record<string, HelpSection> = {
           reassign those trainings to another product type first.
         </p>
 
-        <h3>Imports</h3>
+        <h3>Import &amp; Export</h3>
+        <p>
+          Use <strong>Import Product Types</strong> to bulk-create entries from a
+          CSV or Excel file with a single <code>Name</code> column. The wizard
+          auto-maps the column, shows a preview, and reports how many were created
+          versus skipped. Names that already exist (case-insensitive) and
+          duplicates within the file are skipped rather than duplicated.
+          <strong> Export</strong> downloads the current list as CSV, Excel, or
+          PDF.
+        </p>
+
+        <h3>Training-data imports</h3>
         <p>
           During a training-data import, product-type cells are matched
           case-insensitively against this list. Unknown values are reported as
