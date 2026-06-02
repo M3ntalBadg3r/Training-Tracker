@@ -209,6 +209,17 @@ INSTALL_OUTPUT=$(npm install 2>&1) || {
 }
 echo "  Dependencies installed."
 
+# Self-heal npm optional-dependency bug (npm/cli#4828) on cross-platform lockfiles.
+if ! node -e "require('lightningcss')" >/dev/null 2>&1; then
+    echo "  Native CSS engine missing; reinstalling dependencies for this platform..."
+    rm -rf node_modules package-lock.json
+    HEAL_OUTPUT=$(npm install 2>&1) || {
+        echo "  npm reinstall failed: ${HEAL_OUTPUT}"
+        rollback 3 "Failed to reinstall dependencies"
+    }
+    echo "  Dependencies reinstalled."
+fi
+
 # Step 4: Run database migrations
 echo "[4/7] Running database migrations..."
 MIGRATE_OUTPUT=$(npx prisma migrate deploy 2>&1) || {

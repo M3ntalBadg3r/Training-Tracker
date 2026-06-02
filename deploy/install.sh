@@ -193,6 +193,15 @@ chmod 600 "${ENV_FILE}"
 echo "[7/9] Installing dependencies and building..."
 cd ${APP_DIR}
 npm install
+# Self-heal npm's optional-dependency bug (npm/cli#4828): a package-lock.json
+# generated on another OS/arch can leave platform-native binaries uninstalled
+# (e.g. lightningcss for Tailwind v4), breaking the build. If the native CSS
+# engine can't load, regenerate the lockfile for this platform and reinstall.
+if ! node -e "require('lightningcss')" >/dev/null 2>&1; then
+    echo "Native CSS engine missing for this platform; reinstalling dependencies..."
+    rm -rf node_modules package-lock.json
+    npm install
+fi
 npx prisma migrate deploy
 npx prisma generate
 npm run build

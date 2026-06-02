@@ -248,6 +248,18 @@ INSTALL_OUTPUT=$(npm install 2>&1) || {
 }
 log "Dependencies installed"
 
+# Self-heal npm optional-dependency bug (npm/cli#4828) on cross-platform lockfiles.
+if ! node -e "require('lightningcss')" >/dev/null 2>&1; then
+    log "Native CSS engine missing; reinstalling dependencies for this platform"
+    rm -rf node_modules package-lock.json
+    HEAL_OUTPUT=$(npm install 2>&1) || {
+        log "npm reinstall failed: ${HEAL_OUTPUT}"
+        rollback 3 "Failed to reinstall dependencies"
+        exit 1
+    }
+    log "Dependencies reinstalled"
+fi
+
 # Step 4: Run database migrations
 write_status 4 "Running database migrations..." "in_progress"
 log "Step 4: Running database migrations"
