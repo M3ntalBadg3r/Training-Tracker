@@ -13,6 +13,7 @@ Built with Next.js, React, PostgreSQL, and Prisma.
   - [Installation Script](#installation-script)
   - [Update Script](#update-script)
   - [Service Management](#service-management)
+  - [Troubleshooting](#troubleshooting)
 - [Authentication & Users](#authentication--users)
 - [Dashboard](#dashboard)
 - [Students](#students)
@@ -135,6 +136,27 @@ tail -f /var/log/training-tracker.log
 ```
 
 The application runs on **port 3000** by default. To change the port, edit the `PORT` environment variable in `/opt/training-tracker/.env` or in the systemd service file at `/etc/systemd/system/training-tracker.service`, then restart the service.
+
+### Troubleshooting
+
+**Build fails on ARM64 with `Cannot find module '...lightningcss...node'`** — On
+ARM64 hosts (e.g. a Debian VM on Apple Silicon) the build can fail while
+compiling CSS with an error such as `Cannot find module
+'../lightningcss.linux-arm64-gnu.node'`. This is a known npm bug
+([npm/cli#4828](https://github.com/npm/cli/issues/4828)): a `package-lock.json`
+generated on a different OS/architecture can leave the platform-native binary
+uninstalled. The install and update scripts now detect this and reinstall
+automatically. To fix an existing install manually, regenerate the lockfile for
+your platform:
+
+```bash
+cd /opt/training-tracker
+rm -rf node_modules package-lock.json
+npm install
+npx prisma generate
+npm run build
+systemctl restart training-tracker
+```
 
 ---
 
