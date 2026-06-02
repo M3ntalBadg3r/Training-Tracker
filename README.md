@@ -67,22 +67,16 @@ bash deploy/install.sh
 1. **Updates system packages** via `apt-get update`.
 2. **Installs Node.js 22 LTS** from the NodeSource repository.
 3. **Installs PostgreSQL** (if not already installed) and starts the service.
-4. **Creates the database and user** — database `training_tracker`, user `tracker`.
+4. **Creates the database and user** — database `training_tracker`, user `tracker` with a **randomly generated password** (`openssl rand -hex 32`).
 5. **Copies application files** to `/opt/training-tracker` (skipped if already running from that directory).
-6. **Configures the `.env` file** — creates it with `DATABASE_URL` and `JWT_SECRET` if missing, or appends any missing required variables to an existing `.env` file.
+6. **Configures the `.env` file** — creates it if missing (or appends only the missing keys to an existing one) and **auto-generates strong random secrets** for `JWT_SECRET`, `ENCRYPTION_KEY`, and `CRON_SECRET`. It also **prompts** whether you use a public domain name (→ `APP_BASE_URL`) and whether you sit behind a reverse proxy (→ `TRUSTED_PROXIES`, asking for the proxy IP(s), default `127.0.0.1,::1`). On a non-interactive install (`curl | sudo bash` with no terminal) the prompts are skipped; you can preset them via environment variables instead, e.g. `APP_BASE_URL="https://tracker.example.com" bash deploy/install.sh`. Finally, when a system CA bundle is present it sets `NODE_EXTRA_CA_CERTS` so installs **behind an SSL-inspecting proxy/firewall** work (see below).
 7. **Installs npm dependencies**, runs Prisma migrations, generates the Prisma client, and builds the application.
 8. **Installs a systemd service** (`training-tracker.service`) so the application starts automatically on boot. Falls back to an init.d script if systemd is not available.
-9. **Prints the URL** where the application is accessible (port 3000).
+9. **Prints the URL** plus a configuration summary — including the **generated database password** (save it; it is also stored in `.env`).
 
-**Default database credentials:**
+**Database credentials:** database `training_tracker`, user `tracker`, with a random password generated at install time and written to `DATABASE_URL` in `/opt/training-tracker/.env`. The generated password is printed in the install summary. To change it later, edit `/opt/training-tracker/.env` (and the PostgreSQL role) and restart the service.
 
-| Setting | Value |
-|---------|-------|
-| Database | `training_tracker` |
-| User | `tracker` |
-| Password | `tracker123` |
-
-To use different credentials, edit the variables at the top of `deploy/install.sh` before running it, or edit `/opt/training-tracker/.env` after installation and restart the service.
+> **Behind an SSL-inspecting firewall (e.g. Palo Alto)?** Node.js ignores the OS trust store and uses its own CA list, so even after importing your firewall's root cert into Debian, Prisma's engine download (and the app's outbound HTTPS) can fail with `self-signed certificate in certificate chain`. The installer fixes this automatically by setting `NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt` in `.env` (which `systemd` injects at runtime, and the update scripts inherit). Make sure your firewall's root + intermediate certs are imported into the system store (`update-ca-certificates`) first. The update scripts also self-heal older installs that predate this.
 
 ### Update Script
 
@@ -201,6 +195,7 @@ The `.env` file requires:
 | `CRON_SECRET` | *(Optional)* Required only when using the auto-backup / auto-export shell scripts. Generate with `openssl rand -hex 32`. |
 | `APP_BASE_URL` | *(Recommended in production)* Canonical externally-resolvable origin (e.g. `https://tracker.example.com`). Used to build OAuth redirect URIs without trusting `X-Forwarded-Host` headers. |
 | `TRUSTED_PROXIES` | *(Recommended in production)* Comma-separated list of trusted reverse-proxy IPs whose `X-Forwarded-For` entries are stripped when extracting the real client IP for rate limiting. Defaults to `127.0.0.1,::1`. |
+| `NODE_EXTRA_CA_CERTS` | *(Optional)* Path to a CA bundle Node should trust in addition to its built-ins — set this when running behind an SSL-inspecting proxy/firewall so Prisma engine downloads and outbound HTTPS succeed. The installer sets it to `/etc/ssl/certs/ca-certificates.crt` automatically on Debian. |
 | `GITHUB_TOKEN` | *(Optional)* GitHub personal access token — required for update checks **and git pulls** on private repositories |
 
 #### Setting up GITHUB_TOKEN

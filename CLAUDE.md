@@ -230,4 +230,4 @@ After every change, you MUST complete these steps before considering the task do
 
 ## Deployment
 
-Production runs via systemd at `/opt/training-tracker` on port 3000. See `deploy/` for install/update scripts.
+Production runs via systemd at `/opt/training-tracker` on port 3000. See `deploy/` for install/update scripts. `deploy/install.sh` auto-generates the DB password and the `JWT_SECRET`/`ENCRYPTION_KEY`/`CRON_SECRET` secrets (`openssl rand -hex 32`), prompts (via `/dev/tty`, with env-var overrides) for `APP_BASE_URL`/`TRUSTED_PROXIES`, and writes `NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt` so installs behind an SSL-inspecting proxy work (Node ignores the OS trust store); the systemd unit's `EnvironmentFile=.env` propagates it at runtime and `update.sh`/`perform-update.sh` self-heal/inherit it.

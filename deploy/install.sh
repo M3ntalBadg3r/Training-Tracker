@@ -18,7 +18,18 @@ set -e
 APP_DIR="/opt/training-tracker"
 DB_NAME="training_tracker"
 DB_USER="tracker"
-DB_PASS="tracker123"
+
+# CA bundle that Node should trust in addition to its built-ins. On Debian this
+# file is maintained by `update-ca-certificates`, so it already includes any
+# corporate/firewall root certs the admin imported — which is what lets Prisma's
+# Node-based engine downloader (and the running app) work behind an
+# SSL-inspecting proxy. Node ignores the system store unless pointed at it.
+CA_BUNDLE="/etc/ssl/certs/ca-certificates.crt"
+
+# Generate a random secret/password (32 bytes -> 64 hex chars).
+generate_secret() {
+    openssl rand -hex 32 2>/dev/null || node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+}
 
 echo "=== Training Tracker - Installation ==="
 
@@ -66,6 +77,18 @@ done
 
 # 4. Create database and user
 echo "[4/9] Setting up database..."
+
+# Decide the database password before creating the role. On a re-run where .env
+# already has a DATABASE_URL, keep the existing credentials (CREATE USER no-ops
+# below and step 6 won't rewrite DATABASE_URL). On a fresh install, generate a
+# strong random password and surface it at the end.
+if [ -f "${APP_DIR}/.env" ] && grep -q '^DATABASE_URL=' "${APP_DIR}/.env"; then
+    REUSE_DB_CREDS=true
+else
+    REUSE_DB_CREDS=false
+fi
+DB_PASS="$(generate_secret)"
+
 su - postgres -c "psql -c \"CREATE DATABASE ${DB_NAME};\"" 2>/dev/null || echo "Database already exists"
 su - postgres -c "psql -c \"CREATE USER ${DB_USER} WITH PASSWORD '${DB_PASS}';\"" 2>/dev/null || echo "User already exists"
 su - postgres -c "psql -c \"ALTER USER ${DB_USER} CREATEDB;\""
@@ -92,37 +115,79 @@ fi
 # 6. Configure environment
 echo "[6/9] Configuring environment..."
 
-# Generate a random JWT secret
-generate_secret() {
-    openssl rand -hex 32 2>/dev/null || node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-}
-
 # URL-encode a password so special characters (#$&@etc.) don't break the connection string
 url_encode_password() {
     node -e "console.log(encodeURIComponent(process.argv[1]))" "$1"
 }
 
+# Read a line from the controlling terminal when one is attached. Under a piped
+# install (curl ... | sudo bash) stdin is the script, so we read /dev/tty
+# directly; with no terminal we return empty and the caller skips the prompt.
+prompt_tty() {
+    local _ans=""
+    if ( : </dev/tty ) 2>/dev/null; then
+        read -r -p "$1" _ans </dev/tty || _ans=""
+    fi
+    printf '%s' "${_ans}"
+}
+
+ENV_FILE="${APP_DIR}/.env"
+
+# Does the .env already define KEY?
+env_has() {
+    [ -f "${ENV_FILE}" ] && grep -q "^$1=" "${ENV_FILE}"
+}
+
+# Optional site configuration — prompt only when not already set via an env var
+# or an existing .env. Env-var overrides (e.g. APP_BASE_URL=... bash install.sh)
+# win and skip the prompt; a non-interactive install simply leaves them unset.
+if [ -z "${APP_BASE_URL}" ] && ! env_has APP_BASE_URL; then
+    APP_BASE_URL="$(prompt_tty "Domain name / public URL for the site (e.g. https://tracker.example.com), or leave blank to skip: ")"
+fi
+if [ -z "${TRUSTED_PROXIES}" ] && ! env_has TRUSTED_PROXIES; then
+    _rp="$(prompt_tty "Are you running behind a reverse proxy? [y/N]: ")"
+    case "${_rp}" in
+        [Yy]*)
+            _ips="$(prompt_tty "Reverse proxy IP(s), comma-separated [127.0.0.1,::1]: ")"
+            TRUSTED_PROXIES="${_ips:-127.0.0.1,::1}"
+            ;;
+    esac
+fi
+
 DB_PASS_ENCODED=$(url_encode_password "${DB_PASS}")
 
-if [ ! -f "${APP_DIR}/.env" ]; then
-    cat > ${APP_DIR}/.env << EOF
+if [ ! -f "${ENV_FILE}" ]; then
+    cat > "${ENV_FILE}" << EOF
 DATABASE_URL="postgresql://${DB_USER}:${DB_PASS_ENCODED}@localhost:5432/${DB_NAME}"
 JWT_SECRET="$(generate_secret)"
+ENCRYPTION_KEY="$(generate_secret)"
+CRON_SECRET="$(generate_secret)"
 EOF
+    [ -f "${CA_BUNDLE}" ] && echo "NODE_EXTRA_CA_CERTS=\"${CA_BUNDLE}\"" >> "${ENV_FILE}"
+    [ -n "${APP_BASE_URL}" ] && echo "APP_BASE_URL=\"${APP_BASE_URL}\"" >> "${ENV_FILE}"
+    [ -n "${TRUSTED_PROXIES}" ] && echo "TRUSTED_PROXIES=\"${TRUSTED_PROXIES}\"" >> "${ENV_FILE}"
 else
-    # Ensure DATABASE_URL is present
-    if ! grep -q "^DATABASE_URL=" "${APP_DIR}/.env"; then
-        echo "" >> "${APP_DIR}/.env"
-        echo "DATABASE_URL=\"postgresql://${DB_USER}:${DB_PASS_ENCODED}@localhost:5432/${DB_NAME}\"" >> "${APP_DIR}/.env"
-        echo "Added DATABASE_URL to existing .env"
+    # Append any keys missing from an existing .env (idempotent re-run).
+    env_has DATABASE_URL   || { echo "DATABASE_URL=\"postgresql://${DB_USER}:${DB_PASS_ENCODED}@localhost:5432/${DB_NAME}\"" >> "${ENV_FILE}"; echo "Added DATABASE_URL to existing .env"; }
+    env_has JWT_SECRET     || { echo "JWT_SECRET=\"$(generate_secret)\"" >> "${ENV_FILE}"; echo "Added JWT_SECRET to existing .env"; }
+    env_has ENCRYPTION_KEY || { echo "ENCRYPTION_KEY=\"$(generate_secret)\"" >> "${ENV_FILE}"; echo "Added ENCRYPTION_KEY to existing .env"; }
+    env_has CRON_SECRET    || { echo "CRON_SECRET=\"$(generate_secret)\"" >> "${ENV_FILE}"; echo "Added CRON_SECRET to existing .env"; }
+    if [ -f "${CA_BUNDLE}" ] && ! env_has NODE_EXTRA_CA_CERTS; then
+        echo "NODE_EXTRA_CA_CERTS=\"${CA_BUNDLE}\"" >> "${ENV_FILE}"; echo "Added NODE_EXTRA_CA_CERTS to existing .env"
     fi
-    # Ensure JWT_SECRET is present
-    if ! grep -q "^JWT_SECRET=" "${APP_DIR}/.env"; then
-        echo "JWT_SECRET=\"$(generate_secret)\"" >> "${APP_DIR}/.env"
-        echo "Added JWT_SECRET to existing .env"
+    if [ -n "${APP_BASE_URL}" ] && ! env_has APP_BASE_URL; then
+        echo "APP_BASE_URL=\"${APP_BASE_URL}\"" >> "${ENV_FILE}"; echo "Added APP_BASE_URL to existing .env"
+    fi
+    if [ -n "${TRUSTED_PROXIES}" ] && ! env_has TRUSTED_PROXIES; then
+        echo "TRUSTED_PROXIES=\"${TRUSTED_PROXIES}\"" >> "${ENV_FILE}"; echo "Added TRUSTED_PROXIES to existing .env"
     fi
 fi
-chmod 600 ${APP_DIR}/.env
+chmod 600 "${ENV_FILE}"
+
+# Make Node trust the system CA bundle for the build below (install.sh does not
+# source .env). This is what lets the Prisma engine download succeed behind an
+# SSL-inspecting proxy; harmless otherwise, since it only adds trust.
+[ -f "${CA_BUNDLE}" ] && export NODE_EXTRA_CA_CERTS="${NODE_EXTRA_CA_CERTS:-${CA_BUNDLE}}"
 
 # 7. Install dependencies and build
 echo "[7/9] Installing dependencies and building..."
@@ -202,6 +267,22 @@ fi
 echo ""
 echo "=== Installation Complete ==="
 echo "Training Tracker is now running on http://$(hostname -I | awk '{print $1}'):3000"
+echo ""
+echo "  Configuration (stored in ${APP_DIR}/.env, permissions 600):"
+echo "    Database:        ${DB_NAME} (user: ${DB_USER})"
+if [ "${REUSE_DB_CREDS}" = false ]; then
+    echo "    DB password:     ${DB_PASS}"
+    echo "                     ^ save this somewhere safe (also in .env)"
+else
+    echo "    DB password:     unchanged (existing .env reused)"
+fi
+echo "    Secrets:         JWT_SECRET, ENCRYPTION_KEY, CRON_SECRET auto-generated"
+[ -n "${APP_BASE_URL}" ]    && echo "    Public URL:      ${APP_BASE_URL}"
+[ -n "${TRUSTED_PROXIES}" ] && echo "    Trusted proxies: ${TRUSTED_PROXIES}"
+[ -f "${CA_BUNDLE}" ]       && echo "    Node CA bundle:  ${CA_BUNDLE}"
+echo ""
+echo "  Next: open the URL above and complete the first-run setup wizard to"
+echo "  create your administrator account."
 echo ""
 if command -v systemctl &> /dev/null; then
     echo "Commands:"

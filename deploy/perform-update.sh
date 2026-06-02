@@ -31,6 +31,13 @@ if [ -f "${APP_DIR}/.env" ]; then
     set +a
 fi
 
+# Make Node trust the system CA bundle (covers SSL-inspecting proxies). New
+# installs persist NODE_EXTRA_CA_CERTS in .env; this self-heals older installs
+# that predate that so the Prisma engine download during updates still works.
+if [ -z "${NODE_EXTRA_CA_CERTS}" ] && [ -f /etc/ssl/certs/ca-certificates.crt ]; then
+    export NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
+fi
+
 # Unset NODE_ENV so npm install includes devDependencies (prisma, dotenv, etc.)
 unset NODE_ENV
 
