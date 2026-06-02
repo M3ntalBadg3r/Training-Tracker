@@ -5,6 +5,7 @@ import {
   getAuthFromRequest,
   setAuthCookie,
   verifyMfaToken,
+  isRequestSecure,
 } from "@/lib/auth";
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 
@@ -59,7 +60,7 @@ export async function POST(request: NextRequest) {
       role: updated.role,
       displayName: updated.displayName,
     });
-    setAuthCookie(response, newToken);
+    setAuthCookie(response, newToken, isRequestSecure(request));
   }
 
   return response;
