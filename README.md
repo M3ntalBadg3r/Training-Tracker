@@ -711,8 +711,8 @@ Click **Scan for Issues** to check all student records for problems in the Full 
 |-------|-------------|-------------|
 | **Spaces** | Leading or trailing whitespace | Trimmed |
 | **Email as Name** | Full name is an email address | Derived from email local part (e.g. `jane.doe@co.com` → `Jane Doe`) |
-| **Question Marks** | Full name contains only question marks and whitespace (e.g. `?`, `? ??`, `??? ??`) | Derived from email local part (e.g. `karol.postol@co.com` → `Karol Postol`) |
-| **Duplicate Name** | Full name repeats the same word (e.g. `Karol Karol`) | Duplicates removed; if only one word remains, the name is derived from the email local part instead |
+| **Question Marks** | Full name contains only question marks and whitespace (e.g. `?`, `? ??`, `??? ??`) | Derived from email local part (e.g. `jane.doe@co.com` → `Jane Doe`) |
+| **Duplicate Name** | Full name repeats the same word (e.g. `Jane Jane`) | Duplicates removed; if only one word remains, the name is derived from the email local part instead |
 | **Numbers** | Digits in the name | Removed |
 | **Special Characters** | Non-letter/space/hyphen/apostrophe chars | Removed |
 

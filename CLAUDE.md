@@ -143,6 +143,35 @@ deploy/           # install.sh, update.sh, install-remote.sh, perform-update.sh,
 - ESLint: `eslint-config-next` with core-web-vitals + TypeScript rules (strict mode)
 - No implicit any — strict TypeScript enabled
 
+## Data Hygiene & De-identification (MANDATORY)
+
+This is a generic, multi-tenant product. **Never** commit or publish real
+company names, customer/partner names, product or certification brand names,
+partner-program names, or any personally identifiable information (PII —
+real people's names, email addresses, phone numbers, etc.). This applies to
+**everything you author or edit**: source code, comments, `README.md`,
+`CLAUDE.md`, `src/lib/help-content.tsx`, commit messages, **and GitHub release
+notes**.
+
+- **Use fictional placeholders for examples**, consistent with what's already
+  in the codebase:
+  - People / emails: `Jane Doe`, `jane.doe@co.com`, `John Smith` (domains
+    `co.com` / `example.com` only — never a real company's domain).
+  - Products / certifications: `Product A`, `Cert A` / `Cert B`,
+    `Training A` / `Training B`.
+  - Partner programs: "a partner program", "a global-only program" — never a
+    real program name.
+  - Theatres/regions: the neutral codes already used in docs (`EMEA`, `NAM`,
+    `JAPAC`, `LATAM`).
+- **Do not name the thing you are removing.** When sanitising, describe the
+  change generically (e.g. "fictionalised a real-looking name example") — do
+  **not** repeat the real identifier in the notes/commit that removes it.
+- **Real data belongs only in a user's own database**, never in the repo or
+  release artifacts. Seed/fixture/test data must be fictional.
+- **Before committing or cutting a release**, scan your diff (and any release
+  body) for real names, company/product/program names, and non-fictional email
+  domains. If you find one, replace it with a placeholder from the list above.
+
 ## Common Pitfalls
 
 - **fullTitle vs trainingTitle**: `trainingTitle` is the internal DB key (from imports); `fullTitle` is the human-readable display name. Multiple trainingTitles can share a fullTitle — always group/deduplicate by fullTitle when counting.
@@ -197,6 +226,7 @@ After every change, you MUST complete these steps before considering the task do
 3. **Update the help system** — If the change affects user-facing behavior, update the relevant section in `src/lib/help-content.tsx` so the in-app help stays accurate.
 4. **Update CLAUDE.md** — If the change modifies the project structure (new/renamed/removed files or directories) or the data model (new/changed models, fields, enums, or relationships), update the relevant sections in this file.
 5. **Create a GitHub release** — After pushing, create a GitHub release via `gh api` using the tag conventions in the Git Workflow section above (`v<version>-dev` for dev pre-releases, `v<version>` for stable). Write friendly release notes describing what's new, changed, and fixed.
+6. **De-identify** — Before committing and before writing release notes, confirm the diff and the release body contain no real company/product/program names or PII (see **Data Hygiene & De-identification** above). Use fictional placeholders, and never name the identifier you are removing.
 
 ## Deployment
 
