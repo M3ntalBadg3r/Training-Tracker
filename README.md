@@ -158,6 +158,24 @@ npm run build
 systemctl restart training-tracker
 ```
 
+**Update/build fails with `Killed` at step 5 (Building application)** — This is
+the Linux out-of-memory (OOM) killer terminating `next build`: the VM ran out of
+RAM. Next.js 16's production build uses **Turbopack**, which allocates native
+memory, so Node's `--max-old-space-size` won't help — you need more available
+memory. This is common on small VMs (especially 1–2 GB ARM64 instances). We
+recommend at least **2 GB of RAM**, or add a swapfile:
+
+```bash
+sudo fallocate -l 2G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=2048
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab   # persist across reboots
+```
+
+Then re-run the update. The rollback is automatic and safe, so a killed build
+leaves your previous version running and unaffected.
+
 ---
 
 ## Authentication & Users
