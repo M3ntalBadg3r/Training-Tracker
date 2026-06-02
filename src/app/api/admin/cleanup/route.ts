@@ -93,7 +93,7 @@ function fixName(fullName: string, email: string): string {
   });
   name = deduped.join(" ");
 
-  // If de-duplication left only a single word (e.g. "Karol Karol" → "Karol"),
+  // If de-duplication left only a single word (e.g. "Jane Jane" → "Jane"),
   // try to recover a fuller name from the email's local part.
   if (deduped.length < 2) {
     const fromEmail = deriveNameFromEmail(email);

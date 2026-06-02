@@ -665,11 +665,11 @@ const helpSections: Record<string, HelpSection> = {
             <tr>
               <td><strong>Question Marks</strong></td>
               <td>Full name contains only question marks and whitespace (e.g. <code>?</code>, <code>? ??</code>, <code>??? ??</code>)</td>
-              <td>Derived from email local part (e.g. karol.postol@co.com &rarr; Karol Postol)</td>
+              <td>Derived from email local part (e.g. jane.doe@co.com &rarr; Jane Doe)</td>
             </tr>
             <tr>
               <td><strong>Duplicate Name</strong></td>
-              <td>Full name repeats the same word (e.g. <code>Karol Karol</code>)</td>
+              <td>Full name repeats the same word (e.g. <code>Jane Jane</code>)</td>
               <td>Duplicates removed; if only one word remains, the name is derived from the email local part instead</td>
             </tr>
             <tr>
