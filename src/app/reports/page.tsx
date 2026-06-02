@@ -14,6 +14,7 @@ import {
   TrendingUp,
   RefreshCw,
   Scale,
+  UserCheck,
 } from "lucide-react";
 
 const TILES = [
@@ -40,6 +41,12 @@ const TILES = [
     title: "Achievement Over Time",
     description: "Training records over a chosen time range (1/3/6/12 months or custom), with prior-period comparison",
     Icon: CalendarDays,
+  },
+  {
+    href: "/reports/learner-scorecard",
+    title: "Learner Achievement Scorecard",
+    description: "One row per learner — certs, accreditations, ILT/OLX, renewals due, certification gaps, and a top-achievers leaderboard",
+    Icon: UserCheck,
   },
   {
     href: "/reports/trained-not-certified",
