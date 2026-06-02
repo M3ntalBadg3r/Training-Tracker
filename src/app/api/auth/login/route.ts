@@ -5,6 +5,7 @@ import {
   createToken,
   setAuthCookie,
   verifyMfaToken,
+  isRequestSecure,
 } from "@/lib/auth";
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 
@@ -89,7 +90,7 @@ export async function POST(request: NextRequest) {
       pendingMfaEnrollment,
     });
 
-    setAuthCookie(response, token);
+    setAuthCookie(response, token, isRequestSecure(request));
     return response;
   } catch (error) {
     console.error("Login error:", error);

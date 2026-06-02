@@ -84,20 +84,46 @@ export async function verifyToken(
 
 // --- Cookies ---
 
-export function setAuthCookie(response: NextResponse, token: string): void {
+/**
+ * Determine whether the auth cookie should carry the `Secure` attribute for
+ * this request. We key this off the *actual* request protocol rather than
+ * NODE_ENV: browsers silently drop `Secure` cookies delivered over plain HTTP,
+ * which would otherwise make login impossible on an HTTP-only LAN/VM deployment
+ * (NODE_ENV=production but no TLS). Prefer the deployment's canonical
+ * APP_BASE_URL (authoritative, not spoofable), then fall back to
+ * `x-forwarded-proto` (set by a TLS-terminating reverse proxy) and finally the
+ * request URL's own protocol.
+ */
+export function isRequestSecure(request: NextRequest): boolean {
+  const base = process.env.APP_BASE_URL?.trim();
+  if (base) return base.toLowerCase().startsWith("https://");
+  const proto =
+    request.headers.get("x-forwarded-proto")?.split(",")[0].trim() ??
+    new URL(request.url).protocol.replace(":", "");
+  return proto === "https";
+}
+
+export function setAuthCookie(
+  response: NextResponse,
+  token: string,
+  secure: boolean
+): void {
   response.cookies.set(COOKIE_NAME, token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure,
     sameSite: "strict",
     path: "/",
     maxAge: 8 * 60 * 60, // 8 hours
   });
 }
 
-export function clearAuthCookie(response: NextResponse): void {
+export function clearAuthCookie(
+  response: NextResponse,
+  secure: boolean
+): void {
   response.cookies.set(COOKIE_NAME, "", {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure,
     sameSite: "strict",
     path: "/",
     maxAge: 0,
