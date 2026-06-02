@@ -674,7 +674,7 @@ Click **Add Schedule** and configure:
 | Field | Description |
 |-------|-------------|
 | **Name** | A descriptive label for this schedule |
-| **Report** | Which report to export (Trained but Not Certified, By Product Type, By Function, Expiring Soon, Achievement Over Time) |
+| **Report** | Which report to export (Trained but Not Certified, Learner Achievement Scorecard, By Product Type, By Function, Expiring Soon, Achievement Over Time) |
 | **Format** | CSV, Excel (XLSX), or PDF |
 | **Destination** | Where to deliver the file |
 | **Schedule** | Daily / Weekly / Monthly at a specified time |

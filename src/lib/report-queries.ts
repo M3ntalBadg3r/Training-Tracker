@@ -21,6 +21,23 @@ export interface TrainedNotCertifiedRow {
   iltActive: string;
 }
 
+export interface LearnerScorecardRow {
+  fullName: string;
+  email: string;
+  theatre: string;
+  region: string;
+  country: string;
+  certifications: number;
+  accreditations: number;
+  ilts: number;
+  olx: number;
+  total: number;
+  expiring: number;
+  lapsed: number;
+  gaps: number;
+  lastAchievement: string;
+}
+
 export interface TrainingRecordRow {
   fullName: string;
   email: string;
@@ -278,6 +295,85 @@ export async function fetchTrainedNotCertified(companyId?: number | null): Promi
   return results;
 }
 
+export async function fetchLearnerScorecard(companyId?: number | null): Promise<LearnerScorecardRow[]> {
+  // Seed from the full roster so learners with zero completions still appear
+  // (the management half of the report). Counts are active-only and the
+  // renewing window is fixed at 6 months to mirror the report's defaults.
+  const students = await prisma.student.findMany({
+    where: companyId ? { companyId } : {},
+    include: { regionData: { select: { region: true } } },
+  });
+
+  const map = new Map<string, LearnerScorecardRow>();
+  const ensure = (
+    email: string,
+    seed: { fullName: string; theatre: string; region: string; country: string },
+  ): LearnerScorecardRow => {
+    let row = map.get(email);
+    if (!row) {
+      row = {
+        email,
+        fullName: seed.fullName,
+        theatre: seed.theatre,
+        region: seed.region,
+        country: seed.country,
+        certifications: 0, accreditations: 0, ilts: 0, olx: 0, total: 0,
+        expiring: 0, lapsed: 0, gaps: 0, lastAchievement: "",
+      };
+      map.set(email, row);
+    }
+    return row;
+  };
+
+  for (const s of students) {
+    ensure(s.email, {
+      fullName: s.fullName,
+      theatre: s.theatre ?? "",
+      region: s.regionData?.region ?? "",
+      country: s.country ?? "",
+    });
+  }
+
+  const records = await fetchAllTrainingRecords(companyId);
+  const now = new Date();
+  const sixMonths = new Date(now);
+  sixMonths.setMonth(sixMonths.getMonth() + 6);
+
+  for (const r of records) {
+    const row = ensure(r.email, { fullName: r.fullName, theatre: r.theatre, region: r.region, country: r.country });
+    const active = r.active === "Yes";
+    if (active) {
+      if (r.trainingType === "Certification") row.certifications += 1;
+      else if (r.trainingType === "Accreditation") row.accreditations += 1;
+      else if (r.trainingType === "Instructor-Led Training") row.ilts += 1;
+      else if (r.trainingType === "OLX") row.olx += 1;
+
+      // Renewing = active certs/accreditations expiring within the window.
+      if (r.trainingType === "Certification" || r.trainingType === "Accreditation") {
+        const exp = new Date(r.expiryDate);
+        if (exp >= now && exp <= sixMonths) row.expiring += 1;
+      }
+    } else {
+      row.lapsed += 1;
+    }
+
+    if (r.completedDate && r.completedDate > row.lastAchievement) row.lastAchievement = r.completedDate;
+  }
+
+  // Certification gaps — one trained-not-certified row per (training, learner).
+  const gaps = await fetchTrainedNotCertified(companyId);
+  for (const g of gaps) {
+    const row = map.get(g.email);
+    if (row) row.gaps += 1;
+  }
+
+  for (const row of map.values()) {
+    row.total = row.certifications + row.accreditations + row.ilts + row.olx;
+  }
+
+  return Array.from(map.values()).sort((a, b) => b.total - a.total || a.fullName.localeCompare(b.fullName));
+}
+
 export async function fetchByProductType(companyId?: number | null): Promise<TrainingRecordRow[]> {
   const records = await fetchAllTrainingRecords(companyId);
   return records.sort((a, b) => a.productType.localeCompare(b.productType) || a.fullName.localeCompare(b.fullName));
@@ -327,6 +423,23 @@ export const TRAINED_NOT_CERTIFIED_COLUMNS: ExportColumn<TrainedNotCertifiedRow>
   { key: "iltActive", header: "Active" },
 ];
 
+export const LEARNER_SCORECARD_COLUMNS: ExportColumn<LearnerScorecardRow>[] = [
+  { key: "fullName", header: "Name" },
+  { key: "email", header: "Email" },
+  { key: "theatre", header: "Theatre" },
+  { key: "region", header: "Region" },
+  { key: "country", header: "Country" },
+  { key: "certifications", header: "Certifications" },
+  { key: "accreditations", header: "Accreditations" },
+  { key: "ilts", header: "ILTs" },
+  { key: "olx", header: "OLX" },
+  { key: "total", header: "Total" },
+  { key: "expiring", header: "Renewing (6mo)" },
+  { key: "lapsed", header: "Lapsed" },
+  { key: "gaps", header: "Cert Gaps" },
+  { key: "lastAchievement", header: "Last Achievement" },
+];
+
 export const TRAINING_RECORD_COLUMNS: ExportColumn<TrainingRecordRow>[] = [
   { key: "fullName", header: "Name" },
   { key: "email", header: "Email" },
@@ -345,6 +458,7 @@ export const TRAINING_RECORD_COLUMNS: ExportColumn<TrainingRecordRow>[] = [
 
 export type ReportType =
   | "trained-not-certified"
+  | "learner-scorecard"
   | "by-product"
   | "by-function"
   | "expiring-soon"
@@ -365,6 +479,12 @@ export async function fetchReportData(reportType: ReportType, companyId?: number
         data: await fetchTrainedNotCertified(companyId),
         columns: TRAINED_NOT_CERTIFIED_COLUMNS,
         title: "Trained But Not Certified",
+      };
+    case "learner-scorecard":
+      return {
+        data: await fetchLearnerScorecard(companyId),
+        columns: LEARNER_SCORECARD_COLUMNS,
+        title: "Learner Achievement Scorecard",
       };
     case "by-product":
       return {
