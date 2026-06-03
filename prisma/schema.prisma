@@ -106,8 +106,9 @@ model TrainingData {
 }
 
 model ProductType {
-  id   Int    @id @default(autoincrement())
-  name String @unique
+  id    Int     @id @default(autoincrement())
+  name  String  @unique
+  color String? @db.VarChar(7)
 
   trainingData TrainingData[]
 

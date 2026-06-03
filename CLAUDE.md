@@ -44,7 +44,7 @@ src/
     layout.tsx    # Root layout with AuthProvider + DateFormatProvider + CompanyScopeProvider + AppShell
   components/
     layout/       # Sidebar, PageHeader, AppShell
-    ui/           # Modal, Badge, HelpModal, KpiStrip, DateRangePicker, DatePicker (single-date, format-aware)
+    ui/           # Modal, Badge, HelpModal, KpiStrip, DateRangePicker, DatePicker (single-date, format-aware), HexColorPickerField (react-colorful saturation/hue popover + hex text input, used by /admin/product-types)
     auth/         # AuthProvider (context + useAuth hook)
     company/      # CompanyScopeProvider (selected company in header) + CompanySwitcher
     theme/        # ThemeProvider (dark mode context + useTheme hook)
@@ -52,7 +52,7 @@ src/
     data-table/   # Generic DataTable (search, sort, filter, paginate) + GroupedRows (grouped tbody with subtotals + expand/collapse)
     admin/        # Admin-only widgets: ProviderCredentialWizard, CredentialHealthBanner, UpdateAvailableBanner (dashboard "update available" alert, SuperAdmin-only, session-dismissible)
     programs/     # ProgramCompliance.tsx — shared presentational pieces for the dynamic program dashboard (ComplianceTable matrix, SpecialisationCard + per-theatre breakdown, ExportMenu, LoadingSpinner)
-  hooks/          # useDebounce
+  hooks/          # useDebounce, useProductTypeColors (cached `{name -> hex|null}` lookup fed by GET /api/product-types, used by every chart that represents a product)
   proxy.ts       # Route protection (auth + role checks). Note: in Next.js 16+ the official middleware filename is `proxy.ts` (formerly `middleware.ts`).
   lib/
     prisma.ts     # Prisma client singleton (PrismaPg adapter)
@@ -65,7 +65,7 @@ src/
     rate-limit.ts # In-memory sliding-window rate limiter for auth endpoints. getClientIp walks X-Forwarded-For from the right and skips entries in TRUSTED_PROXIES.
     utils.ts      # Date helpers, formatters, label mappers, safeDecodeParam (URL-decode that returns null on malformed input instead of throwing)
     olx.ts        # OLX parent-completion materialization (recomputeParentsForStudent / ForSubItem / ForMany / AllStudentsForParent)
-    chart-theme.ts # useChartTheme() hook — theme-aware Recharts axis/grid/tooltip + COLORS palette
+    chart-theme.ts # useChartTheme() hook — theme-aware Recharts axis/grid/tooltip + COLORS palette + `productColor(name, map)` lookup that falls back to NEUTRAL_GREY when a product type has no configured colour
     group-by.ts    # rollUp(country, region, theatre) + groupRows() — country->region->theatre rollup with theatre fallback for null/'unknown' regions
     program-compliance.ts # Shared compliance calculations (email-set queries, OR-logic union, per-theatre breakdown) used by the dynamic program dashboard and Program Compliance Trend
     product-types.ts # ProductType table helpers: getProductTypeNames, resolveProductTypeId (case-insensitive), getDefaultProductTypeId/ensureDefaultProductTypeId, and prepareBackupRestore (normalises backup data, incl. pre-migration enum-string archives)
@@ -94,7 +94,7 @@ deploy/           # install.sh, update.sh, install-remote.sh, perform-update.sh,
 - **Company** — PK: `id`. Fields: name (unique). Tenants: students, scheduled exports, and (via `UserCompany`) Admin/User access lists are all scoped per-company.
 - **UserCompany** — Composite PK: (userId, companyId). Many-to-many between non-SuperAdmin users and the companies they can see. SuperAdmins are not represented in this table; they implicitly have access to every company.
 - **TrainingData** — PK: `trainingTitle`. Fields: fullTitle (display name), trainingType, productTypeId (FK → ProductType.id, NOT NULL), function, link, certification[], isLegacy, replacedBy[]. OLX parents and OLX sub-items are both stored here; the parent ↔ sub-item membership lives in `OlxSubItemRelation`. Only `Certification`, `InstructorLedTraining`, and `OLX` rows can carry certifications — sub-items have an empty array. **Legacy lifecycle**: `isLegacy` flags a **Certification or Accreditation** as retired/superseded and `replacedBy[]` lists the trainingTitles of the replacement Cert/Accreditation(s) — alternatives (completing any one counts); empty `replacedBy` = retired with no replacement. Both are forced false/empty for non-eligible types and normalised by `lib/legacy-training.ts:sanitizeLegacyFields` in the POST/PUT handlers. Stored as plain columns (`is_legacy` boolean, `replaced_by` TEXT[]), so they ride along with backups automatically (no join table). Edited on `/admin/training-data` (Legacy checkbox + "Replaced by" multiselect, Cert/Accred only); the training-data import/export round-trips them via `Legacy`/`Replacement` columns.
-- **ProductType** — PK: `id` (auto-increment). Fields: name (unique). Admin-managed list (replaced the old `ProductType` enum) of product categories assigned to training data. Referenced by TrainingData via `productTypeId` with `ON DELETE RESTRICT` (a type in use can't be deleted). Managed at `/admin/product-types`; resolve/list helpers live in `lib/product-types.ts`.
+- **ProductType** — PK: `id` (auto-increment). Fields: name (unique), color (nullable `VARCHAR(7)`, validated as `#RRGGBB` lowercase via a CHECK constraint). Admin-managed list (replaced the old `ProductType` enum) of product categories assigned to training data. Referenced by TrainingData via `productTypeId` with `ON DELETE RESTRICT` (a type in use can't be deleted). Managed at `/admin/product-types` with a saturation/hue colour picker (react-colorful) + hex input; the colour is consumed by charts via `useChartTheme().productColor()` (Coverage bars, Comparison "By Product" series, plus dashboard / By Product Type X-axis labels). A read-only `GET /api/product-types` endpoint exposes the `{name, color}[]` list to any authenticated user so charts can fetch the lookup without admin scope. Resolve/list helpers live in `lib/product-types.ts`.
 - **TrainingTaken** — FK: email → Student, trainingTitle → TrainingData. Fields: completedDate, expiryDate (auto: +2 years). When a student completes every sub-item of an OLX parent, the system materialises a `TrainingTaken` row on the parent with `completedDate` = the latest sub-item date and `expiryDate` = +2 years; this row is removed if the student later loses any sub-item completion. A "single-item OLX" is just an OLX parent with no sub-items — it's treated as a normal training row.
 - **OlxSubItemRelation** — Composite PK: (parentTrainingTitle, subItemTrainingTitle). Many-to-many between an OLX parent and its sub-items (a sub-item may belong to multiple parents). Cascade deletes from either side.
 - **RegionData** — PK: `country`. Fields: region, theatre (nullable). Theatre is the source of truth for a country's theatre — student add/edit forms only show countries with a populated theatre, and student imports flag (and override) any row whose theatre disagrees.

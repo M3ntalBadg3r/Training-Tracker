@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import PageHeader from "@/components/layout/PageHeader";
 import Modal from "@/components/ui/Modal";
+import HexColorPickerField from "@/components/ui/HexColorPickerField";
 import {
   Plus,
   Pencil,
@@ -21,10 +22,14 @@ import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 interface ProductTypeRow {
   id: number;
   name: string;
+  color: string | null;
   trainingCount: number;
 }
 
-const TARGET_FIELDS = [{ key: "name", label: "Name", required: true }];
+const TARGET_FIELDS = [
+  { key: "name", label: "Name", required: true },
+  { key: "color", label: "Color", required: false },
+];
 
 type ImportStep = "upload" | "mapping" | "importing" | "summary";
 
@@ -43,10 +48,12 @@ export default function ProductTypesPage() {
 
   const [showAdd, setShowAdd] = useState(false);
   const [addName, setAddName] = useState("");
+  const [addColor, setAddColor] = useState<string | null>(null);
   const [addError, setAddError] = useState("");
 
   const [editProductType, setEditProductType] = useState<ProductTypeRow | null>(null);
   const [editName, setEditName] = useState("");
+  const [editColor, setEditColor] = useState<string | null>(null);
   const [editError, setEditError] = useState("");
 
   const [deleteProductType, setDeleteProductType] = useState<ProductTypeRow | null>(null);
@@ -87,7 +94,7 @@ export default function ProductTypesPage() {
     const res = await fetch("/api/admin/product-types", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: addName }),
+      body: JSON.stringify({ name: addName, color: addColor }),
     });
     const data = await res.json();
     if (!res.ok) {
@@ -96,6 +103,7 @@ export default function ProductTypesPage() {
     }
     setShowAdd(false);
     setAddName("");
+    setAddColor(null);
     fetchProductTypes();
   };
 
@@ -105,7 +113,7 @@ export default function ProductTypesPage() {
     const res = await fetch(`/api/admin/product-types/${editProductType.id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: editName }),
+      body: JSON.stringify({ name: editName, color: editColor }),
     });
     const data = await res.json();
     if (!res.ok) {
@@ -180,11 +188,14 @@ export default function ProductTypesPage() {
   };
 
   const autoMapColumns = (hdrs: string[]) => {
+    const aliases: Record<string, string[]> = {
+      name: ["name"],
+      color: ["color", "colour", "hex"],
+    };
     const mapping: Record<string, string> = {};
     for (const field of TARGET_FIELDS) {
-      const match = hdrs.find(
-        (h) => h.toLowerCase().replace(/[^a-z]/g, "") === field.label.toLowerCase().replace(/[^a-z]/g, "")
-      );
+      const wants = aliases[field.key] ?? [field.label.toLowerCase()];
+      const match = hdrs.find((h) => wants.includes(h.toLowerCase().replace(/[^a-z]/g, "")));
       if (match) mapping[field.key] = match;
     }
     setColumnMapping(mapping);
@@ -283,15 +294,16 @@ export default function ProductTypesPage() {
             </button>
             {showExportMenu && (
               <div className="absolute left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[140px]">
-                <button onClick={() => { exportToCsv(productTypes, [{ key: "name", header: "Name" }], "product-types"); setShowExportMenu(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-t-lg">Export as CSV</button>
-                <button onClick={() => { exportToExcel(productTypes, [{ key: "name", header: "Name" }], "product-types"); setShowExportMenu(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100">Export as Excel</button>
-                <button onClick={() => { exportToPdf(productTypes, [{ key: "name", header: "Name" }], "product-types"); setShowExportMenu(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-b-lg">Export as PDF</button>
+                <button onClick={() => { exportToCsv(productTypes, [{ key: "name", header: "Name" }, { key: "color", header: "Color" }], "product-types"); setShowExportMenu(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-t-lg">Export as CSV</button>
+                <button onClick={() => { exportToExcel(productTypes, [{ key: "name", header: "Name" }, { key: "color", header: "Color" }], "product-types"); setShowExportMenu(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100">Export as Excel</button>
+                <button onClick={() => { exportToPdf(productTypes, [{ key: "name", header: "Name" }, { key: "color", header: "Color" }], "product-types"); setShowExportMenu(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-b-lg">Export as PDF</button>
               </div>
             )}
           </div>
           <button
             onClick={() => {
               setAddName("");
+              setAddColor(null);
               setAddError("");
               setShowAdd(true);
             }}
@@ -307,6 +319,7 @@ export default function ProductTypesPage() {
           <thead>
             <tr className="bg-gray-50 border-b border-gray-200">
               <th className="px-4 py-3 text-left font-semibold text-gray-700">Name</th>
+              <th className="px-4 py-3 text-left font-semibold text-gray-700">Colour</th>
               <th className="px-4 py-3 text-left font-semibold text-gray-700">Trainings</th>
               <th className="px-4 py-3 text-left font-semibold text-gray-700">Actions</th>
             </tr>
@@ -314,16 +327,28 @@ export default function ProductTypesPage() {
           <tbody>
             {productTypes.length === 0 && (
               <tr>
-                <td colSpan={3} className="px-4 py-8 text-center text-gray-500">
+                <td colSpan={4} className="px-4 py-8 text-center text-gray-500">
                   No product types yet.
                 </td>
               </tr>
             )}
             {productTypes.map((pt) => (
               <tr key={pt.id} className="border-b border-gray-100 hover:bg-gray-50">
-                <td className="px-4 py-3 text-gray-700 font-medium flex items-center gap-2">
-                  <Tag size={14} className="text-gray-400" />
-                  {pt.name}
+                <td className="px-4 py-3 text-gray-700 font-medium">
+                  <span className="inline-flex items-center gap-2">
+                    <Tag size={14} style={pt.color ? { color: pt.color } : { color: "#9ca3af" }} />
+                    {pt.name}
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-gray-700">
+                  {pt.color ? (
+                    <span className="inline-flex items-center gap-2">
+                      <span className="inline-block h-5 w-5 rounded border border-gray-300" style={{ backgroundColor: pt.color }} />
+                      <span className="font-mono text-xs text-gray-500">{pt.color}</span>
+                    </span>
+                  ) : (
+                    <span className="text-xs text-gray-400 italic">none</span>
+                  )}
                 </td>
                 <td className="px-4 py-3 text-gray-700">{pt.trainingCount}</td>
                 <td className="px-4 py-3">
@@ -332,6 +357,7 @@ export default function ProductTypesPage() {
                       onClick={() => {
                         setEditProductType(pt);
                         setEditName(pt.name);
+                        setEditColor(pt.color);
                         setEditError("");
                       }}
                       className="p-1.5 text-blue-600 hover:bg-blue-50 rounded"
@@ -363,7 +389,7 @@ export default function ProductTypesPage() {
           <div className="flex justify-end mb-3">
             <button
               onClick={() => {
-                const csv = "Name\nFirewall\nEndpoint\nCloud";
+                const csv = "Name,Color\nProduct A,#3b82f6\nProduct B,#10b981\nProduct C,";
                 const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
                 const a = document.createElement("a");
                 a.href = url;
@@ -411,7 +437,7 @@ export default function ProductTypesPage() {
               <div>
                 <h4 className="text-sm font-semibold mb-3">Map Columns</h4>
                 <p className="text-sm text-gray-600 mb-3">
-                  Map the column from your file that holds the product type name.
+                  Map the columns from your file. Name is required; Color is optional and must be a hex value like <code>#1a2b3c</code>.
                 </p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {TARGET_FIELDS.map((field) => (
@@ -532,6 +558,11 @@ export default function ProductTypesPage() {
               autoFocus
             />
           </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Colour (optional)</label>
+            <HexColorPickerField value={addColor} onChange={setAddColor} />
+            <p className="text-xs text-gray-500 mt-1">Used in charts and reports to represent this product type. Leave blank for a neutral grey.</p>
+          </div>
           {addError && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2">{addError}</div>}
         </div>
       </Modal>
@@ -539,7 +570,7 @@ export default function ProductTypesPage() {
       <Modal
         open={!!editProductType}
         onClose={() => setEditProductType(null)}
-        title={`Rename Product Type: ${editProductType?.name}`}
+        title={`Edit Product Type: ${editProductType?.name}`}
         actions={
           <>
             <button onClick={() => setEditProductType(null)} className="px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300">Cancel</button>
@@ -557,6 +588,11 @@ export default function ProductTypesPage() {
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
               autoFocus
             />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Colour</label>
+            <HexColorPickerField value={editColor} onChange={setEditColor} />
+            <p className="text-xs text-gray-500 mt-1">Used in charts and reports to represent this product type. Leave blank for a neutral grey.</p>
           </div>
           {editError && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2">{editError}</div>}
         </div>

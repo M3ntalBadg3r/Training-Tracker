@@ -553,9 +553,10 @@ A **Certification** or **Accreditation** can be flagged as **Legacy** when it ha
 Navigate to **Admin > Product Types** to manage the list of product types used to categorise training data (shown on the dashboard's *By Product Type* chart and the *By Product Type* report).
 
 - **Add / Rename** — Names must be unique (case-insensitive).
+- **Colour** — Each product type can be given an optional brand colour (hex). Charts and reports that represent products will use that colour: the *By Product Type* and dashboard charts colour each product's X-axis label, while the *Coverage* and *Comparison "By Product"* charts colour each product's series. Product types without a colour render in a neutral grey so it's obvious which still need configuring.
 - **Delete** — Only possible when no training data references the product type. The **Trainings** column shows the current usage count; reassign those trainings first.
-- **Import** — Upload a CSV or Excel file with a single `Name` column to bulk-create product types. The wizard auto-maps the column and shows a preview; names that already exist (case-insensitive) and duplicate rows within the file are skipped rather than duplicated.
-- **Export** — Download the current list as CSV, Excel, or PDF.
+- **Import** — Upload a CSV or Excel file with a `Name` column (required) and an optional `Color` column (`#RRGGBB`) to bulk-create or recolour product types. The wizard auto-maps the columns and shows a preview; names that already exist (case-insensitive) are skipped, but a new colour on an existing row is applied as an update. Invalid colour values are logged and the row is imported without a colour.
+- **Export** — Download the current list (including colour) as CSV, Excel, or PDF.
 - During a training-data import, product-type cells are matched case-insensitively against this list. Unknown values are reported as per-row errors rather than being silently changed.
 
 ### User Management

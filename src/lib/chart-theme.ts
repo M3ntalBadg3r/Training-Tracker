@@ -38,6 +38,12 @@ export const SERIES_PALETTE_DARK = [
   "#a3e635",
 ];
 
+// Fallback for product-type-keyed charts when the type has no configured colour.
+export const NEUTRAL_GREY = "#9ca3af";
+export const NEUTRAL_GREY_DARK = "#6b7280";
+
+const HEX_RE = /^#[0-9a-fA-F]{6}$/;
+
 export interface ChartTheme {
   isDark: boolean;
   axis: string;
@@ -45,13 +51,17 @@ export interface ChartTheme {
   tooltipBg: string;
   tooltipBorder: string;
   tooltipText: string;
+  neutral: string;
   typeColor: (key: keyof typeof TYPE_COLORS) => string;
   series: (i: number) => string;
+  /** Look up a configured product-type colour, falling back to neutral grey. */
+  productColor: (name: string | null | undefined, map: Record<string, string | null>) => string;
 }
 
 export function useChartTheme(): ChartTheme {
   const { theme } = useTheme();
   const isDark = theme === "dark";
+  const neutral = isDark ? NEUTRAL_GREY_DARK : NEUTRAL_GREY;
   return {
     isDark,
     axis: isDark ? "#9ca3af" : "#6b7280",
@@ -59,8 +69,14 @@ export function useChartTheme(): ChartTheme {
     tooltipBg: isDark ? "#1f2937" : "#ffffff",
     tooltipBorder: isDark ? "#374151" : "#e5e7eb",
     tooltipText: isDark ? "#f3f4f6" : "#111827",
+    neutral,
     typeColor: (key) => (isDark ? TYPE_COLORS_DARK[key] : TYPE_COLORS[key]),
     series: (i) => (isDark ? SERIES_PALETTE_DARK : SERIES_PALETTE)[i % SERIES_PALETTE.length],
+    productColor: (name, map) => {
+      if (!name) return neutral;
+      const v = map[name];
+      return v && HEX_RE.test(v) ? v : neutral;
+    },
   };
 }
 

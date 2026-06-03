@@ -5,6 +5,7 @@ import Link from "next/link";
 import PageHeader from "@/components/layout/PageHeader";
 import KpiStrip from "@/components/ui/KpiStrip";
 import { useChartTheme, tooltipStyle } from "@/lib/chart-theme";
+import { useProductTypeColors } from "@/hooks/useProductTypeColors";
 import { GroupByMode } from "@/lib/group-by";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
@@ -55,6 +56,7 @@ function ExportMenu({ data, columns, filename }: { data: Record<string, unknown>
 
 export default function CoveragePage() {
   const chart = useChartTheme();
+  const productColors = useProductTypeColors();
   const companyScope = useCompanyScope();
   const [data, setData] = useState<CoverageResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -153,8 +155,8 @@ export default function CoveragePage() {
             <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: chart.axis }} stroke={chart.axis} />
             <Tooltip contentStyle={tooltipStyle(chart)} />
             <Legend />
-            {bucketChart.products.map((p, i) => (
-              <Bar key={p} dataKey={p} stackId="a" fill={chart.series(i)} />
+            {bucketChart.products.map((p) => (
+              <Bar key={p} dataKey={p} stackId="a" fill={chart.productColor(p, productColors)} />
             ))}
           </BarChart>
         </ResponsiveContainer>
