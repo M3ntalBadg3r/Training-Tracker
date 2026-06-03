@@ -26,6 +26,8 @@ export async function GET(request: NextRequest) {
     function: t.function,
     link: t.link,
     certification: t.certification,
+    isLegacy: t.isLegacy,
+    replacedBy: t.replacedBy,
     isIncomplete: t.isIncomplete,
     subItems: t.subItemMemberships.map((m) => m.subItemTrainingTitle),
     parents: t.parentMemberships.map((m) => m.parentTrainingTitle),

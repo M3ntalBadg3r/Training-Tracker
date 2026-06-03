@@ -476,6 +476,9 @@ const helpSections: Record<string, HelpSection> = {
         <h3>Trained But Not Certified</h3>
         <p>Gap funnel by product (ILT completed → ILT still active) plus the top theatres/regions/countries with gaps. When a training can lead to more than one certification, the options are treated as alternatives (OR): a student is only flagged if they hold none of them, and the &ldquo;Certification Not Obtained&rdquo; column lists every option joined with &ldquo;or&rdquo;.</p>
 
+        <h3>Legacy Replacement Gap</h3>
+        <p>Learners who hold a <strong>legacy</strong> Certification/Accreditation but haven&rsquo;t taken its <strong>replacement</strong> (configured in Admin &gt; Training Data). Multiple replacements are alternatives — holding any one clears the learner. The expiry-horizon chart and the Already Expired / ≤ 1 / 3 / 6 / 12-month window filter key on the learner&rsquo;s legacy training expiry, so you can chase the most urgent migrations first. Two toggles tailor the view: <strong>Include legacy with no replacement</strong> (show holders of a retired cert with no successor) and <strong>Replacement must be active</strong> (when off, a previously-held but now-expired replacement also counts as satisfied).</p>
+
         <h3>Coverage / Compliance</h3>
         <p>
           Active-training-holder share of population per theatre/region/country
@@ -921,6 +924,45 @@ const helpSections: Record<string, HelpSection> = {
           <li>
             During import, multiple certifications can be specified as
             comma-separated values in a single cell.
+          </li>
+        </ul>
+
+        <h3>Legacy Certifications &amp; Replacements</h3>
+        <p>
+          A <strong>Certification</strong> or <strong>Accreditation</strong> can
+          be flagged as <strong>Legacy</strong> when it has been retired or
+          superseded by a newer one.
+        </p>
+        <ul>
+          <li>
+            When adding or editing a Certification/Accreditation, tick{" "}
+            <strong>Mark as Legacy</strong>.
+          </li>
+          <li>
+            A <strong>Replaced by</strong> checkbox list of all other
+            Certifications/Accreditations then appears &mdash; select one or
+            more. Multiple replacements are <strong>alternatives</strong>:
+            holding any one of them counts as having migrated. Leave the list
+            empty for a cert retired with no successor.
+          </li>
+          <li>
+            A <strong>Legacy</strong> badge appears in the catalogue, on the
+            training detail page, and next to the training on each learner&apos;s
+            record (with the replacement name).
+          </li>
+          <li>
+            Changing the type away from Certification/Accreditation clears the
+            legacy flag and replacements.
+          </li>
+          <li>
+            During import, set a <strong>Legacy</strong> column to{" "}
+            <code>Yes</code> and list replacement training titles
+            (comma-separated) in a <strong>Replacement</strong> column.
+          </li>
+          <li>
+            The <strong>Legacy Replacement Gap</strong> report uses this to find
+            learners still holding a legacy cert who haven&apos;t taken the
+            replacement.
           </li>
         </ul>
       </>

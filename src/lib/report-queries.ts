@@ -5,6 +5,7 @@
 
 import prisma from "@/lib/prisma";
 import type { ExportColumn } from "@/lib/server-export";
+import { computeLegacyGaps } from "@/lib/legacy-gap";
 
 // ─── Type definitions ──────────────────────────────────────────────────────────
 
@@ -36,6 +37,21 @@ export interface LearnerScorecardRow {
   lapsed: number;
   gaps: number;
   lastAchievement: string;
+}
+
+export interface LegacyGapRow {
+  fullName: string;
+  email: string;
+  theatre: string;
+  region: string;
+  country: string;
+  legacyFullTitle: string;
+  legacyType: string;
+  productType: string;
+  replacementFullTitle: string;
+  legacyCompletedDate: string;
+  legacyExpiryDate: string;
+  legacyActive: string;
 }
 
 export interface TrainingRecordRow {
@@ -295,6 +311,27 @@ export async function fetchTrainedNotCertified(companyId?: number | null): Promi
   return results;
 }
 
+export async function fetchLegacyGap(companyId?: number | null): Promise<LegacyGapRow[]> {
+  // Scheduled-export view uses the report's defaults: active-replacement rule
+  // and legacy entries with no replacement included. (The interactive report
+  // exposes these as toggles.)
+  const records = await computeLegacyGaps(companyId ? [companyId] : null);
+  return records.map((r) => ({
+    fullName: r.fullName,
+    email: r.email,
+    theatre: r.theatre,
+    region: r.region,
+    country: r.country,
+    legacyFullTitle: r.legacyFullTitle,
+    legacyType: r.legacyType,
+    productType: r.productType,
+    replacementFullTitle: r.replacementDefined ? r.replacementFullTitle : "None",
+    legacyCompletedDate: r.legacyCompletedDate.split("T")[0],
+    legacyExpiryDate: r.legacyExpiryDate.split("T")[0],
+    legacyActive: r.legacyActive ? "Yes" : "No",
+  }));
+}
+
 export async function fetchLearnerScorecard(companyId?: number | null): Promise<LearnerScorecardRow[]> {
   // Seed from the full roster so learners with zero completions still appear
   // (the management half of the report). Counts are active-only and the
@@ -440,6 +477,21 @@ export const LEARNER_SCORECARD_COLUMNS: ExportColumn<LearnerScorecardRow>[] = [
   { key: "lastAchievement", header: "Last Achievement" },
 ];
 
+export const LEGACY_GAP_COLUMNS: ExportColumn<LegacyGapRow>[] = [
+  { key: "fullName", header: "Name" },
+  { key: "email", header: "Email" },
+  { key: "theatre", header: "Theatre" },
+  { key: "region", header: "Region" },
+  { key: "country", header: "Country" },
+  { key: "legacyFullTitle", header: "Legacy Training" },
+  { key: "legacyType", header: "Type" },
+  { key: "productType", header: "Product" },
+  { key: "replacementFullTitle", header: "Replacement" },
+  { key: "legacyCompletedDate", header: "Completed" },
+  { key: "legacyExpiryDate", header: "Expires" },
+  { key: "legacyActive", header: "Active" },
+];
+
 export const TRAINING_RECORD_COLUMNS: ExportColumn<TrainingRecordRow>[] = [
   { key: "fullName", header: "Name" },
   { key: "email", header: "Email" },
@@ -458,6 +510,7 @@ export const TRAINING_RECORD_COLUMNS: ExportColumn<TrainingRecordRow>[] = [
 
 export type ReportType =
   | "trained-not-certified"
+  | "legacy-gap"
   | "learner-scorecard"
   | "by-product"
   | "by-function"
@@ -479,6 +532,12 @@ export async function fetchReportData(reportType: ReportType, companyId?: number
         data: await fetchTrainedNotCertified(companyId),
         columns: TRAINED_NOT_CERTIFIED_COLUMNS,
         title: "Trained But Not Certified",
+      };
+    case "legacy-gap":
+      return {
+        data: await fetchLegacyGap(companyId),
+        columns: LEGACY_GAP_COLUMNS,
+        title: "Legacy Replacement Gap",
       };
     case "learner-scorecard":
       return {

@@ -55,6 +55,8 @@ interface ColumnMapping {
   link?: string;
   certification?: string;
   parentTrainingTitle?: string;
+  legacy?: string;
+  replacement?: string;
 }
 
 export async function POST(request: NextRequest) {
@@ -185,6 +187,15 @@ export async function POST(request: NextRequest) {
         ? certRaw.split(",").map((c: string) => c.trim()).filter(Boolean)
         : [];
 
+    // Legacy lifecycle — only meaningful for Certification/Accreditation.
+    const legacyEligible = trainingType === TrainingType.Certification || trainingType === TrainingType.Accreditation;
+    const legacyRaw = columnMapping.legacy ? row[columnMapping.legacy]?.trim() : "";
+    const isLegacy = legacyEligible && /^(true|yes|y|1|legacy)$/i.test(legacyRaw || "");
+    const replacementRaw = columnMapping.replacement ? row[columnMapping.replacement]?.trim() : "";
+    const replacedBy = isLegacy && replacementRaw
+      ? Array.from(new Set(replacementRaw.split(",").map((c: string) => c.trim()).filter((c) => Boolean(c) && c !== trainingTitle)))
+      : [];
+
     try {
       const existing = await prisma.trainingData.findUnique({
         where: { trainingTitle },
@@ -197,12 +208,14 @@ export async function POST(request: NextRequest) {
           existing.productTypeId !== productTypeId ||
           existing.function !== functionType ||
           existing.link !== link ||
-          JSON.stringify(existing.certification) !== JSON.stringify(certification);
+          JSON.stringify(existing.certification) !== JSON.stringify(certification) ||
+          existing.isLegacy !== isLegacy ||
+          JSON.stringify(existing.replacedBy) !== JSON.stringify(replacedBy);
 
         if (changed) {
           await prisma.trainingData.update({
             where: { trainingTitle },
-            data: { fullTitle, trainingType, productTypeId, function: functionType, link, certification },
+            data: { fullTitle, trainingType, productTypeId, function: functionType, link, certification, isLegacy, replacedBy },
           });
           updated++;
         } else {
@@ -218,6 +231,8 @@ export async function POST(request: NextRequest) {
             function: functionType,
             link,
             certification,
+            isLegacy,
+            replacedBy,
           },
         });
         imported++;

@@ -71,6 +71,20 @@ export async function GET(
     }
   }
 
+  // Resolve replacement trainingTitles to display fullTitles for any legacy
+  // certs/accreditations the student holds.
+  const replacementTitles = new Set<string>();
+  for (const t of student.trainings) {
+    if (t.trainingData.isLegacy) for (const r of t.trainingData.replacedBy) replacementTitles.add(r);
+  }
+  const replFull = replacementTitles.size > 0
+    ? await prisma.trainingData.findMany({
+        where: { trainingTitle: { in: Array.from(replacementTitles) } },
+        select: { trainingTitle: true, fullTitle: true },
+      })
+    : [];
+  const replMap = new Map(replFull.map((r) => [r.trainingTitle, r.fullTitle]));
+
   const result = {
     email: student.email,
     fullName: student.fullName,
@@ -98,6 +112,8 @@ export async function GET(
         isSubItem,
         rolledUpUnderParent,
         parents,
+        isLegacy: t.trainingData.isLegacy,
+        replacedBy: t.trainingData.replacedBy.map((r) => replMap.get(r) ?? r),
       };
     }),
   };

@@ -84,6 +84,8 @@ const TARGET_FIELDS = [
   { key: "link", label: "Link", required: false },
   { key: "certification", label: "Certification", required: false },
   { key: "parentTrainingTitle", label: "Parent Training Title", required: false },
+  { key: "legacy", label: "Legacy", required: false },
+  { key: "replacement", label: "Replacement", required: false },
 ];
 
 type ImportStep = "upload" | "mapping" | "resolve" | "importing" | "summary";
@@ -117,6 +119,8 @@ export default function TrainingDataPage() {
     certification: [] as string[],
     subItems: [] as string[],
     parents: [] as string[],
+    isLegacy: false,
+    replacedBy: [] as string[],
   });
   const [loading, setLoading] = useState(true);
 
@@ -256,6 +260,8 @@ export default function TrainingDataPage() {
     certification: [] as string[],
     subItems: [] as string[],
     parents: [] as string[],
+    isLegacy: false,
+    replacedBy: [] as string[],
   });
 
   // Tracks which OLX parents are expanded in the catalog view.
@@ -302,6 +308,17 @@ export default function TrainingDataPage() {
     [trainingList]
   );
 
+  // Replacement candidates for a legacy cert/accreditation — any Certification
+  // or Accreditation. Callers exclude the row being edited.
+  const replacementOptions = useMemo(
+    () =>
+      trainingList
+        .filter((t) => t.trainingType === "Certification" || t.trainingType === "Accreditation")
+        .map((t) => ({ trainingTitle: t.trainingTitle, fullTitle: t.fullTitle }))
+        .sort((a, b) => a.fullTitle.localeCompare(b.fullTitle)),
+    [trainingList]
+  );
+
   // Available sub-item titles for OLX parent forms. Only OLXSubItem entries
   // are eligible — promote a training to OLXSubItem first if it should belong
   // to a parent.
@@ -335,6 +352,8 @@ export default function TrainingDataPage() {
     link: t.link ?? "",
     certification: (t.certification ?? []).join(", "),
     parentTrainingTitle: (t.parents ?? []).join(", "),
+    legacy: t.isLegacy ? "Yes" : "",
+    replacement: (t.replacedBy ?? []).join(", "),
   });
 
   const fetchLastImport = () => {
@@ -393,6 +412,8 @@ export default function TrainingDataPage() {
         certification: [],
         subItems: [],
         parents: [],
+        isLegacy: false,
+        replacedBy: [],
       });
       fetchRawTrainingData();
     }
@@ -729,6 +750,8 @@ export default function TrainingDataPage() {
                         { key: "link", header: "Link" },
                         { key: "certification", header: "Certification" },
                         { key: "parentTrainingTitle", header: "Parent Training Title" },
+                        { key: "legacy", header: "Legacy" },
+                        { key: "replacement", header: "Replacement" },
                       ], "training-data");
                       setShowExportMenu(false);
                     }}
@@ -747,6 +770,8 @@ export default function TrainingDataPage() {
                         { key: "link", header: "Link" },
                         { key: "certification", header: "Certification" },
                         { key: "parentTrainingTitle", header: "Parent Training Title" },
+                        { key: "legacy", header: "Legacy" },
+                        { key: "replacement", header: "Replacement" },
                       ], "training-data");
                       setShowExportMenu(false);
                     }}
@@ -765,6 +790,8 @@ export default function TrainingDataPage() {
                         { key: "link", header: "Link" },
                         { key: "certification", header: "Certification" },
                         { key: "parentTrainingTitle", header: "Parent Training Title" },
+                        { key: "legacy", header: "Legacy" },
+                        { key: "replacement", header: "Replacement" },
                       ], "training-data");
                       setShowExportMenu(false);
                     }}
@@ -791,7 +818,7 @@ export default function TrainingDataPage() {
             <button
               onClick={() => {
                 const pt = productTypes[0] ?? "Product Type";
-                const csv = `Training Title,Full Title,Training Type,Product Type,Function,Link,Certification,Parent Training Title\nMY-CERT-001,My Certification Name,Certification,${pt},Sales,,,\nMY-OLX-PARENT,My OLX Course,OLX,${pt},Sales,,My Cert,\nMY-OLX-SUB-1,Sub-Item 1,OLX Sub-Item,${pt},Sales,,,MY-OLX-PARENT`;
+                const csv = `Training Title,Full Title,Training Type,Product Type,Function,Link,Certification,Parent Training Title,Legacy,Replacement\nMY-CERT-001,My Certification Name,Certification,${pt},Sales,,,,,\nMY-CERT-OLD,My Legacy Certification,Certification,${pt},Sales,,,,Yes,MY-CERT-001\nMY-OLX-PARENT,My OLX Course,OLX,${pt},Sales,,My Cert,,,\nMY-OLX-SUB-1,Sub-Item 1,OLX Sub-Item,${pt},Sales,,,MY-OLX-PARENT,,`;
                 const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
                 const a = document.createElement("a");
                 a.href = url;
@@ -1388,7 +1415,7 @@ export default function TrainingDataPage() {
                             </>
                           ) : (
                             <>
-                              <button onClick={() => { setEditingTitle(t.trainingTitle); setEditValues({ trainingTitle: t.trainingTitle, fullTitle: t.fullTitle, trainingType: t.trainingType, productType: t.productType, function: t.function, link: t.link || "", certification: t.certification || [], subItems: t.subItems || [], parents: t.parents || [] }); }}
+                              <button onClick={() => { setEditingTitle(t.trainingTitle); setEditValues({ trainingTitle: t.trainingTitle, fullTitle: t.fullTitle, trainingType: t.trainingType, productType: t.productType, function: t.function, link: t.link || "", certification: t.certification || [], subItems: t.subItems || [], parents: t.parents || [], isLegacy: t.isLegacy ?? false, replacedBy: t.replacedBy || [] }); }}
                                 className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200">Edit</button>
                               <button onClick={() => handleMarkComplete(t.trainingTitle)}
                                 disabled={markingComplete === t.trainingTitle}
@@ -1493,6 +1520,14 @@ export default function TrainingDataPage() {
                             </button>
                           )}
                           <span>{t.fullTitle}</span>
+                          {t.isLegacy && (
+                            <span
+                              className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800"
+                              title={t.replacedBy && t.replacedBy.length > 0 ? `Replaced by: ${t.replacedBy.join(", ")}` : "Legacy — no replacement"}
+                            >
+                              Legacy
+                            </span>
+                          )}
                           {isExpandable && (
                             <span className="text-xs text-gray-500">({subs.length} sub-item{subs.length === 1 ? "" : "s"})</span>
                           )}
@@ -1657,6 +1692,8 @@ export default function TrainingDataPage() {
                                   certification: t.certification || [],
                                   subItems: t.subItems || [],
                                   parents: t.parents || [],
+                                  isLegacy: t.isLegacy ?? false,
+                                  replacedBy: t.replacedBy || [],
                                 });
                               }}
                               className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
@@ -1675,6 +1712,52 @@ export default function TrainingDataPage() {
                     </td>
                   </tr>
                   );
+                  // Inline editor extension: when editing a Certification or
+                  // Accreditation, show a second row with the legacy controls.
+                  if (editingTitle === t.trainingTitle && (editValues.trainingType === "Certification" || editValues.trainingType === "Accreditation")) {
+                    rows.push(
+                      <tr key={`${t.trainingTitle}::legacy-edit`} className="border-b border-gray-100 bg-blue-50/40">
+                        <td colSpan={8} className="px-4 py-3">
+                          <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-gray-600">
+                            <input
+                              type="checkbox"
+                              checked={editValues.isLegacy}
+                              onChange={(e) => setEditValues((prev) => ({ ...prev, isLegacy: e.target.checked, replacedBy: e.target.checked ? prev.replacedBy : [] }))}
+                              className="rounded border-gray-300"
+                            />
+                            Mark as Legacy
+                          </label>
+                          {editValues.isLegacy && (
+                            <div className="mt-2">
+                              <div className="text-xs font-semibold text-gray-600 mb-1">Replaced by (optional — select one or more)</div>
+                              <div className="max-h-40 overflow-y-auto border border-gray-200 rounded px-2 py-1 text-sm space-y-1 bg-white">
+                                {replacementOptions.filter((r) => r.trainingTitle !== t.trainingTitle).length === 0 ? (
+                                  <span className="text-gray-400 text-xs">No certifications/accreditations available.</span>
+                                ) : replacementOptions.filter((r) => r.trainingTitle !== t.trainingTitle).map((r) => (
+                                  <label key={r.trainingTitle} className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 rounded px-1">
+                                    <input
+                                      type="checkbox"
+                                      checked={editValues.replacedBy.includes(r.trainingTitle)}
+                                      onChange={(e) => {
+                                        setEditValues((prev) => ({
+                                          ...prev,
+                                          replacedBy: e.target.checked
+                                            ? [...prev.replacedBy, r.trainingTitle]
+                                            : prev.replacedBy.filter((x) => x !== r.trainingTitle),
+                                        }));
+                                      }}
+                                      className="rounded border-gray-300"
+                                    />
+                                    <span className="text-xs">{r.fullTitle}</span>
+                                  </label>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  }
                   // Inline editor extension: when editing an OLX or OLXSubItem,
                   // show a second row with the membership picker.
                   if (editingTitle === t.trainingTitle && (editValues.trainingType === "OLX" || editValues.trainingType === "OLXSubItem")) {
@@ -1768,6 +1851,8 @@ export default function TrainingDataPage() {
                                   certification: s.certification || [],
                                   subItems: s.subItems || [],
                                   parents: s.parents || [],
+                                  isLegacy: s.isLegacy ?? false,
+                                  replacedBy: s.replacedBy || [],
                                 });
                               }}
                               className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
@@ -1926,6 +2011,55 @@ export default function TrainingDataPage() {
                   </label>
                 ))}
               </div>
+            </div>
+          )}
+          {(newTraining.trainingType === "Certification" || newTraining.trainingType === "Accreditation") && (
+            <div className="rounded-lg border border-gray-200 p-3 space-y-2">
+              <label className="flex items-center gap-2 cursor-pointer text-sm font-medium">
+                <input
+                  type="checkbox"
+                  checked={newTraining.isLegacy}
+                  onChange={(e) =>
+                    setNewTraining((prev) => ({
+                      ...prev,
+                      isLegacy: e.target.checked,
+                      replacedBy: e.target.checked ? prev.replacedBy : [],
+                    }))
+                  }
+                  className="rounded border-gray-300"
+                />
+                Mark as Legacy
+              </label>
+              {newTraining.isLegacy && (
+                <div>
+                  <label className="block text-sm font-medium mb-1">Replaced by <span className="text-xs text-gray-500">(optional — select one or more)</span></label>
+                  <div className="max-h-40 overflow-y-auto border border-gray-300 rounded-lg px-3 py-2 text-sm space-y-1">
+                    {replacementOptions.filter((r) => r.trainingTitle !== newTraining.trainingTitle).length === 0 && (
+                      <span className="text-gray-400 text-xs">No certifications/accreditations available</span>
+                    )}
+                    {replacementOptions
+                      .filter((r) => r.trainingTitle !== newTraining.trainingTitle)
+                      .map((r) => (
+                        <label key={r.trainingTitle} className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 rounded px-1">
+                          <input
+                            type="checkbox"
+                            checked={newTraining.replacedBy.includes(r.trainingTitle)}
+                            onChange={(e) => {
+                              setNewTraining((prev) => ({
+                                ...prev,
+                                replacedBy: e.target.checked
+                                  ? [...prev.replacedBy, r.trainingTitle]
+                                  : prev.replacedBy.filter((x) => x !== r.trainingTitle),
+                              }));
+                            }}
+                            className="rounded border-gray-300"
+                          />
+                          <span>{r.fullTitle}</span>
+                        </label>
+                      ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
           {newTraining.trainingType === "OLX" && (
