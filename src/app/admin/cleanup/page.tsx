@@ -133,7 +133,8 @@ export default function DataCleanUpPage() {
   const [rowError, setRowError] = useState<Record<number, string>>({});
 
   // Wipe data
-  const [showWipeConfirm, setShowWipeConfirm] = useState(false);
+  // Wipe scope: "data" keeps user accounts, "all" is a factory reset.
+  const [wipeScope, setWipeScope] = useState<"data" | "all" | null>(null);
   const [wipeText, setWipeText] = useState("");
   const [wiping, setWiping] = useState(false);
 
@@ -257,12 +258,24 @@ export default function DataCleanUpPage() {
     }
   };
 
+  // Each scope requires its own confirmation word to avoid an accidental reset.
+  const wipeConfirmWord = wipeScope === "all" ? "RESET" : "WIPE";
+
   const handleWipe = async () => {
-    if (wipeText !== "WIPE") return;
+    if (!wipeScope || wipeText !== wipeConfirmWord) return;
     setWiping(true);
     try {
-      await fetch("/api/admin/wipe", { method: "POST" });
-      setShowWipeConfirm(false);
+      await fetch("/api/admin/wipe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scope: wipeScope }),
+      });
+      if (wipeScope === "all") {
+        // Users are gone — send the operator to the first-run setup wizard.
+        window.location.href = "/setup";
+        return;
+      }
+      setWipeScope(null);
       setWipeText("");
       // Clear scan results since data is gone
       setResults([]);
@@ -575,20 +588,53 @@ export default function DataCleanUpPage() {
       {/* Danger Zone */}
       <section className="mb-8">
         <h2 className="text-lg font-semibold mb-4">Danger Zone</h2>
-        <div className="bg-red-50 border border-red-200 rounded-lg p-6">
+        <div className="bg-red-50 border border-red-200 rounded-lg p-6 space-y-6">
+          {/* Wipe data, keep accounts */}
           <div className="flex items-start gap-3">
             <AlertTriangle size={24} className="text-red-500 shrink-0" />
             <div>
-              <h3 className="font-semibold text-red-800">Wipe All Data</h3>
+              <h3 className="font-semibold text-red-800">
+                Wipe All Data (Keep Accounts)
+              </h3>
               <p className="text-sm text-red-600 mt-1">
-                This will permanently delete all students, training records,
-                training data, and region data. This action cannot be undone.
+                Permanently deletes all students, training records, training
+                data, product types, region data, programs, companies and
+                scheduled exports. Your <strong>user accounts are kept</strong>{" "}
+                so you stay signed in. This action cannot be undone.
               </p>
               <button
-                onClick={() => setShowWipeConfirm(true)}
+                onClick={() => {
+                  setWipeScope("data");
+                  setWipeText("");
+                }}
                 className="mt-3 px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700"
               >
                 Wipe All Data
+              </button>
+            </div>
+          </div>
+
+          {/* Factory reset */}
+          <div className="flex items-start gap-3 border-t border-red-200 pt-6">
+            <AlertTriangle size={24} className="text-red-500 shrink-0" />
+            <div>
+              <h3 className="font-semibold text-red-800">
+                Factory Reset (Wipe Everything)
+              </h3>
+              <p className="text-sm text-red-600 mt-1">
+                Deletes <strong>everything, including all user accounts</strong>
+                , and returns the system to its brand-new state — you&apos;ll be
+                taken to the first-run setup wizard to create a new admin. This
+                action cannot be undone.
+              </p>
+              <button
+                onClick={() => {
+                  setWipeScope("all");
+                  setWipeText("");
+                }}
+                className="mt-3 px-4 py-2 text-sm bg-red-700 text-white rounded-lg hover:bg-red-800"
+              >
+                Factory Reset
               </button>
             </div>
           </div>
@@ -597,17 +643,17 @@ export default function DataCleanUpPage() {
 
       {/* Wipe Confirmation Modal */}
       <Modal
-        open={showWipeConfirm}
+        open={wipeScope !== null}
         onClose={() => {
-          setShowWipeConfirm(false);
+          setWipeScope(null);
           setWipeText("");
         }}
-        title="Confirm Data Wipe"
+        title={wipeScope === "all" ? "Confirm Factory Reset" : "Confirm Data Wipe"}
         actions={
           <>
             <button
               onClick={() => {
-                setShowWipeConfirm(false);
+                setWipeScope(null);
                 setWipeText("");
               }}
               className="px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300"
@@ -616,23 +662,39 @@ export default function DataCleanUpPage() {
             </button>
             <button
               onClick={handleWipe}
-              disabled={wipeText !== "WIPE" || wiping}
+              disabled={wipeText !== wipeConfirmWord || wiping}
               className="px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
             >
-              {wiping ? "Wiping..." : "Confirm Wipe"}
+              {wiping
+                ? wipeScope === "all"
+                  ? "Resetting..."
+                  : "Wiping..."
+                : wipeScope === "all"
+                ? "Confirm Reset"
+                : "Confirm Wipe"}
             </button>
           </>
         }
       >
         <p className="text-gray-600 mb-3">
-          This will permanently delete ALL data. Type{" "}
-          <strong>WIPE</strong> to confirm.
+          {wipeScope === "all" ? (
+            <>
+              This will permanently delete <strong>ALL data and every user
+              account</strong> and return the system to the setup screen. Type{" "}
+              <strong>RESET</strong> to confirm.
+            </>
+          ) : (
+            <>
+              This will permanently delete ALL data (user accounts are kept).
+              Type <strong>WIPE</strong> to confirm.
+            </>
+          )}
         </p>
         <input
           type="text"
           value={wipeText}
           onChange={(e) => setWipeText(e.target.value)}
-          placeholder="Type WIPE to confirm"
+          placeholder={`Type ${wipeConfirmWord} to confirm`}
           className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
         />
       </Modal>

@@ -7,6 +7,8 @@ import {
   decryptBuffer,
   isEncryptedBuffer,
   isEncryptionConfigured,
+  isPassphraseEncryptedBuffer,
+  decryptBufferWithPassphrase,
 } from "@/lib/crypto";
 import { prepareBackupRestore } from "@/lib/product-types";
 
@@ -46,17 +48,31 @@ export async function generateBackupArchive(): Promise<{
 }
 
 /**
- * Decrypt-if-needed loader for a backup archive. Accepts either:
- *  - a raw ZIP buffer (legacy / unencrypted deployments), or
- *  - an envelope-encrypted buffer (magic 'TT01' + IV + tag + ciphertext)
- * and returns the inner ZIP bytes ready for JSZip.loadAsync.
+ * Decrypt-if-needed loader for a backup archive. Accepts:
+ *  - a raw ZIP buffer (legacy / unencrypted deployments),
+ *  - a key-encrypted buffer (magic 'TT01' + IV + tag + ciphertext), keyed by
+ *    this install's ENCRYPTION_KEY, or
+ *  - a portable, passphrase-encrypted buffer (magic 'TT02' + salt + IV + tag +
+ *    ciphertext) — restorable on any system given the original passphrase.
+ * Returns the inner ZIP bytes ready for JSZip.loadAsync.
  */
-export async function loadBackupArchive(input: ArrayBuffer | Buffer): Promise<Buffer> {
+export async function loadBackupArchive(
+  input: ArrayBuffer | Buffer,
+  passphrase?: string
+): Promise<Buffer> {
   const buf = Buffer.isBuffer(input) ? input : Buffer.from(input);
+  if (isPassphraseEncryptedBuffer(buf)) {
+    if (!passphrase) {
+      throw new Error(
+        "This is a portable backup. Enter the passphrase it was created with to restore it."
+      );
+    }
+    return decryptBufferWithPassphrase(buf, passphrase);
+  }
   if (isEncryptedBuffer(buf)) {
     if (!isEncryptionConfigured()) {
       throw new Error(
-        "Archive is encrypted but ENCRYPTION_KEY is not configured. Set ENCRYPTION_KEY to the same value used when the backup was created."
+        "Archive is encrypted but ENCRYPTION_KEY is not configured. Set ENCRYPTION_KEY to the same value used when the backup was created, or restore a portable backup instead."
       );
     }
     return decryptBuffer(buf);
@@ -130,6 +146,7 @@ export async function POST(request: NextRequest) {
   }
   const formData = await request.formData();
   const file = formData.get("file") as File | null;
+  const passphrase = (formData.get("passphrase") as string | null) || undefined;
 
   if (!file) {
     return NextResponse.json({ error: "No file provided" }, { status: 400 });
@@ -138,7 +155,7 @@ export async function POST(request: NextRequest) {
   const arrayBuffer = await file.arrayBuffer();
   let zipBytes: Buffer;
   try {
-    zipBytes = await loadBackupArchive(arrayBuffer);
+    zipBytes = await loadBackupArchive(arrayBuffer, passphrase);
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Failed to read archive" },

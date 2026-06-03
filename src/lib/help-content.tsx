@@ -739,11 +739,23 @@ const helpSections: Record<string, HelpSection> = {
 
         <h3>Wipe All Data</h3>
         <p>
-          The <strong>Danger Zone</strong> at the bottom of this page allows you
-          to permanently delete all students, training records, training data,
-          and region data. Type <code>WIPE</code> to confirm.{" "}
-          <strong>This cannot be undone.</strong>
+          The <strong>Danger Zone</strong> at the bottom of this page offers two
+          destructive actions. <strong>Both cannot be undone.</strong>
         </p>
+        <ul>
+          <li>
+            <strong>Wipe All Data (Keep Accounts)</strong> — Permanently deletes
+            all students, training records, training data, product types, region
+            data, programs, companies, and scheduled exports, but keeps your user
+            accounts so you stay signed in. Type <code>WIPE</code> to confirm.
+          </li>
+          <li>
+            <strong>Factory Reset (Wipe Everything)</strong> — Deletes
+            everything, including all user accounts, and returns the system to
+            its brand-new state — you are taken to the first-run setup wizard to
+            create a new admin. Type <code>RESET</code> to confirm.
+          </li>
+        </ul>
       </>
     ),
   },
@@ -1307,11 +1319,28 @@ const helpSections: Record<string, HelpSection> = {
             </tr>
           </tbody>
         </table>
+        <p>
+          When an <code>ENCRYPTION_KEY</code> is configured, a standard backup is
+          encrypted with <strong>this server&apos;s</strong> key (saved as{" "}
+          <code>.zip.enc</code>) and can only be restored on the same system.
+        </p>
+
+        <h3>Portable Backup</h3>
+        <p>
+          To restore on a <strong>different</strong> installation, click{" "}
+          <strong>Portable backup&hellip;</strong> and choose a passphrase (at
+          least 8 characters). The archive is encrypted from the passphrase
+          rather than the server key, so it can be restored anywhere by
+          re-entering the same passphrase. <strong>Keep the passphrase safe —
+          the data cannot be recovered without it.</strong>
+        </p>
 
         <h3>Restore from Backup</h3>
         <p>
           Click <strong>Upload Backup File</strong> and select a previously
-          created backup <code>.zip</code> file. A confirmation dialog will
+          created backup file. For a <strong>portable</strong> backup, enter its
+          passphrase in the <strong>Portable backup passphrase</strong> field
+          (leave it blank for a standard backup). A confirmation dialog will
           appear &mdash; type <code>RESTORE</code> to proceed.
         </p>
         <p><strong>What happens during restore:</strong></p>
@@ -1369,7 +1398,7 @@ const helpSections: Record<string, HelpSection> = {
     ),
   },
   "scheduled-exports": {
-    title: "Scheduled Exports",
+    title: "Scheduled Report Exports",
     content: (
       <>
         <p>

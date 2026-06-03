@@ -10,11 +10,12 @@ CREATE TABLE "product_types" (
 );
 CREATE UNIQUE INDEX "product_types_name_key" ON "product_types"("name");
 
--- 2. Seed from values actually present, plus the previously-known set.
+-- 2. Seed only from values actually present in the legacy enum column.
+--    Fresh installs have an empty training_data, so no product types are
+--    created here — the catalogue starts empty and types are added on demand
+--    (lib/product-types.ts:ensureDefaultProductTypeId) or via the admin UI.
 INSERT INTO "product_types" ("name")
 SELECT DISTINCT "product_type"::text FROM "training_data"
-UNION
-SELECT unnest(ARRAY['Cortex', 'SASE', 'Cloud', 'Strata', 'Foundation'])
 ON CONFLICT ("name") DO NOTHING;
 
 -- 3. Add nullable FK column.

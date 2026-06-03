@@ -26,7 +26,7 @@ Built with Next.js, React, PostgreSQL, and Prisma.
   - [User Management](#user-management)
   - [Backup & Restore](#backup--restore)
   - [Updates](#updates)
-  - [Scheduled Exports](#scheduled-exports)
+  - [Scheduled Report Exports](#scheduled-report-exports)
   - [Program Data](#program-data)
   - [Wipe Data](#wipe-data)
 - [Partner Programs](#partner-programs)
@@ -599,11 +599,17 @@ Click **Download Backup** to generate and download a `.zip` file containing all 
 | `users.json` | User accounts (with hashed passwords) |
 | `backup_metadata.json` | Backup version and creation timestamp |
 
-The downloaded file is named `training-tracker-backup-<timestamp>.zip`.
+The downloaded file is named `training-tracker-backup-<timestamp>.zip`. When an `ENCRYPTION_KEY` is configured, the archive is encrypted with **this server's** key and saved as `.zip.enc`. A key-encrypted backup can **only** be restored on the same system (or another system configured with the identical `ENCRYPTION_KEY`).
+
+#### Portable Backup (restore on a different system)
+
+To move data to a **different** installation, click **Portable backup…** and choose a passphrase (at least 8 characters). The archive is encrypted with a key derived from that passphrase instead of the server's `ENCRYPTION_KEY`, so it can be restored anywhere by re-entering the same passphrase. The file is named `training-tracker-backup-<timestamp>.portable.zip.enc`.
+
+> **Keep the passphrase safe — there is no way to recover the data if it is lost.**
 
 #### Restore from Backup
 
-Click **Upload Backup File** and select a previously created backup `.zip` file. A confirmation dialog will appear — type `RESTORE` to proceed.
+Click **Upload Backup File** and select a previously created backup file. If it is a **portable** backup, enter the passphrase it was created with in the **Portable backup passphrase** field (leave it blank for a standard backup). A confirmation dialog will appear — type `RESTORE` to proceed.
 
 **What happens during restore:**
 
@@ -681,9 +687,9 @@ Enable automatic updates to have the system check for and apply updates on a sch
 
 The application restarts during automatic updates.
 
-### Scheduled Exports
+### Scheduled Report Exports
 
-Navigate to **Admin > Scheduled Exports** to automate report delivery on a recurring schedule.
+Navigate to **Admin > Scheduled Report Exports** to automate report delivery on a recurring schedule.
 
 #### Adding a Schedule
 
@@ -783,7 +789,10 @@ Each row's completed date is shown as an editable date input, highlighted in amb
 
 #### Wipe All Data
 
-The **Danger Zone** at the bottom of the Data Clean-Up page allows you to permanently delete all students, training records, training data, and region data. Type `WIPE` to confirm. **This cannot be undone.**
+The **Danger Zone** at the bottom of the Data Clean-Up page offers two destructive actions. **Both cannot be undone.**
+
+- **Wipe All Data (Keep Accounts)** — Permanently deletes all students, training records, training data, product types, region data, programs, companies, and scheduled exports, but **keeps your user accounts** so you stay signed in. Type `WIPE` to confirm.
+- **Factory Reset (Wipe Everything)** — Deletes **everything, including all user accounts**, returning the system to its brand-new state. You are taken straight to the first-run setup wizard to create a new admin. Type `RESET` to confirm.
 
 ---
 
