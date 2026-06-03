@@ -137,9 +137,19 @@ export default function TrainingDataPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [searchColumn, setSearchColumn] = useState("all");
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
+  const [legacyOnly, setLegacyOnly] = useState(false);
   const [sortColumn, setSortColumn] = useState<string | null>("fullTitle");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
   const debouncedSearch = useDebounce(searchTerm);
+
+  // trainingTitle → fullTitle map covering every row, so legacy `replacedBy`
+  // arrays (which store internal trainingTitle keys) can be rendered as the
+  // human-readable fullTitles shown elsewhere in the UI.
+  const trainingTitleToFullTitle = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const t of trainingList) m.set(t.trainingTitle, t.fullTitle);
+    return m;
+  }, [trainingList]);
 
   // Column definitions for search/filter (order matches desired table order)
   const tableColumns = useMemo(() => [
@@ -212,6 +222,12 @@ export default function TrainingDataPage() {
       );
     }
 
+    // Legacy-only toggle: when on, restrict to retired Certs/Accreds. Used by
+    // admins auditing which legacy items still need a replacement defined.
+    if (legacyOnly) {
+      result = result.filter((row) => row.isLegacy);
+    }
+
     // Sorting
     if (sortColumn) {
       result.sort((a, b) => {
@@ -223,7 +239,7 @@ export default function TrainingDataPage() {
     }
 
     return result;
-  }, [trainingList, subItemTitleSet, debouncedSearch, searchColumn, columnFilters, sortColumn, sortDirection, tableColumns]);
+  }, [trainingList, subItemTitleSet, debouncedSearch, searchColumn, columnFilters, legacyOnly, sortColumn, sortDirection, tableColumns]);
 
   const handleSort = (key: string) => {
     if (sortColumn === key) {
@@ -1314,6 +1330,15 @@ export default function TrainingDataPage() {
             </option>
           ))}
         </select>
+        <label className="flex items-center gap-2 text-sm text-gray-700 select-none cursor-pointer">
+          <input
+            type="checkbox"
+            checked={legacyOnly}
+            onChange={(e) => setLegacyOnly(e.target.checked)}
+            className="rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+          />
+          Show legacy only
+        </label>
       </section>
 
       {/* Incomplete Training Entries */}
@@ -1503,35 +1528,60 @@ export default function TrainingDataPage() {
                           className="border border-gray-300 rounded px-2 py-1 text-sm w-full"
                         />
                       ) : (
-                        <div className="flex items-center gap-2">
-                          {isExpandable && (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setExpandedParents((prev) => ({
-                                  ...prev,
-                                  [t.trainingTitle]: !prev[t.trainingTitle],
-                                }))
-                              }
-                              className="text-gray-500 hover:text-gray-800"
-                              aria-label={isExpanded ? "Collapse sub-items" : "Expand sub-items"}
-                            >
-                              {isExpanded ? <ChevronDown size={14} /> : <ChevronUp size={14} className="rotate-90" />}
-                            </button>
-                          )}
-                          <span>{t.fullTitle}</span>
-                          {t.isLegacy && (
-                            <span
-                              className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800"
-                              title={t.replacedBy && t.replacedBy.length > 0 ? `Replaced by: ${t.replacedBy.join(", ")}` : "Legacy — no replacement"}
-                            >
-                              Legacy
-                            </span>
-                          )}
-                          {isExpandable && (
-                            <span className="text-xs text-gray-500">({subs.length} sub-item{subs.length === 1 ? "" : "s"})</span>
-                          )}
-                        </div>
+                        (() => {
+                          const replFulls = t.isLegacy
+                            ? (t.replacedBy ?? []).map((rt) => trainingTitleToFullTitle.get(rt) ?? rt)
+                            : [];
+                          const replTooltip = t.isLegacy
+                            ? replFulls.length > 0
+                              ? `Replaced by: ${replFulls.join(", ")}`
+                              : "Legacy — no replacement defined"
+                            : undefined;
+                          return (
+                            <div>
+                              <div className="flex items-center gap-2">
+                                {isExpandable && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setExpandedParents((prev) => ({
+                                        ...prev,
+                                        [t.trainingTitle]: !prev[t.trainingTitle],
+                                      }))
+                                    }
+                                    className="text-gray-500 hover:text-gray-800"
+                                    aria-label={isExpanded ? "Collapse sub-items" : "Expand sub-items"}
+                                  >
+                                    {isExpanded ? <ChevronDown size={14} /> : <ChevronUp size={14} className="rotate-90" />}
+                                  </button>
+                                )}
+                                <span>{t.fullTitle}</span>
+                                {t.isLegacy && (
+                                  <span
+                                    className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800"
+                                    title={replTooltip}
+                                  >
+                                    Legacy
+                                  </span>
+                                )}
+                                {isExpandable && (
+                                  <span className="text-xs text-gray-500">({subs.length} sub-item{subs.length === 1 ? "" : "s"})</span>
+                                )}
+                              </div>
+                              {t.isLegacy && (
+                                replFulls.length > 0 ? (
+                                  <div className="text-xs text-gray-500 mt-0.5 pl-0.5">
+                                    → Replaced by: <span className="text-gray-700">{replFulls.join(", ")}</span>
+                                  </div>
+                                ) : (
+                                  <div className="text-xs italic text-orange-700 mt-0.5 pl-0.5">
+                                    → No replacement defined
+                                  </div>
+                                )
+                              )}
+                            </div>
+                          );
+                        })()
                       )}
                     </td>
                     {/* Training Title */}

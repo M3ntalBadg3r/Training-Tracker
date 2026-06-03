@@ -948,7 +948,12 @@ const helpSections: Record<string, HelpSection> = {
           <li>
             A <strong>Legacy</strong> badge appears in the catalogue, on the
             training detail page, and next to the training on each learner&apos;s
-            record (with the replacement name).
+            record (with the replacement name). On this admin page the badge is
+            followed by an inline <em>&rarr; Replaced by: &lt;names&gt;</em>{" "}
+            subtitle (or <em>&rarr; No replacement defined</em> when the list
+            is empty), so you can audit replacements at a glance without
+            opening each row. Tick <strong>Show legacy only</strong> in the
+            search bar to scope the table to retired Certs/Accreds.
           </li>
           <li>
             Changing the type away from Certification/Accreditation clears the
