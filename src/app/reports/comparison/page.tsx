@@ -6,6 +6,7 @@ import PageHeader from "@/components/layout/PageHeader";
 import KpiStrip from "@/components/ui/KpiStrip";
 import DateRangePicker, { DateRangeValue } from "@/components/ui/DateRangePicker";
 import { useChartTheme, tooltipStyle } from "@/lib/chart-theme";
+import { useProductTypeColors } from "@/hooks/useProductTypeColors";
 import { resolveBucket, GroupByMode, GROUP_BY_LABEL } from "@/lib/group-by";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
@@ -134,6 +135,7 @@ interface BucketMetrics {
 
 export default function ComparisonPage() {
   const chart = useChartTheme();
+  const productColors = useProductTypeColors();
   const companyScope = useCompanyScope();
 
   const [records, setRecords] = useState<TrainingRecordRow[]>([]);
@@ -468,7 +470,11 @@ export default function ComparisonPage() {
               <Tooltip contentStyle={tooltipStyle(chart)} />
               <Legend />
               {breakdownChart.series.map((s, i) => (
-                <Bar key={s} dataKey={s} fill={chart.series(i)} />
+                <Bar
+                  key={s}
+                  dataKey={s}
+                  fill={compareMode === "product" ? chart.productColor(s, productColors) : chart.series(i)}
+                />
               ))}
             </BarChart>
           )}
