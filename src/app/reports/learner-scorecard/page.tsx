@@ -192,10 +192,10 @@ export default function LearnerScorecardPage() {
         else if (r.trainingType === "OLX") row.olx += 1;
       }
 
-      // Lapsed = expired achievements (independent of the toggle).
+      // Expired = expired achievements (independent of the toggle).
       if (!r.active) row.lapsed += 1;
 
-      // Expiring = active certs/accreditations renewing within the window.
+      // Expiring Soon = active certs/accreditations expiring within the window.
       if (r.active && (r.trainingType === "Certification" || r.trainingType === "Accreditation") && r.expiryDate) {
         const exp = new Date(r.expiryDate);
         if (exp >= now && exp <= windowCutoff) row.expiring += 1;
@@ -301,8 +301,8 @@ export default function LearnerScorecardPage() {
     { key: "ilt", header: "ILTs" },
     { key: "olx", header: "OLX" },
     { key: "total", header: "Total" },
-    { key: "expiring", header: `Expiring ${windowMonths}mo` },
-    { key: "lapsed", header: "Lapsed" },
+    { key: "expiring", header: `Expiring Soon (${windowMonths}mo)` },
+    { key: "lapsed", header: "Expired" },
     { key: "gaps", header: "Cert Gaps" },
     { key: "lastDate", header: "Last Achievement" },
   ];
@@ -355,7 +355,7 @@ export default function LearnerScorecardPage() {
           { label: "Learners", value: kpis.learners, icon: Users, tone: "blue", hint: `${kpis.zero.toLocaleString()} with no achievements` },
           { label: includeExpired ? "Total Achievements" : "Active Achievements", value: kpis.achievements, icon: Award, tone: "emerald" },
           { label: "Learners with Cert Gaps", value: kpis.withGaps, icon: AlertTriangle, tone: "amber" },
-          { label: `Renewing in ${windowMonths}mo`, value: kpis.withExpiring, icon: Clock, tone: "red" },
+          { label: `Expiring Soon (${windowMonths}mo)`, value: kpis.withExpiring, icon: Clock, tone: "red" },
         ]}
       />
 
@@ -381,7 +381,7 @@ export default function LearnerScorecardPage() {
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-wrap gap-2">
           <p className="text-sm text-gray-500">
-            One row per learner. Counts are {includeExpired ? "all completions" : "active only"}; renewing and gap counts always look forward from today.
+            One row per learner. Counts are {includeExpired ? "all completions" : "active only"}; expiring-soon and gap counts always look forward from today.
           </p>
           <ExportMenu data={exportRows as never} columns={exportColumns} filename="learner-scorecard" />
         </div>
@@ -397,8 +397,8 @@ export default function LearnerScorecardPage() {
                 {numHeader("ilt", "ILTs")}
                 {numHeader("olx", "OLX")}
                 {numHeader("total", "Total")}
-                {numHeader("expiring", "Renewing")}
-                {numHeader("lapsed", "Lapsed")}
+                {numHeader("expiring", "Expiring Soon")}
+                {numHeader("lapsed", "Expired")}
                 {numHeader("gaps", "Gaps")}
                 {numHeader("lastDate", "Last Achievement")}
               </tr>

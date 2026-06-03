@@ -348,7 +348,7 @@ export async function fetchLearnerScorecard(companyId?: number | null): Promise<
       else if (r.trainingType === "Instructor-Led Training") row.ilts += 1;
       else if (r.trainingType === "OLX") row.olx += 1;
 
-      // Renewing = active certs/accreditations expiring within the window.
+      // Expiring Soon = active certs/accreditations expiring within the window.
       if (r.trainingType === "Certification" || r.trainingType === "Accreditation") {
         const exp = new Date(r.expiryDate);
         if (exp >= now && exp <= sixMonths) row.expiring += 1;
@@ -434,8 +434,8 @@ export const LEARNER_SCORECARD_COLUMNS: ExportColumn<LearnerScorecardRow>[] = [
   { key: "ilts", header: "ILTs" },
   { key: "olx", header: "OLX" },
   { key: "total", header: "Total" },
-  { key: "expiring", header: "Renewing (6mo)" },
-  { key: "lapsed", header: "Lapsed" },
+  { key: "expiring", header: "Expiring Soon (6mo)" },
+  { key: "lapsed", header: "Expired" },
   { key: "gaps", header: "Cert Gaps" },
   { key: "lastAchievement", header: "Last Achievement" },
 ];

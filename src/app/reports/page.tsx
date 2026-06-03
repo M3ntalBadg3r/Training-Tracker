@@ -45,7 +45,7 @@ const TILES = [
   {
     href: "/reports/learner-scorecard",
     title: "Learner Achievement Scorecard",
-    description: "One row per learner — certs, accreditations, ILT/OLX, renewals due, certification gaps, and a top-achievers leaderboard",
+    description: "One row per learner — certs, accreditations, ILT/OLX, expiring soon, certification gaps, and a top-achievers leaderboard",
     Icon: UserCheck,
   },
   {
