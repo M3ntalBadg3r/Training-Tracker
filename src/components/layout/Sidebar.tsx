@@ -37,6 +37,7 @@ import {
   TrendingUp,
   Scale,
   SlidersHorizontal,
+  UserCheck,
 } from "lucide-react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useTheme } from "@/components/theme/ThemeProvider";
@@ -68,6 +69,7 @@ const reportSubItems = [
   { href: "/reports/expiring-soon", label: "Expiring Soon", icon: Clock },
   { href: "/reports/last-12-months", label: "Achievement Over Time", icon: CalendarDays },
   { href: "/reports/trained-not-certified", label: "Trained Not Certified", icon: AlertCircle },
+  { href: "/reports/learner-scorecard", label: "Learner Achievement Scorecard", icon: UserCheck },
   { href: "/reports/coverage", label: "Coverage", icon: Target },
   { href: "/reports/comparison", label: "Comparison", icon: Scale },
   { href: "/reports/catalogue-health", label: "Catalogue Health", icon: BookOpen },

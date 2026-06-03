@@ -443,6 +443,10 @@ Area chart of completions with a dashed prior-period comparison line, plus a top
 
 Identifies students who have completed an **Instructor-Led Training** or an **OLX** (full sub-item set) but have **not** obtained the associated **Certification** (mapping configured in **Admin > Training Data**). Includes a gap-by-product chart and a top-buckets bar showing which theatres / regions / countries have the most gaps.
 
+### Learner Achievement Scorecard
+
+A learner-centric report — **one row per person** instead of per training. For each learner it shows counts of active **Certifications / Accreditations / ILTs / OLX**, a **Total**, the number **expiring soon** within a selectable window (1 / 3 / 6 months), **expired** achievements, **certification gaps** (completed a training without earning the mapped cert), and the **last achievement** date. A **Top Achievers** leaderboard chart highlights the most-certified learners for recognition. The whole roster is included, so learners with no completions surface with all-zero counts for follow-up. Counts are active-only by default; tick **Include expired in counts** to count expired completions too. Filter by theatre / region / country, search by name or email, sort any column, and export to CSV / Excel / PDF. Each name links through to the learner's detail page.
+
 ### Coverage / Compliance
 
 Active-training-holder share of population per theatre / region / country bucket × product × type. Coverage badges colour-code each row red / amber / green at 40% and 80% thresholds. Use the **Group by** selector to switch dimension.
@@ -670,7 +674,7 @@ Click **Add Schedule** and configure:
 | Field | Description |
 |-------|-------------|
 | **Name** | A descriptive label for this schedule |
-| **Report** | Which report to export (Trained but Not Certified, By Product Type, By Function, Expiring Soon, Achievement Over Time) |
+| **Report** | Which report to export (Trained but Not Certified, Learner Achievement Scorecard, By Product Type, By Function, Expiring Soon, Achievement Over Time) |
 | **Format** | CSV, Excel (XLSX), or PDF |
 | **Destination** | Where to deliver the file |
 | **Schedule** | Daily / Weekly / Monthly at a specified time |

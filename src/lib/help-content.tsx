@@ -544,6 +544,30 @@ const helpSections: Record<string, HelpSection> = {
     ),
   },
 
+  "reports-learner-scorecard": {
+    title: "Learner Achievement Scorecard",
+    content: (
+      <>
+        <p>
+          A learner-centric view — one row per person summarising what each
+          learner has achieved, what&apos;s due for renewal, and where the gaps
+          are. Useful both for recognising top achievers and for spotting
+          under-trained learners.
+        </p>
+        <ul>
+          <li><strong>Certs / Accreds / ILTs / OLX</strong> — counts per learner. Active completions only by default; tick <strong>Include expired in counts</strong> to count expired ones too.</li>
+          <li><strong>Total</strong> — sum of the four count columns; also drives the Top Achievers leaderboard.</li>
+          <li><strong>Expiring Soon</strong> — active Certifications/Accreditations whose expiry falls within the selected window (1/3/6 months); always looks forward from today.</li>
+          <li><strong>Expired</strong> — the learner&apos;s expired achievements.</li>
+          <li><strong>Gaps</strong> — trainings the learner completed without earning the mapped certification (same logic as Trained But Not Certified).</li>
+          <li><strong>Last Achievement</strong> — most recent completion date across all of the learner&apos;s records.</li>
+          <li>The whole roster is included, so learners with no completions appear with all-zero counts. OLX sub-items are excluded (the parent OLX counts once it&apos;s complete).</li>
+          <li>Filter by theatre/region/country and search by name or email; every column is sortable and the table exports to CSV/Excel/PDF.</li>
+        </ul>
+      </>
+    ),
+  },
+
   "reports-catalogue-health": {
     title: "Training Catalogue Health",
     content: (
