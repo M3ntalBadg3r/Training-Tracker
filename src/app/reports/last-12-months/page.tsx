@@ -8,6 +8,7 @@ import KpiStrip from "@/components/ui/KpiStrip";
 import GroupedRows from "@/components/data-table/GroupedRows";
 import DateRangePicker, { DateRangeValue } from "@/components/ui/DateRangePicker";
 import { useChartTheme, tooltipStyle } from "@/lib/chart-theme";
+import { useProductTypeColors } from "@/hooks/useProductTypeColors";
 import { groupRows, GroupByMode } from "@/lib/group-by";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
@@ -126,6 +127,7 @@ type Granularity = "day" | "week" | "month";
 export default function AchievementOverTimePage() {
   const router = useRouter();
   const chart = useChartTheme();
+  const productColors = useProductTypeColors();
   const { formatDate } = useDateFormat();
   const [trainingRecords, setTrainingRecords] = useState<TrainingRecordRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -311,12 +313,18 @@ export default function AchievementOverTimePage() {
   }, [chartRecords, buckets, bucketKey, windowStart, windowEnd, priorStart, priorEnd]);
 
   const topTitles = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const r of filtered) m.set(r.trainingTitle, (m.get(r.trainingTitle) ?? 0) + 1);
-    return Array.from(m.entries())
+    const counts = new Map<string, number>();
+    const productByTitle = new Map<string, string>();
+    for (const r of filtered) {
+      counts.set(r.trainingTitle, (counts.get(r.trainingTitle) ?? 0) + 1);
+      if (r.productType && !productByTitle.has(r.trainingTitle)) {
+        productByTitle.set(r.trainingTitle, r.productType);
+      }
+    }
+    return Array.from(counts.entries())
       .sort((a, b) => b[1] - a[1])
       .slice(0, 10)
-      .map(([title, count]) => ({ title, count }));
+      .map(([title, count]) => ({ title, count, productType: productByTitle.get(title) ?? "" }));
   }, [filtered]);
 
   const kpis = useMemo(() => {
@@ -471,6 +479,7 @@ export default function AchievementOverTimePage() {
             {topTitles.map((t, i) => {
               const max = topTitles[0]?.count ?? 1;
               const pct = (t.count / max) * 100;
+              const color = chart.productColor(t.productType, productColors);
               return (
                 <div key={t.title}>
                   <div className="flex justify-between text-xs mb-1">
@@ -478,7 +487,7 @@ export default function AchievementOverTimePage() {
                     <span className="text-gray-500 font-medium">{t.count}</span>
                   </div>
                   <div className="h-2 bg-gray-100 rounded">
-                    <div className="h-2 rounded" style={{ width: `${pct}%`, backgroundColor: chart.series(i) }} />
+                    <div className="h-2 rounded" style={{ width: `${pct}%`, backgroundColor: color }} />
                   </div>
                 </div>
               );

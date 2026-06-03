@@ -7,6 +7,7 @@ import PageHeader from "@/components/layout/PageHeader";
 import KpiStrip from "@/components/ui/KpiStrip";
 import GroupedRows from "@/components/data-table/GroupedRows";
 import { useChartTheme, tooltipStyle } from "@/lib/chart-theme";
+import { useProductTypeColors } from "@/hooks/useProductTypeColors";
 import { groupRows, GroupByMode } from "@/lib/group-by";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
@@ -15,6 +16,7 @@ import { Search, Download, ArrowLeft, History, AlertCircle, AlertTriangle, Ban }
 import {
   BarChart,
   Bar,
+  Cell,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -95,6 +97,7 @@ function bucketHorizon(expiry: Date, now: Date): string {
 export default function LegacyGapPage() {
   const router = useRouter();
   const chart = useChartTheme();
+  const productColors = useProductTypeColors();
   const { formatDate } = useDateFormat();
   const [records, setRecords] = useState<LegacyGapRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -252,7 +255,11 @@ export default function LegacyGapPage() {
               <XAxis type="number" allowDecimals={false} tick={{ fontSize: 12, fill: chart.axis }} stroke={chart.axis} />
               <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 11, fill: chart.axis }} stroke={chart.axis} />
               <Tooltip contentStyle={tooltipStyle(chart)} />
-              <Bar dataKey="gaps" fill={chart.series(0)} />
+              <Bar dataKey="gaps">
+                {productSeries.map((p) => (
+                  <Cell key={p.name} fill={chart.productColor(p.name, productColors)} />
+                ))}
+              </Bar>
             </BarChart>
           </ResponsiveContainer>
         </div>
