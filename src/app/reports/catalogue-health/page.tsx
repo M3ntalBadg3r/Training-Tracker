@@ -5,12 +5,14 @@ import Link from "next/link";
 import PageHeader from "@/components/layout/PageHeader";
 import KpiStrip from "@/components/ui/KpiStrip";
 import { useChartTheme, tooltipStyle } from "@/lib/chart-theme";
+import { useProductTypeColors } from "@/hooks/useProductTypeColors";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
 import { ArrowLeft, Download, BookOpen, AlertOctagon, AlertTriangle, TrendingDown } from "lucide-react";
 import {
   BarChart,
   Bar,
+  Cell,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -51,6 +53,7 @@ function ExportMenu({ data, columns, filename }: { data: Record<string, unknown>
 
 export default function CatalogueHealthPage() {
   const chart = useChartTheme();
+  const productColors = useProductTypeColors();
   const companyScope = useCompanyScope();
   const [rows, setRows] = useState<CatalogueRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -133,7 +136,11 @@ export default function CatalogueHealthPage() {
               <XAxis type="number" allowDecimals={false} tick={{ fontSize: 12, fill: chart.axis }} stroke={chart.axis} />
               <YAxis type="category" dataKey="fullTitle" tick={{ fontSize: 11, fill: chart.axis }} stroke={chart.axis} width={140} />
               <Tooltip contentStyle={tooltipStyle(chart)} />
-              <Bar dataKey="activeStudents" fill={chart.series(0)} />
+              <Bar dataKey="activeStudents">
+                {topUptake.map((r) => (
+                  <Cell key={r.fullTitle} fill={chart.productColor(r.productType, productColors)} />
+                ))}
+              </Bar>
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -148,7 +155,11 @@ export default function CatalogueHealthPage() {
                 <XAxis type="number" allowDecimals={false} tick={{ fontSize: 12, fill: chart.axis }} stroke={chart.axis} />
                 <YAxis type="category" dataKey="fullTitle" tick={{ fontSize: 11, fill: chart.axis }} stroke={chart.axis} width={140} />
                 <Tooltip contentStyle={tooltipStyle(chart)} />
-                <Bar dataKey="expiring90d" fill={chart.series(2)} />
+                <Bar dataKey="expiring90d">
+                  {topExpiring.map((r) => (
+                    <Cell key={r.fullTitle} fill={chart.productColor(r.productType, productColors)} />
+                  ))}
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           )}

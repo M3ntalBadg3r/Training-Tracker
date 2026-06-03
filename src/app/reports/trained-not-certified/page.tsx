@@ -7,6 +7,7 @@ import PageHeader from "@/components/layout/PageHeader";
 import KpiStrip from "@/components/ui/KpiStrip";
 import GroupedRows from "@/components/data-table/GroupedRows";
 import { useChartTheme, tooltipStyle } from "@/lib/chart-theme";
+import { useProductTypeColors } from "@/hooks/useProductTypeColors";
 import { groupRows, GroupByMode, resolveBucket } from "@/lib/group-by";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
@@ -57,6 +58,7 @@ function ExportMenu({ data, columns, filename }: { data: Record<string, unknown>
 export default function TrainedNotCertifiedPage() {
   const router = useRouter();
   const chart = useChartTheme();
+  const productColors = useProductTypeColors();
   const { formatDate } = useDateFormat();
   const [reportData, setReportData] = useState<TrainedNotCertifiedRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -198,7 +200,20 @@ export default function TrainedNotCertifiedPage() {
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={productSeries}>
               <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
-              <XAxis dataKey="name" tick={{ fontSize: 12, fill: chart.axis }} stroke={chart.axis} />
+              <XAxis
+                dataKey="name"
+                stroke={chart.axis}
+                tick={(props: { x: string | number; y: string | number; payload: { value: string } }) => {
+                  const fill = chart.productColor(props.payload.value, productColors);
+                  const x = typeof props.x === "number" ? props.x : Number(props.x);
+                  const y = typeof props.y === "number" ? props.y : Number(props.y);
+                  return (
+                    <text x={x} y={y + 12} textAnchor="middle" fill={fill} fontSize={12} fontWeight={600}>
+                      {props.payload.value}
+                    </text>
+                  );
+                }}
+              />
               <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: chart.axis }} stroke={chart.axis} />
               <Tooltip contentStyle={tooltipStyle(chart)} />
               <Legend />
