@@ -15,6 +15,7 @@ import {
   RefreshCw,
   Scale,
   UserCheck,
+  History,
 } from "lucide-react";
 
 const TILES = [
@@ -53,6 +54,12 @@ const TILES = [
     title: "Trained But Not Certified",
     description: "Students who completed an ILT but haven't obtained the associated Certification",
     Icon: AlertCircle,
+  },
+  {
+    href: "/reports/legacy-gap",
+    title: "Legacy Replacement Gap",
+    description: "Learners holding a legacy certification/accreditation who haven't taken its replacement, bucketed by when the legacy training expires",
+    Icon: History,
   },
   {
     href: "/reports/coverage",

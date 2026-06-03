@@ -443,6 +443,10 @@ Area chart of completions with a dashed prior-period comparison line, plus a top
 
 Identifies students who have completed an **Instructor-Led Training** or an **OLX** (full sub-item set) but have **not** obtained the associated **Certification** (mapping configured in **Admin > Training Data**). Includes a gap-by-product chart and a top-buckets bar showing which theatres / regions / countries have the most gaps.
 
+### Legacy Replacement Gap
+
+Lists learners who hold a **legacy** Certification or Accreditation but have **not** taken its **replacement** (both configured in **Admin > Training Data** — tick **Mark as Legacy** and pick one or more **Replaced by** certs/accreditations). Replacements are alternatives: holding any one clears the learner. The expiry-horizon chart and **Already Expired / ≤ 1 / 3 / 6 / 12 months** window filter key on the learner's **legacy** training expiry, so you can prioritise who needs to migrate first. Two toggles tailor the view: **Include legacy with no replacement** (show holders of a retired cert that has no successor) and **Replacement must be active** (when off, a previously-held but now-expired replacement also counts as satisfied). Filter by type / product, group by theatre / region / country, and export to CSV / Excel / PDF. Also available as a scheduled export.
+
 ### Learner Achievement Scorecard
 
 A learner-centric report — **one row per person** instead of per training. For each learner it shows counts of active **Certifications / Accreditations / ILTs / OLX**, a **Total**, the number **expiring soon** within a selectable window (1 / 3 / 6 months), **expired** achievements, **certification gaps** (completed a training without earning the mapped cert), and the **last achievement** date. A **Top Achievers** leaderboard chart highlights the most-certified learners for recognition. The whole roster is included, so learners with no completions surface with all-zero counts for follow-up. Counts are active-only by default; tick **Include expired in counts** to count expired completions too. Filter by theatre / region / country, search by name or email, sort any column, and export to CSV / Excel / PDF. Each name links through to the learner's detail page.
@@ -510,6 +514,8 @@ Manage the definitions of all training programs in the system.
 | **Function** | Sales, Pre-Sales, or Deployments |
 | **Link** | Optional URL to training resources |
 | **Certification** | Certification mapping (ILT only — see below) |
+| **Legacy** | Marks a Certification/Accreditation as retired/superseded (see below) |
+| **Replacement** | The Cert/Accreditation(s) that replace a legacy training |
 
 **Features:**
 
@@ -531,14 +537,26 @@ The **Certification** column is available for trainings of type **Instructor-Led
 - Changing the training type away from ILT automatically clears the certification mapping.
 - During import, multiple certifications can be specified as comma-separated values in a single cell.
 
+#### Legacy Certifications & Replacements
+
+A **Certification** or **Accreditation** can be flagged as **Legacy** when it has been retired or superseded.
+
+- When adding or editing a Certification/Accreditation, tick **Mark as Legacy**.
+- Once legacy, a **Replaced by** checkbox list of all other Certifications/Accreditations appears — select one or more. Multiple replacements are treated as **alternatives**: holding any one of them counts as having migrated (the same model as an ILT mapping to several certs). Leave the list empty for a cert that was retired with no successor.
+- A **Legacy** badge is shown on the training in the catalogue, on each learner's training list (with the replacement name), and on the training detail page.
+- Changing the type away from Certification/Accreditation automatically clears the legacy flag and replacements.
+- During import, set a **Legacy** column to `Yes` and list replacement training titles (comma-separated) in a **Replacement** column.
+- The **Legacy Replacement Gap** report uses this to find learners still holding a legacy cert who haven't taken the replacement.
+
 ### Product Types
 
 Navigate to **Admin > Product Types** to manage the list of product types used to categorise training data (shown on the dashboard's *By Product Type* chart and the *By Product Type* report).
 
 - **Add / Rename** — Names must be unique (case-insensitive).
+- **Colour** — Each product type can be given an optional brand colour (hex). Charts and reports that represent products will use that colour: the *By Product Type* and dashboard charts colour each product's X-axis label, while the *Coverage* and *Comparison "By Product"* charts colour each product's series. Product types without a colour render in a neutral grey so it's obvious which still need configuring.
 - **Delete** — Only possible when no training data references the product type. The **Trainings** column shows the current usage count; reassign those trainings first.
-- **Import** — Upload a CSV or Excel file with a single `Name` column to bulk-create product types. The wizard auto-maps the column and shows a preview; names that already exist (case-insensitive) and duplicate rows within the file are skipped rather than duplicated.
-- **Export** — Download the current list as CSV, Excel, or PDF.
+- **Import** — Upload a CSV or Excel file with a `Name` column (required) and an optional `Color` column (`#RRGGBB`) to bulk-create or recolour product types. The wizard auto-maps the columns and shows a preview; names that already exist (case-insensitive) are skipped, but a new colour on an existing row is applied as an update. Invalid colour values are logged and the row is imported without a colour.
+- **Export** — Download the current list (including colour) as CSV, Excel, or PDF.
 - During a training-data import, product-type cells are matched case-insensitively against this list. Unknown values are reported as per-row errors rather than being silently changed.
 
 ### User Management
@@ -674,7 +692,7 @@ Click **Add Schedule** and configure:
 | Field | Description |
 |-------|-------------|
 | **Name** | A descriptive label for this schedule |
-| **Report** | Which report to export (Trained but Not Certified, Learner Achievement Scorecard, By Product Type, By Function, Expiring Soon, Achievement Over Time) |
+| **Report** | Which report to export (Trained but Not Certified, Legacy Replacement Gap, Learner Achievement Scorecard, By Product Type, By Function, Expiring Soon, Achievement Over Time) |
 | **Format** | CSV, Excel (XLSX), or PDF |
 | **Destination** | Where to deliver the file |
 | **Schedule** | Daily / Weekly / Monthly at a specified time |
@@ -849,7 +867,7 @@ Export functionality is available on the following pages:
 | Page | What is exported |
 |------|-----------------|
 | **Admin > Region Data** | Country and Region |
-| **Admin > Training Data** | Training Title, Full Title, Type, Product, Function, Link, Certification |
+| **Admin > Training Data** | Training Title, Full Title, Type, Product, Function, Link, Certification, Parent Training Title, Legacy, Replacement |
 | **Reports** | Full report results with all columns |
 
 Each export supports three formats:

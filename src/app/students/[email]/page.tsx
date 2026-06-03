@@ -56,19 +56,32 @@ function buildTrainingColumns(
     {
       key: "fullTitle",
       header: "Title",
-      render: (row) =>
-        row.link ? (
-          <a
-            href={row.link}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-blue-600 hover:underline"
-          >
-            {row.fullTitle}
-          </a>
-        ) : (
-          <span>{row.fullTitle}</span>
-        ),
+      render: (row) => (
+        <div className="flex flex-wrap items-center gap-2">
+          {row.link ? (
+            <a
+              href={row.link}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-600 hover:underline"
+            >
+              {row.fullTitle}
+            </a>
+          ) : (
+            <span>{row.fullTitle}</span>
+          )}
+          {row.isLegacy && (
+            <span
+              className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800"
+              title={row.replacedBy && row.replacedBy.length > 0 ? `Replaced by: ${row.replacedBy.join(" or ")}` : "Legacy — no replacement"}
+            >
+              {row.replacedBy && row.replacedBy.length > 0
+                ? `Legacy → ${row.replacedBy.join(" or ")}`
+                : "Legacy"}
+            </span>
+          )}
+        </div>
+      ),
     },
     { key: "trainingType", header: "Type" },
     { key: "productType", header: "Product" },

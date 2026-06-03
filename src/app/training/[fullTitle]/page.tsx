@@ -48,6 +48,7 @@ export default function TrainingTakenPage({
   const [loading, setLoading] = useState(true);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [subItems, setSubItems] = useState<{ trainingTitle: string; fullTitle: string }[]>([]);
+  const [legacy, setLegacy] = useState<{ replacedBy: string[] } | null>(null);
 
   const exportData = useMemo(
     () =>
@@ -116,6 +117,26 @@ export default function TrainingTakenPage({
       .catch(() => setSubItems([]));
   }, [fullTitle, trainingType]);
 
+  // For legacy Certifications/Accreditations, surface the replacement(s).
+  useEffect(() => {
+    if (trainingType !== "Certification" && trainingType !== "Accreditation") {
+      setLegacy(null);
+      return;
+    }
+    fetch("/api/training-data/all")
+      .then((res) => (res.ok ? res.json() : []))
+      .then((all: { trainingTitle: string; fullTitle: string; trainingType: string; isLegacy?: boolean; replacedBy?: string[] }[]) => {
+        const match = all.find((t) => t.fullTitle === fullTitle && t.trainingType === trainingType && t.isLegacy);
+        if (!match) {
+          setLegacy(null);
+          return;
+        }
+        const titleToFull = new Map(all.map((t) => [t.trainingTitle, t.fullTitle]));
+        setLegacy({ replacedBy: (match.replacedBy || []).map((r) => titleToFull.get(r) ?? r) });
+      })
+      .catch(() => setLegacy(null));
+  }, [fullTitle, trainingType]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -127,6 +148,16 @@ export default function TrainingTakenPage({
   return (
     <div>
       <PageHeader title={fullTitle} showBack helpSlug="training-detail" />
+      {legacy && (
+        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-800">
+          <span className="inline-block px-2 py-0.5 rounded-full text-xs font-semibold bg-orange-100 text-orange-800">Legacy</span>
+          {legacy.replacedBy.length > 0 ? (
+            <span>Replaced by {legacy.replacedBy.join(" or ")}</span>
+          ) : (
+            <span>No replacement — retired</span>
+          )}
+        </div>
+      )}
       {(hasLocationFilters || activeOnly) && (
         <div className="flex items-center gap-2 mb-3 text-sm text-gray-600">
           <span>Filtered by:</span>

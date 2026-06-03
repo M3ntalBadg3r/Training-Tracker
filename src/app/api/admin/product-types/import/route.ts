@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { handleAuthError, requireSuperAdmin } from "@/lib/auth";
 
+const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
+
 export async function POST(request: NextRequest) {
   try {
     await requireSuperAdmin(request);
@@ -12,7 +14,7 @@ export async function POST(request: NextRequest) {
   const body = await request.json();
   const { rows, columnMapping } = body as {
     rows: Record<string, string>[];
-    columnMapping: { name: string };
+    columnMapping: { name: string; color?: string };
   };
 
   if (!rows || !columnMapping?.name) {
@@ -32,8 +34,8 @@ export async function POST(request: NextRequest) {
   }
 
   let imported = 0;
+  let updated = 0;
   let skipped = 0;
-  const updated = 0; // product types only carry a name, so there is nothing to update
   const errors: string[] = [];
 
   // Track names already processed in this batch (case-insensitive) so a file
@@ -57,15 +59,35 @@ export async function POST(request: NextRequest) {
     }
     seen.add(name.toLowerCase());
 
+    let color: string | null = null;
+    if (columnMapping.color) {
+      const raw = row[columnMapping.color]?.trim();
+      if (raw) {
+        if (HEX_COLOR_RE.test(raw)) {
+          color = raw.toLowerCase();
+        } else {
+          errors.push(`Row ${rowNum}: Ignoring invalid colour "${raw}" (expected #RRGGBB)`);
+        }
+      }
+    }
+
     try {
       const existing = await prisma.productType.findFirst({
         where: { name: { equals: name, mode: "insensitive" } },
       });
 
       if (existing) {
-        skipped++;
+        // Only "update" when there is actually new colour information to apply
+        // and either the existing row has no colour or the import has one
+        // different from what's stored.
+        if (color && existing.color !== color) {
+          await prisma.productType.update({ where: { id: existing.id }, data: { color } });
+          updated++;
+        } else {
+          skipped++;
+        }
       } else {
-        await prisma.productType.create({ data: { name } });
+        await prisma.productType.create({ data: { name, color } });
         imported++;
       }
     } catch (err) {

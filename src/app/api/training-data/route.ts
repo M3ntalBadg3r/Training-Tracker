@@ -5,6 +5,7 @@ import { requireAuth, handleAuthError, requireSuperAdmin } from "@/lib/auth";
 import { getAuthorizedCompanyIds, resolveCompanyFilter } from "@/lib/company-scope";
 import { recomputeAllStudentsForParent } from "@/lib/olx";
 import { resolveProductTypeId } from "@/lib/product-types";
+import { sanitizeLegacyFields } from "@/lib/legacy-training";
 
 export async function GET(request: NextRequest) {
   let auth;
@@ -120,7 +121,7 @@ export async function POST(request: NextRequest) {
     return handleAuthError(error);
   }
   const body = await request.json();
-  const { trainingTitle, fullTitle, trainingType, productType, function: fn, link, certification, subItems, parents } = body;
+  const { trainingTitle, fullTitle, trainingType, productType, function: fn, link, certification, subItems, parents, isLegacy, replacedBy } = body;
 
   if (!trainingTitle || !fullTitle || !trainingType || !productType || !fn) {
     return NextResponse.json(
@@ -146,6 +147,9 @@ export async function POST(request: NextRequest) {
     ? Array.from(new Set(parents.filter((p): p is string => typeof p === "string" && !!p.trim())))
     : [];
 
+  // Legacy flag + replacement list (Certification/Accreditation only).
+  const legacy = await sanitizeLegacyFields(trainingTitle, trainingType, isLegacy, replacedBy);
+
   const training = await prisma.trainingData.create({
     data: {
       trainingTitle,
@@ -156,6 +160,8 @@ export async function POST(request: NextRequest) {
       link: link || null,
       // Only OLX parents may carry certifications.
       certification: trainingType === "OLXSubItem" ? [] : (Array.isArray(certification) ? certification : []),
+      isLegacy: legacy.isLegacy,
+      replacedBy: legacy.replacedBy,
       subItemMemberships: subItemTitles.length > 0
         ? { create: subItemTitles.map((s) => ({ subItemTrainingTitle: s })) }
         : undefined,

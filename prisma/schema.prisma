@@ -81,6 +81,12 @@ model TrainingData {
   link          String?
   certification String[]      @default([]) @map("certification")
   isIncomplete  Boolean      @default(false) @map("is_incomplete")
+  // Legacy lifecycle (Certification/Accreditation only). When `isLegacy` is set,
+  // `replacedBy` lists the trainingTitles of the Cert/Accreditation(s) that
+  // supersede this one (alternatives — completing any one counts). Empty means
+  // the cert is retired with no replacement.
+  isLegacy      Boolean      @default(false) @map("is_legacy")
+  replacedBy    String[]     @default([]) @map("replaced_by")
 
   productType             ProductType  @relation(fields: [productTypeId], references: [id])
   trainingsTaken          TrainingTaken[]
@@ -100,8 +106,9 @@ model TrainingData {
 }
 
 model ProductType {
-  id   Int    @id @default(autoincrement())
-  name String @unique
+  id    Int     @id @default(autoincrement())
+  name  String  @unique
+  color String? @db.VarChar(7)
 
   trainingData TrainingData[]
 

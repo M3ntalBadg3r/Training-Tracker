@@ -58,6 +58,7 @@ interface Credential {
 
 const REPORT_TYPES = [
   { value: "trained-not-certified", label: "Trained but Not Certified" },
+  { value: "legacy-gap", label: "Legacy Replacement Gap" },
   { value: "learner-scorecard", label: "Learner Achievement Scorecard" },
   { value: "by-product", label: "By Product Type" },
   { value: "by-function", label: "By Function" },

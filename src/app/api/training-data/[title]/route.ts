@@ -5,6 +5,7 @@ import { handleAuthError, requireSuperAdmin } from "@/lib/auth";
 import { recomputeAllStudentsForParent } from "@/lib/olx";
 import { safeDecodeParam } from "@/lib/utils";
 import { resolveProductTypeId } from "@/lib/product-types";
+import { sanitizeLegacyFields, isLegacyEligible } from "@/lib/legacy-training";
 
 export async function GET(
   _request: NextRequest,
@@ -157,6 +158,22 @@ export async function PUT(
       );
     }
 
+    // Resolve legacy fields against the NEW title (self-reference check) and the
+    // effective training type. Fall back to the existing row's values when the
+    // request omits them.
+    const oldForLegacy = await prisma.trainingData.findUnique({
+      where: { trainingTitle: decodedTitle },
+      select: { trainingType: true, isLegacy: true, replacedBy: true },
+    });
+    const effectiveType = (body.trainingType as string | undefined)
+      ?? oldForLegacy?.trainingType ?? "Certification";
+    const legacyRename = await sanitizeLegacyFields(
+      newTitle,
+      effectiveType,
+      body.isLegacy !== undefined ? body.isLegacy : oldForLegacy?.isLegacy,
+      body.replacedBy !== undefined ? body.replacedBy : oldForLegacy?.replacedBy,
+    );
+
     let renameResult;
     try {
       renameResult = await prisma.$transaction(async (tx: PrismaTransactionClient) => {
@@ -199,6 +216,8 @@ export async function PUT(
             : (body.certification !== undefined
                 ? (Array.isArray(body.certification) ? body.certification : [])
                 : (old?.certification ?? [])),
+          isLegacy: legacyRename.isLegacy,
+          replacedBy: legacyRename.replacedBy,
         },
       });
       const sync = await syncMemberships(tx, newTitle, trainingType, subItems, parents);
@@ -234,6 +253,23 @@ export async function PUT(
     updateProductTypeId = resolved;
   }
 
+  // Resolve legacy fields when supplied, or when the type changes to something
+  // that can't be legacy (drop stale markers).
+  let legacyUpdate: { isLegacy: boolean; replacedBy: string[] } | undefined;
+  if (body.isLegacy !== undefined || body.replacedBy !== undefined) {
+    let effectiveType = body.trainingType as string | undefined;
+    if (!effectiveType) {
+      const existing = await prisma.trainingData.findUnique({
+        where: { trainingTitle: decodedTitle },
+        select: { trainingType: true },
+      });
+      effectiveType = existing?.trainingType ?? "";
+    }
+    legacyUpdate = await sanitizeLegacyFields(decodedTitle, effectiveType, body.isLegacy, body.replacedBy);
+  } else if (body.trainingType !== undefined && !isLegacyEligible(body.trainingType)) {
+    legacyUpdate = { isLegacy: false, replacedBy: [] };
+  }
+
   const { training, affectedParents } = await prisma.$transaction(async (tx: PrismaTransactionClient) => {
     const updated = await tx.trainingData.update({
       where: { trainingTitle: decodedTitle },
@@ -251,6 +287,10 @@ export async function PUT(
           certification: body.trainingType === "OLXSubItem"
             ? []
             : (Array.isArray(body.certification) ? body.certification : []),
+        }),
+        ...(legacyUpdate !== undefined && {
+          isLegacy: legacyUpdate.isLegacy,
+          replacedBy: legacyUpdate.replacedBy,
         }),
       },
     });

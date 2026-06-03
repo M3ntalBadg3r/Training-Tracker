@@ -38,6 +38,7 @@ import {
   Scale,
   SlidersHorizontal,
   UserCheck,
+  History,
 } from "lucide-react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useTheme } from "@/components/theme/ThemeProvider";
@@ -72,6 +73,7 @@ const reportSubItems = [
   { href: "/reports/learner-scorecard", label: "Learner Achievement Scorecard", icon: UserCheck },
   { href: "/reports/coverage", label: "Coverage", icon: Target },
   { href: "/reports/comparison", label: "Comparison", icon: Scale },
+  { href: "/reports/legacy-gap", label: "Legacy Replacement Gap", icon: History },
   { href: "/reports/catalogue-health", label: "Catalogue Health", icon: BookOpen },
   { href: "/reports/program-compliance-trend", label: "Compliance Trend", icon: TrendingUp },
   { href: "/reports/renewal-forecast", label: "Renewal Forecast", icon: RefreshCw },
