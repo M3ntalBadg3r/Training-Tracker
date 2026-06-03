@@ -91,6 +91,13 @@ export default function BackupPage() {
   const [showRestoreConfirm, setShowRestoreConfirm] = useState(false);
   const [confirmText, setConfirmText] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  // Portable (passphrase-encrypted) backup download.
+  const [showPortableModal, setShowPortableModal] = useState(false);
+  const [portablePass, setPortablePass] = useState("");
+  const [portablePass2, setPortablePass2] = useState("");
+  const [portableCreating, setPortableCreating] = useState(false);
+  // Passphrase entered when restoring a portable backup.
+  const [restorePassphrase, setRestorePassphrase] = useState("");
   const [result, setResult] = useState<{
     type: "success" | "error";
     message: string;
@@ -181,6 +188,48 @@ export default function BackupPage() {
     }
   };
 
+  const handlePortableBackup = async () => {
+    if (portablePass.length < 8 || portablePass !== portablePass2) return;
+    setPortableCreating(true);
+    setResult(null);
+    try {
+      const res = await fetch("/api/admin/backup/portable", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ passphrase: portablePass }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? "Portable backup failed");
+      }
+      const blob = await res.blob();
+      const disposition = res.headers.get("Content-Disposition") ?? "";
+      const match = disposition.match(/filename="(.+)"/);
+      const filename = match?.[1] ?? "training-tracker-backup.portable.zip.enc";
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+      setShowPortableModal(false);
+      setPortablePass("");
+      setPortablePass2("");
+      setResult({
+        type: "success",
+        message:
+          "Portable backup downloaded. Keep the passphrase safe — it's required to restore this file on any system.",
+      });
+    } catch (err) {
+      setResult({
+        type: "error",
+        message: err instanceof Error ? err.message : "Failed to create portable backup.",
+      });
+    } finally {
+      setPortableCreating(false);
+    }
+  };
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] ?? null;
     if (file && !(file.name.endsWith(".zip") || file.name.endsWith(".zip.enc"))) {
@@ -201,6 +250,7 @@ export default function BackupPage() {
     try {
       const formData = new FormData();
       formData.append("file", selectedFile);
+      if (restorePassphrase) formData.append("passphrase", restorePassphrase);
       const res = await fetch("/api/admin/backup", {
         method: "POST",
         body: formData,
@@ -221,6 +271,7 @@ export default function BackupPage() {
       setRestoring(false);
       setSelectedFile(null);
       setConfirmText("");
+      setRestorePassphrase("");
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
@@ -414,17 +465,33 @@ export default function BackupPage() {
           </div>
           <p className="text-sm text-gray-500 mb-4">
             Download a zip file containing all system data: regions, training
-            programs, students, and training records. Use this to restore the
-            system on a new installation.
+            programs, students, and training records. A standard backup is tied
+            to <strong>this</strong> server&apos;s encryption key — to restore on
+            a <strong>different</strong> system, use a portable backup and
+            remember its passphrase.
           </p>
-          <button
-            onClick={handleBackup}
-            disabled={creating}
-            className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-          >
-            <Download size={16} />
-            {creating ? "Creating backup..." : "Download Backup"}
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={handleBackup}
+              disabled={creating}
+              className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+            >
+              <Download size={16} />
+              {creating ? "Creating backup..." : "Download Backup"}
+            </button>
+            <button
+              onClick={() => {
+                setPortablePass("");
+                setPortablePass2("");
+                setShowPortableModal(true);
+              }}
+              disabled={portableCreating}
+              className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 disabled:opacity-50"
+            >
+              <Download size={16} />
+              Portable backup…
+            </button>
+          </div>
         </section>
 
         {/* Restore Card */}
@@ -758,6 +825,7 @@ export default function BackupPage() {
           setShowRestoreConfirm(false);
           setConfirmText("");
           setSelectedFile(null);
+          setRestorePassphrase("");
           if (fileInputRef.current) fileInputRef.current.value = "";
         }}
         title="Confirm Restore"
@@ -768,6 +836,7 @@ export default function BackupPage() {
                 setShowRestoreConfirm(false);
                 setConfirmText("");
                 setSelectedFile(null);
+                setRestorePassphrase("");
                 if (fileInputRef.current) fileInputRef.current.value = "";
               }}
               className="px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300"
@@ -791,6 +860,19 @@ export default function BackupPage() {
         <p className="text-sm font-mono bg-gray-100 px-3 py-2 rounded mb-3">
           {selectedFile?.name}
         </p>
+        <div className="mb-3">
+          <label className="block text-sm text-gray-600 mb-1">
+            Portable backup passphrase{" "}
+            <span className="text-gray-400">(leave blank for a standard backup)</span>
+          </label>
+          <input
+            type="password"
+            value={restorePassphrase}
+            onChange={(e) => setRestorePassphrase(e.target.value)}
+            placeholder="Passphrase used to create the portable backup"
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+          />
+        </div>
         <p className="text-gray-600 mb-3">
           Type <strong>RESTORE</strong> to confirm.
         </p>
@@ -801,6 +883,72 @@ export default function BackupPage() {
           placeholder="Type RESTORE to confirm"
           className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
         />
+      </Modal>
+
+      {/* Portable Backup Modal */}
+      <Modal
+        open={showPortableModal}
+        onClose={() => {
+          setShowPortableModal(false);
+          setPortablePass("");
+          setPortablePass2("");
+        }}
+        title="Download portable backup"
+        actions={
+          <>
+            <button
+              onClick={() => {
+                setShowPortableModal(false);
+                setPortablePass("");
+                setPortablePass2("");
+              }}
+              className="px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handlePortableBackup}
+              disabled={
+                portablePass.length < 8 ||
+                portablePass !== portablePass2 ||
+                portableCreating
+              }
+              className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+            >
+              {portableCreating ? "Creating..." : "Download"}
+            </button>
+          </>
+        }
+      >
+        <p className="text-gray-600 mb-3">
+          A portable backup is encrypted with a passphrase instead of this
+          server&apos;s key, so it can be restored on a different system. There
+          is <strong>no way to recover the data if you lose the passphrase</strong>
+          — store it somewhere safe.
+        </p>
+        <label className="block text-sm text-gray-600 mb-1">
+          Passphrase <span className="text-gray-400">(at least 8 characters)</span>
+        </label>
+        <input
+          type="password"
+          value={portablePass}
+          onChange={(e) => setPortablePass(e.target.value)}
+          placeholder="Enter a passphrase"
+          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mb-3"
+        />
+        <label className="block text-sm text-gray-600 mb-1">
+          Confirm passphrase
+        </label>
+        <input
+          type="password"
+          value={portablePass2}
+          onChange={(e) => setPortablePass2(e.target.value)}
+          placeholder="Re-enter the passphrase"
+          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+        />
+        {portablePass2.length > 0 && portablePass !== portablePass2 && (
+          <p className="text-xs text-red-600 mt-2">Passphrases do not match.</p>
+        )}
       </Modal>
 
       {/* Server Restore Confirmation Modal */}

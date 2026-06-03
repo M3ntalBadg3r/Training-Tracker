@@ -531,7 +531,7 @@ export default function ScheduledExportsPage() {
 
   return (
     <div>
-      <PageHeader title="Scheduled Exports" showBack helpSlug="scheduled-exports" />
+      <PageHeader title="Scheduled Report Exports" showBack helpSlug="scheduled-exports" />
 
       <CredentialHealthBanner />
 

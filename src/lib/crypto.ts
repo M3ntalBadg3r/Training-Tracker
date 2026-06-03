@@ -161,3 +161,72 @@ export function decryptBuffer(blob: Buffer): Buffer {
   decipher.setAuthTag(authTag);
   return Buffer.concat([decipher.update(ciphertext), decipher.final()]);
 }
+
+// --- Passphrase envelope (portable backups) -------------------------------
+//
+// Layout: <4-byte magic 'TT02'> <16-byte salt> <12-byte IV> <16-byte authTag> <ciphertext>
+//
+// Unlike the TT01 envelope, the encryption key is derived from a user-supplied
+// passphrase via scrypt (with the per-archive random salt stored in the
+// header), so the archive is NOT tied to this install's ENCRYPTION_KEY. This is
+// what makes a portable backup restorable on a different system: the operator
+// just re-enters the same passphrase. The salt is public by design — security
+// rests on the passphrase strength.
+
+const PORTABLE_MAGIC = Buffer.from("TT02", "ascii");
+const SALT_LENGTH = 16;
+const SCRYPT_KEYLEN = 32; // AES-256
+
+function deriveKeyFromPassphrase(passphrase: string, salt: Buffer): Buffer {
+  // N=16384 is a sensible interactive cost for a one-off backup operation.
+  return crypto.scryptSync(passphrase.normalize("NFKC"), salt, SCRYPT_KEYLEN, {
+    N: 16384,
+    r: 8,
+    p: 1,
+  });
+}
+
+export function isPassphraseEncryptedBuffer(buf: Buffer): boolean {
+  return (
+    buf.length > PORTABLE_MAGIC.length &&
+    buf.subarray(0, PORTABLE_MAGIC.length).equals(PORTABLE_MAGIC)
+  );
+}
+
+/** AES-256-GCM encrypt a binary buffer with a key derived from `passphrase`. */
+export function encryptBufferWithPassphrase(plain: Buffer, passphrase: string): Buffer {
+  if (!passphrase) throw new Error("A passphrase is required to create a portable backup");
+  const salt = crypto.randomBytes(SALT_LENGTH);
+  const key = deriveKeyFromPassphrase(passphrase, salt);
+  const iv = crypto.randomBytes(IV_LENGTH);
+  const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
+  const ciphertext = Buffer.concat([cipher.update(plain), cipher.final()]);
+  const authTag = cipher.getAuthTag();
+  return Buffer.concat([PORTABLE_MAGIC, salt, iv, authTag, ciphertext]);
+}
+
+/** Decrypt a buffer produced by encryptBufferWithPassphrase. Throws on a wrong passphrase / tampering. */
+export function decryptBufferWithPassphrase(blob: Buffer, passphrase: string): Buffer {
+  if (!isPassphraseEncryptedBuffer(blob)) {
+    throw new Error("Buffer is not in the expected portable format (magic header missing)");
+  }
+  if (!passphrase) throw new Error("A passphrase is required to restore a portable backup");
+  const headerLen = PORTABLE_MAGIC.length;
+  if (blob.length < headerLen + SALT_LENGTH + IV_LENGTH + TAG_LENGTH) {
+    throw new Error("Portable archive is too short — possibly corrupt");
+  }
+  const salt = blob.subarray(headerLen, headerLen + SALT_LENGTH);
+  const ivStart = headerLen + SALT_LENGTH;
+  const iv = blob.subarray(ivStart, ivStart + IV_LENGTH);
+  const tagStart = ivStart + IV_LENGTH;
+  const authTag = blob.subarray(tagStart, tagStart + TAG_LENGTH);
+  const ciphertext = blob.subarray(tagStart + TAG_LENGTH);
+  const key = deriveKeyFromPassphrase(passphrase, salt);
+  const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
+  decipher.setAuthTag(authTag);
+  try {
+    return Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+  } catch {
+    throw new Error("Incorrect passphrase, or the portable backup is corrupt");
+  }
+}
