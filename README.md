@@ -163,7 +163,7 @@ the Linux out-of-memory (OOM) killer terminating `next build`: the VM ran out of
 RAM. Next.js 16's production build uses **Turbopack**, which allocates native
 memory, so Node's `--max-old-space-size` won't help — you need more available
 memory. This is common on small VMs (especially 1–2 GB ARM64 instances). We
-recommend at least **2 GB of RAM**, or add a swapfile:
+recommend at least **4 GB of RAM**, or add a swapfile:
 
 ```bash
 sudo fallocate -l 2G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=2048
