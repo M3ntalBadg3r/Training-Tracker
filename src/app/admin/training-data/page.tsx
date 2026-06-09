@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import PageHeader from "@/components/layout/PageHeader";
 import Modal from "@/components/ui/Modal";
 import { TrainingDataRow } from "@/types";
@@ -8,7 +9,6 @@ import { useDebounce } from "@/hooks/useDebounce";
 import {
   Plus,
   Trash2,
-  Save,
   Upload,
   Download,
   FileSpreadsheet,
@@ -105,6 +105,7 @@ interface UnrecognizedValue {
 }
 
 export default function TrainingDataPage() {
+  const router = useRouter();
   const [trainingList, setTrainingList] = useState<TrainingDataRow[]>([]);
   // Product types are an admin-managed list, fetched at mount.
   const [productTypes, setProductTypes] = useState<string[]>([]);
@@ -138,7 +139,6 @@ export default function TrainingDataPage() {
   const [searchColumn, setSearchColumn] = useState("all");
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
   const [legacyOnly, setLegacyOnly] = useState(false);
-  const [sortColumn, setSortColumn] = useState<string | null>("fullTitle");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
   const debouncedSearch = useDebounce(searchTerm);
 
@@ -168,38 +168,11 @@ export default function TrainingDataPage() {
     return String((row as unknown as Record<string, unknown>)[key] ?? "");
   };
 
-  // Map of parentTrainingTitle → sub-item rows (resolved through the join table
-  // surfaced on each TrainingData row's `subItems` field).
-  const subItemsByParent = useMemo(() => {
-    const map = new Map<string, TrainingDataRow[]>();
-    const byTitle = new Map(trainingList.map((t) => [t.trainingTitle, t]));
-    for (const t of trainingList) {
-      if (t.trainingType === "OLX" && t.subItems && t.subItems.length > 0) {
-        const subs: TrainingDataRow[] = [];
-        for (const subTitle of t.subItems) {
-          const row = byTitle.get(subTitle);
-          if (row) subs.push(row);
-        }
-        map.set(t.trainingTitle, subs);
-      }
-    }
-    return map;
-  }, [trainingList]);
-
-  // Set of training titles that are sub-items of at least one parent — these
-  // should be hidden from the top-level table and only appear nested.
-  const subItemTitleSet = useMemo(() => {
-    const set = new Set<string>();
-    for (const subs of subItemsByParent.values()) {
-      for (const s of subs) set.add(s.trainingTitle);
-    }
-    return set;
-  }, [subItemsByParent]);
-
-  const filteredTrainingList = useMemo(() => {
-    // Hide sub-items from the top level — they're only visible nested under
-    // their parent OLX.
-    let result = trainingList.filter((t) => !t.isIncomplete && !subItemTitleSet.has(t.trainingTitle));
+  // Members (individual training titles) passing the active search + filters.
+  // The table groups these by fullTitle; sub-items are included as their own
+  // groups (OLX membership is managed on the Full Title detail page).
+  const filteredMembers = useMemo(() => {
+    let result = trainingList.filter((t) => !t.isIncomplete);
 
     // Free-form search
     if (debouncedSearch) {
@@ -222,33 +195,44 @@ export default function TrainingDataPage() {
       );
     }
 
-    // Legacy-only toggle: when on, restrict to retired Certs/Accreds. Used by
-    // admins auditing which legacy items still need a replacement defined.
+    // Legacy-only toggle: when on, restrict to retired Certs/Accreds.
     if (legacyOnly) {
       result = result.filter((row) => row.isLegacy);
     }
 
-    // Sorting
-    if (sortColumn) {
-      result.sort((a, b) => {
-        const aVal = getCellValue(a, sortColumn);
-        const bVal = getCellValue(b, sortColumn);
-        const cmp = aVal.localeCompare(bVal, undefined, { numeric: true });
-        return sortDirection === "asc" ? cmp : -cmp;
-      });
-    }
-
     return result;
-  }, [trainingList, subItemTitleSet, debouncedSearch, searchColumn, columnFilters, legacyOnly, sortColumn, sortDirection, tableColumns]);
+  }, [trainingList, debouncedSearch, searchColumn, columnFilters, legacyOnly, tableColumns]);
 
-  const handleSort = (key: string) => {
-    if (sortColumn === key) {
-      setSortDirection((prev) => (prev === "asc" ? "desc" : "asc"));
-    } else {
-      setSortColumn(key);
-      setSortDirection("asc");
+  // One row per Full Title — the first-class record. Aggregates its mapped
+  // training titles' types/products/functions and legacy state.
+  const groupedList = useMemo(() => {
+    const map = new Map<string, TrainingDataRow[]>();
+    for (const t of filteredMembers) {
+      const arr = map.get(t.fullTitle) ?? [];
+      arr.push(t);
+      map.set(t.fullTitle, arr);
     }
-  };
+    const groups = Array.from(map.entries()).map(([fullTitle, members]) => ({
+      fullTitle,
+      members,
+      types: Array.from(new Set(members.map((m) => m.trainingType))),
+      products: Array.from(new Set(members.map((m) => m.productType))),
+      functions: Array.from(new Set(members.map((m) => m.function))),
+      anyLegacy: members.some((m) => m.isLegacy),
+      replacedByFulls: Array.from(
+        new Set(
+          members
+            .filter((m) => m.isLegacy)
+            .flatMap((m) => (m.replacedBy ?? []).map((rt) => trainingTitleToFullTitle.get(rt) ?? rt))
+        )
+      ),
+    }));
+    groups.sort((a, b) => {
+      const cmp = a.fullTitle.localeCompare(b.fullTitle, undefined, { numeric: true });
+      return sortDirection === "asc" ? cmp : -cmp;
+    });
+    return groups;
+  }, [filteredMembers, trainingTitleToFullTitle, sortDirection]);
 
   const handleColumnFilter = (key: string, value: string) => {
     setColumnFilters((prev) => ({ ...prev, [key]: value }));
@@ -280,12 +264,29 @@ export default function TrainingDataPage() {
     replacedBy: [] as string[],
   });
 
-  // Tracks which OLX parents are expanded in the catalog view.
-  const [expandedParents, setExpandedParents] = useState<Record<string, boolean>>({});
+  // Existing Full Titles (from completed entries) with a representative
+  // type/product/function — used to attach a newly-discovered training to an
+  // existing Full Title group during the import "needs attention" flow.
+  const existingFullTitles = useMemo(() => {
+    const map = new Map<string, { trainingType: string; productType: string; function: string }>();
+    for (const t of trainingList) {
+      if (t.isIncomplete) continue;
+      if (!map.has(t.fullTitle)) {
+        map.set(t.fullTitle, { trainingType: t.trainingType, productType: t.productType, function: t.function });
+      }
+    }
+    return map;
+  }, [trainingList]);
+  const existingFullTitleNames = useMemo(
+    () => Array.from(existingFullTitles.keys()).sort((a, b) => a.localeCompare(b)),
+    [existingFullTitles]
+  );
 
   // Incomplete entries
   const incompleteData = useMemo(() => trainingList.filter((t) => t.isIncomplete), [trainingList]);
   const [markingComplete, setMarkingComplete] = useState<string | null>(null);
+  // "new" = type a brand-new Full Title; "existing" = attach to a group below.
+  const [incompleteFullTitleMode, setIncompleteFullTitleMode] = useState<"new" | "existing">("new");
 
   const handleMarkComplete = async (trainingTitle: string) => {
     setMarkingComplete(trainingTitle);
@@ -1375,9 +1376,42 @@ export default function TrainingDataPage() {
                       {/* Full Title */}
                       <td className="px-4 py-3">
                         {editingTitle === t.trainingTitle ? (
-                          <input type="text" value={editValues.fullTitle}
-                            onChange={(e) => setEditValues((prev) => ({ ...prev, fullTitle: e.target.value }))}
-                            className="border border-gray-300 rounded px-2 py-1 text-sm w-full" />
+                          <div className="space-y-1">
+                            <select
+                              value={incompleteFullTitleMode === "existing" ? editValues.fullTitle : "__new__"}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                if (val === "__new__") {
+                                  setIncompleteFullTitleMode("new");
+                                  setEditValues((prev) => ({ ...prev, fullTitle: t.fullTitle }));
+                                } else {
+                                  // Attach to an existing Full Title and inherit its
+                                  // type/product/function as editable defaults.
+                                  const rep = existingFullTitles.get(val);
+                                  setIncompleteFullTitleMode("existing");
+                                  setEditValues((prev) => ({
+                                    ...prev,
+                                    fullTitle: val,
+                                    trainingType: rep?.trainingType ?? prev.trainingType,
+                                    productType: rep?.productType ?? prev.productType,
+                                    function: rep?.function ?? prev.function,
+                                  }));
+                                }
+                              }}
+                              className="border border-gray-300 rounded px-2 py-1 text-sm w-full"
+                            >
+                              <option value="__new__">➕ Create new Full Title…</option>
+                              {existingFullTitleNames.map((f) => (
+                                <option key={f} value={f}>{f}</option>
+                              ))}
+                            </select>
+                            {incompleteFullTitleMode === "new" && (
+                              <input type="text" value={editValues.fullTitle}
+                                onChange={(e) => setEditValues((prev) => ({ ...prev, fullTitle: e.target.value }))}
+                                placeholder="New Full Title"
+                                className="border border-gray-300 rounded px-2 py-1 text-sm w-full" />
+                            )}
+                          </div>
                         ) : t.fullTitle}
                       </td>
                       {/* Training Title */}
@@ -1440,7 +1474,7 @@ export default function TrainingDataPage() {
                             </>
                           ) : (
                             <>
-                              <button onClick={() => { setEditingTitle(t.trainingTitle); setEditValues({ trainingTitle: t.trainingTitle, fullTitle: t.fullTitle, trainingType: t.trainingType, productType: t.productType, function: t.function, link: t.link || "", certification: t.certification || [], subItems: t.subItems || [], parents: t.parents || [], isLegacy: t.isLegacy ?? false, replacedBy: t.replacedBy || [] }); }}
+                              <button onClick={() => { setIncompleteFullTitleMode("new"); setEditingTitle(t.trainingTitle); setEditValues({ trainingTitle: t.trainingTitle, fullTitle: t.fullTitle, trainingType: t.trainingType, productType: t.productType, function: t.function, link: t.link || "", certification: t.certification || [], subItems: t.subItems || [], parents: t.parents || [], isLegacy: t.isLegacy ?? false, replacedBy: t.replacedBy || [] }); }}
                                 className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200">Edit</button>
                               <button onClick={() => handleMarkComplete(t.trainingTitle)}
                                 disabled={markingComplete === t.trainingTitle}
@@ -1471,19 +1505,22 @@ export default function TrainingDataPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-200">
-                  {tableColumns.map((col) => (
-                    <th key={col.key} className="px-4 py-3 text-left">
-                      <div className="space-y-1">
-                        <button
-                          onClick={() => handleSort(col.key)}
-                          className="flex items-center gap-1 font-semibold text-gray-700 hover:text-gray-900"
-                        >
-                          {col.header}
-                          {sortColumn === col.key && (
-                            sortDirection === "asc" ? <ChevronUp size={14} /> : <ChevronDown size={14} />
-                          )}
-                        </button>
-                        {col.filterable && (
+                  <th className="px-4 py-3 text-left">
+                    <button
+                      onClick={() => setSortDirection((d) => (d === "asc" ? "desc" : "asc"))}
+                      className="flex items-center gap-1 font-semibold text-gray-700 hover:text-gray-900"
+                    >
+                      Full Title
+                      {sortDirection === "asc" ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                    </button>
+                  </th>
+                  <th className="px-4 py-3 text-left font-semibold text-gray-700">Titles</th>
+                  {tableColumns
+                    .filter((col) => col.key === "trainingType" || col.key === "productType" || col.key === "function")
+                    .map((col) => (
+                      <th key={col.key} className="px-4 py-3 text-left">
+                        <div className="space-y-1">
+                          <span className="font-semibold text-gray-700">{col.header}</span>
                           <select
                             value={columnFilters[col.key] || ""}
                             onChange={(e) => handleColumnFilter(col.key, e.target.value)}
@@ -1496,426 +1533,66 @@ export default function TrainingDataPage() {
                               </option>
                             ))}
                           </select>
-                        )}
-                      </div>
-                    </th>
-                  ))}
+                        </div>
+                      </th>
+                    ))}
                   <th className="px-4 py-3 text-left font-semibold text-gray-700">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredTrainingList.length === 0 ? (
+                {groupedList.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="px-4 py-8 text-center text-gray-500">
+                    <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
                       No records found
                     </td>
                   </tr>
                 ) : (
-                  filteredTrainingList.flatMap((t) => {
-                    const subs = subItemsByParent.get(t.trainingTitle) ?? [];
-                    const isExpandable = subs.length > 0;
-                    const isExpanded = isExpandable && !!expandedParents[t.trainingTitle];
-                    const rows: React.ReactNode[] = [];
-                    rows.push(
-                  <tr key={t.trainingTitle} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
-                    {/* Full Title */}
-                    <td className="px-4 py-3">
-                      {editingTitle === t.trainingTitle ? (
-                        <input
-                          type="text"
-                          value={editValues.fullTitle}
-                          onChange={(e) => setEditValues((prev) => ({ ...prev, fullTitle: e.target.value }))}
-                          className="border border-gray-300 rounded px-2 py-1 text-sm w-full"
-                        />
-                      ) : (
-                        (() => {
-                          const replFulls = t.isLegacy
-                            ? (t.replacedBy ?? []).map((rt) => trainingTitleToFullTitle.get(rt) ?? rt)
-                            : [];
-                          const replTooltip = t.isLegacy
-                            ? replFulls.length > 0
-                              ? `Replaced by: ${replFulls.join(", ")}`
-                              : "Legacy — no replacement defined"
-                            : undefined;
-                          return (
-                            <div>
-                              <div className="flex items-center gap-2">
-                                {isExpandable && (
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      setExpandedParents((prev) => ({
-                                        ...prev,
-                                        [t.trainingTitle]: !prev[t.trainingTitle],
-                                      }))
-                                    }
-                                    className="text-gray-500 hover:text-gray-800"
-                                    aria-label={isExpanded ? "Collapse sub-items" : "Expand sub-items"}
-                                  >
-                                    {isExpanded ? <ChevronDown size={14} /> : <ChevronUp size={14} className="rotate-90" />}
-                                  </button>
-                                )}
-                                <span>{t.fullTitle}</span>
-                                {t.isLegacy && (
-                                  <span
-                                    className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800"
-                                    title={replTooltip}
-                                  >
-                                    Legacy
-                                  </span>
-                                )}
-                                {isExpandable && (
-                                  <span className="text-xs text-gray-500">({subs.length} sub-item{subs.length === 1 ? "" : "s"})</span>
-                                )}
-                              </div>
-                              {t.isLegacy && (
-                                replFulls.length > 0 ? (
-                                  <div className="text-xs text-gray-500 mt-0.5 pl-0.5">
-                                    → Replaced by: <span className="text-gray-700">{replFulls.join(", ")}</span>
-                                  </div>
-                                ) : (
-                                  <div className="text-xs italic text-orange-700 mt-0.5 pl-0.5">
-                                    → No replacement defined
-                                  </div>
-                                )
-                              )}
-                            </div>
-                          );
-                        })()
-                      )}
-                    </td>
-                    {/* Training Title */}
-                    <td className="px-4 py-3">
-                      {editingTitle === t.trainingTitle ? (
-                        <input
-                          type="text"
-                          value={editValues.trainingTitle}
-                          onChange={(e) => setEditValues((prev) => ({ ...prev, trainingTitle: e.target.value }))}
-                          className="border border-gray-300 rounded px-2 py-1 text-sm w-full"
-                        />
-                      ) : (
-                        t.trainingTitle
-                      )}
-                    </td>
-                    {/* Type */}
-                    <td className="px-4 py-3">
-                      {editingTitle === t.trainingTitle ? (
-                        <select
-                          value={editValues.trainingType}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            setEditValues((prev) => ({
-                              ...prev,
-                              trainingType: val,
-                              certification: (val === "InstructorLedTraining" || val === "OLX") ? prev.certification : [],
-                            }));
-                          }}
-                          className="border border-gray-300 rounded px-2 py-1 text-sm"
-                        >
-                          {TRAINING_TYPES.map((tt) => (
-                            <option key={tt} value={tt}>{TRAINING_TYPE_LABELS[tt]}</option>
-                          ))}
-                        </select>
-                      ) : (
-                        TRAINING_TYPE_LABELS[t.trainingType] || t.trainingType
-                      )}
-                    </td>
-                    {/* Link */}
-                    <td className="px-4 py-3">
-                      {editingTitle === t.trainingTitle ? (
-                        <input
-                          type="url"
-                          value={editValues.link}
-                          onChange={(e) => setEditValues((prev) => ({ ...prev, link: e.target.value }))}
-                          className="border border-gray-300 rounded px-2 py-1 text-sm w-full"
-                          placeholder="https://..."
-                        />
-                      ) : t.link ? (
-                        <a
-                          href={t.link}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-blue-600 hover:underline"
-                        >
-                          Link
-                        </a>
-                      ) : (
-                        "-"
-                      )}
-                    </td>
-                    {/* Product */}
-                    <td className="px-4 py-3">
-                      {editingTitle === t.trainingTitle ? (
-                        <select
-                          value={editValues.productType}
-                          onChange={(e) => setEditValues((prev) => ({ ...prev, productType: e.target.value }))}
-                          className="border border-gray-300 rounded px-2 py-1 text-sm"
-                        >
-                          {productTypes.map((pt) => (
-                            <option key={pt} value={pt}>{pt}</option>
-                          ))}
-                        </select>
-                      ) : (
-                        t.productType
-                      )}
-                    </td>
-                    {/* Function */}
-                    <td className="px-4 py-3">
-                      {editingTitle === t.trainingTitle ? (
-                        <select
-                          value={editValues.function}
-                          onChange={(e) => setEditValues((prev) => ({ ...prev, function: e.target.value }))}
-                          className="border border-gray-300 rounded px-2 py-1 text-sm"
-                        >
-                          {FUNCTION_TYPES.map((ft) => (
-                            <option key={ft} value={ft}>{FUNCTION_TYPE_LABELS[ft]}</option>
-                          ))}
-                        </select>
-                      ) : (
-                        FUNCTION_TYPE_LABELS[t.function] || t.function
-                      )}
-                    </td>
-                    {/* Certification (available for ILT and OLX parents) */}
-                    <td className="px-4 py-3">
-                      {(t.trainingType === "InstructorLedTraining" || t.trainingType === "OLX") ? (
-                        editingTitle === t.trainingTitle ? (
-                          <div className="max-h-32 overflow-y-auto border border-gray-300 rounded px-2 py-1 text-sm space-y-1">
-                            {certificationOptions.length === 0 && (
-                              <span className="text-gray-400 text-xs">No certifications available</span>
-                            )}
-                            {certificationOptions.map((c) => (
-                              <label key={c} className="flex items-center gap-1.5 cursor-pointer hover:bg-gray-50 rounded px-1">
-                                <input
-                                  type="checkbox"
-                                  checked={editValues.certification.includes(c)}
-                                  onChange={(e) => {
-                                    setEditValues((prev) => ({
-                                      ...prev,
-                                      certification: e.target.checked
-                                        ? [...prev.certification, c]
-                                        : prev.certification.filter((x) => x !== c),
-                                    }));
-                                  }}
-                                  className="rounded border-gray-300"
-                                />
-                                <span className="text-xs">{c}</span>
-                              </label>
-                            ))}
-                          </div>
-                        ) : (
-                          t.certification.length > 0 ? t.certification.join(", ") : "-"
-                        )
-                      ) : (
-                        <span className="text-gray-300">-</span>
-                      )}
-                    </td>
-                    {/* Actions */}
-                    <td className="px-4 py-3">
-                      <div className="flex gap-2">
-                        {editingTitle === t.trainingTitle ? (
-                          <>
-                            <button
-                              onClick={() => handleUpdateTraining(t.trainingTitle)}
-                              className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200"
+                  groupedList.map((g) => (
+                    <tr
+                      key={g.fullTitle}
+                      className="border-b border-gray-100 hover:bg-gray-50 transition-colors cursor-pointer"
+                      onClick={() => router.push(`/admin/training-data/${encodeURIComponent(g.fullTitle)}`)}
+                    >
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-gray-900">{g.fullTitle}</span>
+                          {g.anyLegacy && (
+                            <span
+                              className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800"
+                              title={g.replacedByFulls.length ? `Replaced by: ${g.replacedByFulls.join(", ")}` : "Legacy — no replacement defined"}
                             >
-                              <Save size={14} />
-                            </button>
-                            <button
-                              onClick={() => setEditingTitle(null)}
-                              className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
-                            >
-                              Cancel
-                            </button>
-                          </>
-                        ) : (
-                          <>
-                            <button
-                              onClick={() => {
-                                setEditingTitle(t.trainingTitle);
-                                setEditValues({
-                                  trainingTitle: t.trainingTitle,
-                                  fullTitle: t.fullTitle,
-                                  trainingType: t.trainingType,
-                                  productType: t.productType,
-                                  function: t.function,
-                                  link: t.link || "",
-                                  certification: t.certification || [],
-                                  subItems: t.subItems || [],
-                                  parents: t.parents || [],
-                                  isLegacy: t.isLegacy ?? false,
-                                  replacedBy: t.replacedBy || [],
-                                });
-                              }}
-                              className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
-                            >
-                              Edit
-                            </button>
-                            <button
-                              onClick={() => handleDeleteTraining(t.trainingTitle)}
-                              className="px-2 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                  );
-                  // Inline editor extension: when editing a Certification or
-                  // Accreditation, show a second row with the legacy controls.
-                  if (editingTitle === t.trainingTitle && (editValues.trainingType === "Certification" || editValues.trainingType === "Accreditation")) {
-                    rows.push(
-                      <tr key={`${t.trainingTitle}::legacy-edit`} className="border-b border-gray-100 bg-blue-50/40">
-                        <td colSpan={8} className="px-4 py-3">
-                          <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-gray-600">
-                            <input
-                              type="checkbox"
-                              checked={editValues.isLegacy}
-                              onChange={(e) => setEditValues((prev) => ({ ...prev, isLegacy: e.target.checked, replacedBy: e.target.checked ? prev.replacedBy : [] }))}
-                              className="rounded border-gray-300"
-                            />
-                            Mark as Legacy
-                          </label>
-                          {editValues.isLegacy && (
-                            <div className="mt-2">
-                              <div className="text-xs font-semibold text-gray-600 mb-1">Replaced by (optional — select one or more)</div>
-                              <div className="max-h-40 overflow-y-auto border border-gray-200 rounded px-2 py-1 text-sm space-y-1 bg-white">
-                                {replacementOptions.filter((r) => r.trainingTitle !== t.trainingTitle).length === 0 ? (
-                                  <span className="text-gray-400 text-xs">No certifications/accreditations available.</span>
-                                ) : replacementOptions.filter((r) => r.trainingTitle !== t.trainingTitle).map((r) => (
-                                  <label key={r.trainingTitle} className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 rounded px-1">
-                                    <input
-                                      type="checkbox"
-                                      checked={editValues.replacedBy.includes(r.trainingTitle)}
-                                      onChange={(e) => {
-                                        setEditValues((prev) => ({
-                                          ...prev,
-                                          replacedBy: e.target.checked
-                                            ? [...prev.replacedBy, r.trainingTitle]
-                                            : prev.replacedBy.filter((x) => x !== r.trainingTitle),
-                                        }));
-                                      }}
-                                      className="rounded border-gray-300"
-                                    />
-                                    <span className="text-xs">{r.fullTitle}</span>
-                                  </label>
-                                ))}
-                              </div>
-                            </div>
+                              Legacy
+                            </span>
                           )}
-                        </td>
-                      </tr>
-                    );
-                  }
-                  // Inline editor extension: when editing an OLX or OLXSubItem,
-                  // show a second row with the membership picker.
-                  if (editingTitle === t.trainingTitle && (editValues.trainingType === "OLX" || editValues.trainingType === "OLXSubItem")) {
-                    rows.push(
-                      <tr key={`${t.trainingTitle}::membership-edit`} className="border-b border-gray-100 bg-blue-50/40">
-                        <td colSpan={8} className="px-4 py-3">
-                          {editValues.trainingType === "OLX" ? (
-                            <div>
-                              <div className="text-xs font-semibold text-gray-600 mb-1">Sub-Items (none = single-item OLX)</div>
-                              <div className="max-h-40 overflow-y-auto border border-gray-200 rounded px-2 py-1 text-sm space-y-1 bg-white">
-                                {subItemOptions.length === 0 ? (
-                                  <span className="text-gray-400 text-xs">No OLX Sub-Item entries available.</span>
-                                ) : subItemOptions.map((s) => (
-                                  <label key={s.trainingTitle} className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 rounded px-1">
-                                    <input
-                                      type="checkbox"
-                                      checked={editValues.subItems.includes(s.trainingTitle)}
-                                      onChange={(e) => {
-                                        setEditValues((prev) => ({
-                                          ...prev,
-                                          subItems: e.target.checked
-                                            ? [...prev.subItems, s.trainingTitle]
-                                            : prev.subItems.filter((x) => x !== s.trainingTitle),
-                                        }));
-                                      }}
-                                      className="rounded border-gray-300"
-                                    />
-                                    <span className="text-xs">{s.fullTitle}</span>
-                                  </label>
-                                ))}
-                              </div>
+                        </div>
+                        {g.anyLegacy && (
+                          g.replacedByFulls.length > 0 ? (
+                            <div className="text-xs text-gray-500 mt-0.5">
+                              → Replaced by: <span className="text-gray-700">{g.replacedByFulls.join(", ")}</span>
                             </div>
                           ) : (
-                            <div>
-                              <div className="text-xs font-semibold text-gray-600 mb-1">Parent OLX (sub-item can belong to many)</div>
-                              <div className="max-h-40 overflow-y-auto border border-gray-200 rounded px-2 py-1 text-sm space-y-1 bg-white">
-                                {parentOptions.length === 0 ? (
-                                  <span className="text-gray-400 text-xs">No OLX parent entries available.</span>
-                                ) : parentOptions.map((p) => (
-                                  <label key={p.trainingTitle} className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 rounded px-1">
-                                    <input
-                                      type="checkbox"
-                                      checked={editValues.parents.includes(p.trainingTitle)}
-                                      onChange={(e) => {
-                                        setEditValues((prev) => ({
-                                          ...prev,
-                                          parents: e.target.checked
-                                            ? [...prev.parents, p.trainingTitle]
-                                            : prev.parents.filter((x) => x !== p.trainingTitle),
-                                        }));
-                                      }}
-                                      className="rounded border-gray-300"
-                                    />
-                                    <span className="text-xs">{p.fullTitle}</span>
-                                  </label>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  }
-                  if (isExpanded) {
-                    for (const s of subs) {
-                      rows.push(
-                        <tr key={`${t.trainingTitle}::${s.trainingTitle}`} className="border-b border-gray-100 bg-gray-50/40">
-                          <td className="pl-10 pr-4 py-2 text-sm text-gray-700">
-                            <span className="text-xs text-gray-400 mr-2">↳</span>
-                            {s.fullTitle}
-                          </td>
-                          <td className="px-4 py-2 text-sm text-gray-600">{s.trainingTitle}</td>
-                          <td className="px-4 py-2 text-sm text-gray-600">{TRAINING_TYPE_LABELS[s.trainingType] || s.trainingType}</td>
-                          <td className="px-4 py-2 text-sm">{s.link ? (
-                            <a href={s.link} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Link</a>
-                          ) : "-"}</td>
-                          <td className="px-4 py-2 text-sm text-gray-600">{s.productType}</td>
-                          <td className="px-4 py-2 text-sm text-gray-600">{FUNCTION_TYPE_LABELS[s.function] || s.function}</td>
-                          <td className="px-4 py-2 text-sm text-gray-400">-</td>
-                          <td className="px-4 py-2 text-sm">
-                            <button
-                              onClick={() => {
-                                setEditingTitle(s.trainingTitle);
-                                setEditValues({
-                                  trainingTitle: s.trainingTitle,
-                                  fullTitle: s.fullTitle,
-                                  trainingType: s.trainingType,
-                                  productType: s.productType,
-                                  function: s.function,
-                                  link: s.link || "",
-                                  certification: s.certification || [],
-                                  subItems: s.subItems || [],
-                                  parents: s.parents || [],
-                                  isLegacy: s.isLegacy ?? false,
-                                  replacedBy: s.replacedBy || [],
-                                });
-                              }}
-                              className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
-                            >
-                              Edit
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    }
-                  }
-                  return rows;
-                }))}
+                            <div className="text-xs italic text-orange-700 mt-0.5">→ No replacement defined</div>
+                          )
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-gray-600">{g.members.length}</td>
+                      <td className="px-4 py-3 text-gray-600">{g.types.map((t) => TRAINING_TYPE_LABELS[t] || t).join(", ")}</td>
+                      <td className="px-4 py-3 text-gray-600">{g.products.join(", ")}</td>
+                      <td className="px-4 py-3 text-gray-600">{g.functions.map((f) => FUNCTION_TYPE_LABELS[f] || f).join(", ")}</td>
+                      <td className="px-4 py-3">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            router.push(`/admin/training-data/${encodeURIComponent(g.fullTitle)}`);
+                          }}
+                          className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
+                        >
+                          Edit
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>

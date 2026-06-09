@@ -873,6 +873,13 @@ const helpSections: Record<string, HelpSection> = {
           </tbody>
         </table>
 
+        <p>
+          The list shows <strong>one row per Full Title</strong> &mdash; the
+          first-class &ldquo;record&rdquo;. Because several Training Titles can
+          map to the same Full Title, the page groups them so you can manage the
+          training as a single thing.
+        </p>
+
         <h3>Features</h3>
         <ul>
           <li>
@@ -881,19 +888,16 @@ const helpSections: Record<string, HelpSection> = {
             new training entry.
           </li>
           <li>
-            <strong>Edit</strong> &mdash; Click <strong>Edit</strong> on any row
-            to modify fields inline.
+            <strong>Edit (open the Full Title)</strong> &mdash; Click{" "}
+            <strong>Edit</strong> on any row (or click the row) to open the{" "}
+            <strong>Full Title detail page</strong>, which lists every Training
+            Title mapped to that Full Title and offers group-wide bulk actions.
           </li>
           <li>
-            <strong>Delete</strong> &mdash; Remove a training entry.
-          </li>
-          <li>
-            <strong>Search</strong> &mdash; Search by training title or full
-            title.
-          </li>
-          <li>
-            <strong>Filter</strong> &mdash; Filter by Full Title, Type, Product,
-            or Function.
+            <strong>Search / Filter</strong> &mdash; Search by training title or
+            full title; filter by Type, Product, or Function. A{" "}
+            <strong>Show legacy only</strong> toggle scopes the list to retired
+            Certs/Accreds.
           </li>
           <li>
             <strong>Import</strong> &mdash; Upload a CSV or Excel file. Columns
@@ -906,9 +910,55 @@ const helpSections: Record<string, HelpSection> = {
           </li>
           <li>
             <strong>Export</strong> &mdash; Download all training data as CSV,
-            Excel, or PDF.
+            Excel, or PDF (one row per Training Title, so it round-trips with
+            import).
           </li>
         </ul>
+
+        <h3>Full Title Detail Page</h3>
+        <p>
+          Opening a Full Title takes you to a dedicated page (like a student
+          record) showing all of its mapped Training Titles. From here you can:
+        </p>
+        <ul>
+          <li>
+            <strong>Rename Full Title</strong> &mdash; Renames every mapped
+            Training Title&rsquo;s Full Title at once.
+          </li>
+          <li>
+            <strong>Mark the whole Full Title as Legacy</strong> &mdash;
+            Cascades the legacy flag to <strong>all</strong>{" "}
+            Certification/Accreditation Training Titles under it in one click
+            (other types are unaffected). Pick the replacement as a{" "}
+            <strong>Full Title</strong> and it is expanded to the underlying
+            replacements automatically.
+          </li>
+          <li>
+            <strong>Set Product / Function for all</strong> &mdash; Apply a
+            product type or function across every mapped Training Title.
+          </li>
+          <li>
+            <strong>Per-Title editing</strong> &mdash; Each Training Title keeps
+            its own Link, Certifications, and OLX membership, and can still be
+            edited or deleted individually.
+          </li>
+          <li>
+            <strong>Add / Delete</strong> &mdash; Add another Training Title to
+            this Full Title, or delete the whole group at once.
+          </li>
+        </ul>
+
+        <h3>Newly-discovered trainings (import)</h3>
+        <p>
+          When a student import references a training title that doesn&rsquo;t
+          exist yet, it is auto-created and highlighted in an amber{" "}
+          <strong>&ldquo;needs attention&rdquo;</strong> section at the top of
+          the page. When completing one, you can either{" "}
+          <strong>attach it to an existing Full Title</strong> via a dropdown
+          (it inherits that group&rsquo;s Type/Product/Function as editable
+          defaults) or <strong>create a new Full Title</strong>, then click{" "}
+          <strong>Mark as Complete</strong>.
+        </p>
 
         <h3>Certification Mapping</h3>
         <p>
@@ -947,25 +997,29 @@ const helpSections: Record<string, HelpSection> = {
         </p>
         <ul>
           <li>
-            When adding or editing a Certification/Accreditation, tick{" "}
-            <strong>Mark as Legacy</strong>.
+            On the <strong>Full Title detail page</strong>, tick{" "}
+            <strong>Mark this Full Title as Legacy</strong> to retire every
+            Certification/Accreditation under it at once. (The Add Training modal
+            and per-Title editor also expose the same <strong>Mark as Legacy</strong>{" "}
+            control.)
           </li>
           <li>
-            A <strong>Replaced by</strong> checkbox list of all other
-            Certifications/Accreditations then appears &mdash; select one or
-            more. Multiple replacements are <strong>alternatives</strong>:
-            holding any one of them counts as having migrated. Leave the list
-            empty for a cert retired with no successor.
+            A <strong>Replaced by</strong> picker of all other{" "}
+            <strong>Full Titles</strong> that contain a
+            Certification/Accreditation then appears &mdash; select one or more.
+            Multiple replacements are <strong>alternatives</strong>: holding any
+            one of them counts as having migrated. Leave it empty for a cert
+            retired with no successor.
           </li>
           <li>
             A <strong>Legacy</strong> badge appears in the catalogue, on the
             training detail page, and next to the training on each learner&apos;s
-            record (with the replacement name). On this admin page the badge is
-            followed by an inline <em>&rarr; Replaced by: &lt;names&gt;</em>{" "}
-            subtitle (or <em>&rarr; No replacement defined</em> when the list
-            is empty), so you can audit replacements at a glance without
-            opening each row. Tick <strong>Show legacy only</strong> in the
-            search bar to scope the table to retired Certs/Accreds.
+            record (with the replacement name). On this admin page the grouped
+            row&apos;s badge is followed by an inline{" "}
+            <em>&rarr; Replaced by: &lt;names&gt;</em> subtitle (or{" "}
+            <em>&rarr; No replacement defined</em>), so you can audit
+            replacements at a glance. Tick <strong>Show legacy only</strong> in
+            the search bar to scope the list to retired Certs/Accreds.
           </li>
           <li>
             Changing the type away from Certification/Accreditation clears the
