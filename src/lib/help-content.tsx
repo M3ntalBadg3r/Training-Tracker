@@ -877,7 +877,10 @@ const helpSections: Record<string, HelpSection> = {
           The list shows <strong>one row per Full Title</strong> &mdash; the
           first-class &ldquo;record&rdquo;. Because several Training Titles can
           map to the same Full Title, the page groups them so you can manage the
-          training as a single thing.
+          training as a single thing. A Full Title that contains an{" "}
+          <strong>OLX</strong> parent shows an expand arrow and a sub-item count;
+          expand it to reveal the parent&rsquo;s <strong>OLX Sub-Items</strong>{" "}
+          nested underneath (they are not listed as separate top-level rows).
         </p>
 
         <h3>Features</h3>

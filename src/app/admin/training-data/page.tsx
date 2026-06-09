@@ -140,6 +140,8 @@ export default function TrainingDataPage() {
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
   const [legacyOnly, setLegacyOnly] = useState(false);
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+  // OLX parent groups expanded to reveal their nested sub-items (keyed by fullTitle).
+  const [expandedParents, setExpandedParents] = useState<Record<string, boolean>>({});
   const debouncedSearch = useDebounce(searchTerm);
 
   // trainingTitle → fullTitle map covering every row, so legacy `replacedBy`
@@ -168,11 +170,39 @@ export default function TrainingDataPage() {
     return String((row as unknown as Record<string, unknown>)[key] ?? "");
   };
 
+  // Map of parentTrainingTitle → resolved sub-item rows, plus the set of all
+  // training titles that are a sub-item of some OLX parent. Sub-items are hidden
+  // from the top-level list and shown nested (expandable) under their parent.
+  const subItemsByParent = useMemo(() => {
+    const map = new Map<string, TrainingDataRow[]>();
+    const byTitle = new Map(trainingList.map((t) => [t.trainingTitle, t]));
+    for (const t of trainingList) {
+      if (t.trainingType === "OLX" && t.subItems && t.subItems.length > 0) {
+        const subs: TrainingDataRow[] = [];
+        for (const subTitle of t.subItems) {
+          const row = byTitle.get(subTitle);
+          if (row) subs.push(row);
+        }
+        map.set(t.trainingTitle, subs);
+      }
+    }
+    return map;
+  }, [trainingList]);
+
+  const subItemTitleSet = useMemo(() => {
+    const set = new Set<string>();
+    for (const subs of subItemsByParent.values()) {
+      for (const s of subs) set.add(s.trainingTitle);
+    }
+    return set;
+  }, [subItemsByParent]);
+
   // Members (individual training titles) passing the active search + filters.
-  // The table groups these by fullTitle; sub-items are included as their own
-  // groups (OLX membership is managed on the Full Title detail page).
+  // The table groups these by fullTitle; OLX sub-items are excluded here so they
+  // don't form their own top-level groups — they appear nested under their
+  // parent OLX instead.
   const filteredMembers = useMemo(() => {
-    let result = trainingList.filter((t) => !t.isIncomplete);
+    let result = trainingList.filter((t) => !t.isIncomplete && !subItemTitleSet.has(t.trainingTitle));
 
     // Free-form search
     if (debouncedSearch) {
@@ -201,7 +231,7 @@ export default function TrainingDataPage() {
     }
 
     return result;
-  }, [trainingList, debouncedSearch, searchColumn, columnFilters, legacyOnly, tableColumns]);
+  }, [trainingList, subItemTitleSet, debouncedSearch, searchColumn, columnFilters, legacyOnly, tableColumns]);
 
   // One row per Full Title — the first-class record. Aggregates its mapped
   // training titles' types/products/functions and legacy state.
@@ -212,27 +242,39 @@ export default function TrainingDataPage() {
       arr.push(t);
       map.set(t.fullTitle, arr);
     }
-    const groups = Array.from(map.entries()).map(([fullTitle, members]) => ({
-      fullTitle,
-      members,
-      types: Array.from(new Set(members.map((m) => m.trainingType))),
-      products: Array.from(new Set(members.map((m) => m.productType))),
-      functions: Array.from(new Set(members.map((m) => m.function))),
-      anyLegacy: members.some((m) => m.isLegacy),
-      replacedByFulls: Array.from(
-        new Set(
-          members
-            .filter((m) => m.isLegacy)
-            .flatMap((m) => (m.replacedBy ?? []).map((rt) => trainingTitleToFullTitle.get(rt) ?? rt))
-        )
-      ),
-    }));
+    const groups = Array.from(map.entries()).map(([fullTitle, members]) => {
+      // Union of sub-item rows across this group's OLX-parent members (deduped).
+      const subMap = new Map<string, TrainingDataRow>();
+      for (const m of members) {
+        if (m.trainingType === "OLX") {
+          for (const s of subItemsByParent.get(m.trainingTitle) ?? []) {
+            subMap.set(s.trainingTitle, s);
+          }
+        }
+      }
+      return {
+        fullTitle,
+        members,
+        subItems: Array.from(subMap.values()),
+        types: Array.from(new Set(members.map((m) => m.trainingType))),
+        products: Array.from(new Set(members.map((m) => m.productType))),
+        functions: Array.from(new Set(members.map((m) => m.function))),
+        anyLegacy: members.some((m) => m.isLegacy),
+        replacedByFulls: Array.from(
+          new Set(
+            members
+              .filter((m) => m.isLegacy)
+              .flatMap((m) => (m.replacedBy ?? []).map((rt) => trainingTitleToFullTitle.get(rt) ?? rt))
+          )
+        ),
+      };
+    });
     groups.sort((a, b) => {
       const cmp = a.fullTitle.localeCompare(b.fullTitle, undefined, { numeric: true });
       return sortDirection === "asc" ? cmp : -cmp;
     });
     return groups;
-  }, [filteredMembers, trainingTitleToFullTitle, sortDirection]);
+  }, [filteredMembers, subItemsByParent, trainingTitleToFullTitle, sortDirection]);
 
   const handleColumnFilter = (key: string, value: string) => {
     setColumnFilters((prev) => ({ ...prev, [key]: value }));
@@ -1547,7 +1589,11 @@ export default function TrainingDataPage() {
                     </td>
                   </tr>
                 ) : (
-                  groupedList.map((g) => (
+                  groupedList.flatMap((g) => {
+                    const isExpandable = g.subItems.length > 0;
+                    const isExpanded = isExpandable && !!expandedParents[g.fullTitle];
+                    const rows: React.ReactNode[] = [];
+                    rows.push(
                     <tr
                       key={g.fullTitle}
                       className="border-b border-gray-100 hover:bg-gray-50 transition-colors cursor-pointer"
@@ -1555,6 +1601,19 @@ export default function TrainingDataPage() {
                     >
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
+                          {isExpandable && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setExpandedParents((prev) => ({ ...prev, [g.fullTitle]: !prev[g.fullTitle] }));
+                              }}
+                              className="text-gray-500 hover:text-gray-800"
+                              aria-label={isExpanded ? "Collapse sub-items" : "Expand sub-items"}
+                            >
+                              {isExpanded ? <ChevronDown size={14} /> : <ChevronUp size={14} className="rotate-90" />}
+                            </button>
+                          )}
                           <span className="font-medium text-gray-900">{g.fullTitle}</span>
                           {g.anyLegacy && (
                             <span
@@ -1563,6 +1622,9 @@ export default function TrainingDataPage() {
                             >
                               Legacy
                             </span>
+                          )}
+                          {isExpandable && (
+                            <span className="text-xs text-gray-500">({g.subItems.length} sub-item{g.subItems.length === 1 ? "" : "s"})</span>
                           )}
                         </div>
                         {g.anyLegacy && (
@@ -1591,7 +1653,40 @@ export default function TrainingDataPage() {
                         </button>
                       </td>
                     </tr>
-                  ))
+                    );
+                    if (isExpanded) {
+                      for (const s of g.subItems) {
+                        rows.push(
+                          <tr
+                            key={`${g.fullTitle}::${s.trainingTitle}`}
+                            className="border-b border-gray-100 bg-gray-50/40 hover:bg-gray-50 transition-colors cursor-pointer"
+                            onClick={() => router.push(`/admin/training-data/${encodeURIComponent(s.fullTitle)}`)}
+                          >
+                            <td className="pl-10 pr-4 py-2 text-sm text-gray-700">
+                              <span className="text-xs text-gray-400 mr-2">↳</span>
+                              {s.fullTitle}
+                            </td>
+                            <td className="px-4 py-2 text-sm text-gray-400">-</td>
+                            <td className="px-4 py-2 text-sm text-gray-600">{TRAINING_TYPE_LABELS[s.trainingType] || s.trainingType}</td>
+                            <td className="px-4 py-2 text-sm text-gray-600">{s.productType}</td>
+                            <td className="px-4 py-2 text-sm text-gray-600">{FUNCTION_TYPE_LABELS[s.function] || s.function}</td>
+                            <td className="px-4 py-2 text-sm">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  router.push(`/admin/training-data/${encodeURIComponent(s.fullTitle)}`);
+                                }}
+                                className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
+                              >
+                                Edit
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      }
+                    }
+                    return rows;
+                  })
                 )}
               </tbody>
             </table>
