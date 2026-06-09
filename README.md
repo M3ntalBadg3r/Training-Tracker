@@ -519,13 +519,28 @@ Manage the definitions of all training programs in the system.
 
 **Features:**
 
+The list shows **one row per Full Title** — the first-class "record". Because several Training Titles can map to the same Full Title, the page groups them so you manage the training as a single thing.
+
 - **Add Training** — Click **Add Training** to open a modal form for creating a new training entry.
-- **Edit** — Click **Edit** on any row to modify fields inline.
-- **Delete** — Remove a training entry.
-- **Search** — Search by training title or full title.
-- **Filter** — Filter by Full Title, Type, Product, or Function.
+- **Edit (open the Full Title)** — Click **Edit** on any row (or click the row) to open the **Full Title detail page**, which lists every Training Title mapped to that Full Title and offers group-wide bulk actions (see below).
+- **Search / Filter** — Search by training title or full title; filter by Type, Product, or Function. A **Show legacy only** toggle scopes the list to retired Certs/Accreds.
 - **Import** — Upload a CSV or Excel file. Columns can be mapped to all fields including Certification. The system supports common aliases for type values (e.g. `ILT`, `cert`, `pre-sales`).
-- **Export** — Download all training data as CSV or Excel.
+- **Export** — Download all training data as CSV or Excel (one row per Training Title, so it round-trips with import).
+
+#### Full Title Detail Page
+
+Opening a Full Title takes you to a dedicated page (like a student record) showing all of its mapped Training Titles. From here you can:
+
+- **Rename Full Title** — Renames every mapped Training Title's Full Title at once.
+- **Mark the whole Full Title as Legacy** — Cascades the legacy flag to **all** Certification/Accreditation Training Titles under it in one click (other types are unaffected). Pick the replacement as a **Full Title** (not individual titles) and it is expanded to the underlying replacements automatically.
+- **Set Product / Function for all** — Apply a product type or function across every mapped Training Title.
+- **Per-Title editing** — Each Training Title keeps its own Link, Certifications, OLX membership, and can still be edited or deleted individually.
+- **Add Training Title** — Add another Training Title already attached to this Full Title.
+- **Delete Full Title** — Remove the whole group (all mapped Training Titles) at once.
+
+#### Newly-discovered trainings (import)
+
+When a student import references a training title that doesn't exist yet, it is auto-created and highlighted in an amber **"needs attention"** section at the top of the page. When completing one, you can either **attach it to an existing Full Title** via a dropdown (it inherits that group's Type/Product/Function as editable defaults) or **create a new Full Title**, then click **Mark as Complete**.
 
 #### Certification Mapping
 
@@ -541,9 +556,9 @@ The **Certification** column is available for trainings of type **Instructor-Led
 
 A **Certification** or **Accreditation** can be flagged as **Legacy** when it has been retired or superseded.
 
-- When adding or editing a Certification/Accreditation, tick **Mark as Legacy**.
-- Once legacy, a **Replaced by** checkbox list of all other Certifications/Accreditations appears — select one or more. Multiple replacements are treated as **alternatives**: holding any one of them counts as having migrated (the same model as an ILT mapping to several certs). Leave the list empty for a cert that was retired with no successor.
-- A **Legacy** badge is shown on the training in the catalogue, on each learner's training list (with the replacement name), and on the training detail page. On **Admin > Training Data** the badge is followed by an inline subtitle (`→ Replaced by: <names>` or `→ No replacement defined`) so you can audit replacements without opening each row, and a **Show legacy only** toggle in the search bar scopes the table to retired Certs/Accreds.
+- On the **Full Title detail page**, tick **Mark this Full Title as Legacy** to retire every Certification/Accreditation under it at once. (Adding or editing a single Certification/Accreditation also exposes the same **Mark as Legacy** control.)
+- Once legacy, a **Replaced by** picker of all other **Full Titles** that contain a Certification/Accreditation appears — select one or more. Multiple replacements are treated as **alternatives**: holding any one of them counts as having migrated (the same model as an ILT mapping to several certs). Leave it empty for a cert that was retired with no successor.
+- A **Legacy** badge is shown on the training in the catalogue, on each learner's training list (with the replacement name), and on the training detail page. On **Admin > Training Data** the grouped row's badge is followed by an inline subtitle (`→ Replaced by: <names>` or `→ No replacement defined`) so you can audit replacements at a glance, and a **Show legacy only** toggle in the search bar scopes the list to retired Certs/Accreds.
 - Changing the type away from Certification/Accreditation automatically clears the legacy flag and replacements.
 - During import, set a **Legacy** column to `Yes` and list replacement training titles (comma-separated) in a **Replacement** column.
 - The **Legacy Replacement Gap** report uses this to find learners still holding a legacy cert who haven't taken the replacement.
