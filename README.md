@@ -77,7 +77,7 @@ bash deploy/install.sh
 
 **Database credentials:** database `training_tracker`, user `tracker`, with a random password generated at install time and written to `DATABASE_URL` in `/opt/training-tracker/.env`. The generated password is printed in the install summary. To change it later, edit `/opt/training-tracker/.env` (and the PostgreSQL role) and restart the service.
 
-> **Behind an SSL-inspecting firewall (e.g. Palo Alto)?** Node.js ignores the OS trust store and uses its own CA list, so even after importing your firewall's root cert into Debian, Prisma's engine download (and the app's outbound HTTPS) can fail with `self-signed certificate in certificate chain`. The installer fixes this automatically by setting `NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt` in `.env` (which `systemd` injects at runtime, and the update scripts inherit). Make sure your firewall's root + intermediate certs are imported into the system store (`update-ca-certificates`) first. The update scripts also self-heal older installs that predate this.
+> **Behind an SSL-inspecting firewall?** Node.js ignores the OS trust store and uses its own CA list, so even after importing your firewall's root cert into Debian, Prisma's engine download (and the app's outbound HTTPS) can fail with `self-signed certificate in certificate chain`. The installer fixes this automatically by setting `NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt` in `.env` (which `systemd` injects at runtime, and the update scripts inherit). Make sure your firewall's root + intermediate certs are imported into the system store (`update-ca-certificates`) first. The update scripts also self-heal older installs that predate this.
 
 ### Update Script
 
