@@ -1718,11 +1718,40 @@ const helpSections: Record<string, HelpSection> = {
           or alternatives), deduplicated by student.
         </p>
 
+        <h3>Compliance as of (expiry projection)</h3>
+        <p>
+          The <strong>Compliance as of</strong> selector in the header lets you
+          look ahead to see how upcoming certificate expiry will affect
+          compliance. Choose <strong>+3</strong>, <strong>+6</strong>, or{" "}
+          <strong>+12 months</strong> and every section recomputes compliance as
+          it will stand on that future date — any certificate expiring within the
+          window simply drops out of the count.
+        </p>
+        <ul>
+          <li>
+            Attained figures are shown as <strong>current → projected</strong>{" "}
+            (e.g. 5 → 3), with a <em>▼N expiring</em> note for the number of
+            people whose qualifying certificate lapses within the window.
+          </li>
+          <li>
+            Items shaded <strong>amber</strong> (and an <em>At Risk</em> status)
+            are compliant today but will fall below their requirement by the
+            selected horizon — your early warning to schedule renewals.
+          </li>
+          <li>
+            Green stays compliant through the horizon; red is already
+            non-compliant today. Set the selector back to <strong>Now</strong> to
+            return to a present-day snapshot.
+          </li>
+        </ul>
+
         <h3>Export</h3>
         <p>
           Each report section has an Export button to download the compliance
           data (including theatre breakdowns where present) as CSV, Excel, or
-          PDF.
+          PDF. When a projection horizon is selected, the export adds{" "}
+          <strong>projected</strong>, <strong>expiring</strong>, and{" "}
+          <strong>projected-compliant</strong> columns reflecting that horizon.
         </p>
       </>
     ),

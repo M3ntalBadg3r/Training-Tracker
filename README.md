@@ -856,6 +856,14 @@ The Global report auto-adapts based on the program's data:
 
 All sections support export to CSV, Excel, and PDF. Alternative trainings (OR logic) configured on a requirement count any qualifying training, deduplicated by student.
 
+### Compliance as of — upcoming-expiry projection
+
+A **Compliance as of** selector in the dashboard header lets you look ahead and see how upcoming certificate expiry will affect compliance. Pick **+3**, **+6**, or **+12 months** and every section recomputes compliance as it will stand on that future date — any certificate expiring within the window drops out of the counts (set it back to **Now** for today's snapshot).
+
+- Attained figures display as **current → projected** (e.g. `5 → 3`), with a **▼N expiring** note showing how many people lose a qualifying certificate within the window.
+- Requirements (and theatres) that are compliant today but will fall below their requirement by the chosen horizon are shaded **amber** with an **At Risk** status — an early warning to schedule renewals before compliance breaks. Green stays compliant through the horizon; red is already non-compliant today.
+- Section exports gain **Projected**, **Expiring**, and **Projected Compliant** columns reflecting the selected horizon, and the file name carries a `-plusNmo` suffix.
+
 ---
 
 ## Data Model

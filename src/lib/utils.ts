@@ -17,6 +17,12 @@ export function addYears(date: Date, years: number): Date {
   return result;
 }
 
+export function addMonths(date: Date, months: number): Date {
+  const result = new Date(date);
+  result.setMonth(result.getMonth() + months);
+  return result;
+}
+
 export function computeExpiryDate(completedDate: Date): Date {
   return addYears(completedDate, 2);
 }
