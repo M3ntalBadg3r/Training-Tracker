@@ -170,7 +170,11 @@ const helpSections: Record<string, HelpSection> = {
             Certifications, Accreditations, Instructor-Led Trainings, and OLX
             completed, plus an <strong>Expiring in 6 Months</strong> badge
             counting the student&apos;s active Certifications and Accreditations
-            whose expiry falls within the next six months.
+            whose expiry falls within the next six months. When any of the
+            student&apos;s active certifications are legacy
+            (retired/superseded), the Certifications card also shows an orange
+            &quot;N legacy&quot; pill so you can see at a glance how many of
+            those certs should be renewed or replaced.
           </li>
           <li>
             <strong>Achievement Over Time</strong> &mdash; A chart of the

@@ -573,6 +573,9 @@ export default function StudentRecordPage({
   const activeCerts = visibleTrainings.filter(
     (t) => t.trainingType === "Certification" && t.active
   ).length;
+  const legacyCerts = visibleTrainings.filter(
+    (t) => t.trainingType === "Certification" && t.active && t.isLegacy
+  ).length;
   const activeAccred = visibleTrainings.filter(
     (t) => t.trainingType === "Accreditation" && t.active
   ).length;
@@ -600,6 +603,7 @@ export default function StudentRecordPage({
       icon: Award,
       color: "bg-indigo-50",
       iconColor: "text-indigo-500",
+      note: legacyCerts > 0 ? `${legacyCerts} legacy` : null,
     },
     {
       label: "Accreditations Earned",
@@ -607,6 +611,7 @@ export default function StudentRecordPage({
       icon: ShieldCheck,
       color: "bg-emerald-50",
       iconColor: "text-emerald-500",
+      note: null,
     },
     {
       label: "Instructor-Led Trainings",
@@ -614,6 +619,7 @@ export default function StudentRecordPage({
       icon: GraduationCap,
       color: "bg-amber-50",
       iconColor: "text-amber-500",
+      note: null,
     },
     {
       label: "OLX Completed",
@@ -621,6 +627,7 @@ export default function StudentRecordPage({
       icon: GraduationCap,
       color: "bg-sky-50",
       iconColor: "text-sky-500",
+      note: null,
     },
     {
       label: "Expiring in 6 Months",
@@ -628,6 +635,7 @@ export default function StudentRecordPage({
       icon: CalendarClock,
       color: "bg-rose-50",
       iconColor: "text-rose-500",
+      note: null,
     },
   ];
 
@@ -781,6 +789,14 @@ export default function StudentRecordPage({
               <div>
                 <div className="text-2xl font-bold text-gray-900">{card.value}</div>
                 <div className="text-sm text-gray-500">{card.label}</div>
+                {card.note && (
+                  <span
+                    className="mt-1 inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800"
+                    title="Legacy certifications counted above — these are retired/superseded and should be renewed or replaced"
+                  >
+                    {card.note}
+                  </span>
+                )}
               </div>
             </div>
           );
