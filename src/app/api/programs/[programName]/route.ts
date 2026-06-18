@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { requireAuth, handleAuthError } from "@/lib/auth";
 import { getAuthorizedCompanyIds, resolveCompanyFilter } from "@/lib/company-scope";
+import { addMonths } from "@/lib/utils";
 import {
   countriesInRegion,
   extractTitles,
@@ -52,6 +53,7 @@ export async function GET(
       regions: [],
       theatres: [],
       meta: { levels: [], hasMinimumPerTheatre: false },
+      horizonMonths: 0,
     });
   }
 
@@ -61,6 +63,12 @@ export async function GET(
   const region = request.nextUrl.searchParams.get("region") || "";
   const trainingTitleParam = request.nextUrl.searchParams.get("trainingTitle") || "";
   const studentsMode = request.nextUrl.searchParams.get("students") === "true";
+
+  // Optional forward-looking projection: recompute compliance as it will stand
+  // `horizonMonths` from now, so upcoming certificate expiries surface before
+  // they break compliance. Only a fixed set of horizons is accepted.
+  const rawHorizon = parseInt(request.nextUrl.searchParams.get("horizonMonths") || "0", 10);
+  const horizonMonths = [3, 6, 12].includes(rawHorizon) ? rawHorizon : 0;
 
   if (studentsMode && trainingTitleParam) {
     const titles = trainingTitleParam.split(",").map((t) => t.trim()).filter(Boolean);
@@ -95,6 +103,7 @@ export async function GET(
       regions: [],
       theatres: [],
       meta,
+      horizonMonths,
     });
   }
 
@@ -111,32 +120,45 @@ export async function GET(
   }
 
   const now = new Date();
+  const horizonDate = horizonMonths > 0 ? addMonths(now, horizonMonths) : null;
 
   if (level === "country" && country) {
     const countryReqs = programData.filter((pd: ProgramDataRow) => pd.level === "Country");
     const titles = extractTitles(countryReqs);
-    const emailSets = await getEmailSetsByTitle(titles, now, { country, companyIds: companyFilter });
-    const specialisations = buildSpecialisations(specMap, "Country", emailSets);
-    return NextResponse.json({ specialisations, countries, regions: regionList, theatres: theatreList, meta });
+    const scope = { country, companyIds: companyFilter };
+    const emailSets = await getEmailSetsByTitle(titles, now, scope);
+    const projectedEmailSets = horizonDate
+      ? await getEmailSetsByTitle(titles, horizonDate, scope)
+      : null;
+    const specialisations = buildSpecialisations(specMap, "Country", emailSets, projectedEmailSets);
+    return NextResponse.json({ specialisations, countries, regions: regionList, theatres: theatreList, meta, horizonMonths });
   }
 
   if (level === "region" && region) {
     const countryReqs = programData.filter((pd: ProgramDataRow) => pd.level === "Country");
     const titles = extractTitles(countryReqs);
     const regionCountries = await countriesInRegion(region);
+    const scope = { countries: regionCountries, companyIds: companyFilter };
     const emailSets = regionCountries.length > 0
-      ? await getEmailSetsByTitle(titles, now, { countries: regionCountries, companyIds: companyFilter })
+      ? await getEmailSetsByTitle(titles, now, scope)
       : new Map<string, Set<string>>();
-    const specialisations = buildSpecialisations(specMap, "Country", emailSets);
-    return NextResponse.json({ specialisations, countries, regions: regionList, theatres: theatreList, meta });
+    const projectedEmailSets = horizonDate && regionCountries.length > 0
+      ? await getEmailSetsByTitle(titles, horizonDate, scope)
+      : null;
+    const specialisations = buildSpecialisations(specMap, "Country", emailSets, projectedEmailSets);
+    return NextResponse.json({ specialisations, countries, regions: regionList, theatres: theatreList, meta, horizonMonths });
   }
 
   if (level === "theatre" && theatre) {
     const theatreReqs = programData.filter((pd: ProgramDataRow) => pd.level === "Theatre");
     const titles = extractTitles(theatreReqs);
-    const emailSets = await getEmailSetsByTitle(titles, now, { theatre, companyIds: companyFilter });
-    const specialisations = buildSpecialisations(specMap, "Theatre", emailSets);
-    return NextResponse.json({ specialisations, countries, regions: regionList, theatres: theatreList, meta });
+    const scope = { theatre, companyIds: companyFilter };
+    const emailSets = await getEmailSetsByTitle(titles, now, scope);
+    const projectedEmailSets = horizonDate
+      ? await getEmailSetsByTitle(titles, horizonDate, scope)
+      : null;
+    const specialisations = buildSpecialisations(specMap, "Theatre", emailSets, projectedEmailSets);
+    return NextResponse.json({ specialisations, countries, regions: regionList, theatres: theatreList, meta, horizonMonths });
   }
 
   if (level === "global") {
@@ -150,6 +172,31 @@ export async function GET(
       ? await getEmailSetsByTitleAndTheatre(allTitles, now, companyFilter)
       : new Map<string, Map<string, Set<string>>>();
 
+    // Projected (forward-looking) variants, computed once when a horizon is set.
+    const projectedGlobalEmailSets = horizonDate
+      ? await getEmailSetsByTitle(allTitles, horizonDate, { companyIds: companyFilter })
+      : null;
+    const projectedByTitleAndTheatre = horizonDate && meta.hasMinimumPerTheatre
+      ? await getEmailSetsByTitleAndTheatre(allTitles, horizonDate, companyFilter)
+      : new Map<string, Map<string, Set<string>>>();
+
+    // Count of compliant theatres for a given as-of date (APS semantics — a
+    // theatre is compliant when it meets every theatre-level requirement).
+    async function countCompliantTheatres(theatreReqs: ProgramDataRow[], asOf: Date): Promise<number> {
+      if (theatreReqs.length === 0) return 0;
+      const titles = extractTitles(theatreReqs);
+      let count = 0;
+      for (const t of distinctTheatres) {
+        const emailSets = await getEmailSetsByTitle(titles, asOf, { theatre: t, companyIds: companyFilter });
+        const allMet = theatreReqs.every((req: ProgramDataRow) => {
+          if (!req.trainingTitle) return false;
+          return unionAttained(req, emailSets) >= req.quantityRequired;
+        });
+        if (allMet) count++;
+      }
+      return count;
+    }
+
     const globalSpecialisations = [];
 
     for (const [specName, reqs] of specMap) {
@@ -158,20 +205,10 @@ export async function GET(
 
       if (globalReqs.length === 0) continue;
 
-      // APS "count of compliant theatres" — a theatre is compliant when it meets
-      // every theatre-level requirement for this specialisation.
-      let compliantTheatreCount = 0;
-      if (theatreReqs.length > 0) {
-        const titles = extractTitles(theatreReqs);
-        for (const t of distinctTheatres) {
-          const emailSets = await getEmailSetsByTitle(titles, now, { theatre: t, companyIds: companyFilter });
-          const allMet = theatreReqs.every((req: ProgramDataRow) => {
-            if (!req.trainingTitle) return false;
-            return unionAttained(req, emailSets) >= req.quantityRequired;
-          });
-          if (allMet) compliantTheatreCount++;
-        }
-      }
+      const compliantTheatreCount = await countCompliantTheatres(theatreReqs, now);
+      const projectedCompliantTheatreCount = horizonDate
+        ? await countCompliantTheatres(theatreReqs, horizonDate)
+        : 0;
 
       const specReqs = globalReqs.map((req: ProgramDataRow) => {
         const hasTrainingTitle = req.trainingTitle !== null;
@@ -195,6 +232,27 @@ export async function GET(
         const theatresMet = theatreBreakdown === null || theatreBreakdown.every((t) => t.compliant);
         const compliant = primaryMet && theatresMet;
 
+        // Forward-looking projection at the selected horizon (if any).
+        let projectedGlobalAttained: number | undefined;
+        let projectedAttained: number | undefined;
+        let projectedTheatreBreakdown: { theatre: string; count: number; compliant: boolean }[] | null | undefined;
+        let projectedCompliant: boolean | undefined;
+        if (horizonDate && projectedGlobalEmailSets) {
+          projectedGlobalAttained = unionAttained(req, projectedGlobalEmailSets);
+          projectedAttained = hasTrainingTitle ? projectedGlobalAttained : projectedCompliantTheatreCount;
+          projectedTheatreBreakdown = null;
+          if (minimumPerTheatre !== null && minimumPerTheatre > 0) {
+            projectedTheatreBreakdown = unionAttainedByTheatre(req, projectedByTitleAndTheatre, distinctTheatres).map((t) => ({
+              theatre: t.theatre,
+              count: t.count,
+              compliant: t.count >= minimumPerTheatre,
+            }));
+          }
+          const pPrimaryMet = projectedAttained >= req.quantityRequired;
+          const pTheatresMet = projectedTheatreBreakdown === null || projectedTheatreBreakdown.every((t) => t.compliant);
+          projectedCompliant = pPrimaryMet && pTheatresMet;
+        }
+
         return {
           trainingType: req.trainingType ?? null,
           trainingTitle: req.trainingTitle ?? null,
@@ -205,6 +263,10 @@ export async function GET(
           minimumPerTheatre,
           theatreBreakdown,
           compliant,
+          projectedAttained,
+          projectedGlobalAttained,
+          projectedTheatreBreakdown,
+          projectedCompliant,
           alternatives: req.alternatives.map((a: ProgramDataRow["alternatives"][number]) => ({
             trainingType: a.trainingType,
             trainingTitle: a.trainingTitle,
@@ -214,7 +276,15 @@ export async function GET(
       });
 
       const specCompliant = specReqs.every((r) => r.compliant);
-      globalSpecialisations.push({ name: specName, compliant: specCompliant, requirements: specReqs });
+      const projectedSpecCompliant = horizonDate
+        ? specReqs.every((r) => r.projectedCompliant)
+        : undefined;
+      globalSpecialisations.push({
+        name: specName,
+        compliant: specCompliant,
+        projectedCompliant: projectedSpecCompliant,
+        requirements: specReqs,
+      });
     }
 
     return NextResponse.json({
@@ -223,11 +293,12 @@ export async function GET(
       regions: regionList,
       theatres: theatreList,
       meta,
+      horizonMonths,
     });
   }
 
-  const specialisations = buildSpecialisations(specMap, "Country", new Map());
-  return NextResponse.json({ specialisations, countries, regions: regionList, theatres: theatreList, meta });
+  const specialisations = buildSpecialisations(specMap, "Country", new Map(), null);
+  return NextResponse.json({ specialisations, countries, regions: regionList, theatres: theatreList, meta, horizonMonths });
 }
 
 function buildSpecialisations(
@@ -244,7 +315,8 @@ function buildSpecialisations(
     }>;
   }>>,
   level: string,
-  emailSets: Map<string, Set<string>>
+  emailSets: Map<string, Set<string>>,
+  projectedEmailSets: Map<string, Set<string>> | null
 ) {
   const result = [];
   for (const [name, reqs] of specMap) {
@@ -259,6 +331,10 @@ function buildSpecialisations(
         trainingFullTitle: req.trainingData?.fullTitle ?? "—",
         quantityRequired: req.quantityRequired,
         attained: req.trainingTitle ? unionAttained(req, emailSets) : 0,
+        projectedAttained:
+          projectedEmailSets && req.trainingTitle
+            ? unionAttained(req, projectedEmailSets)
+            : undefined,
         alternatives: req.alternatives.map((a) => ({
           trainingType: a.trainingType,
           trainingTitle: a.trainingTitle,

@@ -16,6 +16,7 @@ import {
   CartesianGrid,
   Tooltip,
   Legend,
+  ReferenceLine,
   ResponsiveContainer,
 } from "recharts";
 
@@ -27,12 +28,20 @@ interface Snapshot {
   attained: number;
   required: number;
   compliancePct: number;
+  projected: boolean;
 }
 
 interface TrendResponse {
   snapshots: Snapshot[];
   programs: string[];
   specialisations: string[];
+  scopeLabel: string;
+}
+
+interface RegionRow {
+  country: string;
+  region: string;
+  theatre: string | null;
 }
 
 function ExportMenu({ data, columns, filename }: { data: Record<string, unknown>[]; columns: { key: string; header: string }[]; filename: string }) {
@@ -59,57 +68,109 @@ export default function ProgramComplianceTrendPage() {
   const [data, setData] = useState<TrendResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [program, setProgram] = useState("");
+  const [regionRows, setRegionRows] = useState<RegionRow[]>([]);
+  const [theatre, setTheatre] = useState("");
+  const [region, setRegion] = useState("");
+  const [country, setCountry] = useState("");
+
+  // Region data (theatre/region/country) for the scope filters — global, not company-scoped.
+  useEffect(() => {
+    fetch("/api/region-data/countries")
+      .then((r) => r.json())
+      .then((rows: RegionRow[]) => setRegionRows(Array.isArray(rows) ? rows : []))
+      .catch(() => setRegionRows([]));
+  }, []);
 
   useEffect(() => {
     if (companyScope.loading) return;
     setLoading(true);
-    const base = program ? `/api/reports/program-compliance-trend?program=${encodeURIComponent(program)}` : "/api/reports/program-compliance-trend";
+    const params = new URLSearchParams();
+    if (program) params.set("program", program);
+    if (country) params.set("country", country);
+    else if (region) params.set("region", region);
+    else if (theatre) params.set("theatre", theatre);
+    const qs = params.toString();
+    const base = `/api/reports/program-compliance-trend${qs ? `?${qs}` : ""}`;
     fetch(withCompany(base, companyScope.selected))
       .then((r) => r.json())
       .then((d) => { setData(d); setLoading(false); })
       .catch(() => setLoading(false));
-  }, [program, companyScope.loading, companyScope.selected]);
+  }, [program, theatre, region, country, companyScope.loading, companyScope.selected]);
 
-  // Pivot snapshots: one row per month, one column per specialisation (filtered by selected program if any)
-  const chartData = useMemo(() => {
-    if (!data) return [];
-    const months = new Map<string, Record<string, string | number>>();
+  // Cascading filter option lists (theatre → region → country).
+  const theatreOptions = useMemo(
+    () => [...new Set(regionRows.map((r) => r.theatre).filter((t): t is string => !!t))].sort(),
+    [regionRows]
+  );
+  const regionOptions = useMemo(
+    () => [...new Set(regionRows.filter((r) => !theatre || r.theatre === theatre).map((r) => r.region).filter(Boolean))].sort(),
+    [regionRows, theatre]
+  );
+  const countryOptions = useMemo(
+    () => [...new Set(regionRows
+      .filter((r) => (!theatre || r.theatre === theatre) && (!region || r.region === region))
+      .map((r) => r.country))].sort(),
+    [regionRows, theatre, region]
+  );
+
+  // The latest non-projected month is "now"; everything after it is forecast.
+  const nowMonthKey = useMemo(() => {
+    if (!data) return null;
+    let k: string | null = null;
+    for (const s of data.snapshots) if (!s.projected && (k === null || s.monthKey > k)) k = s.monthKey;
+    return k;
+  }, [data]);
+
+  // Pivot snapshots into one row per month. Each specialisation produces a solid
+  // series (history, up to & incl. now) and a dashed `__forecast` series (now →
+  // +12), sharing the "now" point so the dashed segment joins the solid line.
+  const { chartData, seriesKeys } = useMemo(() => {
+    if (!data || data.snapshots.length === 0) return { chartData: [] as Record<string, string | number | boolean>[], seriesKeys: [] as string[] };
+    const colOf = (s: Snapshot) => (data.programs.length > 1 ? `${s.program} — ${s.specialisation}` : s.specialisation);
+    const cols = [...new Set(data.snapshots.map(colOf))].sort();
+    const months = new Map<string, Record<string, string | number | boolean>>();
     for (const s of data.snapshots) {
       let row = months.get(s.monthKey);
       if (!row) {
-        row = { monthLabel: s.monthLabel, monthKey: s.monthKey };
+        row = { monthLabel: s.monthLabel, monthKey: s.monthKey, projected: s.projected };
         months.set(s.monthKey, row);
       }
-      const colKey = data.programs.length > 1 ? `${s.program} — ${s.specialisation}` : s.specialisation;
-      row[colKey] = Math.round(s.compliancePct);
+      const col = colOf(s);
+      const val = Math.round(s.compliancePct);
+      if (s.projected) {
+        row[`${col}__forecast`] = val;
+      } else {
+        row[col] = val;
+        if (s.monthKey === nowMonthKey) row[`${col}__forecast`] = val;
+      }
     }
-    return Array.from(months.values()).sort((a, b) => String(a.monthKey).localeCompare(String(b.monthKey)));
-  }, [data]);
+    const chartData = Array.from(months.values()).sort((a, b) => String(a.monthKey).localeCompare(String(b.monthKey)));
+    return { chartData, seriesKeys: cols };
+  }, [data, nowMonthKey]);
 
-  const seriesKeys = useMemo(() => {
-    if (!data || chartData.length === 0) return [] as string[];
-    const last = chartData[chartData.length - 1];
-    return Object.keys(last).filter((k) => k !== "monthLabel" && k !== "monthKey");
-  }, [data, chartData]);
+  const nowMonthLabel = useMemo(
+    () => String(chartData.find((r) => r.monthKey === nowMonthKey)?.monthLabel ?? ""),
+    [chartData, nowMonthKey]
+  );
 
   const kpis = useMemo(() => {
-    if (!data) return { latest: 0, deltaPp: 0, specsTracked: 0, snapshots: 0 };
-    const latestMonth = chartData[chartData.length - 1];
-    const earliestMonth = chartData[0];
-    const avg = (row: Record<string, string | number> | undefined) => {
+    if (!data) return { current: 0, forecastDelta: 0, specsTracked: 0, snapshots: 0 };
+    const nowRow = chartData.find((r) => r.monthKey === nowMonthKey);
+    const lastRow = chartData[chartData.length - 1];
+    const avg = (row: Record<string, string | number | boolean> | undefined, keys: string[]) => {
       if (!row) return 0;
-      const vals = Object.entries(row).filter(([k]) => k !== "monthLabel" && k !== "monthKey").map(([, v]) => Number(v));
+      const vals = keys.map((k) => Number(row[k])).filter((v) => !Number.isNaN(v));
       return vals.length === 0 ? 0 : vals.reduce((s, v) => s + v, 0) / vals.length;
     };
-    const latest = avg(latestMonth);
-    const earliest = avg(earliestMonth);
+    const current = avg(nowRow, seriesKeys);
+    const forecast = avg(lastRow, seriesKeys.map((k) => `${k}__forecast`));
     return {
-      latest: Math.round(latest),
-      deltaPp: Math.round(latest - earliest),
+      current: Math.round(current),
+      forecastDelta: Math.round(forecast - current),
       specsTracked: seriesKeys.length,
       snapshots: data.snapshots.length,
     };
-  }, [data, chartData, seriesKeys]);
+  }, [data, chartData, seriesKeys, nowMonthKey]);
 
   const exportColumns = [
     { key: "program", header: "Program" },
@@ -118,8 +179,9 @@ export default function ProgramComplianceTrendPage() {
     { key: "attained", header: "Attained" },
     { key: "required", header: "Required" },
     { key: "compliancePct", header: "Compliance %" },
+    { key: "projected", header: "Projected" },
   ];
-  const exportRows = (data?.snapshots ?? []).map((s) => ({ ...s, compliancePct: s.compliancePct.toFixed(1) }));
+  const exportRows = (data?.snapshots ?? []).map((s) => ({ ...s, compliancePct: s.compliancePct.toFixed(1), projected: s.projected ? "Yes" : "No" }));
 
   if (loading || !data) {
     return <div className="flex items-center justify-center h-64"><div className="text-gray-500">Loading report...</div></div>;
@@ -136,24 +198,39 @@ export default function ProgramComplianceTrendPage() {
 
       <KpiStrip
         cards={[
-          { label: "Latest Compliance (avg)", value: `${kpis.latest}%`, icon: ShieldCheck, tone: "blue" },
-          { label: "12-mo Δ (pp)", value: `${kpis.deltaPp >= 0 ? "+" : ""}${kpis.deltaPp}`, icon: TrendingUp, tone: kpis.deltaPp >= 0 ? "emerald" : "red" },
+          { label: "Current Compliance (avg)", value: `${kpis.current}%`, icon: ShieldCheck, tone: "blue" },
+          { label: "Forecast 12-mo Δ (pp)", value: `${kpis.forecastDelta >= 0 ? "+" : ""}${kpis.forecastDelta}`, icon: TrendingUp, tone: kpis.forecastDelta >= 0 ? "emerald" : "red" },
           { label: "Specialisations Tracked", value: kpis.specsTracked, icon: Award, tone: "indigo" },
           { label: "Snapshots", value: kpis.snapshots, icon: BarChart3, tone: "amber" },
         ]}
       />
 
       <section className="bg-white rounded-lg border border-gray-200 p-5 mb-6">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-base font-semibold text-gray-900">Compliance % by Specialisation, Last 12 Months</h3>
-          <div className="flex gap-2 items-center">
+        <div className="flex items-start justify-between mb-1 gap-4 flex-wrap">
+          <h3 className="text-base font-semibold text-gray-900">Compliance % by Specialisation — 12-Month History &amp; Forecast</h3>
+          <div className="flex gap-2 items-center flex-wrap">
             <select value={program} onChange={(e) => setProgram(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm">
               <option value="">All Programs</option>
               {data.programs.map((p) => <option key={p} value={p}>{p}</option>)}
             </select>
+            <select value={theatre} onChange={(e) => { setTheatre(e.target.value); setRegion(""); setCountry(""); }} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm">
+              <option value="">All Theatres</option>
+              {theatreOptions.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+            <select value={region} onChange={(e) => { setRegion(e.target.value); setCountry(""); }} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm">
+              <option value="">All Regions</option>
+              {regionOptions.map((r) => <option key={r} value={r}>{r}</option>)}
+            </select>
+            <select value={country} onChange={(e) => setCountry(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm">
+              <option value="">All Countries</option>
+              {countryOptions.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
             <ExportMenu data={exportRows as never} columns={exportColumns} filename="program-compliance-trend" />
           </div>
         </div>
+        <p className="text-xs text-gray-500 mb-4">
+          Showing: <span className="font-medium text-gray-700">{data.scopeLabel}</span> · scoped to the company selected above. Solid = history, dashed = forecast (assumes no new completions — only existing certifications expiring).
+        </p>
         <ResponsiveContainer width="100%" height={350}>
           <LineChart data={chartData}>
             <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
@@ -161,8 +238,14 @@ export default function ProgramComplianceTrendPage() {
             <YAxis allowDecimals={false} domain={[0, 100]} unit="%" tick={{ fontSize: 12, fill: chart.axis }} stroke={chart.axis} />
             <Tooltip contentStyle={tooltipStyle(chart)} />
             <Legend />
+            {nowMonthLabel && (
+              <ReferenceLine x={nowMonthLabel} stroke={chart.axis} strokeDasharray="4 4" label={{ value: "Forecast →", position: "top", fill: chart.axis, fontSize: 11 }} />
+            )}
             {seriesKeys.map((k, i) => (
-              <Line key={k} type="monotone" dataKey={k} stroke={chart.series(i)} strokeWidth={2} dot={{ r: 2 }} />
+              <Line key={k} name={k} type="monotone" dataKey={k} stroke={chart.series(i)} strokeWidth={2} dot={{ r: 2 }} connectNulls={false} />
+            ))}
+            {seriesKeys.map((k, i) => (
+              <Line key={`${k}__forecast`} name={`${k} (forecast)`} legendType="none" type="monotone" dataKey={`${k}__forecast`} stroke={chart.series(i)} strokeWidth={2} strokeDasharray="6 4" dot={{ r: 2 }} connectNulls={false} />
             ))}
           </LineChart>
         </ResponsiveContainer>
@@ -182,6 +265,7 @@ export default function ProgramComplianceTrendPage() {
                 <th className="px-4 py-3 text-left font-semibold">Program</th>
                 <th className="px-4 py-3 text-left font-semibold">Specialisation</th>
                 <th className="px-4 py-3 text-left font-semibold">Month</th>
+                <th className="px-4 py-3 text-left font-semibold">Type</th>
                 <th className="px-4 py-3 text-right font-semibold">Attained</th>
                 <th className="px-4 py-3 text-right font-semibold">Required</th>
                 <th className="px-4 py-3 text-right font-semibold">Compliance</th>
@@ -193,6 +277,11 @@ export default function ProgramComplianceTrendPage() {
                   <td className="px-4 py-3">{s.program}</td>
                   <td className="px-4 py-3">{s.specialisation}</td>
                   <td className="px-4 py-3">{s.monthLabel}</td>
+                  <td className="px-4 py-3">
+                    <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${s.projected ? "bg-indigo-100 text-indigo-800" : "bg-gray-100 text-gray-700"}`}>
+                      {s.projected ? "Forecast" : "History"}
+                    </span>
+                  </td>
                   <td className="px-4 py-3 text-right">{s.attained}</td>
                   <td className="px-4 py-3 text-right">{s.required}</td>
                   <td className="px-4 py-3 text-right">
@@ -203,7 +292,7 @@ export default function ProgramComplianceTrendPage() {
                 </tr>
               ))}
               {data.snapshots.length === 0 && (
-                <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-500">No snapshots available.</td></tr>
+                <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-500">No snapshots available.</td></tr>
               )}
             </tbody>
           </table>

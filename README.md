@@ -465,7 +465,7 @@ Per-training metrics: total completions, last-12-month completions, active stude
 
 ### Program Compliance Trend
 
-Monthly snapshots over the last 12 months for the partner programs configured in **Admin > Program Data**. For each month-end, the same OR-logic union of primary + alternative trainings used by the live program dashboards is applied with the active-as-of date set to that month-end. Line chart per specialisation shows compliance % over time.
+Monthly snapshots — **12 months of history plus a 12-month forecast** — for the partner programs configured in **Admin > Program Data**. For each month-end, the same OR-logic union of primary + alternative trainings used by the live program dashboards is applied, counting only trainings that were completed by that month and still valid (so each point is a true snapshot of that moment, and historical lines reflect how compliance actually built up). The forecast (drawn as dashed lines after the "Forecast →" marker) assumes **no new completions** and shows compliance decaying as today's active certifications reach their expiry — an "if nothing changes" view of upcoming renewal gaps, summarised by the **Forecast 12-mo Δ** KPI. Use the **Theatre / Region / Country** filters to narrow the scope (shown in the "Showing" caption); the report is also scoped to the company selected in the header.
 
 ### Renewal Forecast
 
@@ -855,6 +855,14 @@ The Global report auto-adapts based on the program's data:
 - **Global count with per-theatre minimums** — when a requirement has a **Minimum per Theatre** value, each specialisation appears as a card with a **Compliant** / **Not Compliant** badge and a global attained/required total. Click the chevron to expand a per-theatre breakdown. The requirement is only **Met** when the global total is reached **and** every theatre meets its minimum.
 
 All sections support export to CSV, Excel, and PDF. Alternative trainings (OR logic) configured on a requirement count any qualifying training, deduplicated by student.
+
+### Compliance as of — upcoming-expiry projection
+
+A **Compliance as of** selector in the dashboard header lets you look ahead and see how upcoming certificate expiry will affect compliance. Pick **+3**, **+6**, or **+12 months** and every section recomputes compliance as it will stand on that future date — any certificate expiring within the window drops out of the counts (set it back to **Now** for today's snapshot).
+
+- Attained figures display as **current → projected** (e.g. `5 → 3`), with a **▼N expiring** note showing how many people lose a qualifying certificate within the window.
+- Requirements (and theatres) that are compliant today but will fall below their requirement by the chosen horizon are shaded **amber** with an **At Risk** status — an early warning to schedule renewals before compliance breaks. Green stays compliant through the horizon; red is already non-compliant today.
+- Section exports gain **Projected**, **Expiring**, and **Projected Compliant** columns reflecting the selected horizon, and the file name carries a `-plusNmo` suffix.
 
 ---
 

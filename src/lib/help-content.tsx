@@ -594,13 +594,15 @@ const helpSections: Record<string, HelpSection> = {
     content: (
       <>
         <p>
-          Tracks monthly compliance over the last 12 months for the partner
-          programs configured in <strong>Admin &gt; Program Data</strong>.
+          Tracks monthly compliance over the last 12 months — plus a 12-month
+          forecast — for the partner programs configured in{" "}
+          <strong>Admin &gt; Program Data</strong>.
         </p>
         <ul>
-          <li>For each month-end, the report re-runs the same OR-logic union of primary + alternative trainings used by the live program dashboards, with the active-as-of date set to that month-end.</li>
-          <li>For tractability the trend evaluates at the Global level — country/theatre breakdowns remain on the live dashboards.</li>
-          <li>Filter by program to focus on an individual program.</li>
+          <li>For each month-end, the report re-runs the same OR-logic union of primary + alternative trainings used by the live program dashboards, counting only trainings that were <strong>completed by that month and still valid</strong> (not yet expired). This makes each point a true snapshot of that moment — historical lines reflect how compliance actually built up over time.</li>
+          <li><strong>Solid lines</strong> are history; <strong>dashed lines</strong> (after the &quot;Forecast →&quot; marker) project the next 12 months. The forecast assumes <strong>no new completions</strong> and simply shows compliance decaying as today&apos;s active certifications reach their expiry date — an &quot;if nothing changes&quot; view that surfaces upcoming renewal gaps.</li>
+          <li>The <strong>Forecast 12-mo Δ</strong> KPI shows the projected change (in percentage points) from now to 12 months out — a negative value flags certifications due to lapse.</li>
+          <li>Narrow the view with the <strong>Theatre / Region / Country</strong> filters (the &quot;Showing&quot; caption states the active scope); the report is also scoped to the company selected in the header. The program dropdown lists every program found in Program Data.</li>
         </ul>
       </>
     ),
@@ -1718,11 +1720,40 @@ const helpSections: Record<string, HelpSection> = {
           or alternatives), deduplicated by student.
         </p>
 
+        <h3>Compliance as of (expiry projection)</h3>
+        <p>
+          The <strong>Compliance as of</strong> selector in the header lets you
+          look ahead to see how upcoming certificate expiry will affect
+          compliance. Choose <strong>+3</strong>, <strong>+6</strong>, or{" "}
+          <strong>+12 months</strong> and every section recomputes compliance as
+          it will stand on that future date — any certificate expiring within the
+          window simply drops out of the count.
+        </p>
+        <ul>
+          <li>
+            Attained figures are shown as <strong>current → projected</strong>{" "}
+            (e.g. 5 → 3), with a <em>▼N expiring</em> note for the number of
+            people whose qualifying certificate lapses within the window.
+          </li>
+          <li>
+            Items shaded <strong>amber</strong> (and an <em>At Risk</em> status)
+            are compliant today but will fall below their requirement by the
+            selected horizon — your early warning to schedule renewals.
+          </li>
+          <li>
+            Green stays compliant through the horizon; red is already
+            non-compliant today. Set the selector back to <strong>Now</strong> to
+            return to a present-day snapshot.
+          </li>
+        </ul>
+
         <h3>Export</h3>
         <p>
           Each report section has an Export button to download the compliance
           data (including theatre breakdowns where present) as CSV, Excel, or
-          PDF.
+          PDF. When a projection horizon is selected, the export adds{" "}
+          <strong>projected</strong>, <strong>expiring</strong>, and{" "}
+          <strong>projected-compliant</strong> columns reflecting that horizon.
         </p>
       </>
     ),

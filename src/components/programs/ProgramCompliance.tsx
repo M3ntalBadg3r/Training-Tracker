@@ -33,12 +33,20 @@ export interface Requirement {
   minimumPerTheatre?: number | null;
   theatreBreakdown?: { theatre: string; count: number; compliant: boolean }[] | null;
   compliant?: boolean;
+  // Forward-looking projection fields (present only when a horizon is selected).
+  // `projectedAttained` is the attained count once certs expiring within the
+  // horizon drop out; it is always <= attained.
+  projectedAttained?: number;
+  projectedGlobalAttained?: number;
+  projectedTheatreBreakdown?: { theatre: string; count: number; compliant: boolean }[] | null;
+  projectedCompliant?: boolean;
   alternatives: AlternativeEntry[];
 }
 
 export interface Specialisation {
   name: string;
   compliant?: boolean;
+  projectedCompliant?: boolean;
   requirements: Requirement[];
 }
 
@@ -58,6 +66,82 @@ export type ViewStudentsFn = (
   filterValue: string,
   alternatives?: AlternativeEntry[]
 ) => void;
+
+type RiskState = "compliant" | "atRisk" | "nonCompliant";
+
+/**
+ * Classify a requirement's compliance taking the projection into account:
+ *  - compliant: still meets the requirement at the selected horizon (or now)
+ *  - atRisk: meets it now but falls below it by the horizon (amber)
+ *  - nonCompliant: already below the requirement today (red)
+ * When `projected` is undefined (no horizon) this reduces to the old
+ * green/red split on the current attained figure.
+ */
+function riskState(attained: number, projected: number | undefined, required: number): RiskState {
+  const future = projected ?? attained;
+  if (future >= required) return "compliant";
+  if (attained >= required) return "atRisk";
+  return "nonCompliant";
+}
+
+const RISK_BG: Record<RiskState, string> = {
+  compliant: "bg-green-50",
+  atRisk: "bg-amber-50",
+  nonCompliant: "bg-red-50",
+};
+
+const RISK_TEXT: Record<RiskState, string> = {
+  compliant: "text-green-700",
+  atRisk: "text-amber-700",
+  nonCompliant: "text-red-700",
+};
+
+const RISK_BADGE: Record<RiskState, string> = {
+  compliant: "bg-green-100 text-green-800",
+  atRisk: "bg-amber-100 text-amber-800",
+  nonCompliant: "bg-red-100 text-red-800",
+};
+
+/** Inline "current → projected" attained value with an optional unit label. */
+function AttainedValue({
+  attained,
+  projected,
+  unitLabel,
+  className,
+}: {
+  attained: number;
+  projected?: number;
+  unitLabel?: string;
+  className?: string;
+}) {
+  const showProjection = projected !== undefined && projected < attained;
+  const unit = unitLabel ? ` ${unitLabel}` : "";
+  return (
+    <span className={className}>
+      {showProjection ? (
+        <>
+          <span className="text-gray-400 font-normal">{attained}</span>
+          <span className="mx-1 text-gray-400">→</span>
+          <span>{projected}</span>
+          {unit}
+        </>
+      ) : (
+        <>
+          {attained}
+          {unit}
+        </>
+      )}
+    </span>
+  );
+}
+
+/** Small "▼N expiring" note shown under an at-risk/projected attained value. */
+function ExpiringNote({ attained, projected }: { attained: number; projected?: number }) {
+  if (projected === undefined || projected >= attained) return null;
+  return (
+    <div className="text-[11px] text-amber-600 mt-0.5 font-medium">▼{attained - projected} expiring</div>
+  );
+}
 
 /**
  * APS-style side-by-side specialisation matrix (one column per specialisation,
@@ -198,15 +282,18 @@ function RequirementRowGroup({
               </td>
             );
           }
-          const compliant = req.attained >= req.quantityRequired;
+          const state = riskState(req.attained, req.projectedAttained, req.quantityRequired);
           return (
             <td
               key={spec.name}
-              className={`px-4 py-2 text-center border border-gray-200 ${compliant ? "bg-green-50" : "bg-red-50"}`}
+              className={`px-4 py-2 text-center border border-gray-200 ${RISK_BG[state]}`}
             >
-              <span className={`font-bold ${compliant ? "text-green-700" : "text-red-700"}`}>
-                {req.attained} {unitLabel}
-              </span>
+              <AttainedValue
+                attained={req.attained}
+                projected={req.projectedAttained}
+                unitLabel={unitLabel}
+                className={`font-bold ${RISK_TEXT[state]}`}
+              />
               {level !== "global" && req.trainingTitle && (
                 <button
                   onClick={() => onViewStudents(req.trainingTitle!, req.trainingFullTitle, level, filterValue, req.alternatives)}
@@ -215,6 +302,7 @@ function RequirementRowGroup({
                   <Users size={12} /> View
                 </button>
               )}
+              <ExpiringNote attained={req.attained} projected={req.projectedAttained} />
             </td>
           );
         })}
@@ -234,16 +322,23 @@ function RequirementRowGroup({
 export function SpecialisationCard({ spec }: { spec: Specialisation }) {
   return (
     <div className="mb-6 bg-white rounded-lg border border-gray-200 overflow-hidden">
-      <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-        <h2 className="text-lg font-semibold">{spec.name}</h2>
-        <span
-          className={`px-3 py-1 rounded-full text-sm font-medium ${
-            spec.compliant ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
-          }`}
-        >
-          {spec.compliant ? "Compliant" : "Not Compliant"}
-        </span>
-      </div>
+      {(() => {
+        const state: RiskState = spec.compliant
+          ? spec.projectedCompliant === false
+            ? "atRisk"
+            : "compliant"
+          : "nonCompliant";
+        const label =
+          state === "compliant" ? "Compliant" : state === "atRisk" ? "At Risk" : "Not Compliant";
+        return (
+          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+            <h2 className="text-lg font-semibold">{spec.name}</h2>
+            <span className={`px-3 py-1 rounded-full text-sm font-medium ${RISK_BADGE[state]}`}>
+              {label}
+            </span>
+          </div>
+        );
+      })()}
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-left">
@@ -272,6 +367,16 @@ function RequirementRows({ req }: { req: Requirement }) {
   const [expanded, setExpanded] = useState(false);
   const hasTheatreBreakdown = req.theatreBreakdown != null && req.theatreBreakdown.length > 0;
   const globalAttained = req.globalAttained ?? req.attained;
+  const projectedGlobalAttained = req.projectedGlobalAttained;
+  const attainedState = riskState(globalAttained, projectedGlobalAttained, req.quantityRequired);
+  // Status reflects the full compliance (incl. per-theatre minimums) at the horizon.
+  const statusState: RiskState = req.compliant
+    ? req.projectedCompliant === false
+      ? "atRisk"
+      : "compliant"
+    : "nonCompliant";
+  const statusLabel =
+    statusState === "compliant" ? "Met" : statusState === "atRisk" ? "At Risk" : "Not Met";
 
   return (
     <>
@@ -304,21 +409,18 @@ function RequirementRows({ req }: { req: Requirement }) {
           {req.trainingType ? (TRAINING_TYPE_LABELS[req.trainingType] || req.trainingType) : "—"}
         </td>
         <td className="px-4 py-3 text-center font-semibold">{req.quantityRequired}</td>
-        <td
-          className={`px-4 py-3 text-center font-bold ${
-            globalAttained >= req.quantityRequired ? "text-green-700" : "text-red-700"
-          }`}
-        >
-          {globalAttained}
+        <td className="px-4 py-3 text-center">
+          <AttainedValue
+            attained={globalAttained}
+            projected={projectedGlobalAttained}
+            className={`font-bold ${RISK_TEXT[attainedState]}`}
+          />
+          <ExpiringNote attained={globalAttained} projected={projectedGlobalAttained} />
         </td>
         <td className="px-4 py-3 text-center text-gray-600">{req.minimumPerTheatre ?? "—"}</td>
         <td className="px-4 py-3 text-center">
-          <span
-            className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${
-              req.compliant ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
-            }`}
-          >
-            {req.compliant ? "Met" : "Not Met"}
+          <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${RISK_BADGE[statusState]}`}>
+            {statusLabel}
           </span>
         </td>
       </tr>
@@ -336,24 +438,36 @@ function RequirementRows({ req }: { req: Requirement }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {req.theatreBreakdown.map((t) => (
-                    <tr key={t.theatre} className="border-t border-gray-200">
-                      <td className="px-3 py-2">{t.theatre}</td>
-                      <td className={`px-3 py-2 text-center font-semibold ${t.compliant ? "text-green-700" : "text-red-700"}`}>
-                        {t.count}
-                      </td>
-                      <td className="px-3 py-2 text-center">{req.minimumPerTheatre}</td>
-                      <td className="px-3 py-2 text-center">
-                        <span
-                          className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${
-                            t.compliant ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
-                          }`}
-                        >
-                          {t.compliant ? "Met" : "Not Met"}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
+                  {req.theatreBreakdown.map((t) => {
+                    const projectedCount = req.projectedTheatreBreakdown?.find(
+                      (p) => p.theatre === t.theatre
+                    )?.count;
+                    const required = req.minimumPerTheatre ?? 0;
+                    const tState = riskState(t.count, projectedCount, required);
+                    const tLabel =
+                      tState === "compliant" ? "Met" : tState === "atRisk" ? "At Risk" : "Not Met";
+                    return (
+                      <tr key={t.theatre} className="border-t border-gray-200">
+                        <td className="px-3 py-2">{t.theatre}</td>
+                        <td className="px-3 py-2 text-center">
+                          <AttainedValue
+                            attained={t.count}
+                            projected={projectedCount}
+                            className={`font-semibold ${RISK_TEXT[tState]}`}
+                          />
+                          <ExpiringNote attained={t.count} projected={projectedCount} />
+                        </td>
+                        <td className="px-3 py-2 text-center">{req.minimumPerTheatre}</td>
+                        <td className="px-3 py-2 text-center">
+                          <span
+                            className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${RISK_BADGE[tState]}`}
+                          >
+                            {tLabel}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

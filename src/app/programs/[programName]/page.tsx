@@ -54,6 +54,11 @@ export default function ProgramDetailPage() {
   }, [companyScope.loading, companyScope.selected, companyScope.companies]);
   const companyQS = companyId !== null ? `&companyId=${companyId}` : "";
 
+  // Forward-looking projection horizon (0 = today). When > 0 the dashboard shows
+  // how compliance will stand once certs expiring within the window drop out.
+  const [horizonMonths, setHorizonMonths] = useState(0);
+  const horizonQS = horizonMonths > 0 ? `&horizonMonths=${horizonMonths}` : "";
+
   const [meta, setMeta] = useState<ProgramMeta | null>(null);
   const [countries, setCountries] = useState<string[]>([]);
   const [regions, setRegions] = useState<string[]>([]);
@@ -130,12 +135,12 @@ export default function ProgramDetailPage() {
       return;
     }
     setCountryLoading(true);
-    fetch(`${apiBase}?level=country&country=${encodeURIComponent(selectedCountry)}${companyQS}`)
+    fetch(`${apiBase}?level=country&country=${encodeURIComponent(selectedCountry)}${companyQS}${horizonQS}`)
       .then((r) => r.json())
       .then((data) => setCountrySpecs(data.specialisations || []))
       .catch(() => {})
       .finally(() => setCountryLoading(false));
-  }, [selectedCountry, companyId, companyQS, apiBase]);
+  }, [selectedCountry, companyId, companyQS, horizonQS, apiBase]);
 
   // Region report
   useEffect(() => {
@@ -144,12 +149,12 @@ export default function ProgramDetailPage() {
       return;
     }
     setRegionLoading(true);
-    fetch(`${apiBase}?level=region&region=${encodeURIComponent(selectedRegion)}${companyQS}`)
+    fetch(`${apiBase}?level=region&region=${encodeURIComponent(selectedRegion)}${companyQS}${horizonQS}`)
       .then((r) => r.json())
       .then((data) => setRegionSpecs(data.specialisations || []))
       .catch(() => {})
       .finally(() => setRegionLoading(false));
-  }, [selectedRegion, companyId, companyQS, apiBase]);
+  }, [selectedRegion, companyId, companyQS, horizonQS, apiBase]);
 
   // Theatre report
   useEffect(() => {
@@ -158,23 +163,23 @@ export default function ProgramDetailPage() {
       return;
     }
     setTheatreLoading(true);
-    fetch(`${apiBase}?level=theatre&theatre=${encodeURIComponent(selectedTheatre)}${companyQS}`)
+    fetch(`${apiBase}?level=theatre&theatre=${encodeURIComponent(selectedTheatre)}${companyQS}${horizonQS}`)
       .then((r) => r.json())
       .then((data) => setTheatreSpecs(data.specialisations || []))
       .catch(() => {})
       .finally(() => setTheatreLoading(false));
-  }, [selectedTheatre, companyId, companyQS, apiBase]);
+  }, [selectedTheatre, companyId, companyQS, horizonQS, apiBase]);
 
   // Global report
   useEffect(() => {
     if (!globalOpen || companyId === null) return;
     setGlobalLoading(true);
-    fetch(`${apiBase}?level=global${companyQS}`)
+    fetch(`${apiBase}?level=global${companyQS}${horizonQS}`)
       .then((r) => r.json())
       .then((data) => setGlobalSpecs(data.specialisations || []))
       .catch(() => {})
       .finally(() => setGlobalLoading(false));
-  }, [globalOpen, companyId, companyQS, apiBase]);
+  }, [globalOpen, companyId, companyQS, horizonQS, apiBase]);
 
   const viewStudents = async (
     trainingTitle: string,
@@ -219,16 +224,23 @@ export default function ProgramDetailPage() {
         if (req.alternatives && req.alternatives.length > 0) {
           trainingLabel += " (or " + req.alternatives.map((a) => a.trainingFullTitle).join(", ") + ")";
         }
-        rows.push({
+        const row: Record<string, string | number> = {
           specialisation: spec.name,
           training: trainingLabel,
           type: req.trainingType ? TRAINING_TYPE_LABELS[req.trainingType] || req.trainingType : "—",
           required: req.quantityRequired,
           attained: req.attained,
           compliant: req.attained >= req.quantityRequired ? "Yes" : "No",
-          level: levelLabel,
-          filter: filterValue,
-        });
+        };
+        if (horizonMonths > 0) {
+          const projected = req.projectedAttained ?? req.attained;
+          row.projectedAttained = projected;
+          row.expiring = Math.max(0, req.attained - projected);
+          row.projectedCompliant = projected >= req.quantityRequired ? "Yes" : "No";
+        }
+        row.level = levelLabel;
+        row.filter = filterValue;
+        rows.push(row);
       }
     }
     return rows;
@@ -241,6 +253,13 @@ export default function ProgramDetailPage() {
     { key: "required", header: "Required" },
     { key: "attained", header: "Attained" },
     { key: "compliant", header: "Compliant" },
+    ...(horizonMonths > 0
+      ? [
+          { key: "projectedAttained", header: `Projected (+${horizonMonths}mo)` },
+          { key: "expiring", header: "Expiring" },
+          { key: "projectedCompliant", header: "Projected Compliant" },
+        ]
+      : []),
     { key: "level", header: "Level" },
     { key: "filter", header: "Filter" },
   ];
@@ -255,6 +274,15 @@ export default function ProgramDetailPage() {
           trainingLabel += " (or " + req.alternatives.map((a) => a.trainingFullTitle).join(", ") + ")";
         }
         const globalAttained = req.globalAttained ?? req.attained;
+        const projectedGlobal = req.projectedGlobalAttained ?? globalAttained;
+        const projCols = (count: number, projected: number, required: number): Record<string, string | number> =>
+          horizonMonths > 0
+            ? {
+                projectedCount: projected,
+                expiring: Math.max(0, count - projected),
+                projectedCompliant: projected >= required ? "Yes" : "No",
+              }
+            : {};
         rows.push({
           specialisation: spec.name,
           training: trainingLabel,
@@ -266,9 +294,12 @@ export default function ProgramDetailPage() {
           theatreCount: globalAttained,
           theatreRequired: req.quantityRequired,
           theatreCompliant: req.compliant ? "Yes" : "No",
+          ...projCols(globalAttained, projectedGlobal, req.quantityRequired),
         });
         if (req.theatreBreakdown) {
           for (const t of req.theatreBreakdown) {
+            const tReq = req.minimumPerTheatre ?? 0;
+            const tProjected = req.projectedTheatreBreakdown?.find((p) => p.theatre === t.theatre)?.count ?? t.count;
             rows.push({
               specialisation: spec.name,
               training: req.trainingFullTitle,
@@ -278,8 +309,9 @@ export default function ProgramDetailPage() {
               compliant: req.compliant ? "Yes" : "No",
               theatre: t.theatre,
               theatreCount: t.count,
-              theatreRequired: req.minimumPerTheatre ?? 0,
+              theatreRequired: tReq,
               theatreCompliant: t.compliant ? "Yes" : "No",
+              ...projCols(t.count, tProjected, tReq),
             });
           }
         }
@@ -299,9 +331,17 @@ export default function ProgramDetailPage() {
     { key: "theatreCount", header: "Theatre Count" },
     { key: "theatreRequired", header: "Theatre Required" },
     { key: "theatreCompliant", header: "Theatre Compliant" },
+    ...(horizonMonths > 0
+      ? [
+          { key: "projectedCount", header: `Projected (+${horizonMonths}mo)` },
+          { key: "expiring", header: "Expiring" },
+          { key: "projectedCompliant", header: "Projected Compliant" },
+        ]
+      : []),
   ];
 
   const sectionSlug = programName.replace(/[^a-z0-9]+/gi, "-").toLowerCase();
+  const horizonSuffix = horizonMonths > 0 ? `-plus${horizonMonths}mo` : "";
 
   const renderGlobalExport = (align: "left" | "right") =>
     globalSpecs.length > 0 ? (
@@ -310,7 +350,7 @@ export default function ProgramDetailPage() {
         setShow={setShowExportGlobal}
         data={gdStyleGlobal ? buildGlobalDiamondExport() : buildExportData(globalSpecs, "Global", "Global")}
         columns={gdStyleGlobal ? gdExportCols : exportCols}
-        filename={`${sectionSlug}-global`}
+        filename={`${sectionSlug}-global${horizonSuffix}`}
         align={align}
       />
     ) : null;
@@ -333,10 +373,33 @@ export default function ProgramDetailPage() {
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </select>
+            <label className="text-sm text-gray-500 ml-2">Compliance as of</label>
+            <select
+              value={horizonMonths}
+              onChange={(e) => setHorizonMonths(Number(e.target.value))}
+              className="text-sm border border-gray-300 rounded-lg px-2 py-1.5 bg-white"
+              title="Project compliance forward to see the impact of upcoming certificate expiry"
+            >
+              <option value={0}>Now</option>
+              <option value={3}>+3 months</option>
+              <option value={6}>+6 months</option>
+              <option value={12}>+12 months</option>
+            </select>
             {globalOnly && renderGlobalExport("right")}
           </div>
         }
       />
+
+      {horizonMonths > 0 && meta && meta.levels.length > 0 && (
+        <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800">
+          <span className="font-medium">Projection:</span>
+          <span>
+            Showing compliance as it will stand in <strong>{horizonMonths} months</strong> (current → projected).
+            Items shaded <span className="font-medium text-amber-700">amber</span> are compliant today but will
+            fall below their requirement as certificates expire within the window.
+          </span>
+        </div>
+      )}
 
       {meta && meta.levels.length === 0 && (
         <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-500">
@@ -376,7 +439,7 @@ export default function ProgramDetailPage() {
                     setShow={setShowExportCountry}
                     data={buildExportData(countrySpecs, "Country", selectedCountry)}
                     columns={exportCols}
-                    filename={`${sectionSlug}-country-${selectedCountry}`}
+                    filename={`${sectionSlug}-country-${selectedCountry}${horizonSuffix}`}
                   />
                 )}
               </div>
@@ -430,7 +493,7 @@ export default function ProgramDetailPage() {
                     setShow={setShowExportRegion}
                     data={buildExportData(regionSpecs, "Region", selectedRegion)}
                     columns={exportCols}
-                    filename={`${sectionSlug}-region-${selectedRegion}`}
+                    filename={`${sectionSlug}-region-${selectedRegion}${horizonSuffix}`}
                   />
                 )}
               </div>
@@ -484,7 +547,7 @@ export default function ProgramDetailPage() {
                     setShow={setShowExportTheatre}
                     data={buildExportData(theatreSpecs, "Theatre", selectedTheatre)}
                     columns={exportCols}
-                    filename={`${sectionSlug}-theatre-${selectedTheatre}`}
+                    filename={`${sectionSlug}-theatre-${selectedTheatre}${horizonSuffix}`}
                   />
                 )}
               </div>
