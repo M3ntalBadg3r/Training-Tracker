@@ -579,11 +579,20 @@ export default function StudentRecordPage({
   const activeAccred = visibleTrainings.filter(
     (t) => t.trainingType === "Accreditation" && t.active
   ).length;
+  const legacyAccred = visibleTrainings.filter(
+    (t) => t.trainingType === "Accreditation" && t.active && t.isLegacy
+  ).length;
   const activeILT = visibleTrainings.filter(
     (t) => t.trainingType === "Instructor-Led Training" && t.active
   ).length;
+  const legacyILT = visibleTrainings.filter(
+    (t) => t.trainingType === "Instructor-Led Training" && t.active && t.isLegacy
+  ).length;
   const activeOLX = visibleTrainings.filter(
     (t) => t.trainingType === "OLX" && t.active
+  ).length;
+  const legacyOLX = visibleTrainings.filter(
+    (t) => t.trainingType === "OLX" && t.active && t.isLegacy
   ).length;
 
   const sixMonthsOut = new Date();
@@ -611,7 +620,7 @@ export default function StudentRecordPage({
       icon: ShieldCheck,
       color: "bg-emerald-50",
       iconColor: "text-emerald-500",
-      note: null,
+      note: legacyAccred > 0 ? `${legacyAccred} legacy` : null,
     },
     {
       label: "Instructor-Led Trainings",
@@ -619,7 +628,7 @@ export default function StudentRecordPage({
       icon: GraduationCap,
       color: "bg-amber-50",
       iconColor: "text-amber-500",
-      note: null,
+      note: legacyILT > 0 ? `${legacyILT} legacy` : null,
     },
     {
       label: "OLX Completed",
@@ -627,7 +636,7 @@ export default function StudentRecordPage({
       icon: GraduationCap,
       color: "bg-sky-50",
       iconColor: "text-sky-500",
-      note: null,
+      note: legacyOLX > 0 ? `${legacyOLX} legacy` : null,
     },
     {
       label: "Expiring in 6 Months",
