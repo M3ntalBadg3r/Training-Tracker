@@ -594,13 +594,15 @@ const helpSections: Record<string, HelpSection> = {
     content: (
       <>
         <p>
-          Tracks monthly compliance over the last 12 months for the partner
-          programs configured in <strong>Admin &gt; Program Data</strong>.
+          Tracks monthly compliance over the last 12 months — plus a 12-month
+          forecast — for the partner programs configured in{" "}
+          <strong>Admin &gt; Program Data</strong>.
         </p>
         <ul>
-          <li>For each month-end, the report re-runs the same OR-logic union of primary + alternative trainings used by the live program dashboards, with the active-as-of date set to that month-end.</li>
-          <li>For tractability the trend evaluates at the Global level — country/theatre breakdowns remain on the live dashboards.</li>
-          <li>Filter by program to focus on an individual program.</li>
+          <li>For each month-end, the report re-runs the same OR-logic union of primary + alternative trainings used by the live program dashboards, counting only trainings that were <strong>completed by that month and still valid</strong> (not yet expired). This makes each point a true snapshot of that moment — historical lines reflect how compliance actually built up over time.</li>
+          <li><strong>Solid lines</strong> are history; <strong>dashed lines</strong> (after the &quot;Forecast →&quot; marker) project the next 12 months. The forecast assumes <strong>no new completions</strong> and simply shows compliance decaying as today&apos;s active certifications reach their expiry date — an &quot;if nothing changes&quot; view that surfaces upcoming renewal gaps.</li>
+          <li>The <strong>Forecast 12-mo Δ</strong> KPI shows the projected change (in percentage points) from now to 12 months out — a negative value flags certifications due to lapse.</li>
+          <li>Narrow the view with the <strong>Theatre / Region / Country</strong> filters (the &quot;Showing&quot; caption states the active scope); the report is also scoped to the company selected in the header. The program dropdown lists every program found in Program Data.</li>
         </ul>
       </>
     ),

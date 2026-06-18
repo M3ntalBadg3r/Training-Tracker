@@ -465,7 +465,7 @@ Per-training metrics: total completions, last-12-month completions, active stude
 
 ### Program Compliance Trend
 
-Monthly snapshots over the last 12 months for the partner programs configured in **Admin > Program Data**. For each month-end, the same OR-logic union of primary + alternative trainings used by the live program dashboards is applied with the active-as-of date set to that month-end. Line chart per specialisation shows compliance % over time.
+Monthly snapshots — **12 months of history plus a 12-month forecast** — for the partner programs configured in **Admin > Program Data**. For each month-end, the same OR-logic union of primary + alternative trainings used by the live program dashboards is applied, counting only trainings that were completed by that month and still valid (so each point is a true snapshot of that moment, and historical lines reflect how compliance actually built up). The forecast (drawn as dashed lines after the "Forecast →" marker) assumes **no new completions** and shows compliance decaying as today's active certifications reach their expiry — an "if nothing changes" view of upcoming renewal gaps, summarised by the **Forecast 12-mo Δ** KPI. Use the **Theatre / Region / Country** filters to narrow the scope (shown in the "Showing" caption); the report is also scoped to the company selected in the header.
 
 ### Renewal Forecast
 

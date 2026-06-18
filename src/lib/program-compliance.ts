@@ -54,8 +54,13 @@ export function extractTitles(rows: ProgramRequirement[]): string[] {
 
 /**
  * Email-sets keyed by training title for a given scope, considering only
- * trainings that are active as of `asOf` (expiry date strictly greater than
- * `asOf`). Empty input → empty map.
+ * trainings that are valid *as of* `asOf` — i.e. completed on or before `asOf`
+ * (`completedDate <= asOf`) and not yet expired (`expiryDate > asOf`). The
+ * completedDate clause is what makes point-in-time/historical snapshots
+ * correct: without it a past month would count trainings completed *after*
+ * that month. For `asOf = now` (and future horizons) the completedDate clause
+ * is always satisfied by existing rows, so live/forecast callers are
+ * unaffected. Empty input → empty map.
  */
 export async function getEmailSetsByTitle(
   trainingTitles: string[],
@@ -76,6 +81,7 @@ export async function getEmailSetsByTitle(
   const rows = await prisma.trainingTaken.findMany({
     where: {
       trainingTitle: { in: trainingTitles },
+      completedDate: { lte: asOf },
       expiryDate: { gt: asOf },
       ...(Object.keys(studentFilter).length > 0 ? { student: studentFilter } : {}),
     },
@@ -104,6 +110,7 @@ export async function getEmailSetsByTitleAndTheatre(
   const rows = await prisma.trainingTaken.findMany({
     where: {
       trainingTitle: { in: trainingTitles },
+      completedDate: { lte: asOf },
       expiryDate: { gt: asOf },
       ...(Array.isArray(companyIds) && companyIds.length > 0
         ? { student: { companyId: { in: companyIds } } }
