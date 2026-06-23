@@ -295,15 +295,15 @@ Use the **Theatre** dropdown in the top-right corner to filter all metrics and c
 
 ### Metric Cards
 
-Four summary cards are displayed at the top:
+Five summary cards are displayed at the top. The four "earned" cards (Certifications, Accreditations, ILT, OLX) show the total number of completions of that type as the headline figure, plus a smaller **"Held by N students"** sub-metric underneath — the number of distinct students who have at least one completion of that type. The two lines together give a quick read of both depth (records) and breadth (reach).
 
 | Metric | Description |
 |--------|-------------|
 | **Total Students** | Number of students in the system |
-| **Certifications Earned** | Total certification completions across all students |
-| **Accreditations Earned** | Total accreditation completions across all students |
-| **Instructor-Led Trainings** | Total ILT completions across all students |
-| **OLX Completed** | Total OLX completions. An OLX is "completed" once a student has completed every sub-item, or directly for single-item OLX entries. |
+| **Certifications Earned** | Total certification completions across all students, with a sub-metric of distinct students holding any certification |
+| **Accreditations Earned** | Total accreditation completions across all students, with a sub-metric of distinct students holding any accreditation |
+| **Instructor-Led Trainings** | Total ILT completions across all students, with a sub-metric of distinct students who have attended any ILT |
+| **OLX Completed** | Total OLX completions, with a sub-metric of distinct students who have completed any OLX. An OLX is "completed" once a student has completed every sub-item, or directly for single-item OLX entries. |
 
 ### Charts
 
