@@ -16,7 +16,15 @@ const helpSections: Record<string, HelpSection> = {
         </p>
 
         <h3>Metric Cards</h3>
-        <p>Four summary cards are displayed at the top:</p>
+        <p>
+          Five summary cards are displayed at the top. The four &quot;earned&quot;
+          cards (Certifications, Accreditations, Instructor-Led Trainings, OLX
+          Completed) show the total number of completions of that type as the
+          headline figure, with a smaller <strong>&quot;Held by N students&quot;</strong>
+          sub-metric underneath — the number of distinct students who have at
+          least one completion of that type. The two lines together give a
+          quick read of both depth (records) and breadth (reach).
+        </p>
         <table>
           <thead>
             <tr>
@@ -31,22 +39,24 @@ const helpSections: Record<string, HelpSection> = {
             </tr>
             <tr>
               <td><strong>Certifications Earned</strong></td>
-              <td>Total certification completions across all students</td>
+              <td>Total certification completions across all students, with a sub-metric of distinct students holding any certification</td>
             </tr>
             <tr>
               <td><strong>Accreditations Earned</strong></td>
-              <td>Total accreditation completions across all students</td>
+              <td>Total accreditation completions across all students, with a sub-metric of distinct students holding any accreditation</td>
             </tr>
             <tr>
               <td><strong>Instructor-Led Trainings</strong></td>
-              <td>Total ILT completions across all students</td>
+              <td>Total ILT completions across all students, with a sub-metric of distinct students who have attended any ILT</td>
             </tr>
             <tr>
               <td><strong>OLX Completed</strong></td>
               <td>
-                Total OLX completions across all students. An OLX is &quot;completed&quot; when
-                the student has completed every sub-item linked to that OLX, or when the
-                OLX has no sub-items and the student has a completion for it directly.
+                Total OLX completions across all students, with a sub-metric of
+                distinct students who have completed any OLX. An OLX is
+                &quot;completed&quot; when the student has completed every
+                sub-item linked to that OLX, or when the OLX has no sub-items
+                and the student has a completion for it directly.
               </td>
             </tr>
           </tbody>

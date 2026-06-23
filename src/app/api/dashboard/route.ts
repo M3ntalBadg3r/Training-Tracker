@@ -127,7 +127,17 @@ export async function GET(request: NextRequest) {
   if (companyFilter !== null && companyFilter.length === 0) {
     return NextResponse.json({
       theatres: [],
-      metrics: { totalStudents: 0, certifications: 0, accreditations: 0, instructorLedTraining: 0 },
+      metrics: {
+        totalStudents: 0,
+        certifications: 0,
+        accreditations: 0,
+        instructorLedTraining: 0,
+        olx: 0,
+        certificationStudents: 0,
+        accreditationStudents: 0,
+        instructorLedTrainingStudents: 0,
+        olxStudents: 0,
+      },
       byProductType: [],
       byFunction: [],
       expiring: [],
@@ -184,12 +194,28 @@ export async function GET(request: NextRequest) {
   let accredCount = 0;
   let iltCount = 0;
   let olxCount = 0;
+  const certStudents = new Set<string>();
+  const accredStudents = new Set<string>();
+  const iltStudents = new Set<string>();
+  const olxStudents = new Set<string>();
   for (const tt of allTrainingTaken) {
     switch (tt.trainingData.trainingType) {
-      case "Certification": certCount++; break;
-      case "Accreditation": accredCount++; break;
-      case "InstructorLedTraining": iltCount++; break;
-      case "OLX": olxCount++; break;
+      case "Certification":
+        certCount++;
+        certStudents.add(tt.email);
+        break;
+      case "Accreditation":
+        accredCount++;
+        accredStudents.add(tt.email);
+        break;
+      case "InstructorLedTraining":
+        iltCount++;
+        iltStudents.add(tt.email);
+        break;
+      case "OLX":
+        olxCount++;
+        olxStudents.add(tt.email);
+        break;
     }
   }
 
@@ -203,6 +229,10 @@ export async function GET(request: NextRequest) {
       accreditations: accredCount,
       instructorLedTraining: iltCount,
       olx: olxCount,
+      certificationStudents: certStudents.size,
+      accreditationStudents: accredStudents.size,
+      instructorLedTrainingStudents: iltStudents.size,
+      olxStudents: olxStudents.size,
     },
     ...chartData,
   });

@@ -36,6 +36,10 @@ interface DashboardData {
     accreditations: number;
     instructorLedTraining: number;
     olx: number;
+    certificationStudents?: number;
+    accreditationStudents?: number;
+    instructorLedTrainingStudents?: number;
+    olxStudents?: number;
   };
   byProductType: {
     name: string;
@@ -139,7 +143,17 @@ export default function DashboardPage() {
 
   const { metrics } = data;
 
-  const metricCards = [
+  const heldBy = (n: number | undefined) =>
+    `Held by ${(n ?? 0).toLocaleString()} students`;
+
+  const metricCards: {
+    label: string;
+    value: number;
+    subLabel?: string;
+    icon: typeof Users;
+    color: string;
+    iconColor: string;
+  }[] = [
     {
       label: "Total Students",
       value: metrics.totalStudents,
@@ -150,6 +164,7 @@ export default function DashboardPage() {
     {
       label: "Certifications Earned",
       value: metrics.certifications,
+      subLabel: heldBy(metrics.certificationStudents),
       icon: Award,
       color: "bg-indigo-50 text-indigo-700",
       iconColor: "text-indigo-500",
@@ -157,6 +172,7 @@ export default function DashboardPage() {
     {
       label: "Accreditations Earned",
       value: metrics.accreditations,
+      subLabel: heldBy(metrics.accreditationStudents),
       icon: ShieldCheck,
       color: "bg-emerald-50 text-emerald-700",
       iconColor: "text-emerald-500",
@@ -164,6 +180,7 @@ export default function DashboardPage() {
     {
       label: "Instructor-Led Trainings",
       value: metrics.instructorLedTraining,
+      subLabel: heldBy(metrics.instructorLedTrainingStudents),
       icon: GraduationCap,
       color: "bg-amber-50 text-amber-700",
       iconColor: "text-amber-500",
@@ -171,6 +188,7 @@ export default function DashboardPage() {
     {
       label: "OLX Completed",
       value: metrics.olx,
+      subLabel: heldBy(metrics.olxStudents),
       icon: GraduationCap,
       color: "bg-sky-50 text-sky-700",
       iconColor: "text-sky-500",
@@ -219,9 +237,12 @@ export default function DashboardPage() {
               <div className={`p-3 rounded-lg ${card.color}`}>
                 <Icon size={24} className={card.iconColor} />
               </div>
-              <div>
+              <div className="min-w-0">
                 <div className="text-2xl font-bold text-gray-900">{card.value.toLocaleString()}</div>
                 <div className="text-sm text-gray-500">{card.label}</div>
+                {card.subLabel && (
+                  <div className="text-xs text-gray-400 truncate">{card.subLabel}</div>
+                )}
               </div>
             </div>
           );
