@@ -319,12 +319,17 @@ const helpSections: Record<string, HelpSection> = {
           <li>
             <strong>Column Mapping</strong> &mdash; The system auto-maps columns
             where possible, recognising common header variants (e.g.{" "}
-            <code>Email</code>/<code>Email Address</code>, <code>Theatre</code>/
-            <code>Theater</code>, <code>Completion date</code>/<code>Date
-            Completed</code>, and <code>ILT Name</code>/<code>Cert</code> for the{" "}
-            <strong>Cert/Training</strong> field). Manually adjust any unmatched
-            columns. Required fields are: a name, Email Address, Theatre, Country,
-            Cert/Training, and Completed Date. For the name, map{" "}
+            <code>Email</code>/<code>Email Address</code>/<code>Student Email</code>,{" "}
+            <code>Theatre</code>/<code>Theater</code>/<code>Acct Theatre</code>,{" "}
+            <code>Country</code>/<code>Billing Country</code>,{" "}
+            <code>Completion date</code>/<code>Date Completed</code>, and{" "}
+            <code>ILT Name</code>/<code>Cert</code> for the{" "}
+            <strong>Cert/Training</strong> field). The alias list is editable by
+            SuperAdmins at <strong>System Settings &rarr; Import Aliases</strong>,{" "}
+            so new CSV/Excel header variants can be added without a code change.
+            Manually adjust any unmatched columns. Required fields are: a name,
+            Email Address, Theatre, Country, Cert/Training, and Completed Date.
+            For the name, map{" "}
             <strong>either</strong> a single <strong>Full Name</strong> column{" "}
             <strong>or</strong> both <strong>First Name</strong> and{" "}
             <strong>Last Name</strong> &mdash; split names are merged into one

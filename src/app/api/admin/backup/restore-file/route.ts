@@ -98,6 +98,11 @@ export async function POST(request: NextRequest) {
     const usersFile = zip.file("users.json");
     const users = usersFile ? await readJson("users.json") : [];
 
+    const importAliasesFile = zip.file("import_aliases.json");
+    const importAliases = importAliasesFile
+      ? await readJson("import_aliases.json")
+      : [];
+
     await prisma.$transaction(async (tx: PrismaTransactionClient) => {
       await tx.trainingTaken.deleteMany({});
       await tx.student.deleteMany({});
@@ -105,6 +110,7 @@ export async function POST(request: NextRequest) {
       await tx.productType.deleteMany({});
       await tx.regionData.deleteMany({});
       await tx.importMetadata.deleteMany({});
+      await tx.importAlias.deleteMany({});
       await tx.user.deleteMany({});
 
       if (productTypeRows.length > 0) {
@@ -147,6 +153,24 @@ export async function POST(request: NextRequest) {
         );
         await tx.importMetadata.createMany({ data: rows });
       }
+      if (importAliases.length > 0) {
+        const aliasRows = importAliases.map(
+          ({
+            id: _id,
+            createdAt,
+            ...rest
+          }: {
+            id: number;
+            targetField: string;
+            alias: string;
+            createdAt: string;
+          }) => ({
+            ...rest,
+            createdAt: createdAt ? new Date(createdAt) : new Date(),
+          })
+        );
+        await tx.importAlias.createMany({ data: aliasRows });
+      }
       if (users.length > 0) {
         const userRows = users.map(
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -169,6 +193,7 @@ export async function POST(request: NextRequest) {
         trainingTaken: trainingTaken.length,
         importMetadata: importMetadata.length,
         users: users.length,
+        importAliases: importAliases.length,
       },
     });
   } catch (err) {
