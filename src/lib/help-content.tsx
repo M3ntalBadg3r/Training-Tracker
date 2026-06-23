@@ -326,8 +326,10 @@ const helpSections: Record<string, HelpSection> = {
             <code>ILT Name</code>/<code>Cert</code> for the{" "}
             <strong>Cert/Training</strong> field). The alias list is editable by
             SuperAdmins at <strong>System Settings &rarr; Import Aliases</strong>,{" "}
-            so new CSV/Excel header variants can be added without a code change.
-            Manually adjust any unmatched columns. Required fields are: a name,
+            so new CSV/Excel header variants can be added without a code change
+            &mdash; the tab also has CSV/Excel/PDF export and CSV/Excel import
+            (two columns: <code>Target Field</code>, <code>Alias</code>) for
+            bulk maintenance. Manually adjust any unmatched columns. Required fields are: a name,
             Email Address, Theatre, Country, Cert/Training, and Completed Date.
             For the name, map{" "}
             <strong>either</strong> a single <strong>Full Name</strong> column{" "}
