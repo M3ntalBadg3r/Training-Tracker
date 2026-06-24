@@ -1285,9 +1285,13 @@ const helpSections: Record<string, HelpSection> = {
 
         <h3>Update Progress</h3>
         <p>
-          During an update, a progress bar shows the current step. Do not close
-          the page while the update is in progress. On completion, a success
-          message is shown with the new version number.
+          During an update, a progress bar shows the current step. The progress
+          panel pins to the top of the page while the update is running, so it
+          stays visible as you scroll. The page also warns you if you try to
+          refresh the tab or click a sidebar link before the update completes —
+          the update itself continues in the background, but leaving the page
+          hides the progress indicator. On completion, a success message is
+          shown with the new version number.
         </p>
 
         <h3>Rollback &amp; Error Handling</h3>

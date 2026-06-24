@@ -669,7 +669,7 @@ Click **Update Now** to start the update. A progress bar shows the current step:
 5. Rebuilds the application
 6. Restarts the service
 
-On completion, a success message is shown with the new version. Do not close the page during the update.
+On completion, a success message is shown with the new version. The progress panel pins to the top of the page while the update is running so it stays visible as you scroll, and the page warns you if you try to refresh the tab or click a sidebar link before the update completes (the update itself continues in the background, but leaving the page hides the progress indicator). Do not close the page during the update.
 
 #### Rollback & Error Handling
 
