@@ -12,6 +12,13 @@ import {
 } from "@/lib/crypto";
 import { prepareBackupRestore } from "@/lib/product-types";
 
+// Backup archive variants. A "full" backup is the historical shape (everything,
+// including students and training records). A "config" backup is the reference
+// dataset only — the catalogue, programs, regions, etc. — for seeding a fresh
+// system without copying learner data. The discriminator is `kind` inside
+// `backup_metadata.json`; older archives without the field are treated as full.
+export type BackupKind = "full" | "config";
+
 /**
  * Wraps generateBackupZip with envelope encryption (AES-256-GCM, keyed by
  * ENCRYPTION_KEY) when configured. Returns the bytes ready to write to disk
@@ -100,7 +107,11 @@ export async function generateBackupZip(): Promise<{
   zip.file(
     "backup_metadata.json",
     JSON.stringify(
-      { version: process.env.APP_VERSION || "0.0.0", createdAt: new Date().toISOString() },
+      {
+        version: process.env.APP_VERSION || "0.0.0",
+        kind: "full" satisfies BackupKind,
+        createdAt: new Date().toISOString(),
+      },
       null,
       2
     )
@@ -121,6 +132,99 @@ export async function generateBackupZip(): Promise<{
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
 
   return { buffer, timestamp };
+}
+
+/**
+ * Builds a config-only backup ZIP: catalogue, regions, programs, specialisations,
+ * import aliases, system settings. Excludes Student/TrainingTaken (and Users,
+ * Companies, ExportCredential, ScheduledExport, ImportMetadata) so it can seed
+ * a fresh system without dragging over learner data.
+ */
+export async function generateConfigZip(): Promise<{
+  buffer: ArrayBuffer;
+  timestamp: string;
+}> {
+  const [
+    productTypes,
+    regionData,
+    trainingData,
+    olxSubItemRelations,
+    specialisations,
+    programData,
+    programDataAlternatives,
+    importAliases,
+    systemSetting,
+  ] = await Promise.all([
+    prisma.productType.findMany({ orderBy: { id: "asc" } }),
+    prisma.regionData.findMany({ orderBy: { country: "asc" } }),
+    prisma.trainingData.findMany({ orderBy: { trainingTitle: "asc" } }),
+    prisma.olxSubItemRelation.findMany({ orderBy: [{ parentTrainingTitle: "asc" }, { subItemTrainingTitle: "asc" }] }),
+    prisma.specialisation.findMany({ orderBy: { id: "asc" } }),
+    prisma.programData.findMany({ orderBy: { id: "asc" } }),
+    prisma.programDataAlternative.findMany({ orderBy: { id: "asc" } }),
+    prisma.importAlias.findMany({ orderBy: { id: "asc" } }),
+    prisma.systemSetting.findUnique({ where: { id: 1 } }),
+  ]);
+
+  const zip = new JSZip();
+  zip.file(
+    "backup_metadata.json",
+    JSON.stringify(
+      {
+        version: process.env.APP_VERSION || "0.0.0",
+        kind: "config" satisfies BackupKind,
+        createdAt: new Date().toISOString(),
+      },
+      null,
+      2
+    )
+  );
+  zip.file("product_types.json", JSON.stringify(productTypes, null, 2));
+  zip.file("region_data.json", JSON.stringify(regionData, null, 2));
+  zip.file("training_data.json", JSON.stringify(trainingData, null, 2));
+  zip.file("olx_sub_item_relations.json", JSON.stringify(olxSubItemRelations, null, 2));
+  zip.file("specialisations.json", JSON.stringify(specialisations, null, 2));
+  zip.file("program_data.json", JSON.stringify(programData, null, 2));
+  zip.file("program_data_alternatives.json", JSON.stringify(programDataAlternatives, null, 2));
+  zip.file("import_aliases.json", JSON.stringify(importAliases, null, 2));
+  zip.file("system_setting.json", JSON.stringify(systemSetting, null, 2));
+
+  const buffer = await zip.generateAsync({ type: "arraybuffer" });
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+  return { buffer, timestamp };
+}
+
+/**
+ * Mirror of {@link generateBackupArchive} for config-only backups. Wraps
+ * {@link generateConfigZip} with envelope encryption when ENCRYPTION_KEY is
+ * configured.
+ */
+export async function generateConfigArchive(): Promise<{
+  buffer: Buffer;
+  timestamp: string;
+  filename: string;
+  encrypted: boolean;
+  contentType: string;
+}> {
+  const { buffer, timestamp } = await generateConfigZip();
+  const zipBuf = Buffer.from(buffer);
+  if (isEncryptionConfigured()) {
+    const enc = encryptBuffer(zipBuf);
+    return {
+      buffer: enc,
+      timestamp,
+      filename: `training-tracker-config-${timestamp}.zip.enc`,
+      encrypted: true,
+      contentType: "application/octet-stream",
+    };
+  }
+  return {
+    buffer: zipBuf,
+    timestamp,
+    filename: `training-tracker-config-${timestamp}.zip`,
+    encrypted: false,
+    contentType: "application/zip",
+  };
 }
 
 export async function GET(request: NextRequest) {
@@ -166,7 +270,25 @@ export async function POST(request: NextRequest) {
   }
   const zip = await JSZip.loadAsync(zipBytes);
 
-  // Validate required files exist
+  // Detect archive kind from metadata so we can route config-only backups to
+  // the partial-restore path that leaves Student/TrainingTaken untouched.
+  let kind: BackupKind = "full";
+  const metaFile = zip.file("backup_metadata.json");
+  if (metaFile) {
+    try {
+      const meta = JSON.parse(await metaFile.async("string"));
+      if (meta && meta.kind === "config") kind = "config";
+    } catch {
+      // Unparseable metadata falls through to the full-restore validation,
+      // which will reject it with a clearer "missing students.json" error.
+    }
+  }
+
+  if (kind === "config") {
+    return restoreConfigArchive(zip);
+  }
+
+  // Validate required files exist (full restore)
   const requiredFiles = [
     "backup_metadata.json",
     "region_data.json",
@@ -313,6 +435,262 @@ export async function POST(request: NextRequest) {
       importMetadata: importMetadata.length,
       users: users.length,
       importAliases: importAliases.length,
+    },
+  });
+}
+
+/**
+ * Restore a config-only archive. Replaces the reference dataset (training
+ * catalogue, regions, programs, specialisations, OLX relations, import aliases,
+ * system settings) without touching Student or TrainingTaken — so a populated
+ * target system keeps its learner data, and a blank target gets a complete
+ * seed.
+ *
+ * FK strategy:
+ *  - ProductType, RegionData, TrainingData are FK targets for TrainingTaken /
+ *    Student, so they're upserted in place (delete would violate FKs). Product
+ *    types are matched by `name` because primary-key ids differ across systems;
+ *    a name → id translation map rewrites training-data references.
+ *  - Specialisation, ProgramData, ProgramDataAlternative, OlxSubItemRelation,
+ *    ImportAlias have no incoming FKs from Student/TrainingTaken, so they're
+ *    wiped and recreated with explicit ids preserved (the autoincrement
+ *    sequences are reset afterwards to avoid collisions on the next insert).
+ *  - SystemSetting is a singleton — upserted on id=1.
+ */
+async function restoreConfigArchive(zip: JSZip): Promise<NextResponse> {
+  const requiredFiles = [
+    "product_types.json",
+    "region_data.json",
+    "training_data.json",
+    "specialisations.json",
+    "program_data.json",
+    "program_data_alternatives.json",
+    "olx_sub_item_relations.json",
+    "import_aliases.json",
+  ];
+  for (const name of requiredFiles) {
+    if (!zip.file(name)) {
+      return NextResponse.json(
+        { error: `Invalid config backup: missing ${name}` },
+        { status: 400 }
+      );
+    }
+  }
+
+  const readJson = async <T>(name: string): Promise<T> => {
+    const file = zip.file(name);
+    if (!file) return [] as unknown as T;
+    return JSON.parse(await file.async("string")) as T;
+  };
+
+  type ProductTypeRow = { id: number; name: string; color: string | null };
+  type RegionDataRow = { country: string; region: string; theatre: string | null };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  type TrainingDataRow = any;
+  type OlxRelationRow = { parentTrainingTitle: string; subItemTrainingTitle: string };
+  type SpecialisationRow = { id: number; name: string };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  type ProgramDataRow = any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  type ProgramDataAlternativeRow = any;
+  type ImportAliasRow = { id: number; targetField: string; alias: string; createdAt: string };
+  type SystemSettingRow = { id: number; dateFormat: string; updatedAt: string; updatedById: number | null } | null;
+
+  const archiveProductTypes = await readJson<ProductTypeRow[]>("product_types.json");
+  const archiveRegionData = await readJson<RegionDataRow[]>("region_data.json");
+  const archiveTrainingData = await readJson<TrainingDataRow[]>("training_data.json");
+  const archiveOlxRelations = await readJson<OlxRelationRow[]>("olx_sub_item_relations.json");
+  const archiveSpecialisations = await readJson<SpecialisationRow[]>("specialisations.json");
+  const archiveProgramData = await readJson<ProgramDataRow[]>("program_data.json");
+  const archiveProgramDataAlternatives = await readJson<ProgramDataAlternativeRow[]>(
+    "program_data_alternatives.json"
+  );
+  const archiveImportAliases = await readJson<ImportAliasRow[]>("import_aliases.json");
+  const systemSettingFile = zip.file("system_setting.json");
+  const archiveSystemSetting: SystemSettingRow = systemSettingFile
+    ? JSON.parse(await systemSettingFile.async("string"))
+    : null;
+
+  // Map archive product-type id → name so we can rewrite training-data
+  // references after we resolve each name to the *target* system's id.
+  const archiveProductNameById = new Map<number, string>();
+  for (const pt of archiveProductTypes) {
+    archiveProductNameById.set(pt.id, pt.name);
+  }
+
+  try {
+    await prisma.$transaction(async (tx: PrismaTransactionClient) => {
+      // 1. Wipe the tables we'll rebuild from scratch. None of these are FK
+      //    targets of Student or TrainingTaken, so it's safe to clear them.
+      //    Order respects the remaining FKs inside this scope.
+      await tx.programDataAlternative.deleteMany({});
+      await tx.programData.deleteMany({});
+      await tx.specialisation.deleteMany({});
+      await tx.olxSubItemRelation.deleteMany({});
+      await tx.importAlias.deleteMany({});
+
+      // 2. Upsert ProductType by name. Existing rows keep their ids (so any
+      //    TrainingData rows still pointing at them remain valid); new rows get
+      //    fresh ids. Build a name → id map for the training-data step.
+      const productTypeIdByName = new Map<string, number>();
+      for (const pt of archiveProductTypes) {
+        const trimmedName = (pt.name ?? "").trim();
+        if (!trimmedName) continue;
+        const upserted = await tx.productType.upsert({
+          where: { name: trimmedName },
+          create: { name: trimmedName, color: pt.color ?? null },
+          update: { color: pt.color ?? null },
+        });
+        productTypeIdByName.set(trimmedName, upserted.id);
+      }
+
+      // 3. Upsert RegionData by country (PK).
+      for (const row of archiveRegionData) {
+        await tx.regionData.upsert({
+          where: { country: row.country },
+          create: { country: row.country, region: row.region, theatre: row.theatre ?? null },
+          update: { region: row.region, theatre: row.theatre ?? null },
+        });
+      }
+
+      // 4. Upsert TrainingData by trainingTitle (PK). Translate productTypeId
+      //    via the archive id → name → target id chain. If we can't resolve
+      //    (e.g. orphaned reference), fall back to any existing id on the row.
+      for (const row of archiveTrainingData) {
+        const archiveName = archiveProductNameById.get(row.productTypeId);
+        const targetProductTypeId = archiveName
+          ? productTypeIdByName.get(archiveName.trim())
+          : undefined;
+        if (targetProductTypeId === undefined) {
+          throw new Error(
+            `Training "${row.trainingTitle}" references an unknown product type — archive may be corrupt.`
+          );
+        }
+        const writable = {
+          fullTitle: row.fullTitle,
+          trainingType: row.trainingType,
+          productTypeId: targetProductTypeId,
+          function: row.function,
+          link: row.link ?? null,
+          certification: row.certification ?? [],
+          isIncomplete: row.isIncomplete ?? false,
+          isLegacy: row.isLegacy ?? false,
+          replacedBy: row.replacedBy ?? [],
+        };
+        await tx.trainingData.upsert({
+          where: { trainingTitle: row.trainingTitle },
+          create: { trainingTitle: row.trainingTitle, ...writable },
+          update: writable,
+        });
+      }
+
+      // 5. Re-insert OLX relations now that both sides exist in TrainingData.
+      if (archiveOlxRelations.length > 0) {
+        await tx.olxSubItemRelation.createMany({
+          data: archiveOlxRelations.map((r) => ({
+            parentTrainingTitle: r.parentTrainingTitle,
+            subItemTrainingTitle: r.subItemTrainingTitle,
+          })),
+          skipDuplicates: true,
+        });
+      }
+
+      // 6. Re-insert Specialisation, ProgramData, ProgramDataAlternative with
+      //    explicit ids preserved so internal FKs (ProgramData.specialisationId
+      //    and ProgramDataAlternative.programDataId) match the archive.
+      if (archiveSpecialisations.length > 0) {
+        await tx.specialisation.createMany({
+          data: archiveSpecialisations.map((s) => ({ id: s.id, name: s.name })),
+        });
+      }
+      if (archiveProgramData.length > 0) {
+        await tx.programData.createMany({
+          data: archiveProgramData.map((p) => ({
+            id: p.id,
+            programName: p.programName,
+            specialisationId: p.specialisationId,
+            level: p.level,
+            trainingType: p.trainingType ?? null,
+            trainingTitle: p.trainingTitle ?? null,
+            quantityRequired: p.quantityRequired,
+            minimumPerTheatre: p.minimumPerTheatre ?? null,
+            createdAt: p.createdAt ? new Date(p.createdAt) : new Date(),
+            updatedAt: p.updatedAt ? new Date(p.updatedAt) : new Date(),
+          })),
+        });
+      }
+      if (archiveProgramDataAlternatives.length > 0) {
+        await tx.programDataAlternative.createMany({
+          data: archiveProgramDataAlternatives.map((a) => ({
+            id: a.id,
+            programDataId: a.programDataId,
+            trainingType: a.trainingType,
+            trainingTitle: a.trainingTitle,
+          })),
+        });
+      }
+
+      // 7. Reset autoincrement sequences for the tables we inserted with
+      //    explicit ids, otherwise the next admin-created row will collide.
+      const resetSequence = async (table: string) => {
+        await tx.$executeRawUnsafe(
+          `SELECT setval(pg_get_serial_sequence('"${table}"', 'id'), COALESCE((SELECT MAX(id) FROM "${table}"), 1))`
+        );
+      };
+      await resetSequence("specialisations");
+      await resetSequence("program_data");
+      await resetSequence("program_data_alternatives");
+      await resetSequence("product_types");
+
+      // 8. Re-insert ImportAliases (id stripped so Postgres assigns fresh ones).
+      if (archiveImportAliases.length > 0) {
+        await tx.importAlias.createMany({
+          data: archiveImportAliases.map((a) => ({
+            targetField: a.targetField,
+            alias: a.alias,
+            createdAt: a.createdAt ? new Date(a.createdAt) : new Date(),
+          })),
+        });
+      }
+
+      // 9. Upsert SystemSetting singleton (id=1). The updatedById is reset to
+      //    NULL so we don't dangle a FK to a user that doesn't exist on this
+      //    system.
+      if (archiveSystemSetting) {
+        await tx.systemSetting.upsert({
+          where: { id: 1 },
+          create: {
+            id: 1,
+            dateFormat: archiveSystemSetting.dateFormat,
+            updatedById: null,
+          },
+          update: {
+            dateFormat: archiveSystemSetting.dateFormat,
+            updatedById: null,
+          },
+        });
+      }
+    });
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Config restore failed" },
+      { status: 400 }
+    );
+  }
+
+  return NextResponse.json({
+    success: true,
+    kind: "config" satisfies BackupKind,
+    counts: {
+      productTypes: archiveProductTypes.length,
+      regionData: archiveRegionData.length,
+      trainingData: archiveTrainingData.length,
+      olxSubItemRelations: archiveOlxRelations.length,
+      specialisations: archiveSpecialisations.length,
+      programData: archiveProgramData.length,
+      programDataAlternatives: archiveProgramDataAlternatives.length,
+      importAliases: archiveImportAliases.length,
+      systemSetting: archiveSystemSetting ? 1 : 0,
     },
   });
 }

@@ -87,12 +87,15 @@ function formatSize(bytes: number): string {
 export default function BackupPage() {
   // Manual backup state
   const [creating, setCreating] = useState(false);
+  const [creatingConfig, setCreatingConfig] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [showRestoreConfirm, setShowRestoreConfirm] = useState(false);
   const [confirmText, setConfirmText] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  // Portable (passphrase-encrypted) backup download.
+  // Portable (passphrase-encrypted) backup download. `portableKind` controls
+  // whether the modal downloads a full or config-only portable archive.
   const [showPortableModal, setShowPortableModal] = useState(false);
+  const [portableKind, setPortableKind] = useState<"full" | "config">("full");
   const [portablePass, setPortablePass] = useState("");
   const [portablePass2, setPortablePass2] = useState("");
   const [portableCreating, setPortableCreating] = useState(false);
@@ -188,12 +191,44 @@ export default function BackupPage() {
     }
   };
 
+  const handleConfigBackup = async () => {
+    setCreatingConfig(true);
+    setResult(null);
+    try {
+      const res = await fetch("/api/admin/backup/config");
+      if (!res.ok) throw new Error("Config backup failed");
+      const blob = await res.blob();
+      const disposition = res.headers.get("Content-Disposition") ?? "";
+      const match = disposition.match(/filename="(.+)"/);
+      const filename = match?.[1] ?? "training-tracker-config.zip";
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+      setResult({
+        type: "success",
+        message:
+          "Config backup downloaded. Restore it into a fresh system to seed catalogue, regions, programs, and aliases — student data is not included.",
+      });
+    } catch {
+      setResult({ type: "error", message: "Failed to create config backup." });
+    } finally {
+      setCreatingConfig(false);
+    }
+  };
+
   const handlePortableBackup = async () => {
     if (portablePass.length < 8 || portablePass !== portablePass2) return;
     setPortableCreating(true);
     setResult(null);
+    const endpoint =
+      portableKind === "config"
+        ? "/api/admin/backup/config/portable"
+        : "/api/admin/backup/portable";
     try {
-      const res = await fetch("/api/admin/backup/portable", {
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ passphrase: portablePass }),
@@ -218,7 +253,9 @@ export default function BackupPage() {
       setResult({
         type: "success",
         message:
-          "Portable backup downloaded. Keep the passphrase safe — it's required to restore this file on any system.",
+          portableKind === "config"
+            ? "Portable config backup downloaded. Keep the passphrase safe — it's required to restore this file on any system."
+            : "Portable backup downloaded. Keep the passphrase safe — it's required to restore this file on any system.",
       });
     } catch (err) {
       setResult({
@@ -258,10 +295,17 @@ export default function BackupPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Restore failed");
       const c = data.counts;
-      setResult({
-        type: "success",
-        message: `Restore complete — ${c.regionData} regions, ${c.trainingData} trainings, ${c.students} students, ${c.trainingTaken} training records restored.`,
-      });
+      if (data.kind === "config") {
+        setResult({
+          type: "success",
+          message: `Config restore complete — ${c.trainingData} trainings, ${c.regionData} regions, ${c.programData} program rules, ${c.importAliases} import aliases. Student data was not touched.`,
+        });
+      } else {
+        setResult({
+          type: "success",
+          message: `Restore complete — ${c.regionData} regions, ${c.trainingData} trainings, ${c.students} students, ${c.trainingTaken} training records restored.`,
+        });
+      }
     } catch (err) {
       setResult({
         type: "error",
@@ -470,7 +514,7 @@ export default function BackupPage() {
             a <strong>different</strong> system, use a portable backup and
             remember its passphrase.
           </p>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2 mb-4">
             <button
               onClick={handleBackup}
               disabled={creating}
@@ -481,6 +525,7 @@ export default function BackupPage() {
             </button>
             <button
               onClick={() => {
+                setPortableKind("full");
                 setPortablePass("");
                 setPortablePass2("");
                 setShowPortableModal(true);
@@ -491,6 +536,38 @@ export default function BackupPage() {
               <Download size={16} />
               Portable backup…
             </button>
+          </div>
+          <div className="pt-4 border-t border-gray-100">
+            <p className="text-sm text-gray-500 mb-3">
+              <strong>Config backup</strong> — same archive without students or
+              training records. Use this to seed a fresh system with the
+              catalogue, regions, programs, and import aliases. Restore replaces
+              config only; existing student data on the target system is left
+              untouched.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={handleConfigBackup}
+                disabled={creatingConfig}
+                className="flex items-center gap-2 px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+              >
+                <Download size={16} />
+                {creatingConfig ? "Creating backup..." : "Config Backup"}
+              </button>
+              <button
+                onClick={() => {
+                  setPortableKind("config");
+                  setPortablePass("");
+                  setPortablePass2("");
+                  setShowPortableModal(true);
+                }}
+                disabled={portableCreating}
+                className="flex items-center gap-2 px-4 py-2 text-sm bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg hover:bg-indigo-100 disabled:opacity-50"
+              >
+                <Download size={16} />
+                Portable config backup…
+              </button>
+            </div>
           </div>
         </section>
 
@@ -503,12 +580,14 @@ export default function BackupPage() {
             <h2 className="text-lg font-semibold">Restore from File</h2>
           </div>
           <p className="text-sm text-gray-500 mb-2">
-            Upload a previously created backup zip to restore all data. This
-            will <strong>replace</strong> all existing data in the system.
+            Upload a previously created backup zip to restore data. Standard
+            backups <strong>replace</strong> all existing data; config backups
+            replace only catalogue/program/region/alias data and leave student
+            records untouched. The archive type is auto-detected.
           </p>
           <p className="text-xs text-amber-600 mb-4 flex items-center gap-1">
             <AlertTriangle size={14} />
-            All current data will be overwritten.
+            For full backups, all current data will be overwritten.
           </p>
           <label
             className={`inline-flex items-center gap-2 px-4 py-2 text-sm rounded-lg cursor-pointer ${
@@ -893,7 +972,11 @@ export default function BackupPage() {
           setPortablePass("");
           setPortablePass2("");
         }}
-        title="Download portable backup"
+        title={
+          portableKind === "config"
+            ? "Download portable config backup"
+            : "Download portable backup"
+        }
         actions={
           <>
             <button
@@ -921,10 +1004,22 @@ export default function BackupPage() {
         }
       >
         <p className="text-gray-600 mb-3">
-          A portable backup is encrypted with a passphrase instead of this
-          server&apos;s key, so it can be restored on a different system. There
-          is <strong>no way to recover the data if you lose the passphrase</strong>
-          — store it somewhere safe.
+          {portableKind === "config" ? (
+            <>
+              A portable <strong>config</strong> backup excludes students and
+              training records and is encrypted with a passphrase instead of
+              this server&apos;s key, so it can seed a fresh system regardless
+              of its encryption key.
+            </>
+          ) : (
+            <>
+              A portable backup is encrypted with a passphrase instead of this
+              server&apos;s key, so it can be restored on a different system.
+            </>
+          )}{" "}
+          There is{" "}
+          <strong>no way to recover the data if you lose the passphrase</strong>
+          {" "}— store it somewhere safe.
         </p>
         <label className="block text-sm text-gray-600 mb-1">
           Passphrase <span className="text-gray-400">(at least 8 characters)</span>
