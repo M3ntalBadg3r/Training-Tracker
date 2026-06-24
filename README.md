@@ -622,6 +622,14 @@ To move data to a **different** installation, click **Portable backup…** and c
 
 > **Keep the passphrase safe — there is no way to recover the data if it is lost.**
 
+#### Config Backup (seed a fresh system)
+
+When you stand up a new Training Tracker instance and want to carry over the catalogue, regions, programs, and import aliases — but **not** any learner data — click **Config Backup** (standard, tied to `ENCRYPTION_KEY`) or **Portable config backup…** (passphrase-encrypted, restores anywhere). The file is saved as `training-tracker-config-<timestamp>.zip[.enc]`.
+
+A config backup contains: product types, region data, the full training catalogue, OLX parent/sub-item relationships, specialisations, program data + alternatives, import aliases, and the system settings singleton. It explicitly excludes students, training-taken records, users, companies, scheduled exports, export credentials, and import metadata.
+
+Restoring a config backup wipes and replaces only the included reference tables and **leaves student and training-taken rows untouched**, so it is safe to run on a populated system when you just need to refresh the catalogue. Archive type is auto-detected on upload via a `kind` flag in `backup_metadata.json`; the upload form is shared with the standard restore.
+
 #### Restore from Backup
 
 Click **Upload Backup File** and select a previously created backup file. If it is a **portable** backup, enter the passphrase it was created with in the **Portable backup passphrase** field (leave it blank for a standard backup). A confirmation dialog will appear — type `RESTORE` to proceed.

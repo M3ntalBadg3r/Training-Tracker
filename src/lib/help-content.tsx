@@ -1421,6 +1421,30 @@ const helpSections: Record<string, HelpSection> = {
           the data cannot be recovered without it.</strong>
         </p>
 
+        <h3>Config Backup</h3>
+        <p>
+          A <strong>config backup</strong> contains the reference dataset only
+          — product types, regions, the training catalogue, OLX relationships,
+          specialisations, programs, import aliases, and system settings — and
+          excludes students and training records. Use this to clone the
+          catalogue/program setup into a freshly installed instance without
+          carrying any learner data across.
+        </p>
+        <p>
+          Click <strong>Config Backup</strong> for the standard variant (tied
+          to <code>ENCRYPTION_KEY</code>) or <strong>Portable config
+          backup&hellip;</strong> for the passphrase-encrypted variant that
+          restores anywhere. The archive is saved as{" "}
+          <code>training-tracker-config-&lt;timestamp&gt;.zip[.enc]</code>.
+        </p>
+        <p>
+          Restoring a config backup wipes and replaces the included reference
+          tables but leaves <code>Student</code> and <code>TrainingTaken</code>
+          {" "}rows untouched, so it&apos;s safe to run on a populated system
+          when you just need to refresh the catalogue. The archive type is
+          auto-detected on upload.
+        </p>
+
         <h3>Restore from Backup</h3>
         <p>
           Click <strong>Upload Backup File</strong> and select a previously
