@@ -218,6 +218,14 @@ notes**.
     -f body="Release notes here" \
     -F prerelease=false
   ```
+- **Stable release notes MUST aggregate every dev pre-release since the previous stable.** Dev systems already saw each `-dev` entry individually, but stable systems only ever see one set of notes per stable bump — so anything that shipped only on `-dev` releases between the last stable and this one needs to be folded into this stable's body. Skipping this means stable users see an incomplete changelog (e.g. v2.00 originally documented only the v2.00 work and silently dropped v1.99-dev's import-aliases feature).
+  - Before writing the stable body, list the pre-releases tagged since the previous stable and read their bodies:
+    ```bash
+    PREV_STABLE=$(gh api 'repos/M3ntalBadg3r/Training-Tracker/releases/latest' --jq .tag_name)
+    gh api 'repos/M3ntalBadg3r/Training-Tracker/releases?per_page=30' \
+      --jq ".[] | select(.prerelease==true) | select(.tag_name > \"$PREV_STABLE\") | {tag: .tag_name, body}"
+    ```
+  - Concatenate the relevant "What's new / Updated / Fixed" bullets into the stable body, de-duplicating items that were superseded by later dev releases. Lead with a one-line "this stable release rolls up dev pre-releases vX.YY-dev … vZ.WW-dev" sentence so readers know what's in scope.
 - **Update channels**: Systems set `UPDATE_CHANNEL` in `.env` to `"stable"` (default) or `"dev"`. The update check API and CLI scripts use this to determine whether to include pre-releases. Both channels list `releases?per_page=20`, optionally filter out `prerelease`/`draft`, and pick the highest version using `major*1000 + minor` after stripping `v` and `-dev`.
 
 ## Mandatory Post-Change Rules
