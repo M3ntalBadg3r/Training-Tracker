@@ -350,6 +350,64 @@ export default function UpdatesPage() {
       ? Math.round((updateStatus.step / updateStatus.totalSteps) * 100)
       : 0;
 
+  const progressRef = useRef<HTMLElement | null>(null);
+  const prevStatusRef = useRef<UpdateStatus["status"]>("idle");
+  useEffect(() => {
+    if (
+      prevStatusRef.current === "idle" &&
+      updateStatus.status !== "idle"
+    ) {
+      progressRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }
+    prevStatusRef.current = updateStatus.status;
+  }, [updateStatus.status]);
+
+  useEffect(() => {
+    if (updateStatus.status !== "in_progress") return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [updateStatus.status]);
+
+  useEffect(() => {
+    if (updateStatus.status !== "in_progress") return;
+    const onClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      const anchor = target?.closest?.("a");
+      if (!anchor) return;
+      const href = anchor.getAttribute("href") ?? "";
+      if (!href || href.startsWith("#")) return;
+      if (
+        /^https?:\/\//i.test(href) &&
+        !href.includes(window.location.host)
+      ) {
+        return;
+      }
+      if (
+        href === "/admin/updates" ||
+        href.startsWith("/admin/updates?") ||
+        href.startsWith("/admin/updates#")
+      ) {
+        return;
+      }
+      const ok = window.confirm(
+        "An update is in progress. Leaving this page will hide the progress indicator (the update will continue in the background). Leave anyway?"
+      );
+      if (!ok) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+    document.addEventListener("click", onClick, true);
+    return () => document.removeEventListener("click", onClick, true);
+  }, [updateStatus.status]);
+
   return (
     <div>
       <PageHeader title="Updates" showBack helpSlug="updates" />
@@ -411,6 +469,98 @@ export default function UpdatesPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Update Progress (sticky banner — pinned while running) */}
+      {updateStatus.status !== "idle" && (
+        <section
+          ref={progressRef}
+          className="sticky top-0 z-30 mb-6 p-6 bg-white rounded-lg border border-gray-200 shadow-md"
+        >
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">
+            Update Progress
+          </h2>
+
+          {updateStatus.status === "in_progress" && (
+            <>
+              <div className="mb-3">
+                <div className="flex justify-between text-sm text-gray-600 mb-1">
+                  <span>{updateStatus.message}</span>
+                  <span>
+                    Step {updateStatus.step}/{updateStatus.totalSteps}
+                  </span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-3">
+                  <div
+                    className="bg-blue-600 h-3 rounded-full transition-all duration-500"
+                    style={{ width: `${progressPercent}%` }}
+                  />
+                </div>
+              </div>
+              <div className="flex items-start gap-2 text-amber-700">
+                <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+                <p className="text-sm font-medium">
+                  Do not close this page or navigate away while the update is
+                  in progress.
+                </p>
+              </div>
+            </>
+          )}
+
+          {updateStatus.status === "complete" && (
+            <div className="flex items-start gap-3 p-4 bg-green-50 border border-green-200 rounded-lg">
+              <CheckCircle
+                size={20}
+                className="text-green-600 shrink-0 mt-0.5"
+              />
+              <div>
+                <p className="font-medium text-green-800">
+                  Update completed successfully
+                </p>
+                {updateStatus.newVersion && (
+                  <p className="text-sm text-green-700 mt-1">
+                    Updated to v{updateStatus.newVersion}
+                    {updateStatus.previousVersion &&
+                      ` (from v${updateStatus.previousVersion})`}
+                  </p>
+                )}
+                <p className="text-sm text-green-600 mt-2">
+                  Refresh the page to load the new version.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {updateStatus.status === "error" && (
+            <div>
+              <div className="flex items-start gap-3 p-4 bg-red-50 border border-red-200 rounded-lg">
+                <AlertTriangle
+                  size={20}
+                  className="text-red-600 shrink-0 mt-0.5"
+                />
+                <div className="flex-1">
+                  <p className="font-medium text-red-800">
+                    {updateStatus.message || "Update failed"}
+                  </p>
+                  {updateStatus.rolledBack && (
+                    <div className="flex items-center gap-1.5 mt-2 text-sm text-amber-700">
+                      <Undo2 size={14} />
+                      <span>
+                        The system was automatically rolled back to the
+                        previous working version.
+                      </span>
+                    </div>
+                  )}
+                  {updateStatus.error && (
+                    <p className="text-sm text-red-600 mt-2 font-mono whitespace-pre-wrap">
+                      {updateStatus.error}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </section>
       )}
 
       {/* Current Version */}
@@ -537,91 +687,6 @@ export default function UpdatesPage() {
                   ? "No releases found on GitHub"
                   : "You are running the latest version"}
               </span>
-            </div>
-          )}
-        </section>
-      )}
-
-      {/* Update Progress */}
-      {updateStatus.status !== "idle" && (
-        <section className="mb-6 p-6 bg-white rounded-lg border border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">
-            Update Progress
-          </h2>
-
-          {updateStatus.status === "in_progress" && (
-            <>
-              <div className="mb-3">
-                <div className="flex justify-between text-sm text-gray-600 mb-1">
-                  <span>{updateStatus.message}</span>
-                  <span>
-                    Step {updateStatus.step}/{updateStatus.totalSteps}
-                  </span>
-                </div>
-                <div className="w-full bg-gray-200 rounded-full h-3">
-                  <div
-                    className="bg-blue-600 h-3 rounded-full transition-all duration-500"
-                    style={{ width: `${progressPercent}%` }}
-                  />
-                </div>
-              </div>
-              <p className="text-xs text-gray-400">
-                Do not close this page while the update is in progress.
-              </p>
-            </>
-          )}
-
-          {updateStatus.status === "complete" && (
-            <div className="flex items-start gap-3 p-4 bg-green-50 border border-green-200 rounded-lg">
-              <CheckCircle
-                size={20}
-                className="text-green-600 shrink-0 mt-0.5"
-              />
-              <div>
-                <p className="font-medium text-green-800">
-                  Update completed successfully
-                </p>
-                {updateStatus.newVersion && (
-                  <p className="text-sm text-green-700 mt-1">
-                    Updated to v{updateStatus.newVersion}
-                    {updateStatus.previousVersion &&
-                      ` (from v${updateStatus.previousVersion})`}
-                  </p>
-                )}
-                <p className="text-sm text-green-600 mt-2">
-                  Refresh the page to load the new version.
-                </p>
-              </div>
-            </div>
-          )}
-
-          {updateStatus.status === "error" && (
-            <div>
-              <div className="flex items-start gap-3 p-4 bg-red-50 border border-red-200 rounded-lg">
-                <AlertTriangle
-                  size={20}
-                  className="text-red-600 shrink-0 mt-0.5"
-                />
-                <div className="flex-1">
-                  <p className="font-medium text-red-800">
-                    {updateStatus.message || "Update failed"}
-                  </p>
-                  {updateStatus.rolledBack && (
-                    <div className="flex items-center gap-1.5 mt-2 text-sm text-amber-700">
-                      <Undo2 size={14} />
-                      <span>
-                        The system was automatically rolled back to the
-                        previous working version.
-                      </span>
-                    </div>
-                  )}
-                  {updateStatus.error && (
-                    <p className="text-sm text-red-600 mt-2 font-mono whitespace-pre-wrap">
-                      {updateStatus.error}
-                    </p>
-                  )}
-                </div>
-              </div>
             </div>
           )}
         </section>

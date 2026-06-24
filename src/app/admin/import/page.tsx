@@ -9,6 +9,10 @@ import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { excelSerialToIso, swapMonthDayIso } from "@/lib/date-format";
+import {
+  IMPORT_TARGET_FIELDS,
+  type ImportTargetFieldKey,
+} from "@/lib/import-target-fields";
 
 interface DateFormatMismatch {
   assumedFormat: string;
@@ -21,17 +25,12 @@ interface ExcelDateSwap {
   samples: { stored: string; corrected: string }[];
 }
 
-const TARGET_FIELDS = [
-  { key: "fullName", label: "Full Name", required: false, aliases: ["Full Name"] },
-  { key: "firstName", label: "First Name", required: false, aliases: ["First Name"] },
-  { key: "lastName", label: "Last Name", required: false, aliases: ["Last Name"] },
-  { key: "email", label: "Email Address", required: true, aliases: ["Email Address", "Email"] },
-  { key: "theatre", label: "Theatre", required: true, aliases: ["Theatre", "Theater"] },
-  { key: "country", label: "Country", required: true, aliases: ["Country"] },
-  { key: "title", label: "Cert/Training", required: true, aliases: ["Cert/Training", "Title", "ILT Name", "Cert"] },
-  { key: "completedDate", label: "Completed Date", required: true, aliases: ["Completed Date", "Completion date", "Date Completed"] },
-  { key: "company", label: "Company", required: false, aliases: ["Company"] },
-];
+// Header aliases live in the database (table `import_aliases`, managed at
+// /admin/system-settings → Import Aliases tab) so admins can add new variants
+// without a code release. We fetch them on mount and pass them to
+// autoMapColumns. The key/label list itself is shared with the API for
+// validation in src/lib/import-target-fields.ts.
+const TARGET_FIELDS = IMPORT_TARGET_FIELDS;
 
 type NameMode = "full" | "firstLast" | "both";
 
@@ -66,6 +65,12 @@ export default function ImportPage() {
   const [swapAcknowledged, setSwapAcknowledged] = useState(false);
   // Which name columns the file appears to have; drives field/column visibility.
   const [nameMode, setNameMode] = useState<NameMode>("both");
+  // Header aliases, fetched at mount from /api/import-aliases and grouped by
+  // target field. Empty until the fetch resolves (autoMapColumns is a no-op
+  // until then; the user can still map columns manually).
+  const [aliasesByField, setAliasesByField] = useState<
+    Partial<Record<ImportTargetFieldKey, string[]>>
+  >({});
 
   const visibleFields = TARGET_FIELDS.filter((f) => {
     if (f.key === "firstName" || f.key === "lastName") return nameMode !== "full";
@@ -81,6 +86,20 @@ export default function ImportPage() {
         if (data.companies.length === 1) setDefaultCompanyId(data.companies[0].id);
       })
       .catch(() => setCompanies([]));
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/import-aliases")
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((data: { targetField: string; alias: string }[]) => {
+        const grouped: Partial<Record<ImportTargetFieldKey, string[]>> = {};
+        for (const row of data) {
+          const key = row.targetField as ImportTargetFieldKey;
+          (grouped[key] ||= []).push(row.alias);
+        }
+        setAliasesByField(grouped);
+      })
+      .catch(() => setAliasesByField({}));
   }, []);
 
   const parseFile = (file: File) => {
@@ -157,7 +176,9 @@ export default function ImportPage() {
     const norm = (s: string) => s.toLowerCase().replace(/[^a-z]/g, "");
     const mapping: Record<string, string> = {};
     for (const field of TARGET_FIELDS) {
-      const wanted = field.aliases.map(norm);
+      const aliases = aliasesByField[field.key] || [];
+      if (aliases.length === 0) continue;
+      const wanted = aliases.map(norm);
       const match = hdrs.find((h) => wanted.includes(norm(h)));
       if (match) mapping[field.key] = match;
     }

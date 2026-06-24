@@ -84,7 +84,7 @@ export async function generateBackupZip(): Promise<{
   buffer: ArrayBuffer;
   timestamp: string;
 }> {
-  const [productTypes, regionData, trainingData, students, trainingTaken, importMetadata, users] =
+  const [productTypes, regionData, trainingData, students, trainingTaken, importMetadata, users, importAliases] =
     await Promise.all([
       prisma.productType.findMany({ orderBy: { id: "asc" } }),
       prisma.regionData.findMany({ orderBy: { country: "asc" } }),
@@ -93,6 +93,7 @@ export async function generateBackupZip(): Promise<{
       prisma.trainingTaken.findMany({ orderBy: { id: "asc" } }),
       prisma.importMetadata.findMany(),
       prisma.user.findMany({ orderBy: { id: "asc" } }),
+      prisma.importAlias.findMany({ orderBy: { id: "asc" } }),
     ]);
 
   const zip = new JSZip();
@@ -110,6 +111,7 @@ export async function generateBackupZip(): Promise<{
   zip.file("students.json", JSON.stringify(students, null, 2));
   zip.file("training_taken.json", JSON.stringify(trainingTaken, null, 2));
   zip.file("import_metadata.json", JSON.stringify(importMetadata, null, 2));
+  zip.file("import_aliases.json", JSON.stringify(importAliases, null, 2));
   // Exclude sensitive fields (password hashes, MFA secrets) from backup
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const safeUsers = users.map(({ passwordHash: _ph, mfaSecret: _ms, ...rest }: typeof users[number]) => rest);
@@ -208,6 +210,11 @@ export async function POST(request: NextRequest) {
   const usersFile = zip.file("users.json");
   const users = usersFile ? await readJson("users.json") : [];
 
+  const importAliasesFile = zip.file("import_aliases.json");
+  const importAliases = importAliasesFile
+    ? await readJson("import_aliases.json")
+    : [];
+
   // Restore inside a transaction: wipe then re-insert in FK order
   await prisma.$transaction(async (tx: PrismaTransactionClient) => {
     await tx.trainingTaken.deleteMany({});
@@ -216,6 +223,7 @@ export async function POST(request: NextRequest) {
     await tx.productType.deleteMany({});
     await tx.regionData.deleteMany({});
     await tx.importMetadata.deleteMany({});
+    await tx.importAlias.deleteMany({});
     await tx.user.deleteMany({});
 
     if (productTypeRows.length > 0) {
@@ -259,6 +267,24 @@ export async function POST(request: NextRequest) {
       );
       await tx.importMetadata.createMany({ data: rows });
     }
+    if (importAliases.length > 0) {
+      const aliasRows = importAliases.map(
+        ({
+          id: _id,
+          createdAt,
+          ...rest
+        }: {
+          id: number;
+          targetField: string;
+          alias: string;
+          createdAt: string;
+        }) => ({
+          ...rest,
+          createdAt: createdAt ? new Date(createdAt) : new Date(),
+        })
+      );
+      await tx.importAlias.createMany({ data: aliasRows });
+    }
     // Only restore users that have passwordHash (security-sanitized backups omit it)
     const usersWithCredentials = users.filter(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -286,6 +312,7 @@ export async function POST(request: NextRequest) {
       trainingTaken: trainingTaken.length,
       importMetadata: importMetadata.length,
       users: users.length,
+      importAliases: importAliases.length,
     },
   });
 }

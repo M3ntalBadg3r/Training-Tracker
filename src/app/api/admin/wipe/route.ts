@@ -48,6 +48,7 @@ export async function POST(request: NextRequest) {
     await tx.regionData.deleteMany({});
     await tx.exportCredential.deleteMany({});
     await tx.importMetadata.deleteMany({});
+    await tx.importAlias.deleteMany({});
 
     // Both scopes remove companies and their access links (keep only accounts).
     await tx.userCompany.deleteMany({});

@@ -319,12 +319,19 @@ const helpSections: Record<string, HelpSection> = {
           <li>
             <strong>Column Mapping</strong> &mdash; The system auto-maps columns
             where possible, recognising common header variants (e.g.{" "}
-            <code>Email</code>/<code>Email Address</code>, <code>Theatre</code>/
-            <code>Theater</code>, <code>Completion date</code>/<code>Date
-            Completed</code>, and <code>ILT Name</code>/<code>Cert</code> for the{" "}
-            <strong>Cert/Training</strong> field). Manually adjust any unmatched
-            columns. Required fields are: a name, Email Address, Theatre, Country,
-            Cert/Training, and Completed Date. For the name, map{" "}
+            <code>Email</code>/<code>Email Address</code>/<code>Student Email</code>,{" "}
+            <code>Theatre</code>/<code>Theater</code>/<code>Acct Theatre</code>,{" "}
+            <code>Country</code>/<code>Billing Country</code>,{" "}
+            <code>Completion date</code>/<code>Date Completed</code>, and{" "}
+            <code>ILT Name</code>/<code>Cert</code> for the{" "}
+            <strong>Cert/Training</strong> field). The alias list is editable by
+            SuperAdmins at <strong>System Settings &rarr; Import Aliases</strong>,{" "}
+            so new CSV/Excel header variants can be added without a code change
+            &mdash; the tab also has CSV/Excel/PDF export and CSV/Excel import
+            (two columns: <code>Target Field</code>, <code>Alias</code>) for
+            bulk maintenance. Manually adjust any unmatched columns. Required fields are: a name,
+            Email Address, Theatre, Country, Cert/Training, and Completed Date.
+            For the name, map{" "}
             <strong>either</strong> a single <strong>Full Name</strong> column{" "}
             <strong>or</strong> both <strong>First Name</strong> and{" "}
             <strong>Last Name</strong> &mdash; split names are merged into one
@@ -1278,9 +1285,13 @@ const helpSections: Record<string, HelpSection> = {
 
         <h3>Update Progress</h3>
         <p>
-          During an update, a progress bar shows the current step. Do not close
-          the page while the update is in progress. On completion, a success
-          message is shown with the new version number.
+          During an update, a progress bar shows the current step. The progress
+          panel pins to the top of the page while the update is running, so it
+          stays visible as you scroll. The page also warns you if you try to
+          refresh the tab or click a sidebar link before the update completes —
+          the update itself continues in the background, but leaving the page
+          hides the progress indicator. On completion, a success message is
+          shown with the new version number.
         </p>
 
         <h3>Rollback &amp; Error Handling</h3>

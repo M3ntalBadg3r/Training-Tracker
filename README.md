@@ -376,7 +376,7 @@ Navigate to **Import** in the sidebar to bulk-import student training records fr
 ### Import Workflow
 
 1. **Upload** — Drag and drop or click to select a `.csv`, `.xls`, or `.xlsx` file.
-2. **Column Mapping** — The system auto-maps columns where possible, recognising common header variants (e.g. `Email`/`Email Address`, `Theatre`/`Theater`, `Completed Date`/`Completion date`/`Date Completed`, and `Cert/Training`/`Title`/`ILT Name`/`Cert`). Manually adjust any unmatched columns. The name dropdowns and preview columns adapt to the file: if it has only a **Full Name** column the First/Last fields are hidden, if it has **First Name** + **Last Name** (no full name) the Full Name field is hidden, and if it has both (or neither) all are shown. Required fields are:
+2. **Column Mapping** — The system auto-maps columns where possible, recognising common header variants (e.g. `Email`/`Email Address`/`Student Email`, `Theatre`/`Theater`/`Acct Theatre`, `Country`/`Billing Country`, `Completed Date`/`Completion date`/`Date Completed`, `Full Name`/`Student Name`, and `Cert/Training`/`Title`/`ILT Name`/`Cert`/`Test`). The alias list is editable by SuperAdmins at **System Settings → Import Aliases**, so new CSV/Excel header variants can be added without a code change. Manually adjust any unmatched columns. The name dropdowns and preview columns adapt to the file: if it has only a **Full Name** column the First/Last fields are hidden, if it has **First Name** + **Last Name** (no full name) the Full Name field is hidden, and if it has both (or neither) all are shown. Required fields are:
    - Name — map **either** a single **Full Name** column **or** both **First Name** and **Last Name** (split names are merged into one record)
    - Email Address
    - Theatre
@@ -669,7 +669,7 @@ Click **Update Now** to start the update. A progress bar shows the current step:
 5. Rebuilds the application
 6. Restarts the service
 
-On completion, a success message is shown with the new version. Do not close the page during the update.
+On completion, a success message is shown with the new version. The progress panel pins to the top of the page while the update is running so it stays visible as you scroll, and the page warns you if you try to refresh the tab or click a sidebar link before the update completes (the update itself continues in the background, but leaving the page hides the progress indicator). Do not close the page during the update.
 
 #### Rollback & Error Handling
 

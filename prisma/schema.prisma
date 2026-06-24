@@ -219,6 +219,21 @@ model User {
   @@map("users")
 }
 
+// Per-field header alias for the student-import auto-mapper. The wizard
+// fetches these at mount and matches each header against the alias list
+// (case/punctuation-insensitive). Defaults are seeded by the migration; the
+// list is otherwise managed at /admin/system-settings.
+model ImportAlias {
+  id          Int      @id @default(autoincrement())
+  targetField String   @map("target_field")
+  alias       String
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@unique([targetField, alias], map: "import_aliases_target_field_alias_key")
+  @@index([targetField])
+  @@map("import_aliases")
+}
+
 // Singleton: always id = 1. Stores system-wide preferences (currently just
 // the default date format). Application code must upsert with id: 1; the
 // migration also adds a CHECK constraint as defence-in-depth.
