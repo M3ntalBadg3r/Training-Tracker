@@ -451,10 +451,6 @@ Lists learners who hold a **legacy** Certification or Accreditation but have **n
 
 A learner-centric report — **one row per person** instead of per training. For each learner it shows counts of active **Certifications / Accreditations / ILTs / OLX**, a **Total**, the number **expiring soon** within a selectable window (1 / 3 / 6 months), **expired** achievements, **certification gaps** (completed a training without earning the mapped cert), and the **last achievement** date. A **Top Achievers** leaderboard chart highlights the most-certified learners for recognition. The whole roster is included, so learners with no completions surface with all-zero counts for follow-up. Counts are active-only by default; tick **Include expired in counts** to count expired completions too. Filter by theatre / region / country, search by name or email, sort any column, and export to CSV / Excel / PDF. Each name links through to the learner's detail page.
 
-### Coverage / Compliance
-
-Active-training-holder share of population per theatre / region / country bucket × product × type. Coverage badges colour-code each row red / amber / green at 40% and 80% thresholds. Use the **Group by** selector to switch dimension.
-
 ### Theatre / Region / Country Comparison
 
 Compares geographies side by side. A single toggle switches the whole report between **Theatre**, **Region**, and **Country**. The matrix table lists, per geography: **headcount** (student population), counts of **Certifications / Accreditations / ILTs / OLX**, **total** trainings, **trainings per student**, and active trainings **expiring** in the next 3 and 6 months — every column sortable, with a totals row. The chart panel compares geographies by training type, function, or product (grouped bars) or plots completions **over time** (one line per geography, top 8 by volume). A time-range preset (3 / 6 / 12 months, all time, or a custom date range) plus Function / Product / Type filters narrow both the table and the chart. Counts respect the time range; the expiring columns always look forward from today.
@@ -568,7 +564,7 @@ A **Certification** or **Accreditation** can be flagged as **Legacy** when it ha
 Navigate to **Admin > Product Types** to manage the list of product types used to categorise training data (shown on the dashboard's *By Product Type* chart and the *By Product Type* report).
 
 - **Add / Rename** — Names must be unique (case-insensitive).
-- **Colour** — Each product type can be given an optional brand colour (hex). Charts and reports that represent products will use that colour: the *By Product Type* and dashboard charts colour each product's X-axis label, while the *Coverage* and *Comparison "By Product"* charts colour each product's series. Product types without a colour render in a neutral grey so it's obvious which still need configuring.
+- **Colour** — Each product type can be given an optional brand colour (hex). Charts and reports that represent products will use that colour: the *By Product Type* and dashboard charts colour each product's X-axis label, while the *Comparison "By Product"* chart colours each product's series. Product types without a colour render in a neutral grey so it's obvious which still need configuring.
 - **Delete** — Only possible when no training data references the product type. The **Trainings** column shows the current usage count; reassign those trainings first.
 - **Import** — Upload a CSV or Excel file with a `Name` column (required) and an optional `Color` column (`#RRGGBB`) to bulk-create or recolour product types. The wizard auto-maps the columns and shows a preview; names that already exist (case-insensitive) are skipped, but a new colour on an existing row is applied as an update. Invalid colour values are logged and the row is imported without a colour.
 - **Export** — Download the current list (including colour) as CSV, Excel, or PDF.

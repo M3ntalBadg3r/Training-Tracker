@@ -9,7 +9,6 @@ import {
   CalendarDays,
   AlertCircle,
   ChevronRight,
-  Target,
   BookOpen,
   TrendingUp,
   RefreshCw,
@@ -60,12 +59,6 @@ const TILES = [
     title: "Legacy Replacement Gap",
     description: "Learners holding a legacy certification/accreditation who haven't taken its replacement, bucketed by when the legacy training expires",
     Icon: History,
-  },
-  {
-    href: "/reports/coverage",
-    title: "Coverage / Compliance",
-    description: "Active training holders by theatre, region, or country, as a share of population",
-    Icon: Target,
   },
   {
     href: "/reports/comparison",

@@ -145,7 +145,7 @@ export default function RenewalForecastPage() {
         </ResponsiveContainer>
         <p className="text-xs text-gray-400 mt-2">
           Renewal rates are computed per training (≥5 historical expiries), then per product as fallback, then global ({data.globalRate}%).
-          A renewal counts when a follow-up record lands within ±90 days of the previous expiry.
+          A renewal counts when a learner later re-completes the same training; an expired record with no later re-completion counts as a lapse.
         </p>
       </section>
 

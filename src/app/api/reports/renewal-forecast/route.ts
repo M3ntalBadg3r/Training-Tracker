@@ -7,10 +7,11 @@ import { getAuthorizedCompanyIds, resolveCompanyFilter } from "@/lib/company-sco
  * Renewal forecast.
  *
  * "Renewal" rule: for a given (email, fullTitle) timeline of TrainingTaken
- * rows ordered by completedDate, a follow-up row counts as a renewal of the
- * previous one if its completedDate is within ±90 days of the previous
- * expiryDate. Otherwise the previous row is treated as lapsed (only counted
- * once it has actually expired).
+ * rows ordered by completedDate, any later re-completion of the same training
+ * counts as a renewal of the previous one (the learner came back to it),
+ * provided the follow-up is at least 30 days later so near-duplicate rows
+ * aren't double-counted. The final row in a timeline is treated as a lapse
+ * only once it has actually expired with no follow-up.
  *
  * Renewal rate selection per fullTitle:
  *   if ≥5 historical expiries → use per-fullTitle rate
@@ -74,7 +75,10 @@ export async function GET(request: NextRequest) {
   const fullTitleProduct = new Map<string, string>();
   for (const r of records) fullTitleProduct.set(r.trainingData.fullTitle, r.trainingData.productType.name);
 
-  const NINETY_DAYS = 90 * 24 * 60 * 60 * 1000;
+  // A re-completion that lands at least this far after the previous one counts
+  // as a genuine renewal. The gap guards against near-duplicate rows created
+  // when several trainingTitles roll up to a single fullTitle.
+  const MIN_RENEWAL_GAP = 30 * 24 * 60 * 60 * 1000;
 
   for (const [k, timeline] of timelines) {
     if (timeline.length === 0) continue;
@@ -86,17 +90,17 @@ export async function GET(request: NextRequest) {
       const cur = timeline[i];
       const next = timeline[i + 1];
       if (next) {
-        const diff = Math.abs(next.completedDate.getTime() - cur.expiryDate.getTime());
-        if (diff <= NINETY_DAYS) {
+        // Any later re-completion of the same training means the learner came
+        // back and renewed it — regardless of exactly when relative to expiry.
+        // Skip pairs that are effectively the same event (near-duplicate rows).
+        if (next.completedDate.getTime() - cur.completedDate.getTime() >= MIN_RENEWAL_GAP) {
           tallyAdd(perFullTitle, fullTitle, "renewed");
           tallyAdd(perProduct, product, "renewed");
           globalRenewed++;
-        } else if (cur.expiryDate < now) {
-          tallyAdd(perFullTitle, fullTitle, "lapsed");
-          tallyAdd(perProduct, product, "lapsed");
-          globalLapsed++;
         }
       } else if (cur.expiryDate < now) {
+        // Final record with no follow-up and already expired → the learner let
+        // it lapse without re-taking it.
         tallyAdd(perFullTitle, fullTitle, "lapsed");
         tallyAdd(perProduct, product, "lapsed");
         globalLapsed++;
