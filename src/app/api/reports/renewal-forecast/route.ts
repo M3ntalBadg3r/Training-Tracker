@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import prisma from "@/lib/prisma";
 import { requireAuth, handleAuthError } from "@/lib/auth";
 import { getAuthorizedCompanyIds, resolveCompanyFilter } from "@/lib/company-scope";
@@ -31,20 +32,38 @@ export async function GET(request: NextRequest) {
 
   const allowed = await getAuthorizedCompanyIds(auth.sub, auth.role);
   const companyFilter = resolveCompanyFilter(allowed, request.nextUrl.searchParams.get("companyId"));
+
+  // Geographic scope (narrowest wins: country → region → theatre).
+  const countryParam = request.nextUrl.searchParams.get("country") || "";
+  const regionParam = request.nextUrl.searchParams.get("region") || "";
+  const theatreParam = request.nextUrl.searchParams.get("theatre") || "";
+  let scopeLabel = "All theatres";
+  if (countryParam) scopeLabel = `Country: ${countryParam}`;
+  else if (regionParam) scopeLabel = `Region: ${regionParam}`;
+  else if (theatreParam) scopeLabel = `Theatre: ${theatreParam}`;
+
   if (companyFilter !== null && companyFilter.length === 0) {
-    return NextResponse.json({ monthly: [], titleRows: [], globalRate: 0, historicalRenewed: 0, historicalLapsed: 0 });
+    return NextResponse.json({ monthly: [], titleRows: [], globalRate: 0, historicalRenewed: 0, historicalLapsed: 0, scopeLabel });
   }
 
   const now = new Date();
   const horizonEnd = new Date(now);
   horizonEnd.setFullYear(horizonEnd.getFullYear() + 1);
 
+  // Combine company + geographic scope into a single student filter.
+  const studentWhere: Prisma.StudentWhereInput = {};
+  if (companyFilter) studentWhere.companyId = { in: companyFilter };
+  if (countryParam) studentWhere.country = countryParam;
+  else if (regionParam) studentWhere.regionData = { region: regionParam };
+  else if (theatreParam) studentWhere.theatre = theatreParam;
+  const hasStudentFilter = Object.keys(studentWhere).length > 0;
+
   const records = await prisma.trainingTaken.findMany({
     where: {
       // Sub-items roll up into the parent OLX, which carries the canonical
       // expiry. Exclude them from the renewal forecast.
       trainingData: { trainingType: { not: "OLXSubItem" } },
-      ...(companyFilter ? { student: { companyId: { in: companyFilter } } } : {}),
+      ...(hasStudentFilter ? { student: studentWhere } : {}),
     },
     include: {
       trainingData: { select: { fullTitle: true, productType: { select: { name: true } }, trainingType: true } },
@@ -212,5 +231,6 @@ export async function GET(request: NextRequest) {
     globalRate: Number((globalRate * 100).toFixed(1)),
     historicalRenewed: globalRenewed,
     historicalLapsed: globalLapsed,
+    scopeLabel,
   });
 }

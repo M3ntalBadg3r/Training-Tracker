@@ -465,7 +465,7 @@ Monthly snapshots — **12 months of history plus a 12-month forecast** — for 
 
 ### Renewal Forecast
 
-Projects how many of the trainings expiring in the next 12 months will be renewed vs lapsed, based on historical renewal behaviour. A renewal counts when a follow-up record lands within ±90 days of a previous expiry. Renewal rate is computed per training (≥5 historical expiries), falling back to per product, then global. Includes a stacked bar by month (renewed vs lapsed) and an at-risk leaderboard of trainings ranked by projected lapses.
+Projects how many of the trainings expiring in the next 12 months will be renewed vs lapsed, based on historical renewal behaviour. A renewal counts when a learner later re-completes the same training (at least 30 days after the previous completion, so duplicate rows aren't double-counted); an expired record with no later re-completion counts as a lapse. Renewal rate is computed per training (≥5 historical expiries), falling back to per product, then global. Includes a stacked bar by month (renewed vs lapsed) and an at-risk leaderboard of trainings ranked by projected lapses. **Theatre / Region / Country** filters scope the whole report — metric boxes, chart, and table update together.
 
 ---
 

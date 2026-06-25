@@ -619,6 +619,7 @@ const helpSections: Record<string, HelpSection> = {
           <li>A <strong>renewal</strong> is any later re-completion of the same training by the same student (at least 30 days after the previous one, so duplicate rows aren&apos;t double-counted). An expired record with no later re-completion is a <strong>lapse</strong>.</li>
           <li><strong>Renewal rate</strong> is computed per training when ≥5 historical expiries exist; otherwise it falls back to per-product, then to a global rate.</li>
           <li>The at-risk leaderboard ranks trainings by projected lapses over the 12-month horizon.</li>
+          <li>Use the <strong>Theatre / Region / Country</strong> filters to scope the whole report — the metric boxes, the monthly chart, and the at-risk table all update together. The filters cascade (picking a theatre narrows the regions, and so on).</li>
         </ul>
       </>
     ),

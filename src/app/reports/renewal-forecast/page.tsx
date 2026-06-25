@@ -42,6 +42,13 @@ interface ForecastResponse {
   globalRate: number;
   historicalRenewed: number;
   historicalLapsed: number;
+  scopeLabel: string;
+}
+
+interface RegionRow {
+  country: string;
+  region: string;
+  theatre: string | null;
 }
 
 function ExportMenu({ data, columns, filename }: { data: Record<string, unknown>[]; columns: { key: string; header: string }[]; filename: string }) {
@@ -68,15 +75,49 @@ export default function RenewalForecastPage() {
   const [data, setData] = useState<ForecastResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [filterProduct, setFilterProduct] = useState("");
+  const [regionRows, setRegionRows] = useState<RegionRow[]>([]);
+  const [theatre, setTheatre] = useState("");
+  const [region, setRegion] = useState("");
+  const [country, setCountry] = useState("");
+
+  // Region data (theatre/region/country) for the scope filters — global, not company-scoped.
+  useEffect(() => {
+    fetch("/api/region-data/countries")
+      .then((r) => r.json())
+      .then((rows: RegionRow[]) => setRegionRows(Array.isArray(rows) ? rows : []))
+      .catch(() => setRegionRows([]));
+  }, []);
 
   useEffect(() => {
     if (companyScope.loading) return;
     setLoading(true);
-    fetch(withCompany("/api/reports/renewal-forecast", companyScope.selected))
+    const params = new URLSearchParams();
+    if (country) params.set("country", country);
+    else if (region) params.set("region", region);
+    else if (theatre) params.set("theatre", theatre);
+    const qs = params.toString();
+    const base = `/api/reports/renewal-forecast${qs ? `?${qs}` : ""}`;
+    fetch(withCompany(base, companyScope.selected))
       .then((r) => r.json())
       .then((d) => { setData(d); setLoading(false); })
       .catch(() => setLoading(false));
-  }, [companyScope.loading, companyScope.selected]);
+  }, [companyScope.loading, companyScope.selected, theatre, region, country]);
+
+  // Cascading filter option lists (theatre → region → country).
+  const theatreOptions = useMemo(
+    () => [...new Set(regionRows.map((r) => r.theatre).filter((t): t is string => !!t))].sort(),
+    [regionRows]
+  );
+  const regionOptions = useMemo(
+    () => [...new Set(regionRows.filter((r) => !theatre || r.theatre === theatre).map((r) => r.region).filter(Boolean))].sort(),
+    [regionRows, theatre]
+  );
+  const countryOptions = useMemo(
+    () => [...new Set(regionRows
+      .filter((r) => (!theatre || r.theatre === theatre) && (!region || r.region === region))
+      .map((r) => r.country))].sort(),
+    [regionRows, theatre, region]
+  );
 
   const products = useMemo(() => [...new Set(data?.titleRows.map((r) => r.productType) ?? [])].sort(), [data]);
 
@@ -120,6 +161,24 @@ export default function RenewalForecastPage() {
         </Link>
       </div>
       <PageHeader title="Renewal Forecast" helpSlug="reports-renewal-forecast" />
+
+      <section className="bg-white rounded-lg border border-gray-200 p-4 mb-6 flex flex-wrap items-center gap-3">
+        <select value={theatre} onChange={(e) => { setTheatre(e.target.value); setRegion(""); setCountry(""); }} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm">
+          <option value="">All Theatres</option>
+          {theatreOptions.map((t) => <option key={t} value={t}>{t}</option>)}
+        </select>
+        <select value={region} onChange={(e) => { setRegion(e.target.value); setCountry(""); }} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm">
+          <option value="">All Regions</option>
+          {regionOptions.map((r) => <option key={r} value={r}>{r}</option>)}
+        </select>
+        <select value={country} onChange={(e) => setCountry(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm">
+          <option value="">All Countries</option>
+          {countryOptions.map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <span className="text-xs text-gray-500">
+          Showing: <span className="font-medium text-gray-700">{data.scopeLabel}</span> · scoped to the company selected above.
+        </span>
+      </section>
 
       <KpiStrip
         cards={[
