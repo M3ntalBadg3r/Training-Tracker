@@ -232,7 +232,7 @@ notes**.
 
 After every change, you MUST complete these steps before considering the task done:
 
-1. **Bump the version** — Update `"version"` in `package.json` by incrementing 0.01 for each change (e.g., 0.40 → 0.41 → 0.42).
+1. **Bump the version** — Increment `"version"` in `package.json` by exactly **0.01 per task**, regardless of how many individual edits or files the task touched. One task (even one that bundles several related changes) = one 0.01 bump. The new version MUST be the immediate successor of the latest released version — never skip numbers. Example: latest release is `2.02`, so the next task ships `2.03` (not `2.04`/`2.05`), and the task after that ships `2.04`. Before bumping, check the latest tag (`gh api 'repos/M3ntalBadg3r/Training-Tracker/releases?per_page=5'`) and add 0.01 to it. Keep `package-lock.json`'s two `version` fields in sync.
 2. **Update README.md** — If the change affects how the system is used (new features, changed behavior, new pages, config changes), update `README.md` to reflect it.
 3. **Update the help system** — If the change affects user-facing behavior, update the relevant section in `src/lib/help-content.tsx` so the in-app help stays accurate.
 4. **Update CLAUDE.md** — If the change modifies the project structure (new/renamed/removed files or directories) or the data model (new/changed models, fields, enums, or relationships), update the relevant sections in this file.
