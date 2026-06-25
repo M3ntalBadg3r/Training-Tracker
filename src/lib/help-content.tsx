@@ -502,13 +502,6 @@ const helpSections: Record<string, HelpSection> = {
         <h3>Legacy Replacement Gap</h3>
         <p>Learners who hold a <strong>legacy</strong> Certification/Accreditation but haven&rsquo;t taken its <strong>replacement</strong> (configured in Admin &gt; Training Data). Multiple replacements are alternatives — holding any one clears the learner. The expiry-horizon chart and the Already Expired / ≤ 1 / 3 / 6 / 12-month window filter key on the learner&rsquo;s legacy training expiry, so you can chase the most urgent migrations first. Two toggles tailor the view: <strong>Include legacy with no replacement</strong> (show holders of a retired cert with no successor) and <strong>Replacement must be active</strong> (when off, a previously-held but now-expired replacement also counts as satisfied).</p>
 
-        <h3>Coverage / Compliance</h3>
-        <p>
-          Active-training-holder share of population per theatre/region/country
-          bucket × product × type. Coverage badges colour-code each row red /
-          amber / green at 40% and 80% thresholds.
-        </p>
-
         <h3>Theatre / Region / Country Comparison</h3>
         <p>
           Compare geographies side by side. A single toggle switches the whole
@@ -549,23 +542,6 @@ const helpSections: Record<string, HelpSection> = {
           falling back to per product, then global. A renewal counts when a
           follow-up record lands within ±90 days of the previous expiry.
         </p>
-      </>
-    ),
-  },
-
-  "reports-coverage": {
-    title: "Coverage / Compliance Report",
-    content: (
-      <>
-        <p>
-          Shows what share of the student population in each theatre, region,
-          or country holds an active training of each product × type combination.
-        </p>
-        <ul>
-          <li>The <strong>Group by</strong> selector chooses the bucketing dimension.</li>
-          <li>Country rolls up to region; region rolls up to theatre. If a student&apos;s region is missing or &quot;unknown&quot;, region-mode falls back to theatre.</li>
-          <li>The coverage badge colour reflects 80% (green), 40% (amber), and below (red) thresholds.</li>
-        </ul>
       </>
     ),
   },
@@ -640,9 +616,10 @@ const helpSections: Record<string, HelpSection> = {
           will be renewed vs lapsed, based on historical renewal behaviour.
         </p>
         <ul>
-          <li>A <strong>renewal</strong> is a follow-up TrainingTaken row for the same student + training whose completed date is within ±90 days of the previous expiry.</li>
+          <li>A <strong>renewal</strong> is any later re-completion of the same training by the same student (at least 30 days after the previous one, so duplicate rows aren&apos;t double-counted). An expired record with no later re-completion is a <strong>lapse</strong>.</li>
           <li><strong>Renewal rate</strong> is computed per training when ≥5 historical expiries exist; otherwise it falls back to per-product, then to a global rate.</li>
           <li>The at-risk leaderboard ranks trainings by projected lapses over the 12-month horizon.</li>
+          <li>Use the <strong>Theatre / Region / Country</strong> filters to scope the whole report — the metric boxes, the monthly chart, and the at-risk table all update together. The filters cascade (picking a theatre narrows the regions, and so on).</li>
         </ul>
       </>
     ),
