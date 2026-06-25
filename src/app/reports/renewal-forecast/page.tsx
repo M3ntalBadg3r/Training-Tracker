@@ -119,6 +119,8 @@ export default function RenewalForecastPage() {
     [regionRows, theatre, region]
   );
 
+  const scoped = !!(country || region || theatre);
+
   const products = useMemo(() => [...new Set(data?.titleRows.map((r) => r.productType) ?? [])].sort(), [data]);
 
   const filteredTitleRows = useMemo(() => {
@@ -182,7 +184,7 @@ export default function RenewalForecastPage() {
 
       <KpiStrip
         cards={[
-          { label: "Global Renewal Rate", value: `${data.globalRate}%`, icon: RefreshCw, tone: "blue", hint: `${data.historicalRenewed} renewed / ${data.historicalLapsed} lapsed` },
+          { label: scoped ? "Renewal Rate" : "Global Renewal Rate", value: `${data.globalRate}%`, icon: RefreshCw, tone: "blue", hint: `${data.historicalRenewed} renewed / ${data.historicalLapsed} lapsed` },
           { label: "Forecast Renewals (6m)", value: totals.next6Renewed, icon: RotateCcw, tone: "emerald" },
           { label: "Forecast Lapses (6m)", value: totals.next6Lapsed, icon: AlertTriangle, tone: "red" },
           { label: "Forecast Renewals (12m)", value: totals.next12Renewed, icon: TrendingUp, tone: "indigo" },
