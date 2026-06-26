@@ -5,6 +5,7 @@ import Link from "next/link";
 import PageHeader from "@/components/layout/PageHeader";
 import KpiStrip from "@/components/ui/KpiStrip";
 import { useChartTheme, tooltipStyle } from "@/lib/chart-theme";
+import { useTableSort, SortAccessor } from "@/hooks/useTableSort";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
 import { ArrowLeft, Download, RefreshCw, AlertTriangle, TrendingUp, RotateCcw } from "lucide-react";
@@ -141,6 +142,23 @@ export default function RenewalForecastPage() {
     };
   }, [data]);
 
+  // Column sorting for the at-risk table (defaults to highest projected lapses,
+  // preserving the report's "ranked by projected lapses" intent).
+  const sortAccessors: Record<string, SortAccessor<TitleRow>> = {
+    fullTitle: (r) => r.fullTitle,
+    productType: (r) => r.productType,
+    expiringCount: (r) => r.expiringCount,
+    rate: (r) => r.rate,
+    rateSource: (r) => r.rateSource,
+    projectedLapsed: (r) => r.projectedLapsed,
+  };
+  const { sorted: sortedTitleRows, toggleSort, sortIndicator } = useTableSort(filteredTitleRows, sortAccessors, {
+    defaultKey: "projectedLapsed",
+    defaultDir: "desc",
+    tiebreakKey: "fullTitle",
+    descFirstKeys: ["expiringCount", "rate", "projectedLapsed"],
+  });
+
   const exportColumns = [
     { key: "fullTitle", header: "Training" },
     { key: "productType", header: "Product" },
@@ -228,16 +246,16 @@ export default function RenewalForecastPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-gray-50 border-b">
-                  <th className="px-4 py-3 text-left font-semibold">Training</th>
-                  <th className="px-4 py-3 text-left font-semibold">Product</th>
-                  <th className="px-4 py-3 text-right font-semibold">Expiring (12m)</th>
-                  <th className="px-4 py-3 text-right font-semibold">Renewal Rate</th>
-                  <th className="px-4 py-3 text-left font-semibold">Rate Basis</th>
-                  <th className="px-4 py-3 text-right font-semibold">Projected Lapses</th>
+                  <th className="px-4 py-3 text-left font-semibold cursor-pointer select-none" onClick={() => toggleSort("fullTitle")}>Training{sortIndicator("fullTitle")}</th>
+                  <th className="px-4 py-3 text-left font-semibold cursor-pointer select-none" onClick={() => toggleSort("productType")}>Product{sortIndicator("productType")}</th>
+                  <th className="px-4 py-3 text-right font-semibold cursor-pointer select-none" onClick={() => toggleSort("expiringCount")}>Expiring (12m){sortIndicator("expiringCount")}</th>
+                  <th className="px-4 py-3 text-right font-semibold cursor-pointer select-none" onClick={() => toggleSort("rate")}>Renewal Rate{sortIndicator("rate")}</th>
+                  <th className="px-4 py-3 text-left font-semibold cursor-pointer select-none" onClick={() => toggleSort("rateSource")}>Rate Basis{sortIndicator("rateSource")}</th>
+                  <th className="px-4 py-3 text-right font-semibold cursor-pointer select-none" onClick={() => toggleSort("projectedLapsed")}>Projected Lapses{sortIndicator("projectedLapsed")}</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredTitleRows.map((r, i) => (
+                {sortedTitleRows.map((r, i) => (
                   <tr key={`${r.fullTitle}-${i}`} className="border-b hover:bg-gray-50">
                     <td className="px-4 py-3">{r.fullTitle}</td>
                     <td className="px-4 py-3">{r.productType}</td>

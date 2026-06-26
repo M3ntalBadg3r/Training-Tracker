@@ -9,6 +9,7 @@ import GroupedRows from "@/components/data-table/GroupedRows";
 import { useChartTheme, tooltipStyle } from "@/lib/chart-theme";
 import { useProductTypeColors } from "@/hooks/useProductTypeColors";
 import { groupRows, GroupByMode } from "@/lib/group-by";
+import { useTableSort, SortAccessor } from "@/hooks/useTableSort";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
 import { useDateFormat } from "@/components/date-format/DateFormatProvider";
@@ -179,7 +180,27 @@ export default function LegacyGapPage() {
     noReplacement: filtered.filter((r) => !r.replacementDefined).length,
   }), [filtered, now]);
 
-  const grouped = useMemo(() => groupRows(filtered, groupBy ?? "theatre"), [filtered, groupBy]);
+  // Column sorting (applied before grouping so rows sort within each group).
+  const sortAccessors: Record<string, SortAccessor<LegacyGapRow>> = {
+    fullName: (r) => r.fullName,
+    email: (r) => r.email,
+    theatre: (r) => r.theatre,
+    region: (r) => r.region,
+    country: (r) => r.country,
+    legacyFullTitle: (r) => r.legacyFullTitle,
+    legacyType: (r) => r.legacyType,
+    productType: (r) => r.productType,
+    replacementFullTitle: (r) => (r.replacementDefined ? r.replacementFullTitle : ""),
+    legacyCompletedDate: (r) => r.legacyCompletedDate,
+    legacyExpiryDate: (r) => r.legacyExpiryDate,
+    legacyActive: (r) => r.legacyActive,
+  };
+  const { sorted, toggleSort, sortIndicator } = useTableSort(filtered, sortAccessors, {
+    defaultKey: "fullName",
+    tiebreakKey: "fullName",
+  });
+
+  const grouped = useMemo(() => groupRows(sorted, groupBy ?? "theatre"), [sorted, groupBy]);
 
   const exportColumns = [
     { key: "fullName", header: "Full Name" },
@@ -319,18 +340,18 @@ export default function LegacyGapPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-gray-50 border-b">
-                  <th className="px-4 py-3 text-left font-semibold">Full Name</th>
-                  <th className="px-4 py-3 text-left font-semibold">Email</th>
-                  <th className="px-4 py-3 text-left font-semibold">Theatre</th>
-                  <th className="px-4 py-3 text-left font-semibold">Region</th>
-                  <th className="px-4 py-3 text-left font-semibold">Country</th>
-                  <th className="px-4 py-3 text-left font-semibold">Legacy Training</th>
-                  <th className="px-4 py-3 text-left font-semibold">Type</th>
-                  <th className="px-4 py-3 text-left font-semibold">Product</th>
-                  <th className="px-4 py-3 text-left font-semibold">Replacement</th>
-                  <th className="px-4 py-3 text-left font-semibold">Completed</th>
-                  <th className="px-4 py-3 text-left font-semibold">Expires</th>
-                  <th className="px-4 py-3 text-left font-semibold">Status</th>
+                  <th className="px-4 py-3 text-left font-semibold cursor-pointer select-none" onClick={() => toggleSort("fullName")}>Full Name{sortIndicator("fullName")}</th>
+                  <th className="px-4 py-3 text-left font-semibold cursor-pointer select-none" onClick={() => toggleSort("email")}>Email{sortIndicator("email")}</th>
+                  <th className="px-4 py-3 text-left font-semibold cursor-pointer select-none" onClick={() => toggleSort("theatre")}>Theatre{sortIndicator("theatre")}</th>
+                  <th className="px-4 py-3 text-left font-semibold cursor-pointer select-none" onClick={() => toggleSort("region")}>Region{sortIndicator("region")}</th>
+                  <th className="px-4 py-3 text-left font-semibold cursor-pointer select-none" onClick={() => toggleSort("country")}>Country{sortIndicator("country")}</th>
+                  <th className="px-4 py-3 text-left font-semibold cursor-pointer select-none" onClick={() => toggleSort("legacyFullTitle")}>Legacy Training{sortIndicator("legacyFullTitle")}</th>
+                  <th className="px-4 py-3 text-left font-semibold cursor-pointer select-none" onClick={() => toggleSort("legacyType")}>Type{sortIndicator("legacyType")}</th>
+                  <th className="px-4 py-3 text-left font-semibold cursor-pointer select-none" onClick={() => toggleSort("productType")}>Product{sortIndicator("productType")}</th>
+                  <th className="px-4 py-3 text-left font-semibold cursor-pointer select-none" onClick={() => toggleSort("replacementFullTitle")}>Replacement{sortIndicator("replacementFullTitle")}</th>
+                  <th className="px-4 py-3 text-left font-semibold cursor-pointer select-none" onClick={() => toggleSort("legacyCompletedDate")}>Completed{sortIndicator("legacyCompletedDate")}</th>
+                  <th className="px-4 py-3 text-left font-semibold cursor-pointer select-none" onClick={() => toggleSort("legacyExpiryDate")}>Expires{sortIndicator("legacyExpiryDate")}</th>
+                  <th className="px-4 py-3 text-left font-semibold cursor-pointer select-none" onClick={() => toggleSort("legacyActive")}>Status{sortIndicator("legacyActive")}</th>
                   <th className="px-4 py-3 text-left font-semibold"></th>
                 </tr>
               </thead>

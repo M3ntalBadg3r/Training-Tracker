@@ -480,15 +480,16 @@ const helpSections: Record<string, HelpSection> = {
           <li><strong>Charts above the table</strong> — bars/areas/leaderboards summarising the filtered data.</li>
           <li><strong>Drill-down</strong> — click a chart segment to filter the table in place; a small &quot;Clear filter&quot; link appears when active.</li>
           <li><strong>Group by</strong> &mdash; toggle theatre / region / country grouping. The hierarchy rolls up: country → region → theatre, with a fallback to theatre when region is missing or &quot;unknown&quot;.</li>
+          <li><strong>Sortable columns</strong> — click any column header to sort the table; click again to reverse the direction (an ▲/▼ arrow marks the active column). Tables default to Full Name A–Z (or the report&rsquo;s natural primary column). When grouping is on, rows sort within each group.</li>
           <li><strong>Date-range picker</strong> — limit results to a date window (where applicable). Includes presets for Last 30/90 days, Last 12 months, YTD, and All time.</li>
           <li><strong>Dark mode</strong> — chart axes, gridlines, and tooltips adapt automatically.</li>
         </ul>
 
         <h3>By Product Type</h3>
-        <p>Stacked bar of Cert/Accred/ILT per product, plus an active-vs-expired donut.</p>
+        <p>Stacked bar of Cert/Accred/ILT per product, plus an active-vs-expired donut. Tick <strong>Count people, not records (active holders)</strong> to switch the chart and KPI cards from raw record counts to the number of distinct people who currently hold an active cert/training — so a learner holding several certs in one product type counts once per type instead of inflating the totals.</p>
 
         <h3>By Function</h3>
-        <p>Stacked bar of Cert/Accred/ILT per function (Sales, Pre-Sales, Deployments), plus an active-vs-expired donut.</p>
+        <p>Stacked bar of Cert/Accred/ILT per function (Sales, Pre-Sales, Deployments), plus an active-vs-expired donut. Tick <strong>Count people, not records (active holders)</strong> to switch the chart and KPI cards from raw record counts to the number of distinct active holders, so multiple certs held by the same person don&rsquo;t skew the figures.</p>
 
         <h3>Expiring Soon</h3>
         <p>Horizon bar showing records expiring within 1/3/6/12 months, plus a theatre × month stacked bar showing where the cliff falls.</p>

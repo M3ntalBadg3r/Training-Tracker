@@ -9,6 +9,7 @@ import GroupedRows from "@/components/data-table/GroupedRows";
 import { useChartTheme, tooltipStyle } from "@/lib/chart-theme";
 import { useProductTypeColors } from "@/hooks/useProductTypeColors";
 import { groupRows, GroupByMode, resolveBucket } from "@/lib/group-by";
+import { useTableSort, SortAccessor } from "@/hooks/useTableSort";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
 import { useDateFormat } from "@/components/date-format/DateFormatProvider";
@@ -147,7 +148,25 @@ export default function TrainedNotCertifiedPage() {
     };
   }, [filteredData]);
 
-  const grouped = useMemo(() => groupRows(filteredData, groupBy ?? "theatre"), [filteredData, groupBy]);
+  // Column sorting (applied before grouping so rows sort within each group).
+  const sortAccessors: Record<string, SortAccessor<TrainedNotCertifiedRow>> = {
+    fullName: (r) => r.fullName,
+    email: (r) => r.email,
+    theatre: (r) => r.theatre,
+    region: (r) => r.region,
+    country: (r) => r.country,
+    iltFullTitle: (r) => r.iltFullTitle,
+    iltProductType: (r) => r.iltProductType,
+    iltCompletedDate: (r) => r.iltCompletedDate,
+    iltActive: (r) => r.iltActive,
+    certificationFullTitle: (r) => r.certificationFullTitle,
+  };
+  const { sorted, toggleSort, sortIndicator } = useTableSort(filteredData, sortAccessors, {
+    defaultKey: "fullName",
+    tiebreakKey: "fullName",
+  });
+
+  const grouped = useMemo(() => groupRows(sorted, groupBy ?? "theatre"), [sorted, groupBy]);
 
   const exportColumns = [
     { key: "fullName", header: "Full Name" },
@@ -294,16 +313,16 @@ export default function TrainedNotCertifiedPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-gray-50 border-b">
-                  <th className="px-4 py-3 text-left font-semibold">Full Name</th>
-                  <th className="px-4 py-3 text-left font-semibold">Email Address</th>
-                  <th className="px-4 py-3 text-left font-semibold">Theatre</th>
-                  <th className="px-4 py-3 text-left font-semibold">Region</th>
-                  <th className="px-4 py-3 text-left font-semibold">Country</th>
-                  <th className="px-4 py-3 text-left font-semibold">Instructor-Led Training</th>
-                  <th className="px-4 py-3 text-left font-semibold">Product</th>
-                  <th className="px-4 py-3 text-left font-semibold">ILT Completed Date</th>
-                  <th className="px-4 py-3 text-left font-semibold">ILT Active</th>
-                  <th className="px-4 py-3 text-left font-semibold">Certification Not Obtained</th>
+                  <th className="px-4 py-3 text-left font-semibold cursor-pointer select-none" onClick={() => toggleSort("fullName")}>Full Name{sortIndicator("fullName")}</th>
+                  <th className="px-4 py-3 text-left font-semibold cursor-pointer select-none" onClick={() => toggleSort("email")}>Email Address{sortIndicator("email")}</th>
+                  <th className="px-4 py-3 text-left font-semibold cursor-pointer select-none" onClick={() => toggleSort("theatre")}>Theatre{sortIndicator("theatre")}</th>
+                  <th className="px-4 py-3 text-left font-semibold cursor-pointer select-none" onClick={() => toggleSort("region")}>Region{sortIndicator("region")}</th>
+                  <th className="px-4 py-3 text-left font-semibold cursor-pointer select-none" onClick={() => toggleSort("country")}>Country{sortIndicator("country")}</th>
+                  <th className="px-4 py-3 text-left font-semibold cursor-pointer select-none" onClick={() => toggleSort("iltFullTitle")}>Instructor-Led Training{sortIndicator("iltFullTitle")}</th>
+                  <th className="px-4 py-3 text-left font-semibold cursor-pointer select-none" onClick={() => toggleSort("iltProductType")}>Product{sortIndicator("iltProductType")}</th>
+                  <th className="px-4 py-3 text-left font-semibold cursor-pointer select-none" onClick={() => toggleSort("iltCompletedDate")}>ILT Completed Date{sortIndicator("iltCompletedDate")}</th>
+                  <th className="px-4 py-3 text-left font-semibold cursor-pointer select-none" onClick={() => toggleSort("iltActive")}>ILT Active{sortIndicator("iltActive")}</th>
+                  <th className="px-4 py-3 text-left font-semibold cursor-pointer select-none" onClick={() => toggleSort("certificationFullTitle")}>Certification Not Obtained{sortIndicator("certificationFullTitle")}</th>
                   <th className="px-4 py-3 text-left font-semibold"></th>
                 </tr>
               </thead>

@@ -420,17 +420,18 @@ Navigate to **Reports** in the sidebar. Each report follows the same shape: a fo
 ### Common Features
 
 - **Group by** — toggle theatre / region / country grouping on the table. The hierarchy rolls up: country → region → theatre, with a fallback to theatre when a student's region is missing or `unknown`.
+- **Sortable columns** — every report table sorts by clicking a column header (click again to reverse; an ▲/▼ arrow marks the active column). Tables default to Full Name A–Z (or the report's natural primary column), and when grouping is on, rows sort within each theatre / region / country group.
 - **Date-range picker** — limit results to a window (where applicable) with presets for Last 30 / 90 days, Last 12 months, Year to date, and All time.
 - **Drill-down** — click a chart segment to apply that as a table filter; a small "Clear filter" link appears next to the chart while active.
 - **Dark mode** — chart axes, gridlines, and tooltips adapt automatically alongside the rest of the app.
 
 ### By Product Type
 
-Stacked bar of Certifications / Accreditations / ILTs per product, plus an active-vs-expired donut. Drill in by clicking a bar.
+Stacked bar of Certifications / Accreditations / ILTs per product, plus an active-vs-expired donut. Drill in by clicking a bar. Tick **Count people, not records (active holders)** to switch the chart and KPI cards from raw record counts to the number of distinct people who currently hold an active cert/training — so a learner with several certs in one product type is counted once per type rather than inflating the totals.
 
 ### By Function
 
-Same shape as By Product Type, with the function dimension (Sales, Pre-Sales, Deployments) instead.
+Same shape as By Product Type, with the function dimension (Sales, Pre-Sales, Deployments) instead — including the same **Count people, not records (active holders)** toggle.
 
 ### Expiring Soon
 
