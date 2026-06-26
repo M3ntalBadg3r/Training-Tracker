@@ -15,6 +15,7 @@ import {
   Scale,
   UserCheck,
   History,
+  CalendarX,
 } from "lucide-react";
 
 const TILES = [
@@ -35,6 +36,12 @@ const TILES = [
     title: "Expiring Soon",
     description: "Training records expiring within the next 1, 3, 6, or 12 months",
     Icon: Clock,
+  },
+  {
+    href: "/reports/expired",
+    title: "Currently Expired",
+    description: "All certifications & trainings that have already lapsed, bucketed by how long ago they expired",
+    Icon: CalendarX,
   },
   {
     href: "/reports/last-12-months",

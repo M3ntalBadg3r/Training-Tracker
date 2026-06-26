@@ -63,6 +63,7 @@ const REPORT_TYPES = [
   { value: "by-product", label: "By Product Type" },
   { value: "by-function", label: "By Function" },
   { value: "expiring-soon", label: "Expiring Soon" },
+  { value: "currently-expired", label: "Currently Expired" },
   { value: "last-12-months", label: "Achieved in Last 12 Months" },
 ];
 

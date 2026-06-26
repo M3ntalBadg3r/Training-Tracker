@@ -70,6 +70,7 @@ export interface TrainingRecordRow {
   completedDate: string;
   expiryDate: string;
   active: string;
+  isLegacy: boolean;
 }
 
 // ─── Shared helpers ─────────────────────────────────────────────────────────────
@@ -104,6 +105,7 @@ async function fetchAllTrainingRecords(companyId?: number | null): Promise<Train
           trainingType: true,
           productType: { select: { name: true } },
           function: true,
+          isLegacy: true,
         },
       },
       student: {
@@ -141,6 +143,7 @@ async function fetchAllTrainingRecords(companyId?: number | null): Promise<Train
     completedDate: tt.completedDate.toISOString().split("T")[0],
     expiryDate: tt.expiryDate.toISOString().split("T")[0],
     active: tt.expiryDate > now ? "Yes" : "No",
+    isLegacy: tt.trainingData.isLegacy,
   }));
 }
 
@@ -172,6 +175,7 @@ export async function fetchTrainingsWithStudents(opts: {
           trainingType: true,
           productType: { select: { name: true } },
           function: true,
+          isLegacy: true,
         },
       },
       student: {
@@ -217,6 +221,7 @@ export async function fetchTrainingsWithStudents(opts: {
     completedDate: tt.completedDate.toISOString().split("T")[0],
     expiryDate: tt.expiryDate.toISOString().split("T")[0],
     active: tt.expiryDate > now ? "Yes" : "No",
+    isLegacy: tt.trainingData.isLegacy,
   }));
 }
 
@@ -435,6 +440,14 @@ export async function fetchExpiringSoon(monthsAhead = 6, companyId?: number | nu
     .sort((a, b) => a.expiryDate.localeCompare(b.expiryDate));
 }
 
+export async function fetchCurrentlyExpired(companyId?: number | null): Promise<TrainingRecordRow[]> {
+  const now = new Date();
+  const records = await fetchAllTrainingRecords(companyId);
+  return records
+    .filter((r) => new Date(r.expiryDate) < now)
+    .sort((a, b) => b.expiryDate.localeCompare(a.expiryDate)); // most recent lapse first
+}
+
 export async function fetchAchievedLast12Months(companyId?: number | null): Promise<TrainingRecordRow[]> {
   const cutoff = new Date();
   cutoff.setFullYear(cutoff.getFullYear() - 1);
@@ -515,6 +528,7 @@ export type ReportType =
   | "by-product"
   | "by-function"
   | "expiring-soon"
+  | "currently-expired"
   | "last-12-months";
 
 export interface ReportResult {
@@ -562,6 +576,12 @@ export async function fetchReportData(reportType: ReportType, companyId?: number
         data: await fetchExpiringSoon(6, companyId),
         columns: TRAINING_RECORD_COLUMNS,
         title: "Expiring Soon",
+      };
+    case "currently-expired":
+      return {
+        data: await fetchCurrentlyExpired(companyId),
+        columns: TRAINING_RECORD_COLUMNS,
+        title: "Currently Expired",
       };
     case "last-12-months":
       return {
