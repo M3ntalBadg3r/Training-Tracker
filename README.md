@@ -312,6 +312,7 @@ Five summary cards are displayed at the top. The four "earned" cards (Certificat
 | **By Product Type** | Bar chart | Breakdown of Certifications, Accreditations, and ILT by product type (the admin-managed product type list) |
 | **By Function** | Bar chart | Breakdown by function (Sales, Pre-Sales, Deployments) |
 | **Expiring Soon** | Bar chart | Number of trainings expiring within 1, 3, and 6 months |
+| **Currently Expired** | Bar chart | All certifications & trainings that have already lapsed, bucketed by how long ago they expired |
 | **Achievement Over Time** | Line chart | Trend of completions over a selectable range (1/3/6/12 months or custom), with prior-period comparison |
 
 Each chart is clickable — clicking a chart navigates to its corresponding detailed report in the **Reports** section.
@@ -434,6 +435,10 @@ Same shape as By Product Type, with the function dimension (Sales, Pre-Sales, De
 ### Expiring Soon
 
 Horizon bar showing records expiring within 1 / 3 / 6 / 12 months, plus a stacked theatre × month bar showing where expiry pressure clusters. Filter window is selectable up to 12 months.
+
+### Currently Expired
+
+Every certification & training whose latest completion has *already* lapsed — the inverse of Expiring Soon. Records are bucketed by how long ago they expired (≤ 1 month, 1–3, 3–6, 6–12, > 12 months) with a stacked bar by training type (click a band to filter the table) and an "Expired by Theatre" chart. Group by theatre/region/country, search by name/email, and export to CSV/Excel/PDF. Retired (legacy) certs are shown by default; tick **Exclude retired (legacy) certs** to hide them. Also available as a scheduled export.
 
 ### Achievement Over Time
 
@@ -717,7 +722,7 @@ Click **Add Schedule** and configure:
 | Field | Description |
 |-------|-------------|
 | **Name** | A descriptive label for this schedule |
-| **Report** | Which report to export (Trained but Not Certified, Legacy Replacement Gap, Learner Achievement Scorecard, By Product Type, By Function, Expiring Soon, Achievement Over Time) |
+| **Report** | Which report to export (Trained but Not Certified, Legacy Replacement Gap, Learner Achievement Scorecard, By Product Type, By Function, Expiring Soon, Currently Expired, Achievement Over Time) |
 | **Format** | CSV, Excel (XLSX), or PDF |
 | **Destination** | Where to deliver the file |
 | **Schedule** | Daily / Weekly / Monthly at a specified time |

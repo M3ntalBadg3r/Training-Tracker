@@ -493,6 +493,9 @@ const helpSections: Record<string, HelpSection> = {
         <h3>Expiring Soon</h3>
         <p>Horizon bar showing records expiring within 1/3/6/12 months, plus a theatre × month stacked bar showing where the cliff falls.</p>
 
+        <h3>Currently Expired</h3>
+        <p>Every certification &amp; training whose latest completion has <em>already</em> lapsed (the inverse of Expiring Soon). Records are bucketed by how long ago they expired (≤1 month, 1–3, 3–6, 6–12, &gt; 12 months) with a stacked bar by training type and an &ldquo;Expired by Theatre&rdquo; chart. Click a band to filter the table; group by theatre/region/country, search, and export to CSV/Excel/PDF. Retired (legacy) certs are shown by default — tick <strong>Exclude retired (legacy) certs</strong> to hide them. Also available as a scheduled export.</p>
+
         <h3>Achievement Over Time</h3>
         <p>Area chart of completions with a dashed prior-period comparison line, plus a top-10 leaderboard of trainings by completion count. Pick a preset time range (12, 6, 3, or 1 month) or a custom date range; the chart automatically buckets by day, week, or month based on the window. Click a point to filter the table to that bucket. Type/theatre/function/region/product filters update the chart as well as the table.</p>
 

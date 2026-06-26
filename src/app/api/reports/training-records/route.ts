@@ -29,6 +29,7 @@ export async function GET(request: NextRequest) {
           trainingType: true,
           productType: { select: { name: true } },
           function: true,
+          isLegacy: true,
         },
       },
       student: {
@@ -80,6 +81,7 @@ export async function GET(request: NextRequest) {
     completedDate: tt.completedDate.toISOString(),
     expiryDate: tt.expiryDate.toISOString(),
     active: tt.expiryDate > now,
+    isLegacy: tt.trainingData.isLegacy,
   }));
 
   return NextResponse.json(records);
