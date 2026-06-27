@@ -50,6 +50,11 @@ export async function POST(request: NextRequest) {
     await tx.importMetadata.deleteMany({});
     await tx.importAlias.deleteMany({});
 
+    // API keys are scoped to companies via api_key_companies; clearing the keys
+    // also drops those grants. (Deleting companies would cascade the grants but
+    // leave orphan ApiKey rows, so remove the keys explicitly in both scopes.)
+    await tx.apiKey.deleteMany({});
+
     // Both scopes remove companies and their access links (keep only accounts).
     await tx.userCompany.deleteMany({});
     await tx.company.deleteMany({});

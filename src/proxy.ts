@@ -58,6 +58,8 @@ const SUPER_ADMIN_PREFIXES = [
   "/api/admin/updates",
   "/api/admin/wipe",
   "/api/admin/security",
+  "/admin/api-keys",
+  "/api/admin/api-keys",
 ];
 
 function isSuperAdminPath(pathname: string): boolean {
@@ -94,6 +96,13 @@ export async function proxy(request: NextRequest) {
 
   // Allow public paths (login, setup, and their API routes)
   if (isPublicPath(pathname)) {
+    return NextResponse.next();
+  }
+
+  // The read-only public API authenticates with an API key (not the JWT
+  // cookie). Edge middleware can't do the required DB lookup, so let these
+  // requests through — each route handler enforces the key via requireApiKey().
+  if (pathname.startsWith("/api/public/")) {
     return NextResponse.next();
   }
 
