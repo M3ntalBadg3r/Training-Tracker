@@ -1849,6 +1849,57 @@ const helpSections: Record<string, HelpSection> = {
       </>
     ),
   },
+  "api-keys": {
+    title: "API Keys",
+    content: (
+      <>
+        <p>
+          API keys let trusted third-party systems read your data through the
+          <strong> read-only public API</strong>. Each key is scoped to one or more
+          companies and can only <em>read</em> — there is no way to create, change,
+          or delete data with a key. This page is SuperAdmin-only.
+        </p>
+
+        <h3>Creating a key</h3>
+        <ul>
+          <li>Click <strong>New API Key</strong>, give it a descriptive name (e.g. &ldquo;Partner CRM sync&rdquo;), and tick the companies it may read.</li>
+          <li>Optionally set an <strong>expiry</strong> date; leave it blank for a key that never expires.</li>
+          <li>The full key is shown <strong>once</strong>, immediately after creation. Copy it and store it somewhere safe — it is hashed in the database and can never be displayed again. If it&rsquo;s lost, delete the key and create a new one.</li>
+        </ul>
+
+        <h3>Using a key</h3>
+        <p>
+          The calling system sends the key in an <code>Authorization: Bearer &lt;key&gt;</code>
+          header (an <code>X-API-Key</code> header is also accepted) over HTTPS. Available
+          endpoints:
+        </p>
+        <table>
+          <thead>
+            <tr><th>Endpoint</th><th>Returns</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>GET /api/public/v1</code></td><td>Index — confirms the key works and lists its companies and the available endpoints.</td></tr>
+            <tr><td><code>GET /api/public/v1/students</code></td><td>Student roster for the key&rsquo;s companies.</td></tr>
+            <tr><td><code>GET /api/public/v1/training-records</code></td><td>Per-completion training records (latest per learner &amp; training).</td></tr>
+            <tr><td><code>GET /api/public/v1/reports/&#123;type&#125;</code></td><td>Report aggregates (e.g. <code>expiring-soon</code>, <code>legacy-gap</code>, <code>learner-scorecard</code>).</td></tr>
+          </tbody>
+        </table>
+        <p>
+          All endpoints accept an optional <code>?companyId=</code> to narrow to a single
+          granted company. A request for a company the key cannot read returns no rows.
+        </p>
+
+        <h3>Managing &amp; securing keys</h3>
+        <ul>
+          <li><strong>Disable</strong> temporarily suspends a key; <strong>Revoke</strong> permanently kills it (a revoked key can never be re-enabled).</li>
+          <li><strong>Edit</strong> renames a key, changes its companies, or adjusts its expiry. <strong>Delete</strong> removes it entirely.</li>
+          <li>The <strong>Last used</strong> column shows when the key last made a request, so unused keys are easy to spot and clean up.</li>
+          <li>Each key is rate-limited (120 requests per minute); excess requests receive an HTTP 429.</li>
+          <li>Treat keys like passwords: only stored as a hash, never logged, and best sent server-to-server rather than from a browser.</li>
+        </ul>
+      </>
+    ),
+  },
 };
 
 export function getHelpContent(slug: string): HelpSection | null {

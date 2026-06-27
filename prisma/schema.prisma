@@ -42,6 +42,7 @@ model Company {
   students         Student[]
   users            UserCompany[]
   scheduledExports ScheduledExport[]
+  apiKeys          ApiKeyCompany[]
 
   @@map("companies")
 }
@@ -271,6 +272,43 @@ model ScheduledExport {
 
   @@index([companyId])
   @@map("scheduled_exports")
+}
+
+// Read-only public API key. Third-party systems authenticate by sending the
+// plaintext key in an `Authorization: Bearer` header; only the SHA-256 hash is
+// stored here (never the plaintext, which is shown to the admin exactly once at
+// creation). A key reads only the companies linked via ApiKeyCompany.
+model ApiKey {
+  id          Int       @id @default(autoincrement())
+  name        String
+  keyPrefix   String    @map("key_prefix")
+  keyHash     String    @unique @map("key_hash")
+  enabled     Boolean   @default(true)
+  expiresAt   DateTime? @map("expires_at")
+  lastUsedAt  DateTime? @map("last_used_at")
+  lastUsedIp  String?   @map("last_used_ip")
+  revokedAt   DateTime? @map("revoked_at")
+  createdById Int?      @map("created_by_id")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  companies ApiKeyCompany[]
+
+  @@index([keyHash])
+  @@map("api_keys")
+}
+
+// Join table scoping an ApiKey to the companies whose data it may read.
+model ApiKeyCompany {
+  apiKeyId  Int @map("api_key_id")
+  companyId Int @map("company_id")
+
+  apiKey  ApiKey  @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@id([apiKeyId, companyId])
+  @@index([companyId])
+  @@map("api_key_companies")
 }
 
 model ExportCredential {

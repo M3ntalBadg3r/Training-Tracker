@@ -75,6 +75,21 @@ export interface TrainingRecordRow {
 
 // ─── Shared helpers ─────────────────────────────────────────────────────────────
 
+// Report helpers accept either a single company id (the original scheduled-export
+// caller) or a list of ids (the public API, where one key may span several
+// companies). `undefined`/`null` means "no company restriction".
+export type CompanyScope = number | number[] | null | undefined;
+
+/**
+ * Normalise a CompanyScope to either `null` (unrestricted) or an array of ids.
+ * An explicit empty array is preserved (and yields no results) so a public API
+ * key scoped to a company it can't read fails closed.
+ */
+function toCompanyIdList(scope: CompanyScope): number[] | null {
+  if (scope === null || scope === undefined) return null;
+  return Array.isArray(scope) ? scope : [scope];
+}
+
 const FUNCTION_LABELS: Record<string, string> = {
   Sales: "Sales",
   PreSales: "Pre-Sales",
@@ -89,14 +104,15 @@ const TYPE_LABELS: Record<string, string> = {
   OLXSubItem: "OLX Sub-Item",
 };
 
-async function fetchAllTrainingRecords(companyId?: number | null): Promise<TrainingRecordRow[]> {
+async function fetchAllTrainingRecords(companyId?: CompanyScope): Promise<TrainingRecordRow[]> {
+  const ids = toCompanyIdList(companyId);
   // OLX sub-items don't represent stand-alone completions — they roll up into
   // their parent OLX once the full set is taken. Exclude them from
   // completion-counting reports.
   const rawRecords = await prisma.trainingTaken.findMany({
     where: {
       trainingData: { trainingType: { not: "OLXSubItem" } },
-      ...(companyId ? { student: { companyId } } : {}),
+      ...(ids ? { student: { companyId: { in: ids } } } : {}),
     },
     include: {
       trainingData: {
@@ -227,7 +243,8 @@ export async function fetchTrainingsWithStudents(opts: {
 
 // ─── Report queries ─────────────────────────────────────────────────────────────
 
-export async function fetchTrainedNotCertified(companyId?: number | null): Promise<TrainedNotCertifiedRow[]> {
+export async function fetchTrainedNotCertified(companyId?: CompanyScope): Promise<TrainedNotCertifiedRow[]> {
+  const ids = toCompanyIdList(companyId);
   // Both ILT and OLX trainings can lead to a certification. Treat them
   // identically here — an OLX parent's TrainingTaken row is materialised once
   // the student has completed every sub-item.
@@ -259,7 +276,7 @@ export async function fetchTrainedNotCertified(companyId?: number | null): Promi
     const iltRecords = await prisma.trainingTaken.findMany({
       where: {
         trainingTitle: ilt.trainingTitle,
-        ...(companyId ? { student: { companyId } } : {}),
+        ...(ids ? { student: { companyId: { in: ids } } } : {}),
       },
       select: { email: true, completedDate: true, expiryDate: true },
     });
@@ -316,11 +333,11 @@ export async function fetchTrainedNotCertified(companyId?: number | null): Promi
   return results;
 }
 
-export async function fetchLegacyGap(companyId?: number | null): Promise<LegacyGapRow[]> {
+export async function fetchLegacyGap(companyId?: CompanyScope): Promise<LegacyGapRow[]> {
   // Scheduled-export view uses the report's defaults: active-replacement rule
   // and legacy entries with no replacement included. (The interactive report
   // exposes these as toggles.)
-  const records = await computeLegacyGaps(companyId ? [companyId] : null);
+  const records = await computeLegacyGaps(toCompanyIdList(companyId));
   return records.map((r) => ({
     fullName: r.fullName,
     email: r.email,
@@ -337,12 +354,13 @@ export async function fetchLegacyGap(companyId?: number | null): Promise<LegacyG
   }));
 }
 
-export async function fetchLearnerScorecard(companyId?: number | null): Promise<LearnerScorecardRow[]> {
+export async function fetchLearnerScorecard(companyId?: CompanyScope): Promise<LearnerScorecardRow[]> {
+  const ids = toCompanyIdList(companyId);
   // Seed from the full roster so learners with zero completions still appear
   // (the management half of the report). Counts are active-only and the
   // renewing window is fixed at 6 months to mirror the report's defaults.
   const students = await prisma.student.findMany({
-    where: companyId ? { companyId } : {},
+    where: ids ? { companyId: { in: ids } } : {},
     include: { regionData: { select: { region: true } } },
   });
 
@@ -416,17 +434,17 @@ export async function fetchLearnerScorecard(companyId?: number | null): Promise<
   return Array.from(map.values()).sort((a, b) => b.total - a.total || a.fullName.localeCompare(b.fullName));
 }
 
-export async function fetchByProductType(companyId?: number | null): Promise<TrainingRecordRow[]> {
+export async function fetchByProductType(companyId?: CompanyScope): Promise<TrainingRecordRow[]> {
   const records = await fetchAllTrainingRecords(companyId);
   return records.sort((a, b) => a.productType.localeCompare(b.productType) || a.fullName.localeCompare(b.fullName));
 }
 
-export async function fetchByFunction(companyId?: number | null): Promise<TrainingRecordRow[]> {
+export async function fetchByFunction(companyId?: CompanyScope): Promise<TrainingRecordRow[]> {
   const records = await fetchAllTrainingRecords(companyId);
   return records.sort((a, b) => a.function.localeCompare(b.function) || a.fullName.localeCompare(b.fullName));
 }
 
-export async function fetchExpiringSoon(monthsAhead = 6, companyId?: number | null): Promise<TrainingRecordRow[]> {
+export async function fetchExpiringSoon(monthsAhead = 6, companyId?: CompanyScope): Promise<TrainingRecordRow[]> {
   const now = new Date();
   const cutoff = new Date(now);
   cutoff.setMonth(cutoff.getMonth() + monthsAhead);
@@ -440,7 +458,7 @@ export async function fetchExpiringSoon(monthsAhead = 6, companyId?: number | nu
     .sort((a, b) => a.expiryDate.localeCompare(b.expiryDate));
 }
 
-export async function fetchCurrentlyExpired(companyId?: number | null): Promise<TrainingRecordRow[]> {
+export async function fetchCurrentlyExpired(companyId?: CompanyScope): Promise<TrainingRecordRow[]> {
   const now = new Date();
   const records = await fetchAllTrainingRecords(companyId);
   return records
@@ -448,7 +466,7 @@ export async function fetchCurrentlyExpired(companyId?: number | null): Promise<
     .sort((a, b) => b.expiryDate.localeCompare(a.expiryDate)); // most recent lapse first
 }
 
-export async function fetchAchievedLast12Months(companyId?: number | null): Promise<TrainingRecordRow[]> {
+export async function fetchAchievedLast12Months(companyId?: CompanyScope): Promise<TrainingRecordRow[]> {
   const cutoff = new Date();
   cutoff.setFullYear(cutoff.getFullYear() - 1);
 
@@ -539,7 +557,7 @@ export interface ReportResult {
   title: string;
 }
 
-export async function fetchReportData(reportType: ReportType, companyId?: number | null): Promise<ReportResult> {
+export async function fetchReportData(reportType: ReportType, companyId?: CompanyScope): Promise<ReportResult> {
   switch (reportType) {
     case "trained-not-certified":
       return {
