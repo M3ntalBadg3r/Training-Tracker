@@ -1893,7 +1893,7 @@ const helpSections: Record<string, HelpSection> = {
         <ul>
           <li><strong>Disable</strong> temporarily suspends a key; <strong>Revoke</strong> permanently kills it (a revoked key can never be re-enabled).</li>
           <li><strong>Edit</strong> renames a key, changes its companies, or adjusts its expiry. <strong>Delete</strong> removes it entirely.</li>
-          <li>The <strong>Last used</strong> column shows when the key last made a request, so unused keys are easy to spot and clean up.</li>
+          <li>The <strong>Last used</strong> column shows when the key last made a request, so unused keys are easy to spot and clean up. The <strong>Last IP</strong> column shows the source IP of that request (from the <code>X-Forwarded-For</code> header), so you can confirm traffic is coming from where you expect.</li>
           <li>Each key is rate-limited (120 requests per minute); excess requests receive an HTTP 429.</li>
           <li>Treat keys like passwords: only stored as a hash, never logged, and best sent server-to-server rather than from a browser.</li>
         </ul>

@@ -196,6 +196,7 @@ export default function ApiKeysPage() {
               <th className="px-4 py-3 text-left font-semibold text-gray-700">Companies</th>
               <th className="px-4 py-3 text-left font-semibold text-gray-700">Status</th>
               <th className="px-4 py-3 text-left font-semibold text-gray-700">Last used</th>
+              <th className="px-4 py-3 text-left font-semibold text-gray-700">Last IP</th>
               <th className="px-4 py-3 text-left font-semibold text-gray-700">Expires</th>
               <th className="px-4 py-3 text-left font-semibold text-gray-700">Actions</th>
             </tr>
@@ -203,7 +204,7 @@ export default function ApiKeysPage() {
           <tbody>
             {keys.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-gray-400">
+                <td colSpan={8} className="px-4 py-8 text-center text-gray-400">
                   No API keys yet. Create one to allow a third-party system to read your data.
                 </td>
               </tr>
@@ -229,6 +230,9 @@ export default function ApiKeysPage() {
                     </td>
                     <td className="px-4 py-3 text-gray-500 text-xs">
                       {key.lastUsedAt ? formatDateTime(key.lastUsedAt) : <span className="text-gray-300">—</span>}
+                    </td>
+                    <td className="px-4 py-3 text-gray-500 text-xs font-mono">
+                      {key.lastUsedIp ?? <span className="text-gray-300 font-sans">—</span>}
                     </td>
                     <td className="px-4 py-3 text-gray-500 text-xs">
                       {key.expiresAt ? new Date(key.expiresAt).toLocaleDateString() : <span className="text-gray-300">Never</span>}
