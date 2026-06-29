@@ -858,7 +858,9 @@ In **Admin > API Keys** (SuperAdmin only):
 
 Keys can be **disabled** (temporarily), **revoked** (permanently), edited
 (rename / change companies / adjust expiry) or deleted. The **Last used** column
-helps you spot stale keys.
+helps you spot stale keys, and the **Last IP** column shows the source IP of the
+most recent request (from `X-Forwarded-For`) so you can confirm traffic is
+coming from where you expect.
 
 ### Calling the API
 
