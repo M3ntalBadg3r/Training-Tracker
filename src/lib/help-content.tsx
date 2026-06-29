@@ -480,15 +480,16 @@ const helpSections: Record<string, HelpSection> = {
           <li><strong>Charts above the table</strong> — bars/areas/leaderboards summarising the filtered data.</li>
           <li><strong>Drill-down</strong> — click a chart segment to filter the table in place; a small &quot;Clear filter&quot; link appears when active.</li>
           <li><strong>Group by</strong> &mdash; toggle theatre / region / country grouping. The hierarchy rolls up: country → region → theatre, with a fallback to theatre when region is missing or &quot;unknown&quot;.</li>
+          <li><strong>Sortable columns</strong> — click any column header to sort the table; click again to reverse the direction (an ▲/▼ arrow marks the active column). Tables default to Full Name A–Z (or the report&rsquo;s natural primary column). When grouping is on, rows sort within each group.</li>
           <li><strong>Date-range picker</strong> — limit results to a date window (where applicable). Includes presets for Last 30/90 days, Last 12 months, YTD, and All time.</li>
           <li><strong>Dark mode</strong> — chart axes, gridlines, and tooltips adapt automatically.</li>
         </ul>
 
         <h3>By Product Type</h3>
-        <p>Stacked bar of Cert/Accred/ILT per product, plus an active-vs-expired donut.</p>
+        <p>Stacked bar of Cert/Accred/ILT per product, plus an active-vs-expired donut. Tick <strong>Count people, not records (active holders)</strong> to switch the chart and KPI cards from raw record counts to the number of distinct people who currently hold an active cert/training — so a learner holding several certs in one product type counts once per type instead of inflating the totals.</p>
 
         <h3>By Function</h3>
-        <p>Stacked bar of Cert/Accred/ILT per function (Sales, Pre-Sales, Deployments), plus an active-vs-expired donut.</p>
+        <p>Stacked bar of Cert/Accred/ILT per function (Sales, Pre-Sales, Deployments), plus an active-vs-expired donut. Tick <strong>Count people, not records (active holders)</strong> to switch the chart and KPI cards from raw record counts to the number of distinct active holders, so multiple certs held by the same person don&rsquo;t skew the figures.</p>
 
         <h3>Expiring Soon</h3>
         <p>Horizon bar showing records expiring within 1/3/6/12 months, plus a theatre × month stacked bar showing where the cliff falls.</p>
@@ -1845,6 +1846,57 @@ const helpSections: Record<string, HelpSection> = {
           per-row errors rather than being silently changed, so keep this list in
           sync with the values used in your spreadsheets.
         </p>
+      </>
+    ),
+  },
+  "api-keys": {
+    title: "API Keys",
+    content: (
+      <>
+        <p>
+          API keys let trusted third-party systems read your data through the
+          <strong> read-only public API</strong>. Each key is scoped to one or more
+          companies and can only <em>read</em> — there is no way to create, change,
+          or delete data with a key. This page is SuperAdmin-only.
+        </p>
+
+        <h3>Creating a key</h3>
+        <ul>
+          <li>Click <strong>New API Key</strong>, give it a descriptive name (e.g. &ldquo;Partner CRM sync&rdquo;), and tick the companies it may read.</li>
+          <li>Optionally set an <strong>expiry</strong> date; leave it blank for a key that never expires.</li>
+          <li>The full key is shown <strong>once</strong>, immediately after creation. Copy it and store it somewhere safe — it is hashed in the database and can never be displayed again. If it&rsquo;s lost, delete the key and create a new one.</li>
+        </ul>
+
+        <h3>Using a key</h3>
+        <p>
+          The calling system sends the key in an <code>Authorization: Bearer &lt;key&gt;</code>
+          header (an <code>X-API-Key</code> header is also accepted) over HTTPS. Available
+          endpoints:
+        </p>
+        <table>
+          <thead>
+            <tr><th>Endpoint</th><th>Returns</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>GET /api/public/v1</code></td><td>Index — confirms the key works and lists its companies and the available endpoints.</td></tr>
+            <tr><td><code>GET /api/public/v1/students</code></td><td>Student roster for the key&rsquo;s companies.</td></tr>
+            <tr><td><code>GET /api/public/v1/training-records</code></td><td>Per-completion training records (latest per learner &amp; training).</td></tr>
+            <tr><td><code>GET /api/public/v1/reports/&#123;type&#125;</code></td><td>Report aggregates (e.g. <code>expiring-soon</code>, <code>legacy-gap</code>, <code>learner-scorecard</code>).</td></tr>
+          </tbody>
+        </table>
+        <p>
+          All endpoints accept an optional <code>?companyId=</code> to narrow to a single
+          granted company. A request for a company the key cannot read returns no rows.
+        </p>
+
+        <h3>Managing &amp; securing keys</h3>
+        <ul>
+          <li><strong>Disable</strong> temporarily suspends a key; <strong>Revoke</strong> permanently kills it (a revoked key can never be re-enabled).</li>
+          <li><strong>Edit</strong> renames a key, changes its companies, or adjusts its expiry. <strong>Delete</strong> removes it entirely.</li>
+          <li>The <strong>Last used</strong> column shows when the key last made a request, so unused keys are easy to spot and clean up.</li>
+          <li>Each key is rate-limited (120 requests per minute); excess requests receive an HTTP 429.</li>
+          <li>Treat keys like passwords: only stored as a hash, never logged, and best sent server-to-server rather than from a browser.</li>
+        </ul>
       </>
     ),
   },

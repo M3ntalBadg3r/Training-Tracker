@@ -39,6 +39,7 @@ import {
   SlidersHorizontal,
   UserCheck,
   History,
+  KeyRound,
 } from "lucide-react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useTheme } from "@/components/theme/ThemeProvider";
@@ -57,6 +58,7 @@ const adminSubItems: { href: string; label: string; icon: typeof Users; superAdm
   { href: "/admin/product-types", label: "Product Types", icon: Tag, superAdminOnly: true },
   { href: "/admin/region-data", label: "Region Data", icon: Globe, superAdminOnly: true },
   { href: "/admin/system-settings", label: "System Settings", icon: SlidersHorizontal, superAdminOnly: true },
+  { href: "/admin/api-keys", label: "API Keys", icon: KeyRound, superAdminOnly: true },
   { href: "/admin/cleanup", label: "Data Clean-Up", icon: Sparkles, superAdminOnly: true },
   { href: "/admin/backup", label: "Backup", icon: HardDrive, superAdminOnly: true },
   { href: "/admin/import", label: "Import", icon: Upload },

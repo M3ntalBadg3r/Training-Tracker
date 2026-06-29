@@ -5,6 +5,7 @@ import Link from "next/link";
 import PageHeader from "@/components/layout/PageHeader";
 import KpiStrip from "@/components/ui/KpiStrip";
 import { useChartTheme, tooltipStyle } from "@/lib/chart-theme";
+import { useTableSort, SortAccessor } from "@/hooks/useTableSort";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
 import { ArrowLeft, Download, TrendingUp, ShieldCheck, Award, BarChart3 } from "lucide-react";
@@ -172,6 +173,24 @@ export default function ProgramComplianceTrendPage() {
     };
   }, [data, chartData, seriesKeys, nowMonthKey]);
 
+  // Column sorting for the raw snapshots table. Month sorts chronologically by
+  // monthKey (not the display label). Called unconditionally before the early
+  // return below to satisfy the rules of hooks.
+  const snapshotSortAccessors: Record<string, SortAccessor<Snapshot>> = {
+    program: (s) => s.program,
+    specialisation: (s) => s.specialisation,
+    monthKey: (s) => s.monthKey,
+    projected: (s) => s.projected,
+    attained: (s) => s.attained,
+    required: (s) => s.required,
+    compliancePct: (s) => s.compliancePct,
+  };
+  const { sorted: sortedSnapshots, toggleSort, sortIndicator } = useTableSort(
+    data?.snapshots ?? [],
+    snapshotSortAccessors,
+    { defaultKey: "monthKey", tiebreakKey: "specialisation", descFirstKeys: ["attained", "required", "compliancePct"] },
+  );
+
   const exportColumns = [
     { key: "program", header: "Program" },
     { key: "specialisation", header: "Specialisation" },
@@ -262,17 +281,17 @@ export default function ProgramComplianceTrendPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-gray-50 border-b">
-                <th className="px-4 py-3 text-left font-semibold">Program</th>
-                <th className="px-4 py-3 text-left font-semibold">Specialisation</th>
-                <th className="px-4 py-3 text-left font-semibold">Month</th>
-                <th className="px-4 py-3 text-left font-semibold">Type</th>
-                <th className="px-4 py-3 text-right font-semibold">Attained</th>
-                <th className="px-4 py-3 text-right font-semibold">Required</th>
-                <th className="px-4 py-3 text-right font-semibold">Compliance</th>
+                <th className="px-4 py-3 text-left font-semibold cursor-pointer select-none" onClick={() => toggleSort("program")}>Program{sortIndicator("program")}</th>
+                <th className="px-4 py-3 text-left font-semibold cursor-pointer select-none" onClick={() => toggleSort("specialisation")}>Specialisation{sortIndicator("specialisation")}</th>
+                <th className="px-4 py-3 text-left font-semibold cursor-pointer select-none" onClick={() => toggleSort("monthKey")}>Month{sortIndicator("monthKey")}</th>
+                <th className="px-4 py-3 text-left font-semibold cursor-pointer select-none" onClick={() => toggleSort("projected")}>Type{sortIndicator("projected")}</th>
+                <th className="px-4 py-3 text-right font-semibold cursor-pointer select-none" onClick={() => toggleSort("attained")}>Attained{sortIndicator("attained")}</th>
+                <th className="px-4 py-3 text-right font-semibold cursor-pointer select-none" onClick={() => toggleSort("required")}>Required{sortIndicator("required")}</th>
+                <th className="px-4 py-3 text-right font-semibold cursor-pointer select-none" onClick={() => toggleSort("compliancePct")}>Compliance{sortIndicator("compliancePct")}</th>
               </tr>
             </thead>
             <tbody>
-              {data.snapshots.map((s, i) => (
+              {sortedSnapshots.map((s, i) => (
                 <tr key={`${s.program}-${s.specialisation}-${s.monthKey}-${i}`} className="border-b hover:bg-gray-50">
                   <td className="px-4 py-3">{s.program}</td>
                   <td className="px-4 py-3">{s.specialisation}</td>

@@ -29,6 +29,8 @@ Built with Next.js, React, PostgreSQL, and Prisma.
   - [Scheduled Report Exports](#scheduled-report-exports)
   - [Program Data](#program-data)
   - [Wipe Data](#wipe-data)
+  - [API Keys](#public-api)
+- [Public API](#public-api)
 - [Partner Programs](#partner-programs)
 - [Data Model](#data-model)
 - [Exporting Data](#exporting-data)
@@ -420,17 +422,18 @@ Navigate to **Reports** in the sidebar. Each report follows the same shape: a fo
 ### Common Features
 
 - **Group by** — toggle theatre / region / country grouping on the table. The hierarchy rolls up: country → region → theatre, with a fallback to theatre when a student's region is missing or `unknown`.
+- **Sortable columns** — every report table sorts by clicking a column header (click again to reverse; an ▲/▼ arrow marks the active column). Tables default to Full Name A–Z (or the report's natural primary column), and when grouping is on, rows sort within each theatre / region / country group.
 - **Date-range picker** — limit results to a window (where applicable) with presets for Last 30 / 90 days, Last 12 months, Year to date, and All time.
 - **Drill-down** — click a chart segment to apply that as a table filter; a small "Clear filter" link appears next to the chart while active.
 - **Dark mode** — chart axes, gridlines, and tooltips adapt automatically alongside the rest of the app.
 
 ### By Product Type
 
-Stacked bar of Certifications / Accreditations / ILTs per product, plus an active-vs-expired donut. Drill in by clicking a bar.
+Stacked bar of Certifications / Accreditations / ILTs per product, plus an active-vs-expired donut. Drill in by clicking a bar. Tick **Count people, not records (active holders)** to switch the chart and KPI cards from raw record counts to the number of distinct people who currently hold an active cert/training — so a learner with several certs in one product type is counted once per type rather than inflating the totals.
 
 ### By Function
 
-Same shape as By Product Type, with the function dimension (Sales, Pre-Sales, Deployments) instead.
+Same shape as By Product Type, with the function dimension (Sales, Pre-Sales, Deployments) instead — including the same **Count people, not records (active holders)** toggle.
 
 ### Expiring Soon
 
@@ -836,6 +839,59 @@ Each entry specifies a requirement within a program:
 | **Quantity Required** | For Country/Theatre: number of people needed. For Global: number of compliant theatres needed. |
 
 The page includes search, filtering by all fields, sorting, and export to CSV/Excel/PDF. Requirements can also be bulk-imported via the **Import** dialog, which accepts a CSV/Excel file by drag-and-drop onto the drop zone or by clicking to browse.
+
+---
+
+## Public API
+
+Training Tracker exposes a **read-only public API** so trusted third-party
+systems (CRMs, BI tools, partner portals) can pull data programmatically. Access
+is controlled by **API keys**, each scoped to one or more companies.
+
+### Issuing a key
+
+In **Admin > API Keys** (SuperAdmin only):
+
+1. Click **New API Key**, give it a descriptive name, and select the companies it may read.
+2. Optionally set an expiry date (leave blank for a key that never expires).
+3. The full key is shown **once**, right after creation — copy and store it securely. Only a hash is kept in the database, so a lost key cannot be recovered (delete it and issue a new one).
+
+Keys can be **disabled** (temporarily), **revoked** (permanently), edited
+(rename / change companies / adjust expiry) or deleted. The **Last used** column
+helps you spot stale keys.
+
+### Calling the API
+
+Send the key in an `Authorization: Bearer <key>` header (an `X-API-Key` header is
+also accepted) over HTTPS:
+
+```bash
+curl -H "Authorization: Bearer tt_live_xxxxxxxx" \
+  https://your-host/api/public/v1/students
+```
+
+| Endpoint | Returns |
+|----------|---------|
+| `GET /api/public/v1` | Index — confirms the key works and lists its companies and the available endpoints |
+| `GET /api/public/v1/students` | Student roster (name, email, theatre, country, company) |
+| `GET /api/public/v1/training-records` | Per-completion training records (latest per learner & training) |
+| `GET /api/public/v1/reports/{reportType}` | Report aggregates — `trained-not-certified`, `legacy-gap`, `learner-scorecard`, `by-product`, `by-function`, `expiring-soon`, `currently-expired`, `last-12-months` |
+
+All endpoints accept an optional `?companyId=` to narrow to a single granted
+company; `training-records` also accepts `?theatre=`, `?region=`, `?country=`,
+and `?activeOnly=true`. A request for a company the key cannot read returns no
+rows.
+
+### Security
+
+- **Read-only by design** — there are no write endpoints under `/api/public`, so a leaked key can never modify data.
+- **Company-scoped** — a key only ever sees data for its assigned companies.
+- **Hashed at rest** — only a SHA-256 hash of the key is stored; the plaintext is shown once.
+- **Rate-limited** — 120 requests per minute per key (excess requests get HTTP 429).
+- **Revocable & expirable** — disable, revoke, or expire a key at any time.
+
+Keys are best used server-to-server. Serve the app over HTTPS and never embed a
+key in browser-side code.
 
 ---
 

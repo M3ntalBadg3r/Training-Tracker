@@ -9,6 +9,7 @@ import DateRangePicker, { DateRangeValue, filterByRange } from "@/components/ui/
 import GroupedRows from "@/components/data-table/GroupedRows";
 import { useChartTheme, tooltipStyle } from "@/lib/chart-theme";
 import { groupRows, GroupByMode } from "@/lib/group-by";
+import { useTableSort, SortAccessor } from "@/hooks/useTableSort";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
 import { useDateFormat } from "@/components/date-format/DateFormatProvider";
@@ -83,6 +84,7 @@ export default function ByFunctionPage() {
   const [filterTheatre, setFilterTheatre] = useState("");
   const [dateRange, setDateRange] = useState<DateRangeValue>({ from: null, to: null });
   const [groupBy, setGroupBy] = useState<GroupByMode | null>(null);
+  const [countPeople, setCountPeople] = useState(false);
 
   useEffect(() => {
     if (companyScope.loading) return;
@@ -109,8 +111,31 @@ export default function ByFunctionPage() {
     });
   }, [trainingRecords, search, filterFunction, filterType, filterTheatre, dateRange]);
 
+  // KPIs. When `countPeople` is on, per-type figures count distinct *active*
+  // holders (emails) rather than raw records. active/expired stay record-based
+  // (they power the status donut).
   const kpis = useMemo(() => {
     const activeCount = filtered.filter((r) => r.active).length;
+    if (countPeople) {
+      const people = (type?: string) => {
+        const s = new Set<string>();
+        for (const r of filtered) {
+          if (!r.active) continue;
+          if (type && r.trainingType !== type) continue;
+          s.add(r.email);
+        }
+        return s.size;
+      };
+      return {
+        total: people(),
+        cert: people("Certification"),
+        accred: people("Accreditation"),
+        ilt: people("Instructor-Led Training"),
+        olx: people("OLX"),
+        active: activeCount,
+        expired: filtered.length - activeCount,
+      };
+    }
     return {
       total: filtered.length,
       cert: filtered.filter((r) => r.trainingType === "Certification").length,
@@ -120,10 +145,36 @@ export default function ByFunctionPage() {
       active: activeCount,
       expired: filtered.length - activeCount,
     };
-  }, [filtered]);
+  }, [filtered, countPeople]);
 
+  // Stacked bar by function. When `countPeople` is on, each cell counts distinct
+  // active-holder emails (Set) instead of raw records.
   const functionSeries = useMemo(() => {
-    const m = new Map<string, { name: string; Certification: number; Accreditation: number; "Instructor-Led Training": number; OLX: number }>();
+    type Cell = { name: string; Certification: number; Accreditation: number; "Instructor-Led Training": number; OLX: number };
+    if (countPeople) {
+      const sets = new Map<string, { name: string; Certification: Set<string>; Accreditation: Set<string>; "Instructor-Led Training": Set<string>; OLX: Set<string> }>();
+      for (const r of filtered) {
+        if (!r.function || !r.active) continue;
+        const key = r.trainingType as (typeof TYPES)[number];
+        if (!TYPES.includes(key)) continue;
+        let row = sets.get(r.function);
+        if (!row) {
+          row = { name: r.function, Certification: new Set(), Accreditation: new Set(), "Instructor-Led Training": new Set(), OLX: new Set() };
+          sets.set(r.function, row);
+        }
+        row[key].add(r.email);
+      }
+      return Array.from(sets.values())
+        .map((row): Cell => ({
+          name: row.name,
+          Certification: row.Certification.size,
+          Accreditation: row.Accreditation.size,
+          "Instructor-Led Training": row["Instructor-Led Training"].size,
+          OLX: row.OLX.size,
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+    }
+    const m = new Map<string, Cell>();
     for (const r of filtered) {
       if (!r.function) continue;
       let row = m.get(r.function);
@@ -135,7 +186,7 @@ export default function ByFunctionPage() {
       if (TYPES.includes(key)) row[key]++;
     }
     return Array.from(m.values()).sort((a, b) => a.name.localeCompare(b.name));
-  }, [filtered]);
+  }, [filtered, countPeople]);
 
   const statusSeries = useMemo(
     () => [
@@ -145,7 +196,27 @@ export default function ByFunctionPage() {
     [kpis.active, kpis.expired, chart.isDark]
   );
 
-  const grouped = useMemo(() => groupRows(filtered, groupBy ?? "theatre"), [filtered, groupBy]);
+  // Column sorting (applied before grouping so rows sort within each group).
+  const sortAccessors: Record<string, SortAccessor<TrainingRecordRow>> = {
+    fullName: (r) => r.fullName,
+    email: (r) => r.email,
+    theatre: (r) => r.theatre,
+    region: (r) => r.region,
+    country: (r) => r.country,
+    trainingTitle: (r) => r.trainingTitle,
+    trainingType: (r) => r.trainingType,
+    productType: (r) => r.productType,
+    function: (r) => r.function,
+    completedDate: (r) => r.completedDate,
+    expiryDate: (r) => r.expiryDate,
+    active: (r) => r.active,
+  };
+  const { sorted, toggleSort, sortIndicator } = useTableSort(filtered, sortAccessors, {
+    defaultKey: "fullName",
+    tiebreakKey: "fullName",
+  });
+
+  const grouped = useMemo(() => groupRows(sorted, groupBy ?? "theatre"), [sorted, groupBy]);
 
   const exportColumns = [
     { key: "fullName", header: "Full Name" },
@@ -183,7 +254,7 @@ export default function ByFunctionPage() {
 
       <KpiStrip
         cards={[
-          { label: "Total Records", value: kpis.total, icon: CircleCheck, tone: "blue" },
+          { label: countPeople ? "People" : "Total Records", value: kpis.total, icon: CircleCheck, tone: "blue" },
           { label: "Certifications", value: kpis.cert, icon: Award, tone: "indigo" },
           { label: "Accreditations", value: kpis.accred, icon: ShieldCheck, tone: "emerald" },
           { label: "ILTs", value: kpis.ilt, icon: GraduationCap, tone: "amber" },
@@ -193,11 +264,17 @@ export default function ByFunctionPage() {
 
       <section className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
         <div className="lg:col-span-2 bg-white rounded-lg border border-gray-200 p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-base font-semibold text-gray-900">Records by Function</h3>
-            {filterFunction && (
-              <button onClick={() => setFilterFunction("")} className="text-xs text-blue-600 hover:underline">Clear function filter</button>
-            )}
+          <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
+            <h3 className="text-base font-semibold text-gray-900">{countPeople ? "People by Function" : "Records by Function"}</h3>
+            <div className="flex items-center gap-3">
+              <label className="flex items-center gap-2 text-sm text-gray-600 select-none">
+                <input type="checkbox" checked={countPeople} onChange={(e) => setCountPeople(e.target.checked)} className="rounded border-gray-300" />
+                Count people, not records (active holders)
+              </label>
+              {filterFunction && (
+                <button onClick={() => setFilterFunction("")} className="text-xs text-blue-600 hover:underline">Clear function filter</button>
+              )}
+            </div>
           </div>
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={functionSeries}>
@@ -268,18 +345,18 @@ export default function ByFunctionPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-gray-50 border-b">
-                  <th className="px-4 py-3 text-left font-semibold">Full Name</th>
-                  <th className="px-4 py-3 text-left font-semibold">Email</th>
-                  <th className="px-4 py-3 text-left font-semibold">Theatre</th>
-                  <th className="px-4 py-3 text-left font-semibold">Region</th>
-                  <th className="px-4 py-3 text-left font-semibold">Country</th>
-                  <th className="px-4 py-3 text-left font-semibold">Training</th>
-                  <th className="px-4 py-3 text-left font-semibold">Type</th>
-                  <th className="px-4 py-3 text-left font-semibold">Product</th>
-                  <th className="px-4 py-3 text-left font-semibold">Function</th>
-                  <th className="px-4 py-3 text-left font-semibold">Completed</th>
-                  <th className="px-4 py-3 text-left font-semibold">Expires</th>
-                  <th className="px-4 py-3 text-left font-semibold">Active</th>
+                  <th className="px-4 py-3 text-left font-semibold cursor-pointer select-none" onClick={() => toggleSort("fullName")}>Full Name{sortIndicator("fullName")}</th>
+                  <th className="px-4 py-3 text-left font-semibold cursor-pointer select-none" onClick={() => toggleSort("email")}>Email{sortIndicator("email")}</th>
+                  <th className="px-4 py-3 text-left font-semibold cursor-pointer select-none" onClick={() => toggleSort("theatre")}>Theatre{sortIndicator("theatre")}</th>
+                  <th className="px-4 py-3 text-left font-semibold cursor-pointer select-none" onClick={() => toggleSort("region")}>Region{sortIndicator("region")}</th>
+                  <th className="px-4 py-3 text-left font-semibold cursor-pointer select-none" onClick={() => toggleSort("country")}>Country{sortIndicator("country")}</th>
+                  <th className="px-4 py-3 text-left font-semibold cursor-pointer select-none" onClick={() => toggleSort("trainingTitle")}>Training{sortIndicator("trainingTitle")}</th>
+                  <th className="px-4 py-3 text-left font-semibold cursor-pointer select-none" onClick={() => toggleSort("trainingType")}>Type{sortIndicator("trainingType")}</th>
+                  <th className="px-4 py-3 text-left font-semibold cursor-pointer select-none" onClick={() => toggleSort("productType")}>Product{sortIndicator("productType")}</th>
+                  <th className="px-4 py-3 text-left font-semibold cursor-pointer select-none" onClick={() => toggleSort("function")}>Function{sortIndicator("function")}</th>
+                  <th className="px-4 py-3 text-left font-semibold cursor-pointer select-none" onClick={() => toggleSort("completedDate")}>Completed{sortIndicator("completedDate")}</th>
+                  <th className="px-4 py-3 text-left font-semibold cursor-pointer select-none" onClick={() => toggleSort("expiryDate")}>Expires{sortIndicator("expiryDate")}</th>
+                  <th className="px-4 py-3 text-left font-semibold cursor-pointer select-none" onClick={() => toggleSort("active")}>Active{sortIndicator("active")}</th>
                   <th className="px-4 py-3 text-left font-semibold"></th>
                 </tr>
               </thead>

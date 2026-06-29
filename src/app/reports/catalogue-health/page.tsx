@@ -6,6 +6,7 @@ import PageHeader from "@/components/layout/PageHeader";
 import KpiStrip from "@/components/ui/KpiStrip";
 import { useChartTheme, tooltipStyle } from "@/lib/chart-theme";
 import { useProductTypeColors } from "@/hooks/useProductTypeColors";
+import { useTableSort, SortAccessor } from "@/hooks/useTableSort";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
 import { ArrowLeft, Download, BookOpen, AlertOctagon, AlertTriangle, TrendingDown } from "lucide-react";
@@ -31,6 +32,22 @@ interface CatalogueRow {
   expiring90d: number;
   uptakePct: number;
   zeroUptake: boolean;
+}
+
+// Single-line, ellipsised Y-axis tick so long training titles never wrap/overlap.
+// Full text stays available via the SVG <title> tooltip and the detail table below.
+const truncateLabel = (s: string, n: number) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
+
+function TitleYAxisTick(props: { x?: number; y?: number; payload?: { value?: string }; fill?: string }) {
+  const value = props.payload?.value ?? "";
+  const x = typeof props.x === "number" ? props.x : Number(props.x);
+  const y = typeof props.y === "number" ? props.y : Number(props.y);
+  return (
+    <text x={x} y={y} dy={4} textAnchor="end" fontSize={11} fill={props.fill}>
+      <title>{value}</title>
+      {truncateLabel(value, 48)}
+    </text>
+  );
 }
 
 function ExportMenu({ data, columns, filename }: { data: Record<string, unknown>[]; columns: { key: string; header: string }[]; filename: string }) {
@@ -88,6 +105,24 @@ export default function CatalogueHealthPage() {
     decliningLast12: rows.filter((r) => r.totalCompletions > 0 && r.last12mo === 0).length,
   }), [rows]);
 
+  // Column sorting for the detail table (numeric columns default to highest-first).
+  const sortAccessors: Record<string, SortAccessor<CatalogueRow>> = {
+    fullTitle: (r) => r.fullTitle,
+    productType: (r) => r.productType,
+    trainingType: (r) => r.trainingType,
+    function: (r) => r.function,
+    totalCompletions: (r) => r.totalCompletions,
+    last12mo: (r) => r.last12mo,
+    activeStudents: (r) => r.activeStudents,
+    expiring90d: (r) => r.expiring90d,
+    uptakePct: (r) => r.uptakePct,
+  };
+  const { sorted, toggleSort, sortIndicator } = useTableSort(filtered, sortAccessors, {
+    defaultKey: "fullTitle",
+    tiebreakKey: "fullTitle",
+    descFirstKeys: ["totalCompletions", "last12mo", "activeStudents", "expiring90d", "uptakePct"],
+  });
+
   const topUptake = useMemo(() => filtered.slice().sort((a, b) => b.activeStudents - a.activeStudents).slice(0, 10), [filtered]);
   const topExpiring = useMemo(() => filtered.slice().filter((r) => r.expiring90d > 0).sort((a, b) => b.expiring90d - a.expiring90d).slice(0, 10), [filtered]);
 
@@ -127,14 +162,14 @@ export default function CatalogueHealthPage() {
         ]}
       />
 
-      <section className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+      <section className="grid grid-cols-1 gap-6 mb-6">
         <div className="bg-white rounded-lg border border-gray-200 p-5">
           <h3 className="text-base font-semibold text-gray-900 mb-4">Top 10 by Active Students</h3>
           <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={topUptake} layout="vertical" margin={{ left: 100 }}>
+            <BarChart data={topUptake} layout="vertical" margin={{ left: 8 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
               <XAxis type="number" allowDecimals={false} tick={{ fontSize: 12, fill: chart.axis }} stroke={chart.axis} />
-              <YAxis type="category" dataKey="fullTitle" tick={{ fontSize: 11, fill: chart.axis }} stroke={chart.axis} width={140} />
+              <YAxis type="category" dataKey="fullTitle" tick={<TitleYAxisTick fill={chart.axis} />} interval={0} stroke={chart.axis} width={300} />
               <Tooltip contentStyle={tooltipStyle(chart)} />
               <Bar dataKey="activeStudents">
                 {topUptake.map((r) => (
@@ -150,10 +185,10 @@ export default function CatalogueHealthPage() {
             <div className="text-sm text-gray-500 py-8 text-center">No titles with active records expiring in the next 90 days.</div>
           ) : (
             <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={topExpiring} layout="vertical" margin={{ left: 100 }}>
+              <BarChart data={topExpiring} layout="vertical" margin={{ left: 8 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
                 <XAxis type="number" allowDecimals={false} tick={{ fontSize: 12, fill: chart.axis }} stroke={chart.axis} />
-                <YAxis type="category" dataKey="fullTitle" tick={{ fontSize: 11, fill: chart.axis }} stroke={chart.axis} width={140} />
+                <YAxis type="category" dataKey="fullTitle" tick={<TitleYAxisTick fill={chart.axis} />} interval={0} stroke={chart.axis} width={300} />
                 <Tooltip contentStyle={tooltipStyle(chart)} />
                 <Bar dataKey="expiring90d">
                   {topExpiring.map((r) => (
@@ -193,19 +228,19 @@ export default function CatalogueHealthPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-gray-50 border-b">
-                  <th className="px-4 py-3 text-left font-semibold">Training</th>
-                  <th className="px-4 py-3 text-left font-semibold">Product</th>
-                  <th className="px-4 py-3 text-left font-semibold">Type</th>
-                  <th className="px-4 py-3 text-left font-semibold">Function</th>
-                  <th className="px-4 py-3 text-right font-semibold">Total</th>
-                  <th className="px-4 py-3 text-right font-semibold">Last 12mo</th>
-                  <th className="px-4 py-3 text-right font-semibold">Active</th>
-                  <th className="px-4 py-3 text-right font-semibold">Expiring 90d</th>
-                  <th className="px-4 py-3 text-right font-semibold">Uptake</th>
+                  <th className="px-4 py-3 text-left font-semibold cursor-pointer select-none" onClick={() => toggleSort("fullTitle")}>Training{sortIndicator("fullTitle")}</th>
+                  <th className="px-4 py-3 text-left font-semibold cursor-pointer select-none" onClick={() => toggleSort("productType")}>Product{sortIndicator("productType")}</th>
+                  <th className="px-4 py-3 text-left font-semibold cursor-pointer select-none" onClick={() => toggleSort("trainingType")}>Type{sortIndicator("trainingType")}</th>
+                  <th className="px-4 py-3 text-left font-semibold cursor-pointer select-none" onClick={() => toggleSort("function")}>Function{sortIndicator("function")}</th>
+                  <th className="px-4 py-3 text-right font-semibold cursor-pointer select-none" onClick={() => toggleSort("totalCompletions")}>Total{sortIndicator("totalCompletions")}</th>
+                  <th className="px-4 py-3 text-right font-semibold cursor-pointer select-none" onClick={() => toggleSort("last12mo")}>Last 12mo{sortIndicator("last12mo")}</th>
+                  <th className="px-4 py-3 text-right font-semibold cursor-pointer select-none" onClick={() => toggleSort("activeStudents")}>Active{sortIndicator("activeStudents")}</th>
+                  <th className="px-4 py-3 text-right font-semibold cursor-pointer select-none" onClick={() => toggleSort("expiring90d")}>Expiring 90d{sortIndicator("expiring90d")}</th>
+                  <th className="px-4 py-3 text-right font-semibold cursor-pointer select-none" onClick={() => toggleSort("uptakePct")}>Uptake{sortIndicator("uptakePct")}</th>
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((r, i) => (
+                {sorted.map((r, i) => (
                   <tr key={`${r.fullTitle}-${i}`} className={`border-b hover:bg-gray-50 ${r.zeroUptake ? "bg-red-50" : ""}`}>
                     <td className="px-4 py-3">{r.fullTitle}</td>
                     <td className="px-4 py-3">{r.productType}</td>
