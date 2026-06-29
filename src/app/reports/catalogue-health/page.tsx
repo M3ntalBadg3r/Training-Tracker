@@ -34,6 +34,22 @@ interface CatalogueRow {
   zeroUptake: boolean;
 }
 
+// Single-line, ellipsised Y-axis tick so long training titles never wrap/overlap.
+// Full text stays available via the SVG <title> tooltip and the detail table below.
+const truncateLabel = (s: string, n: number) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
+
+function TitleYAxisTick(props: { x?: number; y?: number; payload?: { value?: string }; fill?: string }) {
+  const value = props.payload?.value ?? "";
+  const x = typeof props.x === "number" ? props.x : Number(props.x);
+  const y = typeof props.y === "number" ? props.y : Number(props.y);
+  return (
+    <text x={x} y={y} dy={4} textAnchor="end" fontSize={11} fill={props.fill}>
+      <title>{value}</title>
+      {truncateLabel(value, 48)}
+    </text>
+  );
+}
+
 function ExportMenu({ data, columns, filename }: { data: Record<string, unknown>[]; columns: { key: string; header: string }[]; filename: string }) {
   const [show, setShow] = useState(false);
   return (
@@ -146,14 +162,14 @@ export default function CatalogueHealthPage() {
         ]}
       />
 
-      <section className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+      <section className="grid grid-cols-1 gap-6 mb-6">
         <div className="bg-white rounded-lg border border-gray-200 p-5">
           <h3 className="text-base font-semibold text-gray-900 mb-4">Top 10 by Active Students</h3>
           <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={topUptake} layout="vertical" margin={{ left: 100 }}>
+            <BarChart data={topUptake} layout="vertical" margin={{ left: 8 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
               <XAxis type="number" allowDecimals={false} tick={{ fontSize: 12, fill: chart.axis }} stroke={chart.axis} />
-              <YAxis type="category" dataKey="fullTitle" tick={{ fontSize: 11, fill: chart.axis }} stroke={chart.axis} width={140} />
+              <YAxis type="category" dataKey="fullTitle" tick={<TitleYAxisTick fill={chart.axis} />} interval={0} stroke={chart.axis} width={300} />
               <Tooltip contentStyle={tooltipStyle(chart)} />
               <Bar dataKey="activeStudents">
                 {topUptake.map((r) => (
@@ -169,10 +185,10 @@ export default function CatalogueHealthPage() {
             <div className="text-sm text-gray-500 py-8 text-center">No titles with active records expiring in the next 90 days.</div>
           ) : (
             <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={topExpiring} layout="vertical" margin={{ left: 100 }}>
+              <BarChart data={topExpiring} layout="vertical" margin={{ left: 8 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
                 <XAxis type="number" allowDecimals={false} tick={{ fontSize: 12, fill: chart.axis }} stroke={chart.axis} />
-                <YAxis type="category" dataKey="fullTitle" tick={{ fontSize: 11, fill: chart.axis }} stroke={chart.axis} width={140} />
+                <YAxis type="category" dataKey="fullTitle" tick={<TitleYAxisTick fill={chart.axis} />} interval={0} stroke={chart.axis} width={300} />
                 <Tooltip contentStyle={tooltipStyle(chart)} />
                 <Bar dataKey="expiring90d">
                   {topExpiring.map((r) => (
