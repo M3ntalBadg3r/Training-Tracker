@@ -149,6 +149,7 @@ export async function generateConfigZip(): Promise<{
     regionData,
     trainingData,
     olxSubItemRelations,
+    programs,
     specialisations,
     programData,
     programDataAlternatives,
@@ -159,6 +160,7 @@ export async function generateConfigZip(): Promise<{
     prisma.regionData.findMany({ orderBy: { country: "asc" } }),
     prisma.trainingData.findMany({ orderBy: { trainingTitle: "asc" } }),
     prisma.olxSubItemRelation.findMany({ orderBy: [{ parentTrainingTitle: "asc" }, { subItemTrainingTitle: "asc" }] }),
+    prisma.program.findMany({ orderBy: { id: "asc" } }),
     prisma.specialisation.findMany({ orderBy: { id: "asc" } }),
     prisma.programData.findMany({ orderBy: { id: "asc" } }),
     prisma.programDataAlternative.findMany({ orderBy: { id: "asc" } }),
@@ -183,6 +185,7 @@ export async function generateConfigZip(): Promise<{
   zip.file("region_data.json", JSON.stringify(regionData, null, 2));
   zip.file("training_data.json", JSON.stringify(trainingData, null, 2));
   zip.file("olx_sub_item_relations.json", JSON.stringify(olxSubItemRelations, null, 2));
+  zip.file("programs.json", JSON.stringify(programs, null, 2));
   zip.file("specialisations.json", JSON.stringify(specialisations, null, 2));
   zip.file("program_data.json", JSON.stringify(programData, null, 2));
   zip.file("program_data_alternatives.json", JSON.stringify(programDataAlternatives, null, 2));
@@ -489,6 +492,7 @@ async function restoreConfigArchive(zip: JSZip): Promise<NextResponse> {
   type TrainingDataRow = any;
   type OlxRelationRow = { parentTrainingTitle: string; subItemTrainingTitle: string };
   type SpecialisationRow = { id: number; name: string };
+  type ProgramRow = { id: number; name: string; createdAt?: string };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   type ProgramDataRow = any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -500,6 +504,7 @@ async function restoreConfigArchive(zip: JSZip): Promise<NextResponse> {
   const archiveRegionData = await readJson<RegionDataRow[]>("region_data.json");
   const archiveTrainingData = await readJson<TrainingDataRow[]>("training_data.json");
   const archiveOlxRelations = await readJson<OlxRelationRow[]>("olx_sub_item_relations.json");
+  const archivePrograms = await readJson<ProgramRow[]>("programs.json");
   const archiveSpecialisations = await readJson<SpecialisationRow[]>("specialisations.json");
   const archiveProgramData = await readJson<ProgramDataRow[]>("program_data.json");
   const archiveProgramDataAlternatives = await readJson<ProgramDataAlternativeRow[]>(
@@ -525,6 +530,7 @@ async function restoreConfigArchive(zip: JSZip): Promise<NextResponse> {
       //    Order respects the remaining FKs inside this scope.
       await tx.programDataAlternative.deleteMany({});
       await tx.programData.deleteMany({});
+      await tx.program.deleteMany({});
       await tx.specialisation.deleteMany({});
       await tx.olxSubItemRelation.deleteMany({});
       await tx.importAlias.deleteMany({});
@@ -595,7 +601,25 @@ async function restoreConfigArchive(zip: JSZip): Promise<NextResponse> {
         });
       }
 
-      // 6. Re-insert Specialisation, ProgramData, ProgramDataAlternative with
+      // 6. Re-insert the Program registry. Older config archives predate the
+      //    programs table, so fall back to the distinct program names referenced
+      //    by the requirements to keep the registry consistent.
+      if (archivePrograms.length > 0) {
+        await tx.program.createMany({
+          data: archivePrograms.map((p) => ({
+            id: p.id,
+            name: p.name,
+            createdAt: p.createdAt ? new Date(p.createdAt) : new Date(),
+          })),
+        });
+      } else {
+        const derivedNames = [...new Set(archiveProgramData.map((p) => p.programName).filter(Boolean))];
+        if (derivedNames.length > 0) {
+          await tx.program.createMany({ data: derivedNames.map((name) => ({ name })) });
+        }
+      }
+
+      // 6b. Re-insert Specialisation, ProgramData, ProgramDataAlternative with
       //    explicit ids preserved so internal FKs (ProgramData.specialisationId
       //    and ProgramDataAlternative.programDataId) match the archive.
       if (archiveSpecialisations.length > 0) {
@@ -637,6 +661,7 @@ async function restoreConfigArchive(zip: JSZip): Promise<NextResponse> {
           `SELECT setval(pg_get_serial_sequence('"${table}"', 'id'), COALESCE((SELECT MAX(id) FROM "${table}"), 1))`
         );
       };
+      await resetSequence("programs");
       await resetSequence("specialisations");
       await resetSequence("program_data");
       await resetSequence("program_data_alternatives");

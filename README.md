@@ -630,7 +630,7 @@ To move data to a **different** installation, click **Portable backup…** and c
 
 When you stand up a new Training Tracker instance and want to carry over the catalogue, regions, programs, and import aliases — but **not** any learner data — click **Config Backup** (standard, tied to `ENCRYPTION_KEY`) or **Portable config backup…** (passphrase-encrypted, restores anywhere). The file is saved as `training-tracker-config-<timestamp>.zip[.enc]`.
 
-A config backup contains: product types, region data, the full training catalogue, OLX parent/sub-item relationships, specialisations, program data + alternatives, import aliases, and the system settings singleton. It explicitly excludes students, training-taken records, users, companies, scheduled exports, export credentials, and import metadata.
+A config backup contains: product types, region data, the full training catalogue, OLX parent/sub-item relationships, programs, specialisations, program data + alternatives, import aliases, and the system settings singleton. It explicitly excludes students, training-taken records, users, companies, scheduled exports, export credentials, and import metadata.
 
 Restoring a config backup wipes and replaces only the included reference tables and **leaves student and training-taken rows untouched**, so it is safe to run on a populated system when you just need to refresh the catalogue. Archive type is auto-detected on upload via a `kind` flag in `backup_metadata.json`; the upload form is shared with the standard restore.
 
@@ -827,18 +827,26 @@ The **Danger Zone** at the bottom of the Data Clean-Up page offers two destructi
 
 Navigate to **Admin > Program Data** to define partner program compliance requirements.
 
-Each entry specifies a requirement within a program:
+The page shows a **box for each program**. From here you can:
+
+- **New Program** — create a program by name. It persists immediately (and shows as a box) even before it has any requirements.
+- **Rename** (pencil icon on a box) — renames the program and every one of its requirements.
+- **Delete** (bin icon on a box) — deletes the program together with all of its requirements.
+- **Import / Export** — bulk-import (CSV/Excel drag-and-drop or browse) or export (CSV/Excel/PDF) across all programs at once.
+
+Click a box to open the program's page, which lists just that program's requirements and lets you **Add / Edit / Delete** them and **Manage Specialisations**. When you add a requirement from a program's page it is attached to that program automatically — there is no program picker to get wrong.
+
+Each requirement specifies:
 
 | Field | Description |
 |-------|-------------|
-| **Program Name** | The partner program name. Each unique name automatically gets its own dashboard under **Programs**. |
-| **Specialisation** | The product or solution area for this requirement. Managed via a controlled dropdown — click **+** to add new specialisations. |
+| **Specialisation** | The product or solution area for this requirement. Shared across programs; managed via a controlled dropdown — click **+** or **Manage Specialisations** to add new ones. |
 | **Level** | Whether the requirement applies at Country, Theatre, or Global level |
 | **Type** | Certification, Accreditation, Instructor-Led Training, OLX, or OLX Sub-Item |
 | **Training** | The specific training required (filtered by the selected Type) |
 | **Quantity Required** | For Country/Theatre: number of people needed. For Global: number of compliant theatres needed. |
 
-The page includes search, filtering by all fields, sorting, and export to CSV/Excel/PDF. Requirements can also be bulk-imported via the **Import** dialog, which accepts a CSV/Excel file by drag-and-drop onto the drop zone or by clicking to browse.
+Each distinct program automatically gets its own compliance dashboard under **Programs**.
 
 ---
 

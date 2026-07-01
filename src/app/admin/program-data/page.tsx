@@ -1,36 +1,28 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
 import PageHeader from "@/components/layout/PageHeader";
 import Modal from "@/components/ui/Modal";
-import { ProgramDataRow, SpecialisationRow } from "@/types";
-import { useDebounce } from "@/hooks/useDebounce";
+import { ProgramDataRow, ProgramSummaryRow } from "@/types";
+import { trainingTypeLabel } from "@/lib/utils";
 import {
   Plus,
   Trash2,
   Save,
   Download,
   Upload,
-  Search,
-  X,
-  ChevronUp,
-  ChevronDown,
   FileDown,
   AlertCircle,
   CheckCircle2,
+  ChevronRight,
+  ClipboardList,
+  Pencil,
 } from "lucide-react";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
-
-const TRAINING_TYPES = ["Certification", "Accreditation", "InstructorLedTraining"];
-const LEVELS = ["Country", "Theatre", "Global"];
-
-const TRAINING_TYPE_LABELS: Record<string, string> = {
-  Certification: "Certification",
-  Accreditation: "Accreditation",
-  InstructorLedTraining: "Instructor-Led Training",
-};
 
 const LEVEL_LABELS: Record<string, string> = {
   Country: "Country",
@@ -38,43 +30,26 @@ const LEVEL_LABELS: Record<string, string> = {
   Global: "Global",
 };
 
-interface TrainingOption {
-  trainingTitle: string;
-  fullTitle: string;
-}
-
-type SortDir = "asc" | "desc";
-
 export default function ProgramDataPage() {
-  const [data, setData] = useState<ProgramDataRow[]>([]);
-  const [specialisations, setSpecialisations] = useState<SpecialisationRow[]>([]);
+  const router = useRouter();
+
+  const [programs, setPrograms] = useState<ProgramSummaryRow[]>([]);
+  const [allRows, setAllRows] = useState<ProgramDataRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  // Search & filter
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchColumn, setSearchColumn] = useState("all");
-  const debouncedSearch = useDebounce(searchQuery, 300);
-  const [filterProgram, setFilterProgram] = useState("");
-  const [filterSpec, setFilterSpec] = useState("");
-  const [filterLevel, setFilterLevel] = useState("");
-  const [filterType, setFilterType] = useState("");
-
-  // Sort
-  const [sortCol, setSortCol] = useState("programName");
-  const [sortDir, setSortDir] = useState<SortDir>("asc");
-
-  // Pagination
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
-
-  // Modals
-  const [showAdd, setShowAdd] = useState(false);
-  const [showEdit, setShowEdit] = useState(false);
-  const [showDelete, setShowDelete] = useState(false);
+  // Export menu
   const [showExport, setShowExport] = useState(false);
-  const [showAddSpec, setShowAddSpec] = useState(false);
-  const [showAddProgram, setShowAddProgram] = useState(false);
+
+  // New / Rename / Delete program
+  const [showNew, setShowNew] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newError, setNewError] = useState("");
+  const [renameTarget, setRenameTarget] = useState<ProgramSummaryRow | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [renameError, setRenameError] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<ProgramSummaryRow | null>(null);
+  const [deleteError, setDeleteError] = useState("");
 
   // Import
   type ImportStep = "upload" | "preview" | "result";
@@ -102,76 +77,26 @@ export default function ProgramDataPage() {
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [importFileError, setImportFileError] = useState("");
 
-  // Form
-  const emptyForm = {
-    programName: "",
-    specialisationId: 0,
-    level: "",
-    trainingType: "",
-    trainingTitle: "",
-    quantityRequired: 1,
-    minimumPerTheatre: null as number | null,
-  };
-  const [addForm, setAddForm] = useState(emptyForm);
-  const [addNoTraining, setAddNoTraining] = useState(false);
-  const [editForm, setEditForm] = useState<ProgramDataRow | null>(null);
-  const [editNoTraining, setEditNoTraining] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<ProgramDataRow | null>(null);
-  const [formError, setFormError] = useState("");
-  const [newSpecName, setNewSpecName] = useState("");
-  const [addSpecError, setAddSpecError] = useState("");
-  const [newProgramName, setNewProgramName] = useState("");
-  const [addProgramError, setAddProgramError] = useState("");
+  const [lastImport, setLastImport] = useState<string | null>(null);
 
-  // Which form triggered the add-program modal
-  const [addProgramContext, setAddProgramContext] = useState<"add" | "edit">("add");
-
-  // Training options for dropdown
-  const [trainingOptions, setTrainingOptions] = useState<TrainingOption[]>([]);
-
-  // Alternatives state
-  interface AlternativeEntry { trainingType: string; trainingTitle: string; trainingFullTitle: string }
-  const [addAlternatives, setAddAlternatives] = useState<AlternativeEntry[]>([]);
-  const [editAlternatives, setEditAlternatives] = useState<AlternativeEntry[]>([]);
-  const [showAddAlts, setShowAddAlts] = useState(false);
-  const [showEditAlts, setShowEditAlts] = useState(false);
-  const [altTrainingOptions, setAltTrainingOptions] = useState<Record<string, TrainingOption[]>>({});
-
-  const fetchAltTrainingsByType = async (key: string, type: string) => {
-    if (!type) return;
+  const fetchPrograms = async () => {
     try {
-      const res = await fetch(`/api/training-data/by-type?type=${type}`);
-      if (res.ok) {
-        const options = await res.json();
-        setAltTrainingOptions((prev) => ({ ...prev, [key]: options }));
-      }
-    } catch { /* ignore */ }
-  };
-
-  const fetchData = async () => {
-    try {
-      const res = await fetch("/api/admin/program-data");
-      if (res.ok) {
-        const rows = await res.json();
-        setData(rows);
-      }
+      const res = await fetch("/api/admin/program-data/program");
+      if (res.ok) setPrograms(await res.json());
+      else setError("Failed to load programs");
     } catch {
-      setError("Failed to load program data");
+      setError("Failed to load programs");
     } finally {
       setLoading(false);
     }
   };
 
-  const fetchSpecialisations = async () => {
+  const fetchRows = async () => {
     try {
-      const res = await fetch("/api/admin/specialisations");
-      if (res.ok) {
-        setSpecialisations(await res.json());
-      }
+      const res = await fetch("/api/admin/program-data");
+      if (res.ok) setAllRows(await res.json());
     } catch { /* ignore */ }
   };
-
-  const [lastImport, setLastImport] = useState<string | null>(null);
 
   const fetchLastImport = () => {
     fetch("/api/import-metadata?key=program-data")
@@ -181,221 +106,81 @@ export default function ProgramDataPage() {
   };
 
   useEffect(() => {
-    fetchData();
-    fetchSpecialisations();
+    fetchPrograms();
+    fetchRows();
     fetchLastImport();
   }, []);
 
-  // Fetch trainings when type changes
-  const fetchTrainingsByType = async (type: string) => {
-    if (!type) {
-      setTrainingOptions([]);
-      return;
-    }
-    try {
-      const res = await fetch(`/api/training-data/by-type?type=${type}`);
-      if (res.ok) {
-        setTrainingOptions(await res.json());
-      }
-    } catch { /* ignore */ }
-  };
-
-  // Unique values for filters
-  const programNames = useMemo(() => [...new Set(data.map((d) => d.programName))].sort(), [data]);
-  const specNames = useMemo(() => [...new Set(data.map((d) => d.specialisationName))].sort(), [data]);
-
-  // Filtered & sorted data
-  const filteredData = useMemo(() => {
-    const q = debouncedSearch.toLowerCase();
-    return data.filter((row) => {
-      let matchesSearch = true;
-      if (q) {
-        if (searchColumn === "programName") {
-          matchesSearch = row.programName.toLowerCase().includes(q);
-        } else if (searchColumn === "specialisationName") {
-          matchesSearch = row.specialisationName.toLowerCase().includes(q);
-        } else if (searchColumn === "trainingFullTitle") {
-          matchesSearch = (row.trainingFullTitle || "").toLowerCase().includes(q);
-        } else if (searchColumn === "level") {
-          matchesSearch = row.level.toLowerCase().includes(q);
-        } else if (searchColumn === "trainingType") {
-          matchesSearch = (TRAINING_TYPE_LABELS[row.trainingType || ""] || row.trainingType || "").toLowerCase().includes(q);
-        } else {
-          matchesSearch =
-            row.programName.toLowerCase().includes(q) ||
-            row.specialisationName.toLowerCase().includes(q) ||
-            (row.trainingFullTitle || "").toLowerCase().includes(q) ||
-            row.level.toLowerCase().includes(q) ||
-            (row.trainingType ? (TRAINING_TYPE_LABELS[row.trainingType] || row.trainingType).toLowerCase().includes(q) : false);
-        }
-      }
-      const matchesProgram = !filterProgram || row.programName === filterProgram;
-      const matchesSpec = !filterSpec || row.specialisationName === filterSpec;
-      const matchesLevel = !filterLevel || row.level === filterLevel;
-      const matchesType = !filterType || row.trainingType === filterType;
-      return matchesSearch && matchesProgram && matchesSpec && matchesLevel && matchesType;
-    });
-  }, [data, debouncedSearch, searchColumn, filterProgram, filterSpec, filterLevel, filterType]);
-
-  const sortedData = useMemo(() => {
-    const sorted = [...filteredData];
-    sorted.sort((a, b) => {
-      let aVal = "", bVal = "";
-      switch (sortCol) {
-        case "programName": aVal = a.programName; bVal = b.programName; break;
-        case "specialisationName": aVal = a.specialisationName; bVal = b.specialisationName; break;
-        case "level": aVal = a.level; bVal = b.level; break;
-        case "trainingType": aVal = a.trainingType || ""; bVal = b.trainingType || ""; break;
-        case "trainingFullTitle": aVal = a.trainingFullTitle || ""; bVal = b.trainingFullTitle || ""; break;
-        case "quantityRequired": return sortDir === "asc" ? a.quantityRequired - b.quantityRequired : b.quantityRequired - a.quantityRequired;
-      }
-      return sortDir === "asc" ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
-    });
-    return sorted;
-  }, [filteredData, sortCol, sortDir]);
-
-  const totalPages = Math.max(1, Math.ceil(sortedData.length / pageSize));
-  const pagedData = sortedData.slice((page - 1) * pageSize, page * pageSize);
-
-  useEffect(() => { setPage(1); }, [debouncedSearch, searchColumn, filterProgram, filterSpec, filterLevel, filterType, pageSize]);
-
-  const toggleSort = (col: string) => {
-    if (sortCol === col) {
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    } else {
-      setSortCol(col);
-      setSortDir("asc");
-    }
-  };
-
-  const SortIcon = ({ col }: { col: string }) =>
-    sortCol === col ? (sortDir === "asc" ? <ChevronUp size={14} /> : <ChevronDown size={14} />) : null;
-
-  // CRUD handlers
-  const handleAdd = async () => {
-    setFormError("");
-    const payload = {
-      ...addForm,
-      trainingType: addNoTraining ? null : addForm.trainingType,
-      trainingTitle: addNoTraining ? null : addForm.trainingTitle,
-      minimumPerTheatre: addNoTraining ? null : (addForm.minimumPerTheatre ?? null),
-      alternatives: showAddAlts ? addAlternatives.filter((a) => a.trainingTitle) : [],
-    };
-    const res = await fetch("/api/admin/program-data", {
+  // --- New / Rename / Delete program handlers ---
+  const handleNewProgram = async () => {
+    setNewError("");
+    const trimmed = newName.trim();
+    if (!trimmed) { setNewError("Program name is required"); return; }
+    const res = await fetch("/api/admin/program-data/program", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ name: trimmed }),
     });
-    const result = await res.json();
     if (!res.ok) {
-      setFormError(result.error);
+      const result = await res.json().catch(() => ({}));
+      setNewError(result.error || "Failed to create program");
       return;
     }
-    setShowAdd(false);
-    setAddForm(emptyForm);
-    setAddNoTraining(false);
-    setAddAlternatives([]);
-    setShowAddAlts(false);
-    setTrainingOptions([]);
-    setAltTrainingOptions({});
-    fetchData();
+    setShowNew(false);
+    setNewName("");
+    router.push(`/admin/program-data/${encodeURIComponent(trimmed)}`);
   };
 
-  const handleEdit = async () => {
-    if (!editForm) return;
-    setFormError("");
-    const res = await fetch(`/api/admin/program-data/${editForm.id}`, {
-      method: "PUT",
+  const handleRename = async () => {
+    if (!renameTarget) return;
+    setRenameError("");
+    const trimmed = renameValue.trim();
+    if (!trimmed) { setRenameError("Program name is required"); return; }
+    const res = await fetch(`/api/admin/program-data/program/${encodeURIComponent(renameTarget.name)}`, {
+      method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        programName: editForm.programName,
-        specialisationId: editForm.specialisationId,
-        level: editForm.level,
-        trainingType: editNoTraining ? null : editForm.trainingType,
-        trainingTitle: editNoTraining ? null : editForm.trainingTitle,
-        quantityRequired: editForm.quantityRequired,
-        minimumPerTheatre: editNoTraining ? null : (editForm.minimumPerTheatre ?? null),
-        alternatives: showEditAlts ? editAlternatives.filter((a) => a.trainingTitle) : [],
-      }),
+      body: JSON.stringify({ newName: trimmed }),
     });
-    const result = await res.json();
     if (!res.ok) {
-      setFormError(result.error);
+      const result = await res.json().catch(() => ({}));
+      setRenameError(result.error || "Failed to rename program");
       return;
     }
-    setShowEdit(false);
-    setEditForm(null);
-    setEditAlternatives([]);
-    setShowEditAlts(false);
-    setTrainingOptions([]);
-    setAltTrainingOptions({});
-    fetchData();
+    setRenameTarget(null);
+    setRenameValue("");
+    fetchPrograms();
+    fetchRows();
   };
 
-  const handleDelete = async () => {
+  const handleDeleteProgram = async () => {
     if (!deleteTarget) return;
-    const res = await fetch(`/api/admin/program-data/${deleteTarget.id}`, { method: "DELETE" });
+    setDeleteError("");
+    const res = await fetch(`/api/admin/program-data/program/${encodeURIComponent(deleteTarget.name)}`, {
+      method: "DELETE",
+    });
     if (!res.ok) {
-      const result = await res.json();
-      setFormError(result.error);
+      const result = await res.json().catch(() => ({}));
+      setDeleteError(result.error || "Failed to delete program");
       return;
     }
-    setShowDelete(false);
     setDeleteTarget(null);
-    fetchData();
+    fetchPrograms();
+    fetchRows();
   };
 
-  const handleAddSpecialisation = async () => {
-    setAddSpecError("");
-    const res = await fetch("/api/admin/specialisations", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: newSpecName }),
-    });
-    const result = await res.json();
-    if (!res.ok) {
-      setAddSpecError(result.error);
-      return;
+  const describe = (p: ProgramSummaryRow) => {
+    const parts: string[] = [];
+    parts.push(`${p.requirementCount} requirement${p.requirementCount === 1 ? "" : "s"}`);
+    if (p.specialisations.length > 0) {
+      parts.push(`${p.specialisations.length} specialisation${p.specialisations.length === 1 ? "" : "s"}`);
     }
-    setShowAddSpec(false);
-    setNewSpecName("");
-    fetchSpecialisations();
-    setAddForm((f) => ({ ...f, specialisationId: result.id }));
-  };
-
-  const handleAddProgram = () => {
-    setAddProgramError("");
-    const trimmed = newProgramName.trim();
-    if (!trimmed) { setAddProgramError("Program name is required"); return; }
-    if (programNames.includes(trimmed)) { setAddProgramError("A program with this name already exists"); return; }
-    if (addProgramContext === "add") {
-      setAddForm((f) => ({ ...f, programName: trimmed }));
-    } else {
-      setEditForm((f) => f ? { ...f, programName: trimmed } : f);
+    if (p.levels.length > 0) {
+      parts.push(`levels: ${p.levels.map((l) => LEVEL_LABELS[l] || l).join(", ")}`);
     }
-    setShowAddProgram(false);
-    setNewProgramName("");
+    return parts.join(" · ");
   };
 
-  const openEditModal = (row: ProgramDataRow) => {
-    setEditForm({ ...row });
-    setEditNoTraining(row.level === "Global" && row.trainingTitle === null);
-    setFormError("");
-    if (row.trainingType) fetchTrainingsByType(row.trainingType);
-    // Populate alternatives
-    const alts = row.alternatives || [];
-    setEditAlternatives(alts.map((a) => ({ ...a })));
-    setShowEditAlts(alts.length > 0);
-    // Pre-fetch training options for each alternative's type
-    const newAltOptions: Record<string, TrainingOption[]> = {};
-    setAltTrainingOptions(newAltOptions);
-    alts.forEach((a, i) => {
-      if (a.trainingType) fetchAltTrainingsByType(`edit-${i}`, a.trainingType);
-    });
-    setShowEdit(true);
-  };
-
-  // Export
+  // --- Export (all programs) ---
   const exportColumns = [
     { key: "programName" as const, header: "Program Name" },
     { key: "specialisationName" as const, header: "Specialisation" },
@@ -407,23 +192,23 @@ export default function ProgramDataPage() {
     { key: "alternatives" as const, header: "Alternatives" },
   ];
 
-  const exportData = sortedData.map((r) => {
-    const altsLabel = r.alternatives && r.alternatives.length > 0
-      ? r.alternatives.map((a) => a.trainingFullTitle).join("|")
-      : "";
-    return {
-      programName: r.programName,
-      specialisationName: r.specialisationName,
-      level: r.level,
-      trainingType: r.trainingType ? (TRAINING_TYPE_LABELS[r.trainingType] || r.trainingType) : "—",
-      trainingFullTitle: r.trainingFullTitle || "—",
-      quantityRequired: r.quantityRequired,
-      minimumPerTheatre: r.minimumPerTheatre ?? "—",
-      alternatives: altsLabel,
-    };
-  });
-
-  const hasFilters = !!searchQuery || searchColumn !== "all" || !!filterProgram || !!filterSpec || !!filterLevel || !!filterType;
+  const exportData = [...allRows]
+    .sort((a, b) => a.programName.localeCompare(b.programName) || a.specialisationName.localeCompare(b.specialisationName))
+    .map((r) => {
+      const altsLabel = r.alternatives && r.alternatives.length > 0
+        ? r.alternatives.map((a) => a.trainingFullTitle).join("|")
+        : "";
+      return {
+        programName: r.programName,
+        specialisationName: r.specialisationName,
+        level: r.level,
+        trainingType: r.trainingType ? trainingTypeLabel(r.trainingType) : "—",
+        trainingFullTitle: r.trainingFullTitle || "—",
+        quantityRequired: r.quantityRequired,
+        minimumPerTheatre: r.minimumPerTheatre ?? "—",
+        alternatives: altsLabel,
+      };
+    });
 
   // --- Import helpers ---
   const IMPORT_COLUMN_MAP: Record<string, keyof ImportRow> = {
@@ -556,8 +341,8 @@ export default function ProgramDataPage() {
       const result = await res.json();
       setImportResult(result);
       setImportStep("result");
-      fetchData();
-      fetchSpecialisations();
+      fetchPrograms();
+      fetchRows();
       fetchLastImport();
     } catch {
       setImportResult({ created: 0, skipped: importRows.length, errors: [{ row: 0, message: "Import request failed" }] });
@@ -639,8 +424,8 @@ export default function ProgramDataPage() {
         }
       />
 
-      {/* Import / Export / Add buttons */}
-      <section className="mb-4">
+      {/* Import / Export / New Program buttons */}
+      <section className="mb-6">
         <div className="flex items-center gap-3">
           <button
             onClick={() => { resetImport(); setShowImport(true); }}
@@ -679,10 +464,10 @@ export default function ProgramDataPage() {
             )}
           </div>
           <button
-            onClick={() => { setShowAdd(true); setFormError(""); setAddForm(emptyForm); setAddNoTraining(false); setTrainingOptions([]); setAddAlternatives([]); setShowAddAlts(false); setAltTrainingOptions({}); }}
+            onClick={() => { setShowNew(true); setNewName(""); setNewError(""); }}
             className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
           >
-            <Plus size={16} /> Add Requirement
+            <Plus size={16} /> New Program
           </button>
         </div>
       </section>
@@ -691,590 +476,94 @@ export default function ProgramDataPage() {
         <div className="mb-4 p-3 bg-red-50 text-red-700 rounded-lg">{error}</div>
       )}
 
-      {/* Search bar */}
-      <section className="mb-4 flex items-center gap-3">
-        <div className="relative flex-1 max-w-md">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Search..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-          />
+      {/* Program cards */}
+      {programs.length === 0 ? (
+        <div className="bg-white rounded-lg border border-gray-200 px-4 py-12 text-center text-gray-500">
+          No programs yet. Click &quot;New Program&quot; to create one, or import requirements.
         </div>
-        <select
-          value={searchColumn}
-          onChange={(e) => setSearchColumn(e.target.value)}
-          className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
-        >
-          <option value="all">All columns</option>
-          <option value="programName">Program</option>
-          <option value="specialisationName">Specialisation</option>
-          <option value="level">Level</option>
-          <option value="trainingType">Training Type</option>
-          <option value="trainingFullTitle">Training</option>
-        </select>
-        {hasFilters && (
-          <button
-            onClick={() => { setSearchQuery(""); setSearchColumn("all"); setFilterProgram(""); setFilterSpec(""); setFilterLevel(""); setFilterType(""); }}
-            className="text-sm text-blue-600 hover:text-blue-800 whitespace-nowrap"
-          >
-            Clear Filters
-          </button>
-        )}
-      </section>
-
-      {/* Data Table */}
-      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-left">
-              <tr>
-                <th className="px-4 py-3 text-left">
-                  <div className="space-y-1">
-                    <button onClick={() => toggleSort("programName")} className="flex items-center gap-1 font-semibold text-gray-700 hover:text-gray-900">
-                      Program Name <SortIcon col="programName" />
-                    </button>
-                    <select value={filterProgram} onChange={(e) => setFilterProgram(e.target.value)} className="w-full text-xs border border-gray-200 rounded px-1 py-0.5 font-normal">
-                      <option value="">All</option>
-                      {programNames.map((p) => <option key={p} value={p}>{p}</option>)}
-                    </select>
-                  </div>
-                </th>
-                <th className="px-4 py-3 text-left">
-                  <div className="space-y-1">
-                    <button onClick={() => toggleSort("specialisationName")} className="flex items-center gap-1 font-semibold text-gray-700 hover:text-gray-900">
-                      Specialisation <SortIcon col="specialisationName" />
-                    </button>
-                    <select value={filterSpec} onChange={(e) => setFilterSpec(e.target.value)} className="w-full text-xs border border-gray-200 rounded px-1 py-0.5 font-normal">
-                      <option value="">All</option>
-                      {specNames.map((s) => <option key={s} value={s}>{s}</option>)}
-                    </select>
-                  </div>
-                </th>
-                <th className="px-4 py-3 text-left">
-                  <div className="space-y-1">
-                    <button onClick={() => toggleSort("level")} className="flex items-center gap-1 font-semibold text-gray-700 hover:text-gray-900">
-                      Level <SortIcon col="level" />
-                    </button>
-                    <select value={filterLevel} onChange={(e) => setFilterLevel(e.target.value)} className="w-full text-xs border border-gray-200 rounded px-1 py-0.5 font-normal">
-                      <option value="">All</option>
-                      {LEVELS.map((l) => <option key={l} value={l}>{LEVEL_LABELS[l]}</option>)}
-                    </select>
-                  </div>
-                </th>
-                <th className="px-4 py-3 text-left">
-                  <div className="space-y-1">
-                    <button onClick={() => toggleSort("trainingType")} className="flex items-center gap-1 font-semibold text-gray-700 hover:text-gray-900">
-                      Type <SortIcon col="trainingType" />
-                    </button>
-                    <select value={filterType} onChange={(e) => setFilterType(e.target.value)} className="w-full text-xs border border-gray-200 rounded px-1 py-0.5 font-normal">
-                      <option value="">All</option>
-                      {TRAINING_TYPES.map((t) => <option key={t} value={t}>{TRAINING_TYPE_LABELS[t]}</option>)}
-                    </select>
-                  </div>
-                </th>
-                <th className="px-4 py-3 text-left">
-                  <button onClick={() => toggleSort("trainingFullTitle")} className="flex items-center gap-1 font-semibold text-gray-700 hover:text-gray-900">
-                    Training <SortIcon col="trainingFullTitle" />
-                  </button>
-                </th>
-                <th className="px-4 py-3 text-left">
-                  <button onClick={() => toggleSort("quantityRequired")} className="flex items-center gap-1 font-semibold text-gray-700 hover:text-gray-900">
-                    Qty Required <SortIcon col="quantityRequired" />
-                  </button>
-                </th>
-                <th className="px-4 py-3 font-semibold text-gray-700">Min/Theatre</th>
-                <th className="px-4 py-3 font-semibold text-gray-700">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {pagedData.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="px-4 py-8 text-center text-gray-500">
-                    {data.length === 0 ? "No program data yet. Click \"Add Requirement\" to get started." : "No results match your filters."}
-                  </td>
-                </tr>
-              ) : (
-                pagedData.map((row) => (
-                  <tr key={row.id} className="border-t border-gray-100 hover:bg-gray-50">
-                    <td className="px-4 py-3">{row.programName}</td>
-                    <td className="px-4 py-3">{row.specialisationName}</td>
-                    <td className="px-4 py-3">{LEVEL_LABELS[row.level] || row.level}</td>
-                    <td className="px-4 py-3">{row.trainingType ? (TRAINING_TYPE_LABELS[row.trainingType] || row.trainingType) : "—"}</td>
-                    <td className="px-4 py-3">
-                      {row.trainingFullTitle || "—"}
-                      {row.alternatives && row.alternatives.length > 0 && (
-                        <div className="text-xs text-gray-500 mt-0.5">
-                          or {row.alternatives.map((a) => a.trainingFullTitle).join(", ")}
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">{row.quantityRequired}</td>
-                    <td className="px-4 py-3">{row.minimumPerTheatre ?? "—"}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => openEditModal(row)}
-                          className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => { setDeleteTarget(row); setShowDelete(true); setFormError(""); }}
-                          className="px-2 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Pagination */}
-        {sortedData.length > 0 && (
-          <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100">
-            <div className="flex items-center gap-2 text-sm text-gray-600">
-              <span>Showing {(page - 1) * pageSize + 1}-{Math.min(page * pageSize, sortedData.length)} of {sortedData.length}</span>
-              <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))} className="ml-2 px-2 py-1 border border-gray-300 rounded bg-white text-sm">
-                {[10, 25, 50, 100].map((s) => <option key={s} value={s}>{s} per page</option>)}
-              </select>
+      ) : (
+        <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {programs.map((p) => (
+            <div
+              key={p.name}
+              className="flex items-center justify-between p-4 bg-white rounded-lg border border-gray-200 hover:border-blue-300 hover:shadow-sm transition-all"
+            >
+              <Link href={`/admin/program-data/${encodeURIComponent(p.name)}`} className="flex items-center gap-3 min-w-0 flex-1">
+                <ClipboardList size={20} className="text-blue-600 shrink-0" />
+                <div className="min-w-0">
+                  <h3 className="font-semibold truncate">{p.name}</h3>
+                  <p className="text-sm text-gray-500 truncate">{describe(p)}</p>
+                </div>
+              </Link>
+              <div className="flex items-center gap-1 shrink-0 ml-2">
+                <button
+                  onClick={() => { setRenameTarget(p); setRenameValue(p.name); setRenameError(""); }}
+                  className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded"
+                  title="Rename program"
+                >
+                  <Pencil size={16} />
+                </button>
+                <button
+                  onClick={() => { setDeleteTarget(p); setDeleteError(""); }}
+                  className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
+                  title="Delete program"
+                >
+                  <Trash2 size={16} />
+                </button>
+                <Link href={`/admin/program-data/${encodeURIComponent(p.name)}`} className="p-1.5 text-gray-400 hover:text-gray-700" title="Open program">
+                  <ChevronRight size={20} />
+                </Link>
+              </div>
             </div>
-            <div className="flex items-center gap-1">
-              <button disabled={page <= 1} onClick={() => setPage((p) => p - 1)} className="px-3 py-1 text-sm border rounded disabled:opacity-50 hover:bg-gray-50 border-gray-300">Prev</button>
-              <span className="px-3 py-1 text-sm">{page} / {totalPages}</span>
-              <button disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)} className="px-3 py-1 text-sm border rounded disabled:opacity-50 hover:bg-gray-50 border-gray-300">Next</button>
-            </div>
-          </div>
-        )}
-      </div>
+          ))}
+        </section>
+      )}
 
-      {/* Add Modal */}
-      <Modal open={showAdd} onClose={() => setShowAdd(false)} title="Add Program Requirement">
+      {/* New Program Modal */}
+      <Modal open={showNew} onClose={() => setShowNew(false)} title="New Program">
         <div className="space-y-4">
-          {formError && <div className="p-2 bg-red-50 text-red-700 rounded text-sm">{formError}</div>}
+          {newError && <div className="p-2 bg-red-50 text-red-700 rounded text-sm">{newError}</div>}
           <div>
             <label className="block text-sm font-medium mb-1">Program Name</label>
-            <div className="flex gap-2">
-              <select
-                value={addForm.programName}
-                onChange={(e) => setAddForm((f) => ({ ...f, programName: e.target.value }))}
-                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
-              >
-                <option value="">Select program...</option>
-                {programNames.map((p) => <option key={p} value={p}>{p}</option>)}
-                {addForm.programName && !programNames.includes(addForm.programName) && (
-                  <option value={addForm.programName}>{addForm.programName}</option>
-                )}
-              </select>
-              <button
-                onClick={() => { setAddProgramContext("add"); setShowAddProgram(true); setAddProgramError(""); setNewProgramName(""); }}
-                className="px-3 py-2 text-sm bg-gray-100 border border-gray-300 rounded-lg hover:bg-gray-200"
-                title="Add new program"
-              >
-                <Plus size={16} />
-              </button>
-            </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Specialisation</label>
-            <div className="flex gap-2">
-              <select
-                value={addForm.specialisationId}
-                onChange={(e) => setAddForm((f) => ({ ...f, specialisationId: Number(e.target.value) }))}
-                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
-              >
-                <option value={0}>Select specialisation...</option>
-                {specialisations.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
-              <button
-                onClick={() => { setShowAddSpec(true); setAddSpecError(""); setNewSpecName(""); }}
-                className="px-3 py-2 text-sm bg-gray-100 border border-gray-300 rounded-lg hover:bg-gray-200"
-                title="Add new specialisation"
-              >
-                <Plus size={16} />
-              </button>
-            </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Level</label>
-            <select
-              value={addForm.level}
-              onChange={(e) => {
-                const lvl = e.target.value;
-                setAddForm((f) => ({ ...f, level: lvl }));
-                setAddNoTraining(false);
-                if (lvl !== "Global") fetchTrainingsByType(addForm.trainingType);
-              }}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
-            >
-              <option value="">Select level...</option>
-              {LEVELS.map((l) => <option key={l} value={l}>{LEVEL_LABELS[l]}</option>)}
-            </select>
-          </div>
-          {addForm.level === "Global" && (
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="add-no-training"
-                checked={addNoTraining}
-                onChange={(e) => {
-                  setAddNoTraining(e.target.checked);
-                  if (e.target.checked) setTrainingOptions([]);
-                }}
-                className="w-4 h-4"
-              />
-              <label htmlFor="add-no-training" className="text-sm">
-                No specific training (count compliant theatres)
-              </label>
-            </div>
-          )}
-          {(addForm.level !== "Global" || !addNoTraining) && (
-            <>
-              <div>
-                <label className="block text-sm font-medium mb-1">Type</label>
-                <select
-                  value={addForm.trainingType}
-                  onChange={(e) => {
-                    const type = e.target.value;
-                    setAddForm((f) => ({ ...f, trainingType: type, trainingTitle: "" }));
-                    fetchTrainingsByType(type);
-                  }}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
-                >
-                  <option value="">Select type...</option>
-                  {TRAINING_TYPES.map((t) => <option key={t} value={t}>{TRAINING_TYPE_LABELS[t]}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Training</label>
-                <select
-                  value={addForm.trainingTitle}
-                  onChange={(e) => setAddForm((f) => ({ ...f, trainingTitle: e.target.value }))}
-                  disabled={!addForm.trainingType}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm disabled:opacity-50"
-                >
-                  <option value="">{addForm.trainingType ? "Select training..." : "Select a type first..."}</option>
-                  {trainingOptions.map((t) => <option key={t.trainingTitle} value={t.trainingTitle}>{t.fullTitle}</option>)}
-                </select>
-              </div>
-              {addForm.level === "Global" && (
-                <div>
-                  <label className="block text-sm font-medium mb-1">Minimum per Theatre (optional)</label>
-                  <input
-                    type="number"
-                    min={0}
-                    value={addForm.minimumPerTheatre ?? ""}
-                    onChange={(e) => setAddForm((f) => ({ ...f, minimumPerTheatre: e.target.value ? parseInt(e.target.value) : null }))}
-                    placeholder="Leave blank if no per-theatre minimum"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
-                  />
-                  <p className="mt-1 text-xs text-gray-500">Leave blank if no per-theatre minimum applies.</p>
-                </div>
-              )}
-              {/* Accept alternative trainings */}
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="add-alts"
-                  checked={showAddAlts}
-                  onChange={(e) => {
-                    setShowAddAlts(e.target.checked);
-                    if (!e.target.checked) { setAddAlternatives([]); setAltTrainingOptions({}); }
-                  }}
-                  className="w-4 h-4"
-                />
-                <label htmlFor="add-alts" className="text-sm">
-                  Accept alternative trainings
-                </label>
-              </div>
-              {showAddAlts && (
-                <div className="border border-gray-200 rounded-lg p-3 space-y-3 bg-gray-50">
-                  <p className="text-xs text-gray-500">Students with any of these alternative trainings will also count toward the requirement.</p>
-                  {addAlternatives.map((alt, idx) => (
-                    <div key={idx} className="flex items-end gap-2">
-                      <div className="flex-1">
-                        <label className="block text-xs font-medium mb-1 text-gray-600">Type</label>
-                        <select
-                          value={alt.trainingType}
-                          onChange={(e) => {
-                            const type = e.target.value;
-                            setAddAlternatives((prev) => prev.map((a, i) => i === idx ? { ...a, trainingType: type, trainingTitle: "", trainingFullTitle: "" } : a));
-                            fetchAltTrainingsByType(`add-${idx}`, type);
-                          }}
-                          className="w-full px-2 py-1.5 border border-gray-300 rounded bg-white text-sm"
-                        >
-                          <option value="">Select type...</option>
-                          {TRAINING_TYPES.map((t) => <option key={t} value={t}>{TRAINING_TYPE_LABELS[t]}</option>)}
-                        </select>
-                      </div>
-                      <div className="flex-[2]">
-                        <label className="block text-xs font-medium mb-1 text-gray-600">Training</label>
-                        <select
-                          value={alt.trainingTitle}
-                          onChange={(e) => {
-                            const title = e.target.value;
-                            const opt = (altTrainingOptions[`add-${idx}`] || []).find((o) => o.trainingTitle === title);
-                            setAddAlternatives((prev) => prev.map((a, i) => i === idx ? { ...a, trainingTitle: title, trainingFullTitle: opt?.fullTitle ?? "" } : a));
-                          }}
-                          disabled={!alt.trainingType}
-                          className="w-full px-2 py-1.5 border border-gray-300 rounded bg-white text-sm disabled:opacity-50"
-                        >
-                          <option value="">{alt.trainingType ? "Select training..." : "Select type first..."}</option>
-                          {(altTrainingOptions[`add-${idx}`] || []).map((t) => <option key={t.trainingTitle} value={t.trainingTitle}>{t.fullTitle}</option>)}
-                        </select>
-                      </div>
-                      <button
-                        onClick={() => setAddAlternatives((prev) => prev.filter((_, i) => i !== idx))}
-                        className="px-2 py-1.5 text-red-600 hover:bg-red-50 rounded"
-                        title="Remove alternative"
-                      >
-                        <X size={16} />
-                      </button>
-                    </div>
-                  ))}
-                  <button
-                    onClick={() => setAddAlternatives((prev) => [...prev, { trainingType: "", trainingTitle: "", trainingFullTitle: "" }])}
-                    className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800"
-                  >
-                    <Plus size={14} /> Add Alternative
-                  </button>
-                </div>
-              )}
-            </>
-          )}
-          <div>
-            <label className="block text-sm font-medium mb-1">Quantity Required</label>
             <input
-              type="number"
-              min={1}
-              value={addForm.quantityRequired}
-              onChange={(e) => setAddForm((f) => ({ ...f, quantityRequired: parseInt(e.target.value) || 1 }))}
+              type="text"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              placeholder="e.g., a partner compliance program"
               className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
+              onKeyDown={(e) => { if (e.key === "Enter") handleNewProgram(); }}
             />
-            <p className="mt-1 text-xs text-gray-500">
-              {addForm.level === "Global" && addNoTraining
-                ? "Number of compliant theatres needed."
-                : "Number of people with this training needed."}
-            </p>
           </div>
           <div className="flex justify-end gap-2 pt-2">
-            <button onClick={() => setShowAdd(false)} className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
-            <button onClick={handleAdd} className="flex items-center gap-1 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-              <Save size={16} /> Save
+            <button onClick={() => setShowNew(false)} className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
+            <button onClick={handleNewProgram} className="flex items-center gap-1 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+              <Save size={16} /> Create
             </button>
           </div>
         </div>
       </Modal>
 
-      {/* Edit Modal */}
-      <Modal open={showEdit} onClose={() => setShowEdit(false)} title="Edit Program Requirement">
-        {editForm && (
+      {/* Rename Program Modal */}
+      <Modal open={renameTarget !== null} onClose={() => setRenameTarget(null)} title="Rename Program">
+        {renameTarget && (
           <div className="space-y-4">
-            {formError && <div className="p-2 bg-red-50 text-red-700 rounded text-sm">{formError}</div>}
+            {renameError && <div className="p-2 bg-red-50 text-red-700 rounded text-sm">{renameError}</div>}
             <div>
               <label className="block text-sm font-medium mb-1">Program Name</label>
-              <div className="flex gap-2">
-                <select
-                  value={editForm.programName}
-                  onChange={(e) => setEditForm((f) => f ? { ...f, programName: e.target.value } : f)}
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
-                >
-                  <option value="">Select program...</option>
-                  {programNames.map((p) => <option key={p} value={p}>{p}</option>)}
-                  {/* Include current value even if not in programNames (shouldn't happen, but safe) */}
-                  {editForm.programName && !programNames.includes(editForm.programName) && (
-                    <option value={editForm.programName}>{editForm.programName}</option>
-                  )}
-                </select>
-                <button
-                  onClick={() => { setAddProgramContext("edit"); setShowAddProgram(true); setAddProgramError(""); setNewProgramName(""); }}
-                  className="px-3 py-2 text-sm bg-gray-100 border border-gray-300 rounded-lg hover:bg-gray-200"
-                  title="Add new program"
-                >
-                  <Plus size={16} />
-                </button>
-              </div>
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Specialisation</label>
-              <select
-                value={editForm.specialisationId}
-                onChange={(e) => setEditForm((f) => f ? { ...f, specialisationId: Number(e.target.value) } : f)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
-              >
-                <option value={0}>Select specialisation...</option>
-                {specialisations.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Level</label>
-              <select
-                value={editForm.level}
-                onChange={(e) => {
-                  const lvl = e.target.value;
-                  setEditForm((f) => f ? { ...f, level: lvl } : f);
-                  setEditNoTraining(false);
-                  if (lvl !== "Global") fetchTrainingsByType(editForm.trainingType || "");
-                }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
-              >
-                {LEVELS.map((l) => <option key={l} value={l}>{LEVEL_LABELS[l]}</option>)}
-              </select>
-            </div>
-            {editForm.level === "Global" && (
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="edit-no-training"
-                  checked={editNoTraining}
-                  onChange={(e) => {
-                    setEditNoTraining(e.target.checked);
-                    if (e.target.checked) setTrainingOptions([]);
-                  }}
-                  className="w-4 h-4"
-                />
-                <label htmlFor="edit-no-training" className="text-sm">
-                  No specific training (count compliant theatres)
-                </label>
-              </div>
-            )}
-            {(editForm.level !== "Global" || !editNoTraining) && (
-              <>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Type</label>
-                  <select
-                    value={editForm.trainingType || ""}
-                    onChange={(e) => {
-                      const type = e.target.value;
-                      setEditForm((f) => f ? { ...f, trainingType: type, trainingTitle: null } : f);
-                      fetchTrainingsByType(type);
-                    }}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
-                  >
-                    <option value="">Select type...</option>
-                    {TRAINING_TYPES.map((t) => <option key={t} value={t}>{TRAINING_TYPE_LABELS[t]}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Training</label>
-                  <select
-                    value={editForm.trainingTitle || ""}
-                    onChange={(e) => setEditForm((f) => f ? { ...f, trainingTitle: e.target.value } : f)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
-                  >
-                    <option value="">Select training...</option>
-                    {trainingOptions.map((t) => <option key={t.trainingTitle} value={t.trainingTitle}>{t.fullTitle}</option>)}
-                  </select>
-                </div>
-                {editForm.level === "Global" && (
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Minimum per Theatre (optional)</label>
-                    <input
-                      type="number"
-                      min={0}
-                      value={editForm.minimumPerTheatre ?? ""}
-                      onChange={(e) => setEditForm((f) => f ? { ...f, minimumPerTheatre: e.target.value ? parseInt(e.target.value) : null } : f)}
-                      placeholder="Leave blank if no per-theatre minimum"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
-                    />
-                    <p className="mt-1 text-xs text-gray-500">Leave blank if no per-theatre minimum applies.</p>
-                  </div>
-                )}
-                {/* Accept alternative trainings */}
-                <div className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    id="edit-alts"
-                    checked={showEditAlts}
-                    onChange={(e) => {
-                      setShowEditAlts(e.target.checked);
-                      if (!e.target.checked) { setEditAlternatives([]); setAltTrainingOptions({}); }
-                    }}
-                    className="w-4 h-4"
-                  />
-                  <label htmlFor="edit-alts" className="text-sm">
-                    Accept alternative trainings
-                  </label>
-                </div>
-                {showEditAlts && (
-                  <div className="border border-gray-200 rounded-lg p-3 space-y-3 bg-gray-50">
-                    <p className="text-xs text-gray-500">Students with any of these alternative trainings will also count toward the requirement.</p>
-                    {editAlternatives.map((alt, idx) => (
-                      <div key={idx} className="flex items-end gap-2">
-                        <div className="flex-1">
-                          <label className="block text-xs font-medium mb-1 text-gray-600">Type</label>
-                          <select
-                            value={alt.trainingType}
-                            onChange={(e) => {
-                              const type = e.target.value;
-                              setEditAlternatives((prev) => prev.map((a, i) => i === idx ? { ...a, trainingType: type, trainingTitle: "", trainingFullTitle: "" } : a));
-                              fetchAltTrainingsByType(`edit-${idx}`, type);
-                            }}
-                            className="w-full px-2 py-1.5 border border-gray-300 rounded bg-white text-sm"
-                          >
-                            <option value="">Select type...</option>
-                            {TRAINING_TYPES.map((t) => <option key={t} value={t}>{TRAINING_TYPE_LABELS[t]}</option>)}
-                          </select>
-                        </div>
-                        <div className="flex-[2]">
-                          <label className="block text-xs font-medium mb-1 text-gray-600">Training</label>
-                          <select
-                            value={alt.trainingTitle}
-                            onChange={(e) => {
-                              const title = e.target.value;
-                              const opt = (altTrainingOptions[`edit-${idx}`] || []).find((o) => o.trainingTitle === title);
-                              setEditAlternatives((prev) => prev.map((a, i) => i === idx ? { ...a, trainingTitle: title, trainingFullTitle: opt?.fullTitle ?? "" } : a));
-                            }}
-                            disabled={!alt.trainingType}
-                            className="w-full px-2 py-1.5 border border-gray-300 rounded bg-white text-sm disabled:opacity-50"
-                          >
-                            <option value="">{alt.trainingType ? "Select training..." : "Select type first..."}</option>
-                            {(altTrainingOptions[`edit-${idx}`] || []).map((t) => <option key={t.trainingTitle} value={t.trainingTitle}>{t.fullTitle}</option>)}
-                          </select>
-                        </div>
-                        <button
-                          onClick={() => setEditAlternatives((prev) => prev.filter((_, i) => i !== idx))}
-                          className="px-2 py-1.5 text-red-600 hover:bg-red-50 rounded"
-                          title="Remove alternative"
-                        >
-                          <X size={16} />
-                        </button>
-                      </div>
-                    ))}
-                    <button
-                      onClick={() => setEditAlternatives((prev) => [...prev, { trainingType: "", trainingTitle: "", trainingFullTitle: "" }])}
-                      className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800"
-                    >
-                      <Plus size={14} /> Add Alternative
-                    </button>
-                  </div>
-                )}
-              </>
-            )}
-            <div>
-              <label className="block text-sm font-medium mb-1">Quantity Required</label>
               <input
-                type="number"
-                min={1}
-                value={editForm.quantityRequired}
-                onChange={(e) => setEditForm((f) => f ? { ...f, quantityRequired: parseInt(e.target.value) || 1 } : f)}
+                type="text"
+                value={renameValue}
+                onChange={(e) => setRenameValue(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
+                onKeyDown={(e) => { if (e.key === "Enter") handleRename(); }}
               />
               <p className="mt-1 text-xs text-gray-500">
-                {editForm.level === "Global" && editNoTraining
-                  ? "Number of compliant theatres needed."
-                  : "Number of people with this training needed."}
+                Renames the program and all {renameTarget.requirementCount} of its requirement{renameTarget.requirementCount === 1 ? "" : "s"}.
               </p>
             </div>
             <div className="flex justify-end gap-2 pt-2">
-              <button onClick={() => setShowEdit(false)} className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
-              <button onClick={handleEdit} className="flex items-center gap-1 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+              <button onClick={() => setRenameTarget(null)} className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
+              <button onClick={handleRename} className="flex items-center gap-1 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">
                 <Save size={16} /> Save
               </button>
             </div>
@@ -1282,70 +571,25 @@ export default function ProgramDataPage() {
         )}
       </Modal>
 
-      {/* Delete Modal */}
-      <Modal open={showDelete} onClose={() => setShowDelete(false)} title="Delete Requirement">
+      {/* Delete Program Modal */}
+      <Modal open={deleteTarget !== null} onClose={() => setDeleteTarget(null)} title="Delete Program">
         {deleteTarget && (
           <div>
-            {formError && <div className="mb-3 p-2 bg-red-50 text-red-700 rounded text-sm">{formError}</div>}
+            {deleteError && <div className="mb-3 p-2 bg-red-50 text-red-700 rounded text-sm">{deleteError}</div>}
             <p className="text-sm mb-4">
-              Are you sure you want to delete the requirement for{" "}
-              <strong>{deleteTarget.trainingFullTitle || "this global requirement"}</strong> under{" "}
-              <strong>{deleteTarget.specialisationName}</strong> in the <strong>{deleteTarget.programName}</strong> program?
+              Are you sure you want to delete <strong>{deleteTarget.name}</strong>
+              {deleteTarget.requirementCount > 0
+                ? <> and all <strong>{deleteTarget.requirementCount}</strong> of its requirement{deleteTarget.requirementCount === 1 ? "" : "s"}</>
+                : null}? This cannot be undone.
             </p>
             <div className="flex justify-end gap-2">
-              <button onClick={() => setShowDelete(false)} className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
-              <button onClick={handleDelete} className="flex items-center gap-1 px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700">
+              <button onClick={() => setDeleteTarget(null)} className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
+              <button onClick={handleDeleteProgram} className="flex items-center gap-1 px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700">
                 <Trash2 size={16} /> Delete
               </button>
             </div>
           </div>
         )}
-      </Modal>
-
-      {/* Add Specialisation Modal */}
-      <Modal open={showAddSpec} onClose={() => setShowAddSpec(false)} title="Add Specialisation">
-        <div className="space-y-4">
-          {addSpecError && <div className="p-2 bg-red-50 text-red-700 rounded text-sm">{addSpecError}</div>}
-          <div>
-            <label className="block text-sm font-medium mb-1">Specialisation Name</label>
-            <input
-              type="text"
-              value={newSpecName}
-              onChange={(e) => setNewSpecName(e.target.value)}
-              placeholder="e.g., a product or solution area"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
-            />
-          </div>
-          <div className="flex justify-end gap-2 pt-2">
-            <button onClick={() => setShowAddSpec(false)} className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
-            <button onClick={handleAddSpecialisation} className="flex items-center gap-1 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-              <Save size={16} /> Save
-            </button>
-          </div>
-        </div>
-      </Modal>
-
-      {/* Add Program Modal */}
-      <Modal open={showAddProgram} onClose={() => setShowAddProgram(false)} title="Add Program">
-        <div className="space-y-4">
-          {addProgramError && <div className="p-2 bg-red-50 text-red-700 rounded text-sm">{addProgramError}</div>}
-          <div>
-            <label className="block text-sm font-medium mb-1">Program Name</label>
-            <input
-              type="text"
-              value={newProgramName}
-              onChange={(e) => setNewProgramName(e.target.value)}
-              placeholder="e.g., Partner Compliance Program"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
-            />
-          </div>
-          <div className="flex justify-end gap-2 pt-2">
-            <button onClick={() => setShowAddProgram(false)} className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
-            <button onClick={handleAddProgram} className="flex items-center gap-1 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-              <Save size={16} /> Add
-            </button>
-          </div>
-        </div>
       </Modal>
 
       {/* Import Modal */}
@@ -1407,7 +651,7 @@ export default function ProgramDataPage() {
             <div className="pt-1 text-xs text-gray-500 space-y-1">
               <p><strong>Expected columns:</strong> Program Name, Specialisation, Level, Training Type, Training, Quantity Required, Minimum per Theatre</p>
               <p>Training Type and Training are optional for Global-level rows with no specific training (these count compliant theatres).</p>
-              <p>Specialisations are auto-created if they don&apos;t already exist.</p>
+              <p>Programs and specialisations are auto-created if they don&apos;t already exist.</p>
             </div>
           </div>
         )}
@@ -1427,7 +671,6 @@ export default function ProgramDataPage() {
               </button>
             </div>
 
-            {/* Preview table */}
             <div className="overflow-x-auto max-h-[280px] overflow-y-auto border border-gray-200 rounded-lg">
               <table className="w-full text-xs">
                 <thead className="bg-gray-50 sticky top-0">
@@ -1472,7 +715,6 @@ export default function ProgramDataPage() {
               </table>
             </div>
 
-            {/* Validation errors */}
             {importValidated && importValidationErrors.length > 0 && (
               <div className="space-y-1 max-h-[120px] overflow-y-auto">
                 {importValidationErrors.map((e, i) => (

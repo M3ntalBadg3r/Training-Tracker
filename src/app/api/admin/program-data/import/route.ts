@@ -98,6 +98,8 @@ export async function POST(request: NextRequest) {
 
   // Specialisation name → id cache (to avoid redundant DB calls)
   const specCache = new Map<string, number>();
+  // Programs already registered this run (to avoid redundant upserts)
+  const registeredPrograms = new Set<string>();
 
   for (let i = 0; i < rows.length; i++) {
     const rowNum = i + 1;
@@ -223,6 +225,16 @@ export async function POST(request: NextRequest) {
       }
       specId = spec.id;
       specCache.set(specialisationName.toLowerCase(), specId!);
+    }
+
+    // --- Register the program so it persists (incl. as an admin card) ---
+    if (!registeredPrograms.has(programName)) {
+      await prisma.program.upsert({
+        where: { name: programName },
+        create: { name: programName },
+        update: {},
+      });
+      registeredPrograms.add(programName);
     }
 
     // --- Create ProgramData record with alternatives ---

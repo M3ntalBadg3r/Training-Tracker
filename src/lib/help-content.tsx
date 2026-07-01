@@ -1601,8 +1601,18 @@ const helpSections: Record<string, HelpSection> = {
       <>
         <p>
           The Program Data page lets you define the requirements for partner
-          compliance programs. Each distinct program name automatically gets its
-          own dashboard under <strong>Programs</strong>.
+          compliance programs. Each program automatically gets its own dashboard
+          under <strong>Programs</strong>.
+        </p>
+        <p>
+          The main page shows one <strong>box per program</strong>. Click a box to
+          open that program&apos;s page, where you can add, edit, and delete its
+          requirements. Use <strong>New Program</strong> to create a program (it
+          persists straight away, even before you add any requirements), the pencil
+          icon on a box to <strong>rename</strong> a program (which also renames all
+          of its requirements), and the bin icon to <strong>delete</strong> a program
+          along with every one of its requirements. Import and Export cover all
+          programs at once.
         </p>
 
         <h3>Fields</h3>
@@ -1647,10 +1657,14 @@ const helpSections: Record<string, HelpSection> = {
 
         <h3>Adding Requirements</h3>
         <p>
-          Use <strong>Add Requirement</strong> to create a single entry. For Global-level
-          requirements, check <strong>No specific training</strong> if the entry counts
-          compliant theatres, or leave unchecked to specify a training title with a
-          global quantity (and optional per-theatre minimum).
+          Open a program&apos;s box, then use <strong>Add Requirement</strong> to create a
+          single entry — the requirement is automatically attached to the program whose
+          page you&apos;re on. For Global-level requirements, check <strong>No specific
+          training</strong> if the entry counts compliant theatres, or leave unchecked to
+          specify a training title with a global quantity (and optional per-theatre
+          minimum). Specialisations are shared across programs and can be added from a
+          program&apos;s page via <strong>Manage Specialisations</strong> (or the + next to
+          the Specialisation dropdown).
         </p>
 
         <h3>Alternative Trainings (OR Logic)</h3>

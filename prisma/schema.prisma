@@ -159,6 +159,14 @@ enum ProgramLevel {
   Global
 }
 
+model Program {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("programs")
+}
+
 model Specialisation {
   id   Int    @id @default(autoincrement())
   name String @unique
