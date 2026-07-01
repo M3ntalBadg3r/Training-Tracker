@@ -110,6 +110,14 @@ export interface ProgramDataAlternativeRow {
   trainingFullTitle: string;
 }
 
+export interface ProgramSummaryRow {
+  name: string;
+  requirementCount: number;
+  specialisations: string[];
+  levels: string[];
+  hasMinimumPerTheatre: boolean;
+}
+
 export interface ProgramDataRow {
   id: number;
   programName: string;

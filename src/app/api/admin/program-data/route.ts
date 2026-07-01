@@ -104,6 +104,13 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // Ensure the program is registered so it persists (incl. as an admin card).
+  await prisma.program.upsert({
+    where: { name: programName.trim() },
+    create: { name: programName.trim() },
+    update: {},
+  });
+
   const record = await prisma.programData.create({
     data: {
       programName: programName.trim(),
