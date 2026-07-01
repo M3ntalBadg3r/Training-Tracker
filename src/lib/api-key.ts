@@ -53,7 +53,7 @@ export function generateApiKey(): GeneratedApiKey {
 }
 
 /** Extract the presented key from the Authorization (Bearer) or X-API-Key header. */
-function extractKey(request: NextRequest): string | null {
+export function extractPresentedKey(request: NextRequest): string | null {
   const auth = request.headers.get("authorization");
   if (auth) {
     const match = /^Bearer\s+(.+)$/i.exec(auth.trim());
@@ -62,6 +62,16 @@ function extractKey(request: NextRequest): string | null {
   const headerKey = request.headers.get("x-api-key");
   if (headerKey) return headerKey.trim();
   return null;
+}
+
+/**
+ * Mask a presented key for display/audit: keep the non-secret prefix and elide the
+ * rest. Never returns enough to reconstruct the key. Used by the failed-attempt log
+ * so a mistyped valid key is not written out in full.
+ */
+export function maskPresentedKey(presented: string): string {
+  const head = presented.slice(0, DISPLAY_PREFIX_LENGTH);
+  return presented.length > DISPLAY_PREFIX_LENGTH ? `${head}…` : head;
 }
 
 export interface ApiKeyAuth {
@@ -78,7 +88,7 @@ export interface ApiKeyAuth {
  * Records lastUsedAt/lastUsedIp (throttled) as a lightweight audit trail.
  */
 export async function requireApiKey(request: NextRequest): Promise<ApiKeyAuth> {
-  const presented = extractKey(request);
+  const presented = extractPresentedKey(request);
   if (!presented) {
     throw new AuthError("Missing API key", 401);
   }
@@ -131,7 +141,7 @@ export async function checkApiKeyRateLimit(apiKeyId: number): Promise<boolean> {
 // Throttle *invalid*-key attempts per client IP so the public API can't be used
 // as an oracle to hammer for a valid key (defence-in-depth — keys are 256-bit
 // random, so this is DoS-noise mitigation rather than credential protection).
-const INVALID_KEY_LIMIT = 20;
+export const INVALID_KEY_LIMIT = 20;
 const INVALID_KEY_WINDOW_MS = 5 * 60_000;
 
 /**

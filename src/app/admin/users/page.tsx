@@ -3,8 +3,9 @@
 import { useEffect, useState } from "react";
 import PageHeader from "@/components/layout/PageHeader";
 import Modal from "@/components/ui/Modal";
-import { Plus, Pencil, Trash2, KeyRound, ShieldOff } from "lucide-react";
+import { Plus, Pencil, Trash2, KeyRound, ShieldOff, Unlock } from "lucide-react";
 import { useDateFormat } from "@/components/date-format/DateFormatProvider";
+import FailedAttemptsPanel from "@/components/admin/FailedAttemptsPanel";
 
 interface CompanyOption {
   id: number;
@@ -18,10 +19,16 @@ interface UserRow {
   role: string;
   mfaEnabled: boolean;
   mustEnableMfa: boolean;
+  lockedUntil: string | null;
+  failedLoginAttempts: number;
   lastLoginAt: string | null;
   lastLoginIp: string | null;
   createdAt: string;
   companies: CompanyOption[];
+}
+
+function isLocked(user: UserRow): boolean {
+  return !!user.lockedUntil && new Date(user.lockedUntil) > new Date();
 }
 
 const ROLE_BADGE: Record<string, string> = {
@@ -69,6 +76,9 @@ export default function UserManagementPage() {
 
   const [deleteUser, setDeleteUser] = useState<UserRow | null>(null);
   const [deleteError, setDeleteError] = useState("");
+
+  // Bumped to force the failed-attempts panel to refetch after an unlock here.
+  const [panelReload, setPanelReload] = useState(0);
 
   const fetchUsers = async () => {
     const res = await fetch("/api/admin/users");
@@ -182,6 +192,18 @@ export default function UserManagementPage() {
     fetchUsers();
   };
 
+  const handleUnlockUser = async (user: UserRow) => {
+    const res = await fetch("/api/admin/failed-attempts/unblock", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scope: "username", value: user.username }),
+    });
+    if (res.ok) {
+      fetchUsers();
+      setPanelReload((n) => n + 1);
+    }
+  };
+
   const toggleCompanyId = (
     list: number[],
     id: number,
@@ -232,7 +254,19 @@ export default function UserManagementPage() {
           <tbody>
             {users.map((user) => (
               <tr key={user.id} className="border-b border-gray-100 hover:bg-gray-50">
-                <td className="px-4 py-3 text-gray-700 font-medium">{user.username}</td>
+                <td className="px-4 py-3 text-gray-700 font-medium">
+                  <span className="flex items-center gap-2">
+                    {user.username}
+                    {isLocked(user) && (
+                      <span
+                        className="px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-700"
+                        title={`Locked until ${formatDateTime(user.lockedUntil!)}`}
+                      >
+                        Locked
+                      </span>
+                    )}
+                  </span>
+                </td>
                 <td className="px-4 py-3 text-gray-700">{user.displayName}</td>
                 <td className="px-4 py-3">
                   <span className={`px-2 py-0.5 rounded text-xs font-medium ${ROLE_BADGE[user.role] ?? "bg-gray-100 text-gray-700"}`}>
@@ -270,6 +304,15 @@ export default function UserManagementPage() {
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex gap-1">
+                    {isLocked(user) && (
+                      <button
+                        onClick={() => handleUnlockUser(user)}
+                        className="p-1.5 text-green-600 hover:bg-green-50 rounded"
+                        title="Unlock account"
+                      >
+                        <Unlock size={14} />
+                      </button>
+                    )}
                     <button
                       onClick={() => {
                         setEditUser(user);
@@ -328,6 +371,8 @@ export default function UserManagementPage() {
           </tbody>
         </table>
       </div>
+
+      <FailedAttemptsPanel kind="login" reloadSignal={panelReload} onChanged={fetchUsers} />
 
       <Modal
         open={showAdd}

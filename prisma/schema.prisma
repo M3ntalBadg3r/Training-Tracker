@@ -249,6 +249,26 @@ model RateLimitBucket {
   @@map("rate_limit_buckets")
 }
 
+// Audit log of rejected authentication attempts, surfaced to SuperAdmins on the
+// /admin/users (login) and /admin/api-keys (API) pages. Only genuine credential
+// attempts are recorded (not requests rejected purely by the rate limiter — those
+// would amplify rows under attack and are shown instead as "currently blocked
+// IPs" derived from RateLimitBucket). Rows older than 30 days are pruned
+// opportunistically. See lib/failed-attempts.ts.
+model FailedAttempt {
+  id         Int      @id @default(autoincrement())
+  kind       String   // "login" | "api"
+  identifier String   // attempted username (login) | masked key prefix (api)
+  ip         String
+  reason     String   // login: bad_password|bad_mfa|unknown_user ; api: invalid_key|disabled_key|revoked_key|expired_key
+  keyName    String?  @map("key_name") // api only: name of the known key whose hash matched, if any
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([kind, createdAt])
+  @@index([ip])
+  @@map("failed_attempts")
+}
+
 // Per-field header alias for the student-import auto-mapper. The wizard
 // fetches these at mount and matches each header against the alias list
 // (case/punctuation-insensitive). Defaults are seeded by the migration; the

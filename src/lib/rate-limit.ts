@@ -18,6 +18,11 @@ export interface RateLimitResult {
   retryAfterMs: number;
 }
 
+// Per-IP login limit. Exported so the "currently blocked IPs" admin query
+// (lib/failed-attempts.ts) uses the same threshold the login route enforces.
+export const LOGIN_IP_MAX_ATTEMPTS = 10;
+export const LOGIN_IP_WINDOW_MS = 15 * 60 * 1000;
+
 // Opportunistic cleanup of expired rows, throttled so we don't issue a delete on
 // every call. Fire-and-forget; failures are harmless (rows are ignored once
 // expired anyway).

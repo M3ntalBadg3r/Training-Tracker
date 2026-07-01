@@ -7,12 +7,18 @@ import {
   verifyMfaToken,
   isRequestSecure,
 } from "@/lib/auth";
-import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
+import {
+  checkRateLimit,
+  getClientIp,
+  LOGIN_IP_MAX_ATTEMPTS,
+  LOGIN_IP_WINDOW_MS,
+} from "@/lib/rate-limit";
 import {
   isLockedOut,
   registerFailure,
   registerSuccess,
 } from "@/lib/login-attempts";
+import { recordLoginFailure } from "@/lib/failed-attempts";
 
 function retryAfterResponse(message: string, retryAfterMs: number) {
   const retryAfterSec = Math.ceil(retryAfterMs / 1000);
@@ -26,7 +32,7 @@ export async function POST(request: NextRequest) {
   try {
     // First line of defence: per-IP rate limit (10 attempts / 15 min).
     const ip = getClientIp(request);
-    const ipLimit = await checkRateLimit(`login:${ip}`, 10, 15 * 60 * 1000);
+    const ipLimit = await checkRateLimit(`login:${ip}`, LOGIN_IP_MAX_ATTEMPTS, LOGIN_IP_WINDOW_MS);
     if (!ipLimit.allowed) {
       return retryAfterResponse(
         "Too many login attempts. Please try again later.",
@@ -48,6 +54,7 @@ export async function POST(request: NextRequest) {
     const normalizedUsername = String(username).toLowerCase();
     const user = await prisma.user.findUnique({ where: { username: normalizedUsername } });
     if (!user) {
+      recordLoginFailure({ username: normalizedUsername, ip, reason: "unknown_user" });
       return NextResponse.json(
         { error: "Invalid username or password" },
         { status: 401 }
@@ -69,6 +76,7 @@ export async function POST(request: NextRequest) {
     const passwordValid = await verifyPassword(password, user.passwordHash);
     if (!passwordValid) {
       await registerFailure(user.id);
+      recordLoginFailure({ username: normalizedUsername, ip, reason: "bad_password" });
       return NextResponse.json(
         { error: "Invalid username or password" },
         { status: 401 }
@@ -82,6 +90,7 @@ export async function POST(request: NextRequest) {
       }
       if (!verifyMfaToken(user.mfaSecret, mfaCode)) {
         await registerFailure(user.id);
+        recordLoginFailure({ username: normalizedUsername, ip, reason: "bad_mfa" });
         return NextResponse.json(
           { error: "Invalid MFA code" },
           { status: 401 }

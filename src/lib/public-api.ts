@@ -11,8 +11,10 @@ import {
   checkApiKeyRateLimit,
   checkInvalidApiKeyRateLimit,
   resolveApiKeyCompanyFilter,
+  extractPresentedKey,
 } from "@/lib/api-key";
 import { getClientIp } from "@/lib/rate-limit";
+import { recordApiFailure } from "@/lib/failed-attempts";
 
 export interface PublicApiContext {
   /** Company ids this request may read. Empty = no results (out-of-scope ?companyId=). */
@@ -33,13 +35,17 @@ export async function authorizePublicRequest(
   } catch (error) {
     // Throttle repeated invalid-key attempts per IP before returning the auth
     // error, so an attacker can't spray the endpoint unbounded.
-    const withinBudget = await checkInvalidApiKeyRateLimit(getClientIp(request));
+    const ip = getClientIp(request);
+    const withinBudget = await checkInvalidApiKeyRateLimit(ip);
     if (!withinBudget) {
       return NextResponse.json(
         { error: "Too many invalid API key attempts. Please try again later." },
         { status: 429 }
       );
     }
+    // Record the genuine (non-throttled) attempt for the admin audit log.
+    const presented = extractPresentedKey(request);
+    if (presented) await recordApiFailure({ presentedKey: presented, ip });
     return handleAuthError(error);
   }
 

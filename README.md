@@ -223,6 +223,22 @@ The read-only public API additionally throttles **invalid API-key attempts** per
 (20 failures per 5 minutes) on top of the existing 120-requests-per-minute per-key
 budget.
 
+#### Viewing and clearing failed attempts
+
+SuperAdmins can review rejected attempts and lift blocks:
+
+- **Admin → Users** has a **Failed login attempts** panel listing recent failed
+  logins (username tried — including made-up ones from spray attacks — source IP,
+  reason, and time). Currently **locked accounts** show a *Locked* badge with an
+  **Unlock** button, and **blocked IPs** can be cleared with **Unblock IP**.
+- **Admin → API Keys** has a **Failed API attempts** panel listing rejected public-API
+  requests (a masked prefix of the key that was tried, plus the key's name if it
+  matched a known disabled/revoked/expired key), with **Unblock IP** to clear a
+  throttled address.
+
+Unlocking a user resets its lockout immediately; unblocking an IP clears its rate-limit
+throttle. The attempt log is kept for 30 days and pruned automatically.
+
 ### My Account
 
 Click **My Account** in the sidebar to view your profile and manage MFA settings.
