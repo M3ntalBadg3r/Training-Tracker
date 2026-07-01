@@ -1662,9 +1662,13 @@ const helpSections: Record<string, HelpSection> = {
           page you&apos;re on. For Global-level requirements, check <strong>No specific
           training</strong> if the entry counts compliant theatres, or leave unchecked to
           specify a training title with a global quantity (and optional per-theatre
-          minimum). Specialisations are shared across programs and can be added from a
-          program&apos;s page via <strong>Manage Specialisations</strong> (or the + next to
-          the Specialisation dropdown).
+          minimum). Specialisations are shared across programs and can be added inline via
+          the <strong>+</strong> next to the Specialisation dropdown in the requirement form.
+        </p>
+        <p>
+          A program&apos;s requirements table can be narrowed with the
+          <strong> Specialisation</strong>, <strong>Level</strong>, and <strong>Type</strong>
+          filters in the column headers; use <strong>Clear Filters</strong> to reset them.
         </p>
 
         <h3>Alternative Trainings (OR Logic)</h3>

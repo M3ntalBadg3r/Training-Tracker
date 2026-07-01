@@ -834,7 +834,7 @@ The page shows a **box for each program**. From here you can:
 - **Delete** (bin icon on a box) — deletes the program together with all of its requirements.
 - **Import / Export** — bulk-import (CSV/Excel drag-and-drop or browse) or export (CSV/Excel/PDF) across all programs at once.
 
-Click a box to open the program's page, which lists just that program's requirements and lets you **Add / Edit / Delete** them and **Manage Specialisations**. When you add a requirement from a program's page it is attached to that program automatically — there is no program picker to get wrong.
+Click a box to open the program's page, which lists just that program's requirements and lets you **Add / Edit / Delete** them. When you add a requirement from a program's page it is attached to that program automatically — there is no program picker to get wrong. The requirements table can be filtered by **Specialisation**, **Level**, and **Type** via the column-header dropdowns. New specialisations are added inline from the **+** next to the Specialisation dropdown in the requirement form.
 
 Each requirement specifies:
 

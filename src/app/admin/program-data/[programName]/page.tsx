@@ -7,7 +7,10 @@ import Modal from "@/components/ui/Modal";
 import RequirementModal from "../RequirementModal";
 import { ProgramDataRow, SpecialisationRow } from "@/types";
 import { trainingTypeLabel } from "@/lib/utils";
-import { Plus, Trash2, Save, ChevronUp, ChevronDown, Layers } from "lucide-react";
+import { Plus, Trash2, ChevronUp, ChevronDown } from "lucide-react";
+
+const LEVELS = ["Country", "Theatre", "Global"];
+const TRAINING_TYPES = ["Certification", "Accreditation", "InstructorLedTraining"];
 
 const LEVEL_LABELS: Record<string, string> = {
   Country: "Country",
@@ -31,6 +34,11 @@ export default function ProgramRequirementsPage() {
   const [specialisations, setSpecialisations] = useState<SpecialisationRow[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Filters
+  const [filterSpec, setFilterSpec] = useState("");
+  const [filterLevel, setFilterLevel] = useState("");
+  const [filterType, setFilterType] = useState("");
+
   // Sort
   const [sortCol, setSortCol] = useState("specialisationName");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
@@ -40,11 +48,6 @@ export default function ProgramRequirementsPage() {
   const [editTarget, setEditTarget] = useState<ProgramDataRow | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ProgramDataRow | null>(null);
   const [deleteError, setDeleteError] = useState("");
-
-  // Manage Specialisations
-  const [showAddSpec, setShowAddSpec] = useState(false);
-  const [newSpecName, setNewSpecName] = useState("");
-  const [addSpecError, setAddSpecError] = useState("");
 
   const fetchData = async () => {
     try {
@@ -83,8 +86,27 @@ export default function ProgramRequirementsPage() {
   const SortIcon = ({ col }: { col: string }) =>
     sortCol === col ? (sortDir === "asc" ? <ChevronUp size={14} /> : <ChevronDown size={14} />) : null;
 
+  // Distinct specialisations present in this program's requirements (for the filter).
+  const specOptions = useMemo(
+    () => [...new Set(rows.map((r) => r.specialisationName))].sort((a, b) => a.localeCompare(b)),
+    [rows]
+  );
+
+  const filteredRows = useMemo(
+    () =>
+      rows.filter(
+        (r) =>
+          (!filterSpec || r.specialisationName === filterSpec) &&
+          (!filterLevel || r.level === filterLevel) &&
+          (!filterType || r.trainingType === filterType)
+      ),
+    [rows, filterSpec, filterLevel, filterType]
+  );
+
+  const hasFilters = !!filterSpec || !!filterLevel || !!filterType;
+
   const sortedRows = useMemo(() => {
-    const sorted = [...rows];
+    const sorted = [...filteredRows];
     sorted.sort((a, b) => {
       let aVal = "", bVal = "";
       switch (sortCol) {
@@ -97,7 +119,7 @@ export default function ProgramRequirementsPage() {
       return sortDir === "asc" ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
     });
     return sorted;
-  }, [rows, sortCol, sortDir]);
+  }, [filteredRows, sortCol, sortDir]);
 
   const openAdd = () => { setEditTarget(null); setShowRequirement(true); };
   const openEdit = (row: ProgramDataRow) => { setEditTarget(row); setShowRequirement(true); };
@@ -113,23 +135,6 @@ export default function ProgramRequirementsPage() {
     }
     setDeleteTarget(null);
     fetchData();
-  };
-
-  const handleAddSpecialisation = async () => {
-    setAddSpecError("");
-    const res = await fetch("/api/admin/specialisations", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: newSpecName }),
-    });
-    const result = await res.json();
-    if (!res.ok) {
-      setAddSpecError(result.error || "Failed to add specialisation");
-      return;
-    }
-    setShowAddSpec(false);
-    setNewSpecName("");
-    fetchSpecialisations();
   };
 
   if (loading) {
@@ -155,12 +160,14 @@ export default function ProgramRequirementsPage() {
           >
             <Plus size={16} /> Add Requirement
           </button>
-          <button
-            onClick={() => { setShowAddSpec(true); setAddSpecError(""); setNewSpecName(""); }}
-            className="flex items-center gap-2 px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300"
-          >
-            <Layers size={16} /> Manage Specialisations
-          </button>
+          {hasFilters && (
+            <button
+              onClick={() => { setFilterSpec(""); setFilterLevel(""); setFilterType(""); }}
+              className="text-sm text-blue-600 hover:text-blue-800 whitespace-nowrap"
+            >
+              Clear Filters
+            </button>
+          )}
         </div>
       </section>
 
@@ -170,19 +177,37 @@ export default function ProgramRequirementsPage() {
             <thead className="bg-gray-50 text-left">
               <tr>
                 <th className="px-4 py-3 text-left">
-                  <button onClick={() => toggleSort("specialisationName")} className="flex items-center gap-1 font-semibold text-gray-700 hover:text-gray-900">
-                    Specialisation <SortIcon col="specialisationName" />
-                  </button>
+                  <div className="space-y-1">
+                    <button onClick={() => toggleSort("specialisationName")} className="flex items-center gap-1 font-semibold text-gray-700 hover:text-gray-900">
+                      Specialisation <SortIcon col="specialisationName" />
+                    </button>
+                    <select value={filterSpec} onChange={(e) => setFilterSpec(e.target.value)} className="w-full text-xs border border-gray-200 rounded px-1 py-0.5 font-normal">
+                      <option value="">All</option>
+                      {specOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </div>
                 </th>
                 <th className="px-4 py-3 text-left">
-                  <button onClick={() => toggleSort("level")} className="flex items-center gap-1 font-semibold text-gray-700 hover:text-gray-900">
-                    Level <SortIcon col="level" />
-                  </button>
+                  <div className="space-y-1">
+                    <button onClick={() => toggleSort("level")} className="flex items-center gap-1 font-semibold text-gray-700 hover:text-gray-900">
+                      Level <SortIcon col="level" />
+                    </button>
+                    <select value={filterLevel} onChange={(e) => setFilterLevel(e.target.value)} className="w-full text-xs border border-gray-200 rounded px-1 py-0.5 font-normal">
+                      <option value="">All</option>
+                      {LEVELS.map((l) => <option key={l} value={l}>{LEVEL_LABELS[l]}</option>)}
+                    </select>
+                  </div>
                 </th>
                 <th className="px-4 py-3 text-left">
-                  <button onClick={() => toggleSort("trainingType")} className="flex items-center gap-1 font-semibold text-gray-700 hover:text-gray-900">
-                    Type <SortIcon col="trainingType" />
-                  </button>
+                  <div className="space-y-1">
+                    <button onClick={() => toggleSort("trainingType")} className="flex items-center gap-1 font-semibold text-gray-700 hover:text-gray-900">
+                      Type <SortIcon col="trainingType" />
+                    </button>
+                    <select value={filterType} onChange={(e) => setFilterType(e.target.value)} className="w-full text-xs border border-gray-200 rounded px-1 py-0.5 font-normal">
+                      <option value="">All</option>
+                      {TRAINING_TYPES.map((t) => <option key={t} value={t}>{trainingTypeLabel(t)}</option>)}
+                    </select>
+                  </div>
                 </th>
                 <th className="px-4 py-3 text-left">
                   <button onClick={() => toggleSort("trainingFullTitle")} className="flex items-center gap-1 font-semibold text-gray-700 hover:text-gray-900">
@@ -202,7 +227,9 @@ export default function ProgramRequirementsPage() {
               {sortedRows.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
-                    No requirements yet for this program. Click &quot;Add Requirement&quot; to define the first one.
+                    {rows.length === 0
+                      ? <>No requirements yet for this program. Click &quot;Add Requirement&quot; to define the first one.</>
+                      : "No requirements match the current filters."}
                   </td>
                 </tr>
               ) : (
@@ -274,35 +301,6 @@ export default function ProgramRequirementsPage() {
             </div>
           </div>
         )}
-      </Modal>
-
-      {/* Manage / Add Specialisation */}
-      <Modal open={showAddSpec} onClose={() => setShowAddSpec(false)} title="Add Specialisation">
-        <div className="space-y-4">
-          {addSpecError && <div className="p-2 bg-red-50 text-red-700 rounded text-sm">{addSpecError}</div>}
-          <div>
-            <label className="block text-sm font-medium mb-1">Specialisation Name</label>
-            <input
-              type="text"
-              value={newSpecName}
-              onChange={(e) => setNewSpecName(e.target.value)}
-              placeholder="e.g., a product or solution area"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
-            />
-          </div>
-          {specialisations.length > 0 && (
-            <div className="text-xs text-gray-500">
-              <p className="font-medium mb-1">Existing specialisations:</p>
-              <p>{specialisations.map((s) => s.name).join(", ")}</p>
-            </div>
-          )}
-          <div className="flex justify-end gap-2 pt-2">
-            <button onClick={() => setShowAddSpec(false)} className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
-            <button onClick={handleAddSpecialisation} className="flex items-center gap-1 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-              <Save size={16} /> Save
-            </button>
-          </div>
-        </div>
       </Modal>
     </div>
   );
