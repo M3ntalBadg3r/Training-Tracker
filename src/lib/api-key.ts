@@ -120,11 +120,31 @@ const API_RATE_LIMIT = 120;
 const API_RATE_WINDOW_MS = 60_000;
 
 /**
- * Apply the per-key rate limit. Returns true if the request is allowed, false if
+ * Apply the per-key rate limit. Resolves true if the request is allowed, false if
  * the key has exceeded its budget for the current window.
  */
-export function checkApiKeyRateLimit(apiKeyId: number): boolean {
-  return checkRateLimit(`api:${apiKeyId}`, API_RATE_LIMIT, API_RATE_WINDOW_MS);
+export async function checkApiKeyRateLimit(apiKeyId: number): Promise<boolean> {
+  const result = await checkRateLimit(`api:${apiKeyId}`, API_RATE_LIMIT, API_RATE_WINDOW_MS);
+  return result.allowed;
+}
+
+// Throttle *invalid*-key attempts per client IP so the public API can't be used
+// as an oracle to hammer for a valid key (defence-in-depth — keys are 256-bit
+// random, so this is DoS-noise mitigation rather than credential protection).
+const INVALID_KEY_LIMIT = 20;
+const INVALID_KEY_WINDOW_MS = 5 * 60_000;
+
+/**
+ * Record a failed key attempt from the given IP and report whether the IP has
+ * exceeded its invalid-attempt budget for the current window.
+ */
+export async function checkInvalidApiKeyRateLimit(ip: string): Promise<boolean> {
+  const result = await checkRateLimit(
+    `apikey-fail:${ip}`,
+    INVALID_KEY_LIMIT,
+    INVALID_KEY_WINDOW_MS
+  );
+  return result.allowed;
 }
 
 /**

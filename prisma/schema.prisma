@@ -216,6 +216,12 @@ model User {
   mfaEnabled     Boolean       @default(false) @map("mfa_enabled")
   mfaSecret      String?       @map("mfa_secret")
   mustEnableMfa  Boolean       @default(false) @map("must_enable_mfa")
+  // Brute-force lockout: failedLoginAttempts counts consecutive failed logins
+  // (bad password or bad MFA); lockedUntil holds the temporary lock expiry set
+  // once the threshold is crossed (see lib/login-attempts.ts). Both reset on a
+  // successful login.
+  failedLoginAttempts Int      @default(0) @map("failed_login_attempts")
+  lockedUntil    DateTime?     @map("locked_until")
   lastLoginAt    DateTime?     @map("last_login_at")
   lastLoginIp    String?       @map("last_login_ip")
   dateFormat     String?       @map("date_format")
@@ -226,6 +232,21 @@ model User {
   systemSettingsUpdated SystemSetting[] @relation("SystemSettingUpdatedBy")
 
   @@map("users")
+}
+
+// Persistent, shared sliding-window rate-limit counters. Backs lib/rate-limit.ts
+// so per-IP/per-key limits survive process restarts and are shared across
+// instances (the previous limiter was an in-memory Map). One row per limiter
+// key (e.g. "login:<ip>", "apikey-fail:<ip>"); `resetAt` is when the current
+// window expires and the count rolls back to zero. Expired rows are cleaned up
+// opportunistically.
+model RateLimitBucket {
+  key     String   @id
+  count   Int      @default(0)
+  resetAt DateTime @map("reset_at")
+
+  @@index([resetAt])
+  @@map("rate_limit_buckets")
 }
 
 // Per-field header alias for the student-import auto-mapper. The wizard

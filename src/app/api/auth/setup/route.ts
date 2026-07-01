@@ -13,10 +13,11 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   // Rate limit: 5 setup attempts per 15 minutes per IP
   const ip = getClientIp(request);
-  if (!checkRateLimit(`setup:${ip}`, 5, 15 * 60 * 1000)) {
+  const limit = await checkRateLimit(`setup:${ip}`, 5, 15 * 60 * 1000);
+  if (!limit.allowed) {
     return NextResponse.json(
       { error: "Too many attempts. Please try again later." },
-      { status: 429 }
+      { status: 429, headers: { "Retry-After": String(Math.ceil(limit.retryAfterMs / 1000)) } }
     );
   }
 

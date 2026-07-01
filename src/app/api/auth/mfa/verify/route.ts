@@ -18,10 +18,11 @@ export async function POST(request: NextRequest) {
 
   // Rate limit: 5 MFA attempts per 15 minutes per user+IP
   const ip = getClientIp(request);
-  if (!checkRateLimit(`mfa:${authUser.sub}:${ip}`, 5, 15 * 60 * 1000)) {
+  const limit = await checkRateLimit(`mfa:${authUser.sub}:${ip}`, 5, 15 * 60 * 1000);
+  if (!limit.allowed) {
     return NextResponse.json(
       { error: "Too many attempts. Please try again later." },
-      { status: 429 }
+      { status: 429, headers: { "Retry-After": String(Math.ceil(limit.retryAfterMs / 1000)) } }
     );
   }
 

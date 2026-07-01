@@ -1136,6 +1136,21 @@ const helpSections: Record<string, HelpSection> = {
           Admins can disable MFA for any user from this page, or force enrolment with the
           <strong>Require MFA</strong> checkboxes in the Add and Edit User modals.
         </p>
+
+        <h3>Brute-force protection</h3>
+        <p>
+          Login is defended on two levels. A <strong>per-IP limit</strong> caps
+          attempts (10 per 15 minutes) so a single machine can&rsquo;t hammer the
+          login form. On top of that, a <strong>per-account lockout</strong> kicks
+          in after 5 consecutive failed attempts (wrong password or wrong MFA code)
+          for the same account: the account is temporarily locked, and the lock
+          window grows with each further failure (1 &rarr; 2 &rarr; 5 &rarr; 15
+          &rarr; 30 minutes). A successful login clears it. This is what stops a
+          spread-out attack that guesses one account&rsquo;s password from many
+          different IP addresses. If a user reports being locked out after mistyped
+          passwords, it clears itself once the window elapses. The limits are stored
+          in the database, so they are not reset by a server restart.
+        </p>
       </>
     ),
   },
@@ -1912,7 +1927,7 @@ const helpSections: Record<string, HelpSection> = {
           <li><strong>Disable</strong> temporarily suspends a key; <strong>Revoke</strong> permanently kills it (a revoked key can never be re-enabled).</li>
           <li><strong>Edit</strong> renames a key, changes its companies, or adjusts its expiry. <strong>Delete</strong> removes it entirely.</li>
           <li>The <strong>Last used</strong> column shows when the key last made a request, so unused keys are easy to spot and clean up. The <strong>Last IP</strong> column shows the source IP of that request (from the <code>X-Forwarded-For</code> header), so you can confirm traffic is coming from where you expect.</li>
-          <li>Each key is rate-limited (120 requests per minute); excess requests receive an HTTP 429.</li>
+          <li>Each key is rate-limited (120 requests per minute); excess requests receive an HTTP 429. Requests made with an invalid or unknown key are separately throttled per IP (20 failures per 5 minutes), so the API can&rsquo;t be sprayed with key guesses.</li>
           <li>Treat keys like passwords: only stored as a hash, never logged, and best sent server-to-server rather than from a browser.</li>
         </ul>
       </>
