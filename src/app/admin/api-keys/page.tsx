@@ -5,6 +5,7 @@ import PageHeader from "@/components/layout/PageHeader";
 import Modal from "@/components/ui/Modal";
 import { Plus, Trash2, Pencil, Ban, Power, Copy, Check } from "lucide-react";
 import { useDateFormat } from "@/components/date-format/DateFormatProvider";
+import FailedAttemptsPanel from "@/components/admin/FailedAttemptsPanel";
 
 interface CompanyOption {
   id: number;
@@ -288,6 +289,8 @@ export default function ApiKeysPage() {
           </tbody>
         </table>
       </div>
+
+      <FailedAttemptsPanel kind="api" />
 
       {/* Create */}
       <Modal

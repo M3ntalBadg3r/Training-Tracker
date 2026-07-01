@@ -200,6 +200,45 @@ Training Tracker is multi-company: every student belongs to exactly one company,
 
 Navigate to any page and you will be redirected to the login screen. Enter your username and password. If MFA is enabled on your account, you will be prompted for a 6-digit code from your authenticator app. Usernames are **case-insensitive** — `Alice`, `alice`, and `ALICE` all match the same account.
 
+#### Brute-force protection
+
+Login and the other credential endpoints are defended on two levels, both backed
+by a **persistent, shared** rate-limit store (the counters live in the database, so
+limits survive a server restart and are shared across instances):
+
+- **Per-IP throttling** — login is capped at 10 attempts per 15 minutes per client
+  IP; setup, MFA verification, password change and admin password reset have their
+  own limits. Over-limit requests get an HTTP `429` with a `Retry-After` header.
+  Behind a reverse proxy, set `TRUSTED_PROXIES` so the real client IP is used.
+- **Per-account lockout with escalating backoff** — after 5 consecutive failed
+  logins (wrong password *or* wrong MFA code) for the same account, that account is
+  temporarily locked. The lock window grows with each further failure (1 → 2 → 5 →
+  15 → 30 minutes) and any successful login clears it. This slows distributed /
+  credential-stuffing attacks that spread guesses across many IPs, which per-IP
+  limits alone can't catch. During a lock even the correct password is refused
+  until it expires; the message is deliberately generic so it can't be used to tell
+  whether an account exists.
+
+The read-only public API additionally throttles **invalid API-key attempts** per IP
+(20 failures per 5 minutes) on top of the existing 120-requests-per-minute per-key
+budget.
+
+#### Viewing and clearing failed attempts
+
+SuperAdmins can review rejected attempts and lift blocks:
+
+- **Admin → Users** has a **Failed login attempts** panel listing recent failed
+  logins (username tried — including made-up ones from spray attacks — source IP,
+  reason, and time). Currently **locked accounts** show a *Locked* badge with an
+  **Unlock** button, and **blocked IPs** can be cleared with **Unblock IP**.
+- **Admin → API Keys** has a **Failed API attempts** panel listing rejected public-API
+  requests (a masked prefix of the key that was tried, plus the key's name if it
+  matched a known disabled/revoked/expired key), with **Unblock IP** to clear a
+  throttled address.
+
+Unlocking a user resets its lockout immediately; unblocking an IP clears its rate-limit
+throttle. The attempt log is kept for 30 days and pruned automatically.
+
 ### My Account
 
 Click **My Account** in the sidebar to view your profile and manage MFA settings.
@@ -897,7 +936,7 @@ rows.
 - **Read-only by design** — there are no write endpoints under `/api/public`, so a leaked key can never modify data.
 - **Company-scoped** — a key only ever sees data for its assigned companies.
 - **Hashed at rest** — only a SHA-256 hash of the key is stored; the plaintext is shown once.
-- **Rate-limited** — 120 requests per minute per key (excess requests get HTTP 429).
+- **Rate-limited** — 120 requests per minute per key (excess requests get HTTP 429). Invalid-key attempts are separately throttled per IP (20 failures / 5 min).
 - **Revocable & expirable** — disable, revoke, or expire a key at any time.
 
 Keys are best used server-to-server. Serve the app over HTTPS and never embed a

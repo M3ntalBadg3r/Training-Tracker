@@ -30,10 +30,11 @@ export async function POST(
 
   // Rate limit: 10 password resets per 15 minutes per IP
   const ip = getClientIp(request);
-  if (!checkRateLimit(`reset-pw:${ip}`, 10, 15 * 60 * 1000)) {
+  const limit = await checkRateLimit(`reset-pw:${ip}`, 10, 15 * 60 * 1000);
+  if (!limit.allowed) {
     return NextResponse.json(
       { error: "Too many attempts. Please try again later." },
-      { status: 429 }
+      { status: 429, headers: { "Retry-After": String(Math.ceil(limit.retryAfterMs / 1000)) } }
     );
   }
 

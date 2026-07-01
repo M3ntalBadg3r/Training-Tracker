@@ -7,16 +7,36 @@ import {
   verifyMfaToken,
   isRequestSecure,
 } from "@/lib/auth";
-import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
+import {
+  checkRateLimit,
+  getClientIp,
+  LOGIN_IP_MAX_ATTEMPTS,
+  LOGIN_IP_WINDOW_MS,
+} from "@/lib/rate-limit";
+import {
+  isLockedOut,
+  registerFailure,
+  registerSuccess,
+} from "@/lib/login-attempts";
+import { recordLoginFailure } from "@/lib/failed-attempts";
+
+function retryAfterResponse(message: string, retryAfterMs: number) {
+  const retryAfterSec = Math.ceil(retryAfterMs / 1000);
+  return NextResponse.json(
+    { error: message },
+    { status: 429, headers: { "Retry-After": String(retryAfterSec) } }
+  );
+}
 
 export async function POST(request: NextRequest) {
   try {
-    // Rate limit: 10 login attempts per 15 minutes per IP
+    // First line of defence: per-IP rate limit (10 attempts / 15 min).
     const ip = getClientIp(request);
-    if (!checkRateLimit(`login:${ip}`, 10, 15 * 60 * 1000)) {
-      return NextResponse.json(
-        { error: "Too many login attempts. Please try again later." },
-        { status: 429 }
+    const ipLimit = await checkRateLimit(`login:${ip}`, LOGIN_IP_MAX_ATTEMPTS, LOGIN_IP_WINDOW_MS);
+    if (!ipLimit.allowed) {
+      return retryAfterResponse(
+        "Too many login attempts. Please try again later.",
+        ipLimit.retryAfterMs
       );
     }
 
@@ -34,14 +54,29 @@ export async function POST(request: NextRequest) {
     const normalizedUsername = String(username).toLowerCase();
     const user = await prisma.user.findUnique({ where: { username: normalizedUsername } });
     if (!user) {
+      recordLoginFailure({ username: normalizedUsername, ip, reason: "unknown_user" });
       return NextResponse.json(
         { error: "Invalid username or password" },
         { status: 401 }
       );
     }
 
+    // Second line of defence: per-account lockout. A locked account is refused
+    // even with the correct password until the (escalating) lock expires. The
+    // 429 message is deliberately generic so it can't be used to enumerate
+    // accounts.
+    const lock = isLockedOut(user);
+    if (lock.locked) {
+      return retryAfterResponse(
+        "Too many login attempts. Please try again later.",
+        lock.retryAfterMs
+      );
+    }
+
     const passwordValid = await verifyPassword(password, user.passwordHash);
     if (!passwordValid) {
+      await registerFailure(user.id);
+      recordLoginFailure({ username: normalizedUsername, ip, reason: "bad_password" });
       return NextResponse.json(
         { error: "Invalid username or password" },
         { status: 401 }
@@ -54,12 +89,17 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ mfaRequired: true }, { status: 200 });
       }
       if (!verifyMfaToken(user.mfaSecret, mfaCode)) {
+        await registerFailure(user.id);
+        recordLoginFailure({ username: normalizedUsername, ip, reason: "bad_mfa" });
         return NextResponse.json(
           { error: "Invalid MFA code" },
           { status: 401 }
         );
       }
     }
+
+    // Fully authenticated — clear any accumulated failure/lock state.
+    await registerSuccess(user);
 
     // If an admin has flagged the user with mustEnableMfa and they don't yet
     // have MFA enabled, issue a session-locked cookie. proxy.ts will pin them

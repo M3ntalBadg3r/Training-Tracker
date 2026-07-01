@@ -23,10 +23,11 @@ export async function POST(request: NextRequest) {
 
   // Per-IP throttling so a compromised cookie can't sweep the account list.
   const ip = getClientIp(request);
-  if (!checkRateLimit(`mfa-disable:${ip}`, 10, 15 * 60 * 1000)) {
+  const limit = await checkRateLimit(`mfa-disable:${ip}`, 10, 15 * 60 * 1000);
+  if (!limit.allowed) {
     return NextResponse.json(
       { error: "Too many attempts. Please try again later." },
-      { status: 429 },
+      { status: 429, headers: { "Retry-After": String(Math.ceil(limit.retryAfterMs / 1000)) } },
     );
   }
 

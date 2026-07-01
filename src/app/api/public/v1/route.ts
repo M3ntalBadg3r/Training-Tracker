@@ -1,7 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { handleAuthError } from "@/lib/auth";
-import { requireApiKey, checkApiKeyRateLimit } from "@/lib/api-key";
+import {
+  requireApiKey,
+  checkApiKeyRateLimit,
+  checkInvalidApiKeyRateLimit,
+  extractPresentedKey,
+} from "@/lib/api-key";
+import { getClientIp } from "@/lib/rate-limit";
+import { recordApiFailure } from "@/lib/failed-attempts";
 
 /**
  * GET /api/public/v1 — self-describing index. Confirms the key works and reports
@@ -12,9 +19,19 @@ export async function GET(request: NextRequest) {
   try {
     auth = await requireApiKey(request);
   } catch (error) {
+    const ip = getClientIp(request);
+    const withinBudget = await checkInvalidApiKeyRateLimit(ip);
+    if (!withinBudget) {
+      return NextResponse.json(
+        { error: "Too many invalid API key attempts. Please try again later." },
+        { status: 429 }
+      );
+    }
+    const presented = extractPresentedKey(request);
+    if (presented) await recordApiFailure({ presentedKey: presented, ip });
     return handleAuthError(error);
   }
-  if (!checkApiKeyRateLimit(auth.apiKeyId)) {
+  if (!(await checkApiKeyRateLimit(auth.apiKeyId))) {
     return NextResponse.json(
       { error: "Rate limit exceeded. Please slow down." },
       { status: 429 }

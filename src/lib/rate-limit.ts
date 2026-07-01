@@ -1,52 +1,100 @@
 /**
- * Simple in-memory sliding-window rate limiter.
- * Suitable for single-instance deployments.
+ * Persistent, shared sliding-window rate limiter.
+ *
+ * Counters live in the `rate_limit_buckets` table (see prisma/schema.prisma) so
+ * limits survive process restarts and are shared across instances — the previous
+ * implementation was an in-memory Map that reset on every restart and only
+ * worked for a single process. Each limiter key (e.g. "login:<ip>") maps to one
+ * row holding the current window's count and its expiry.
  */
 
-interface RateLimitEntry {
-  count: number;
-  resetAt: number;
+import { Prisma } from "@prisma/client";
+import prisma from "@/lib/prisma";
+
+export interface RateLimitResult {
+  /** Whether this request is allowed under the limit. */
+  allowed: boolean;
+  /** Milliseconds until the current window resets (0 when allowed). */
+  retryAfterMs: number;
 }
 
-const store = new Map<string, RateLimitEntry>();
+// Per-IP login limit. Exported so the "currently blocked IPs" admin query
+// (lib/failed-attempts.ts) uses the same threshold the login route enforces.
+export const LOGIN_IP_MAX_ATTEMPTS = 10;
+export const LOGIN_IP_WINDOW_MS = 15 * 60 * 1000;
 
-// Periodic cleanup to prevent unbounded memory growth
-const CLEANUP_INTERVAL = 60_000; // 1 minute
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, entry] of store) {
-    if (now > entry.resetAt) {
-      store.delete(key);
-    }
-  }
-}, CLEANUP_INTERVAL).unref();
+// Opportunistic cleanup of expired rows, throttled so we don't issue a delete on
+// every call. Fire-and-forget; failures are harmless (rows are ignored once
+// expired anyway).
+const CLEANUP_INTERVAL_MS = 60_000;
+let lastCleanup = 0;
+
+function maybeCleanup(now: number): void {
+  if (now - lastCleanup < CLEANUP_INTERVAL_MS) return;
+  lastCleanup = now;
+  prisma.rateLimitBucket
+    .deleteMany({ where: { resetAt: { lt: new Date(now) } } })
+    .catch(() => {});
+}
 
 /**
- * Check if a request should be allowed under the rate limit.
- * @param key - Unique identifier (e.g., IP address, "login:<ip>")
- * @param maxAttempts - Maximum number of attempts allowed in the window
- * @param windowMs - Time window in milliseconds
- * @returns true if allowed, false if rate limited
+ * Check whether a request is allowed under the rate limit, atomically recording
+ * the attempt. Uses a single Postgres upsert so concurrent requests can't race
+ * past the limit.
+ *
+ * @param key - Unique identifier (e.g. "login:<ip>", "apikey-fail:<ip>")
+ * @param maxAttempts - Maximum attempts allowed per window
+ * @param windowMs - Window length in milliseconds
+ *
+ * On a database error the limiter fails open (allows the request): the calling
+ * handlers all need the database themselves, so an attacker can't make progress
+ * during an outage anyway, and failing open avoids locking every user out over a
+ * transient blip.
  */
-export function checkRateLimit(
+export async function checkRateLimit(
   key: string,
   maxAttempts: number,
   windowMs: number
-): boolean {
+): Promise<RateLimitResult> {
   const now = Date.now();
-  const entry = store.get(key);
+  maybeCleanup(now);
 
-  if (!entry || now > entry.resetAt) {
-    store.set(key, { count: 1, resetAt: now + windowMs });
-    return true;
+  const nowDate = new Date(now);
+  const resetDate = new Date(now + windowMs);
+
+  try {
+    // Insert a fresh bucket, or on conflict either reset it (window elapsed) or
+    // increment it. RETURNING gives us the post-write count + reset time.
+    const rows = await prisma.$queryRaw<Array<{ count: number; reset_at: Date }>>(
+      Prisma.sql`
+        INSERT INTO "rate_limit_buckets" ("key", "count", "reset_at")
+        VALUES (${key}, 1, ${resetDate})
+        ON CONFLICT ("key") DO UPDATE SET
+          "count" = CASE
+            WHEN "rate_limit_buckets"."reset_at" <= ${nowDate} THEN 1
+            ELSE "rate_limit_buckets"."count" + 1
+          END,
+          "reset_at" = CASE
+            WHEN "rate_limit_buckets"."reset_at" <= ${nowDate} THEN ${resetDate}
+            ELSE "rate_limit_buckets"."reset_at"
+          END
+        RETURNING "count", "reset_at"
+      `
+    );
+
+    const row = rows[0];
+    if (!row) return { allowed: true, retryAfterMs: 0 };
+
+    const count = Number(row.count);
+    if (count <= maxAttempts) {
+      return { allowed: true, retryAfterMs: 0 };
+    }
+    const retryAfterMs = Math.max(0, row.reset_at.getTime() - now);
+    return { allowed: false, retryAfterMs };
+  } catch (err) {
+    console.error("Rate limiter unavailable, failing open:", err);
+    return { allowed: true, retryAfterMs: 0 };
   }
-
-  if (entry.count >= maxAttempts) {
-    return false;
-  }
-
-  entry.count++;
-  return true;
 }
 
 /**
