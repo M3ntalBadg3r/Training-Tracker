@@ -207,31 +207,29 @@ notes**.
 
 - **Development branch**: `dev` — All changes MUST be committed and pushed here first.
 - **Production branch**: `master` — After testing on dev, merge `dev` to `master` and push.
-- **Dev releases**: After pushing to `dev`, create a GitHub **pre-release** via `gh api` (with `"prerelease": true`). Dev systems (`UPDATE_CHANNEL=dev`) will see these.
-- **Stable releases**: After pushing to `master`, create a GitHub **full release** via `gh api` (with `"prerelease": false`). Production systems (`UPDATE_CHANNEL=stable`) will see these.
-- **GitHub operations**: Always use `gh api` directly for all GitHub API interactions (creating releases, tags, etc.). Do NOT use `gh release create`, MCP tools, or `git tag && git push` — the git remote is proxied and they will fail. The `gh` CLI is always available and authenticated.
+- **Releases are automated by GitHub Actions** (`.github/workflows/release.yml`). On every push to `dev` or `master`, the workflow reads `package.json`'s `version`, derives the tag/channel, and creates the release (running on GitHub's runners with `GITHUB_TOKEN`). You do **not** create releases by hand.
+  - **Dev releases**: push to `dev` → the workflow creates a **pre-release** tagged `v<version>-dev`. Dev systems (`UPDATE_CHANNEL=dev`) will see these.
+  - **Stable releases**: push to `master` → the workflow creates a **full release** tagged `v<version>`. Production systems (`UPDATE_CHANNEL=stable`) will see these.
+  - **Release notes** come from `.github/releases/<tag>.md` (e.g. `.github/releases/v2.16-dev.md`). Write this file **in the same commit** as the version bump so the notes ship with the release; if it's missing the workflow falls back to auto-generated notes. The workflow is idempotent — if the release/tag already exists it skips, so re-pushing the same version is safe.
+- **Why not `gh api`/`gh release create` from a session**: Claude Code on the web runs behind an egress proxy that **blocks the GitHub releases API** (`403 "Creating, editing, or deleting releases is not permitted for this session type."`) regardless of token. `git push` still works, so pushing the notes file + version bump is the whole job — the workflow does the release. Do not retry the blocked API or route around the proxy.
 - **Release tag conventions** (mandatory — the update comparator depends on these):
   - **Stable**: tag = `v<version>`, e.g. `v1.38`. The version (after stripping the leading `v`) MUST equal `package.json`'s `version` field.
   - **Dev pre-release**: tag = `v<version>-dev`, e.g. `v1.38-dev`. The `-dev` suffix is the only suffix the update comparator strips before numeric comparison.
   - **Do NOT use** any other suffix (`-stable`, `-rc`, `-beta`, `-hotfix`, …). The version comparator (`parseVersionNumber` in `src/app/api/admin/updates/check/route.ts` and the inline regex in `deploy/check-update.sh`) only strips `-dev`; any other suffix is folded into the minor parse and produces ties or unintended ordering.
   - **Same numeric version on both channels is fine but ties on the dev channel**: the comparator uses strict `>` so when `v1.38` (stable) and `v1.38-dev` (pre-release) both parse to `1038`, whichever GitHub returns first wins. Both tags should always reference functionally equivalent code (the master merge is a `--no-ff` of the dev tip), so this is harmless. If you need the dev channel to clearly diverge, bump `package.json` ahead on dev (e.g. cut `v1.39-dev` while stable is still on `v1.38`).
-- **Creating a release** (examples):
+- **Creating a release** (the flow):
   ```bash
-  # Dev pre-release (after pushing to dev)
-  gh api repos/M3ntalBadg3r/Training-Tracker/releases \
-    -f tag_name="v<version>-dev" \
-    -f target_commitish="$(git rev-parse origin/dev)" \
-    -f name="v<version>" \
-    -f body="Release notes here" \
-    -F prerelease=true
+  # Dev pre-release
+  #   1. Bump package.json "version" (and package-lock.json).
+  #   2. Write .github/releases/v<version>-dev.md with the notes.
+  #   3. Commit both, then: git push -u origin dev
+  #   -> release.yml creates the v<version>-dev pre-release automatically.
 
-  # Stable release (after merging dev → master and pushing)
-  gh api repos/M3ntalBadg3r/Training-Tracker/releases \
-    -f tag_name="v<version>" \
-    -f target_commitish="$(git rev-parse origin/master)" \
-    -f name="v<version>" \
-    -f body="Release notes here" \
-    -F prerelease=false
+  # Stable release
+  #   1. Merge dev → master (--no-ff), write .github/releases/v<version>.md
+  #      with the aggregated notes (see below), commit.
+  #   2. git push -u origin master
+  #   -> release.yml creates the v<version> full release automatically.
   ```
 - **Stable release notes MUST aggregate every dev pre-release since the previous stable.** Dev systems already saw each `-dev` entry individually, but stable systems only ever see one set of notes per stable bump — so anything that shipped only on `-dev` releases between the last stable and this one needs to be folded into this stable's body. Skipping this means stable users see an incomplete changelog (e.g. v2.00 originally documented only the v2.00 work and silently dropped v1.99-dev's import-aliases feature).
   - Before writing the stable body, list the pre-releases tagged since the previous stable and read their bodies:
@@ -251,7 +249,7 @@ After every change, you MUST complete these steps before considering the task do
 2. **Update README.md** — If the change affects how the system is used (new features, changed behavior, new pages, config changes), update `README.md` to reflect it.
 3. **Update the help system** — If the change affects user-facing behavior, update the relevant section in `src/lib/help-content.tsx` so the in-app help stays accurate.
 4. **Update CLAUDE.md** — If the change modifies the project structure (new/renamed/removed files or directories) or the data model (new/changed models, fields, enums, or relationships), update the relevant sections in this file.
-5. **Create a GitHub release** — After pushing, create a GitHub release via `gh api` using the tag conventions in the Git Workflow section above (`v<version>-dev` for dev pre-releases, `v<version>` for stable). Write friendly release notes describing what's new, changed, and fixed.
+5. **Ship the release notes** — Write friendly notes (what's new/changed/fixed) to `.github/releases/<tag>.md` (`v<version>-dev.md` for dev, `v<version>.md` for stable) and commit them with the version bump. The GitHub release itself is created automatically by `.github/workflows/release.yml` when you push (see the Git Workflow section) — do not call the releases API by hand; it's blocked for web sessions.
 6. **De-identify** — Before committing and before writing release notes, confirm the diff and the release body contain no real company/product/program names or PII (see **Data Hygiene & De-identification** above). Use fictional placeholders, and never name the identifier you are removing.
 
 ## Deployment
