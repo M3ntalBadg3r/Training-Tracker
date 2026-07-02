@@ -9,9 +9,13 @@ interface ProgramInfo {
   name: string;
   levels: string[];
   hasMinimumPerTheatre: boolean;
+  isTiered?: boolean;
 }
 
 function describe(p: ProgramInfo): string {
+  if (p.isTiered) {
+    return `View ${p.name} tier status by achieved specialisations`;
+  }
   const parts: string[] = [];
   if (p.levels.includes("Country")) parts.push("country");
   if (p.levels.includes("Theatre")) parts.push("theatre");

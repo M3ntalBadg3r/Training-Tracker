@@ -1639,6 +1639,28 @@ const helpSections: Record<string, HelpSection> = {
           programs at once.
         </p>
 
+        <h3>Tiered programs</h3>
+        <p>
+          Tick <strong>Tiered program</strong> when creating a program to unlock
+          <strong> tiers</strong> (e.g. Tier A, B, C) that a partner reaches based on how
+          many <strong>specialisations</strong> they have achieved. A specialisation is
+          achieved when all of its qualifying (Sales/Pre-Sales) cert requirements are met
+          by enough distinct people. On a tiered program&apos;s page a <strong>Tiers</strong>
+          section lets you add tiers (name, ladder order, and how many specialisations each
+          requires) and choose how <strong>Deployment</strong> cert requirements are handled:
+        </p>
+        <ul>
+          <li><strong>Flat</strong> — each tier lists its own deployment cert requirements.</li>
+          <li><strong>Per achieved specialisation</strong> — each achieved specialisation&apos;s
+            own deployment cert requirements must be met (add these as requirements with
+            purpose <em>Deployment</em>).</li>
+        </ul>
+        <p>
+          Because compliance counts <strong>distinct people</strong>, a requirement for
+          &ldquo;2 of Cert A or Cert B&rdquo; needs two <em>different</em> individuals — one
+          person holding both certs still counts once.
+        </p>
+
         <h3>Fields</h3>
         <table>
           <thead>
@@ -1747,6 +1769,17 @@ const helpSections: Record<string, HelpSection> = {
           <strong>Admin &rsaquo; Program Data</strong>. A program with
           country-level requirements gets Country and Region reports; a program
           with theatre or global requirements gets Theatre and Global reports.
+        </p>
+
+        <h3>Tier Status</h3>
+        <p>
+          Shown for <strong>tiered</strong> programs. Pick a scope (Global, or by
+          Theatre / Country) to see the partner&apos;s <strong>highest tier
+          achieved</strong> and progress toward the next one. Each tier card shows how
+          many specialisations are achieved versus required, plus any Deployment cert
+          requirements with their distinct-holder counts (expand a requirement to see the
+          per-theatre breakdown). With a &ldquo;Compliance as of&rdquo; horizon selected,
+          the banner also shows the projected highest tier once expiring certs drop out.
         </p>
 
         <h3>Country &amp; Region Reports</h3>

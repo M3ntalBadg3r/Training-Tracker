@@ -61,14 +61,25 @@ export async function GET(request: NextRequest) {
     scopeLabel = `Theatre: ${theatreParam}`;
   }
 
-  const data = await prisma.programData.findMany({
-    where: programFilter ? { programName: programFilter } : undefined,
+  const rawData = await prisma.programData.findMany({
+    where: {
+      ...(programFilter ? { programName: programFilter } : {}),
+      // The trend report is specialisation-scoped; tier-scoped deployment rows
+      // (specialisationId null) have no specialisation to group under.
+      specialisationId: { not: null },
+    },
     include: {
       specialisation: true,
       trainingData: { select: { fullTitle: true } },
       alternatives: { include: { trainingData: { select: { fullTitle: true } } } },
     },
   });
+
+  // Narrow the type: every row here has a specialisation (filtered above).
+  const data = rawData.filter(
+    (r): r is typeof rawData[number] & { specialisation: NonNullable<typeof r.specialisation> } =>
+      r.specialisation != null
+  );
 
   type Row = typeof data[number];
 

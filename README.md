@@ -669,7 +669,7 @@ To move data to a **different** installation, click **Portable backup…** and c
 
 When you stand up a new Training Tracker instance and want to carry over the catalogue, regions, programs, and import aliases — but **not** any learner data — click **Config Backup** (standard, tied to `ENCRYPTION_KEY`) or **Portable config backup…** (passphrase-encrypted, restores anywhere). The file is saved as `training-tracker-config-<timestamp>.zip[.enc]`.
 
-A config backup contains: product types, region data, the full training catalogue, OLX parent/sub-item relationships, programs, specialisations, program data + alternatives, import aliases, and the system settings singleton. It explicitly excludes students, training-taken records, users, companies, scheduled exports, export credentials, and import metadata.
+A config backup contains: product types, region data, the full training catalogue, OLX parent/sub-item relationships, programs (incl. tiered-program settings), program tiers, specialisations, program data + alternatives, import aliases, and the system settings singleton. It explicitly excludes students, training-taken records, users, companies, scheduled exports, export credentials, and import metadata.
 
 Restoring a config backup wipes and replaces only the included reference tables and **leaves student and training-taken rows untouched**, so it is safe to run on a populated system when you just need to refresh the catalogue. Archive type is auto-detected on upload via a `kind` flag in `backup_metadata.json`; the upload form is shared with the standard restore.
 
@@ -875,6 +875,17 @@ The page shows a **box for each program**. From here you can:
 
 Click a box to open the program's page, which lists just that program's requirements and lets you **Add / Edit / Delete** them. When you add a requirement from a program's page it is attached to that program automatically — there is no program picker to get wrong. The requirements table can be filtered by **Specialisation**, **Level**, and **Type** via the column-header dropdowns. New specialisations are added inline from the **+** next to the Specialisation dropdown in the requirement form.
 
+#### Tiered programs
+
+Tick **Tiered program** when creating a program to unlock **tiers** (e.g. Tier A, Tier B, Tier C) that a partner reaches based on how many **specialisations** they have achieved. A specialisation is *achieved* (at a given country/theatre/global scope) once all of its qualifying (Sales/Pre-Sales) cert requirements are met by enough distinct people.
+
+On a tiered program's page a **Tiers** section lets you add tiers (name, ladder order, and how many achieved specialisations each requires) and choose how each tier's **Deployment** cert requirements are handled:
+
+- **Flat** — each tier lists its own deployment cert requirements.
+- **Per achieved specialisation** — each achieved specialisation's own deployment cert requirements must be met (added as requirements with the **Deployment** purpose).
+
+Because compliance counts **distinct people**, a requirement such as "2 of Cert A or Cert B" needs two *different* individuals — one person holding both certs still counts once.
+
 Each requirement specifies:
 
 | Field | Description |
@@ -958,6 +969,9 @@ The dashboard shows only the sections relevant to the program's configured requi
 | **Region Report** | Program has Country-level requirements | Region dropdown | The same, aggregated across all countries in a region |
 | **Theatre Report** | Program has Theatre-level requirements | Theatre dropdown | People per theatre with each required training vs. the requirement |
 | **Global Report** | Program has Global-level requirements | None | See below |
+| **Tier Status** | Program is **tiered** | Level (Global / Theatre / Country) + scope | Highest tier achieved and progress to the next — see below |
+
+For a **tiered** program, the **Tier Status** section is the primary view. Pick a scope (Global, or by Theatre/Country) to see the partner's **highest tier achieved** and, for each tier, how many specialisations are achieved versus required plus any **Deployment** cert requirements (with distinct-holder counts and a per-theatre breakdown). With a "Compliance as of" horizon selected, the banner also shows the projected highest tier once certificates expiring within the window drop out.
 
 The Country/Region/Theatre reports display specialisations as columns with grouped rows showing the training name, required count, and attained count. Attained values are colour-coded **green** (met) or **red** (not met). Click **View** on any attained cell to see the qualifying students.
 

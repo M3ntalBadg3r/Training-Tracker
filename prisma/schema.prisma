@@ -160,11 +160,40 @@ enum ProgramLevel {
 }
 
 model Program {
-  id        Int      @id @default(autoincrement())
-  name      String   @unique
-  createdAt DateTime @default(now()) @map("created_at")
+  id             Int      @id @default(autoincrement())
+  name           String   @unique
+  // Tiered programs unlock ordered tiers (A/B/C…) based on how many
+  // specialisations a partner has achieved. Non-tiered programs behave exactly
+  // as before (isTiered = false).
+  isTiered       Boolean  @default(false) @map("is_tiered")
+  // How a tier's Deployment cert requirements are sourced when isTiered:
+  //  "flat"                    → the tier lists its own deployment requirements.
+  //  "perAchievedSpecialisation" → each achieved specialisation's own deployment
+  //                                requirements must be met.
+  deploymentMode String   @default("flat") @map("deployment_mode")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  tiers ProgramTier[]
 
   @@map("programs")
+}
+
+model ProgramTier {
+  id                      Int      @id @default(autoincrement())
+  // String mirror of Program.name (kept in sync in application code, like
+  // ProgramData.programName). Also a real FK so tiers cascade with the program.
+  programName             String   @map("program_name")
+  name                    String
+  sortOrder               Int      @map("sort_order")
+  specialisationsRequired Int      @default(1) @map("specialisations_required")
+  createdAt               DateTime @default(now()) @map("created_at")
+  updatedAt               DateTime @updatedAt @map("updated_at")
+
+  program      Program       @relation(fields: [programName], references: [name], onDelete: Cascade)
+  requirements ProgramData[]
+
+  @@unique([programName, name])
+  @@map("program_tiers")
 }
 
 model Specialisation {
@@ -179,7 +208,16 @@ model Specialisation {
 model ProgramData {
   id               Int           @id @default(autoincrement())
   programName      String        @map("program_name")
-  specialisationId Int           @map("specialisation_id")
+  // A requirement belongs to EITHER a specialisation (specialisationId) OR a
+  // tier (tierId) — exactly one is set, enforced in application code. Existing
+  // rows all carry a specialisationId, so making it nullable is backward safe.
+  specialisationId Int?          @map("specialisation_id")
+  tierId           Int?          @map("tier_id")
+  // "qualification" → counts toward achieving the specialisation.
+  // "deployment"    → a specialisation's Deployment cert requirement, used by
+  //                   tiers running in "perAchievedSpecialisation" mode.
+  // Tier-scoped rows (tierId set) are always deployment requirements.
+  purpose          String        @default("qualification")
   level            ProgramLevel
   trainingType     TrainingType? @map("training_type")
   trainingTitle    String?       @map("training_title")
@@ -188,7 +226,8 @@ model ProgramData {
   createdAt          DateTime      @default(now()) @map("created_at")
   updatedAt        DateTime      @updatedAt @map("updated_at")
 
-  specialisation Specialisation @relation(fields: [specialisationId], references: [id])
+  specialisation Specialisation? @relation(fields: [specialisationId], references: [id])
+  tier           ProgramTier?    @relation(fields: [tierId], references: [id], onDelete: Cascade)
   trainingData   TrainingData?  @relation(fields: [trainingTitle], references: [trainingTitle], onDelete: Cascade)
   alternatives   ProgramDataAlternative[]
 
