@@ -11,6 +11,10 @@ import {
   listTheatres,
   unionAttained,
   unionAttainedByTheatre,
+  evaluateTierLadder,
+  type ComplianceScope,
+  type ProgramRequirement,
+  type TierLadderInput,
 } from "@/lib/program-compliance";
 
 /**
@@ -75,28 +79,37 @@ export async function GET(
     return getStudents(titles, level, country, theatre, region, companyFilter);
   }
 
-  const programData = await prisma.programData.findMany({
-    where: { programName },
-    include: {
-      specialisation: true,
-      trainingData: { select: { fullTitle: true } },
-      alternatives: {
-        include: { trainingData: { select: { fullTitle: true } } },
+  const [programData, program, tierRows] = await Promise.all([
+    prisma.programData.findMany({
+      where: { programName },
+      include: {
+        specialisation: true,
+        trainingData: { select: { fullTitle: true } },
+        alternatives: {
+          include: { trainingData: { select: { fullTitle: true } } },
+        },
       },
-    },
-    orderBy: [{ specialisationId: "asc" }, { trainingType: "asc" }],
-  });
+      orderBy: [{ specialisationId: "asc" }, { trainingType: "asc" }],
+    }),
+    prisma.program.findUnique({ where: { name: programName } }),
+    prisma.programTier.findMany({ where: { programName }, orderBy: { sortOrder: "asc" } }),
+  ]);
 
   type ProgramDataRow = typeof programData[number];
+
+  const isTiered = program?.isTiered === true;
+  const deploymentMode = program?.deploymentMode ?? "flat";
 
   const meta = {
     levels: [...new Set(programData.map((pd: ProgramDataRow) => pd.level))],
     hasMinimumPerTheatre: programData.some(
       (pd: ProgramDataRow) => pd.minimumPerTheatre != null && pd.minimumPerTheatre > 0
     ),
+    isTiered,
+    deploymentMode,
   };
 
-  if (programData.length === 0) {
+  if (programData.length === 0 && !isTiered) {
     return NextResponse.json({
       specialisations: [],
       countries: [],
@@ -112,8 +125,13 @@ export async function GET(
   const regionList = [...new Set(regionData.map((r: typeof regionData[number]) => r.region))].filter(Boolean).sort();
   const theatreList = await listTheatres(companyFilter);
 
+  // The specialisation display covers only qualifying, specialisation-scoped
+  // rows. Tier-scoped rows (specialisationId null) and deployment-purpose rows
+  // are handled by the tier ladder instead.
   const specMap = new Map<string, ProgramDataRow[]>();
   for (const pd of programData) {
+    if (pd.specialisationId == null || !pd.specialisation) continue;
+    if (pd.purpose !== "qualification") continue;
     const key = pd.specialisation.name;
     if (!specMap.has(key)) specMap.set(key, []);
     specMap.get(key)!.push(pd);
@@ -125,20 +143,23 @@ export async function GET(
   if (level === "country" && country) {
     const countryReqs = programData.filter((pd: ProgramDataRow) => pd.level === "Country");
     const titles = extractTitles(countryReqs);
-    const scope = { country, companyIds: companyFilter };
+    const scope: ComplianceScope = { country, companyIds: companyFilter };
     const emailSets = await getEmailSetsByTitle(titles, now, scope);
     const projectedEmailSets = horizonDate
       ? await getEmailSetsByTitle(titles, horizonDate, scope)
       : null;
     const specialisations = buildSpecialisations(specMap, "Country", emailSets, projectedEmailSets);
-    return NextResponse.json({ specialisations, countries, regions: regionList, theatres: theatreList, meta, horizonMonths });
+    const tiers = isTiered
+      ? await computeTierBlock({ levelName: "Country", scope, useTheatre: false, theatres: [], companyFilter, rows: programData, tiers: tierRows, deploymentMode, now, horizonDate })
+      : undefined;
+    return NextResponse.json({ specialisations, countries, regions: regionList, theatres: theatreList, meta, horizonMonths, tiers });
   }
 
   if (level === "region" && region) {
     const countryReqs = programData.filter((pd: ProgramDataRow) => pd.level === "Country");
     const titles = extractTitles(countryReqs);
     const regionCountries = await countriesInRegion(region);
-    const scope = { countries: regionCountries, companyIds: companyFilter };
+    const scope: ComplianceScope = { countries: regionCountries, companyIds: companyFilter };
     const emailSets = regionCountries.length > 0
       ? await getEmailSetsByTitle(titles, now, scope)
       : new Map<string, Set<string>>();
@@ -146,19 +167,25 @@ export async function GET(
       ? await getEmailSetsByTitle(titles, horizonDate, scope)
       : null;
     const specialisations = buildSpecialisations(specMap, "Country", emailSets, projectedEmailSets);
-    return NextResponse.json({ specialisations, countries, regions: regionList, theatres: theatreList, meta, horizonMonths });
+    const tiers = isTiered
+      ? await computeTierBlock({ levelName: "Country", scope, useTheatre: false, theatres: [], companyFilter, rows: programData, tiers: tierRows, deploymentMode, now, horizonDate })
+      : undefined;
+    return NextResponse.json({ specialisations, countries, regions: regionList, theatres: theatreList, meta, horizonMonths, tiers });
   }
 
   if (level === "theatre" && theatre) {
     const theatreReqs = programData.filter((pd: ProgramDataRow) => pd.level === "Theatre");
     const titles = extractTitles(theatreReqs);
-    const scope = { theatre, companyIds: companyFilter };
+    const scope: ComplianceScope = { theatre, companyIds: companyFilter };
     const emailSets = await getEmailSetsByTitle(titles, now, scope);
     const projectedEmailSets = horizonDate
       ? await getEmailSetsByTitle(titles, horizonDate, scope)
       : null;
     const specialisations = buildSpecialisations(specMap, "Theatre", emailSets, projectedEmailSets);
-    return NextResponse.json({ specialisations, countries, regions: regionList, theatres: theatreList, meta, horizonMonths });
+    const tiers = isTiered
+      ? await computeTierBlock({ levelName: "Theatre", scope, useTheatre: false, theatres: [], companyFilter, rows: programData, tiers: tierRows, deploymentMode, now, horizonDate })
+      : undefined;
+    return NextResponse.json({ specialisations, countries, regions: regionList, theatres: theatreList, meta, horizonMonths, tiers });
   }
 
   if (level === "global") {
@@ -287,6 +314,21 @@ export async function GET(
       });
     }
 
+    const tiers = isTiered
+      ? await computeTierBlock({
+          levelName: "Global",
+          scope: { companyIds: companyFilter },
+          useTheatre: meta.hasMinimumPerTheatre,
+          theatres: distinctTheatres,
+          companyFilter,
+          rows: programData,
+          tiers: tierRows,
+          deploymentMode,
+          now,
+          horizonDate,
+        })
+      : undefined;
+
     return NextResponse.json({
       specialisations: globalSpecialisations,
       countries,
@@ -294,6 +336,7 @@ export async function GET(
       theatres: theatreList,
       meta,
       horizonMonths,
+      tiers,
     });
   }
 
@@ -344,6 +387,194 @@ function buildSpecialisations(
     });
   }
   return result;
+}
+
+interface TierBlockRow {
+  id: number;
+  specialisationId: number | null;
+  tierId: number | null;
+  purpose: string;
+  level: string;
+  trainingType: string | null;
+  trainingTitle: string | null;
+  quantityRequired: number;
+  minimumPerTheatre: number | null;
+  specialisation: { name: string } | null;
+  trainingData: { fullTitle: string } | null;
+  alternatives: { trainingType: string; trainingTitle: string; trainingData: { fullTitle: string } | null }[];
+}
+
+interface TierBlockTier {
+  id: number;
+  name: string;
+  sortOrder: number;
+  specialisationsRequired: number;
+}
+
+/**
+ * Build the tier-ladder block for a tiered program at a given level + scope.
+ * Reuses `evaluateTierLadder` (distinct-people counting) for a "now" snapshot
+ * and, when a horizon is set, a forward-looking one. Deployment requirements
+ * are sourced by `deploymentMode` (flat = the tier's own rows;
+ * perAchievedSpecialisation = each achieved specialisation's deployment rows).
+ */
+async function computeTierBlock(params: {
+  levelName: "Country" | "Theatre" | "Global";
+  scope: ComplianceScope;
+  useTheatre: boolean;
+  theatres: string[];
+  companyFilter: number[] | null;
+  rows: TierBlockRow[];
+  tiers: TierBlockTier[];
+  deploymentMode: string;
+  now: Date;
+  horizonDate: Date | null;
+}) {
+  const { levelName, scope, useTheatre, theatres, companyFilter, rows, tiers, deploymentMode, now, horizonDate } = params;
+
+  const levelRows = rows.filter((r) => r.level === levelName);
+
+  const requirements = new Map<number, ProgramRequirement>();
+  interface DepDisplay {
+    trainingType: string | null;
+    trainingTitle: string | null;
+    trainingFullTitle: string;
+    quantityRequired: number;
+    minimumPerTheatre: number | null;
+    alternatives: { trainingType: string; trainingTitle: string; trainingFullTitle: string }[];
+  }
+  const display = new Map<number, DepDisplay>();
+  for (const r of levelRows) {
+    requirements.set(r.id, {
+      trainingTitle: r.trainingTitle,
+      alternatives: r.alternatives.map((a) => ({ trainingTitle: a.trainingTitle })),
+      quantityRequired: r.quantityRequired,
+      minimumPerTheatre: r.minimumPerTheatre,
+    });
+    display.set(r.id, {
+      trainingType: r.trainingType,
+      trainingTitle: r.trainingTitle,
+      trainingFullTitle: r.trainingData?.fullTitle ?? "—",
+      quantityRequired: r.quantityRequired,
+      minimumPerTheatre: r.minimumPerTheatre ?? null,
+      alternatives: r.alternatives.map((a) => ({
+        trainingType: a.trainingType,
+        trainingTitle: a.trainingTitle,
+        trainingFullTitle: a.trainingData?.fullTitle ?? "—",
+      })),
+    });
+  }
+
+  // Split specialisation rows into qualifying vs deployment purpose.
+  const specQual = new Map<string, number[]>();
+  const specDep = new Map<string, number[]>();
+  for (const r of levelRows) {
+    if (r.specialisationId == null || !r.specialisation) continue;
+    const name = r.specialisation.name;
+    const target = r.purpose === "deployment" ? specDep : specQual;
+    if (!target.has(name)) target.set(name, []);
+    target.get(name)!.push(r.id);
+  }
+  const specNames = new Set<string>([...specQual.keys(), ...specDep.keys()]);
+  const specs = [...specNames].map((name) => ({
+    name,
+    qualifyingReqIds: specQual.get(name) ?? [],
+    deploymentReqIds: specDep.get(name) ?? [],
+  }));
+
+  // Tier-scoped deployment rows (flat mode).
+  const tierDepIds = new Map<number, number[]>();
+  for (const r of levelRows) {
+    if (r.tierId == null) continue;
+    if (!tierDepIds.has(r.tierId)) tierDepIds.set(r.tierId, []);
+    tierDepIds.get(r.tierId)!.push(r.id);
+  }
+
+  const tiersInput = tiers.map((t) => ({
+    id: t.id,
+    name: t.name,
+    sortOrder: t.sortOrder,
+    specialisationsRequired: t.specialisationsRequired,
+    deploymentReqIds: tierDepIds.get(t.id) ?? [],
+  }));
+
+  const input: TierLadderInput = { tiers: tiersInput, specs, requirements, deploymentMode };
+
+  const uniqueTitles = [
+    ...new Set(
+      [...requirements.values()].flatMap((r) => [
+        ...(r.trainingTitle ? [r.trainingTitle] : []),
+        ...r.alternatives.map((a) => a.trainingTitle),
+      ])
+    ),
+  ];
+
+  const emptyByTheatre = new Map<string, Map<string, Set<string>>>();
+  const emailSets = await getEmailSetsByTitle(uniqueTitles, now, scope);
+  const byTheatre = useTheatre
+    ? await getEmailSetsByTitleAndTheatre(uniqueTitles, now, companyFilter)
+    : emptyByTheatre;
+  const snapNow = evaluateTierLadder(input, emailSets, byTheatre, theatres);
+
+  let snapProj: ReturnType<typeof evaluateTierLadder> | null = null;
+  if (horizonDate) {
+    const projEmail = await getEmailSetsByTitle(uniqueTitles, horizonDate, scope);
+    const projByTheatre = useTheatre
+      ? await getEmailSetsByTitleAndTheatre(uniqueTitles, horizonDate, companyFilter)
+      : emptyByTheatre;
+    snapProj = evaluateTierLadder(input, projEmail, projByTheatre, theatres);
+  }
+
+  const buildDepReq = (id: number, specialisationName: string | null) => {
+    const d = display.get(id)!;
+    return {
+      specialisationName,
+      trainingType: d.trainingType,
+      trainingTitle: d.trainingTitle,
+      trainingFullTitle: d.trainingFullTitle,
+      quantityRequired: d.quantityRequired,
+      minimumPerTheatre: d.minimumPerTheatre,
+      attained: snapNow.reqAttained.get(id) ?? 0,
+      compliant: snapNow.reqCompliant.get(id) ?? false,
+      theatreBreakdown: snapNow.reqTheatreBreakdown.get(id) ?? null,
+      projectedAttained: snapProj ? snapProj.reqAttained.get(id) ?? 0 : null,
+      projectedCompliant: snapProj ? snapProj.reqCompliant.get(id) ?? false : null,
+      projectedTheatreBreakdown: snapProj ? snapProj.reqTheatreBreakdown.get(id) ?? null : null,
+      alternatives: d.alternatives,
+    };
+  };
+
+  const outTiers = tiersInput.map((t) => {
+    let deploymentRequirements: ReturnType<typeof buildDepReq>[];
+    if (deploymentMode === "perAchievedSpecialisation") {
+      deploymentRequirements = [];
+      for (const name of [...snapNow.achievedSpecs].sort()) {
+        for (const id of specDep.get(name) ?? []) deploymentRequirements.push(buildDepReq(id, name));
+      }
+    } else {
+      deploymentRequirements = (tierDepIds.get(t.id) ?? []).map((id) => buildDepReq(id, null));
+    }
+    return {
+      name: t.name,
+      sortOrder: t.sortOrder,
+      specialisationsRequired: t.specialisationsRequired,
+      compliant: snapNow.tierCompliant.get(t.id) ?? false,
+      projectedCompliant: snapProj ? snapProj.tierCompliant.get(t.id) ?? false : null,
+      deploymentRequirements,
+    };
+  });
+
+  const nameOf = (id: number | null) => (id == null ? null : tiers.find((t) => t.id === id)?.name ?? null);
+
+  return {
+    deploymentMode,
+    highestAchievedTier: nameOf(snapNow.highestAchievedTierId),
+    projectedHighestAchievedTier: snapProj ? nameOf(snapProj.highestAchievedTierId) : null,
+    achievedSpecialisations: [...snapNow.achievedSpecs].sort(),
+    achievedSpecialisationCount: snapNow.achievedSpecCount,
+    projectedAchievedSpecialisationCount: snapProj ? snapProj.achievedSpecCount : null,
+    tiers: outTiers,
+  };
 }
 
 async function getStudents(

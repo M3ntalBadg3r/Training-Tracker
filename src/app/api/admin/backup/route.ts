@@ -150,6 +150,7 @@ export async function generateConfigZip(): Promise<{
     trainingData,
     olxSubItemRelations,
     programs,
+    programTiers,
     specialisations,
     programData,
     programDataAlternatives,
@@ -161,6 +162,7 @@ export async function generateConfigZip(): Promise<{
     prisma.trainingData.findMany({ orderBy: { trainingTitle: "asc" } }),
     prisma.olxSubItemRelation.findMany({ orderBy: [{ parentTrainingTitle: "asc" }, { subItemTrainingTitle: "asc" }] }),
     prisma.program.findMany({ orderBy: { id: "asc" } }),
+    prisma.programTier.findMany({ orderBy: { id: "asc" } }),
     prisma.specialisation.findMany({ orderBy: { id: "asc" } }),
     prisma.programData.findMany({ orderBy: { id: "asc" } }),
     prisma.programDataAlternative.findMany({ orderBy: { id: "asc" } }),
@@ -186,6 +188,7 @@ export async function generateConfigZip(): Promise<{
   zip.file("training_data.json", JSON.stringify(trainingData, null, 2));
   zip.file("olx_sub_item_relations.json", JSON.stringify(olxSubItemRelations, null, 2));
   zip.file("programs.json", JSON.stringify(programs, null, 2));
+  zip.file("program_tiers.json", JSON.stringify(programTiers, null, 2));
   zip.file("specialisations.json", JSON.stringify(specialisations, null, 2));
   zip.file("program_data.json", JSON.stringify(programData, null, 2));
   zip.file("program_data_alternatives.json", JSON.stringify(programDataAlternatives, null, 2));
@@ -492,7 +495,14 @@ async function restoreConfigArchive(zip: JSZip): Promise<NextResponse> {
   type TrainingDataRow = any;
   type OlxRelationRow = { parentTrainingTitle: string; subItemTrainingTitle: string };
   type SpecialisationRow = { id: number; name: string };
-  type ProgramRow = { id: number; name: string; createdAt?: string };
+  type ProgramRow = { id: number; name: string; isTiered?: boolean; deploymentMode?: string; createdAt?: string };
+  type ProgramTierRow = {
+    id: number;
+    programName: string;
+    name: string;
+    sortOrder: number;
+    specialisationsRequired: number;
+  };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   type ProgramDataRow = any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -505,6 +515,8 @@ async function restoreConfigArchive(zip: JSZip): Promise<NextResponse> {
   const archiveTrainingData = await readJson<TrainingDataRow[]>("training_data.json");
   const archiveOlxRelations = await readJson<OlxRelationRow[]>("olx_sub_item_relations.json");
   const archivePrograms = await readJson<ProgramRow[]>("programs.json");
+  // program_tiers.json is optional — older config archives predate tiers.
+  const archiveProgramTiers = await readJson<ProgramTierRow[]>("program_tiers.json");
   const archiveSpecialisations = await readJson<SpecialisationRow[]>("specialisations.json");
   const archiveProgramData = await readJson<ProgramDataRow[]>("program_data.json");
   const archiveProgramDataAlternatives = await readJson<ProgramDataAlternativeRow[]>(
@@ -530,6 +542,7 @@ async function restoreConfigArchive(zip: JSZip): Promise<NextResponse> {
       //    Order respects the remaining FKs inside this scope.
       await tx.programDataAlternative.deleteMany({});
       await tx.programData.deleteMany({});
+      await tx.programTier.deleteMany({});
       await tx.program.deleteMany({});
       await tx.specialisation.deleteMany({});
       await tx.olxSubItemRelation.deleteMany({});
@@ -609,6 +622,8 @@ async function restoreConfigArchive(zip: JSZip): Promise<NextResponse> {
           data: archivePrograms.map((p) => ({
             id: p.id,
             name: p.name,
+            isTiered: p.isTiered ?? false,
+            deploymentMode: p.deploymentMode ?? "flat",
             createdAt: p.createdAt ? new Date(p.createdAt) : new Date(),
           })),
         });
@@ -617,6 +632,20 @@ async function restoreConfigArchive(zip: JSZip): Promise<NextResponse> {
         if (derivedNames.length > 0) {
           await tx.program.createMany({ data: derivedNames.map((name) => ({ name })) });
         }
+      }
+
+      // 6a. Re-insert ProgramTiers (after the programs they reference, before
+      //     ProgramData so its tier_id FK resolves). Explicit ids preserved.
+      if (archiveProgramTiers.length > 0) {
+        await tx.programTier.createMany({
+          data: archiveProgramTiers.map((t) => ({
+            id: t.id,
+            programName: t.programName,
+            name: t.name,
+            sortOrder: t.sortOrder,
+            specialisationsRequired: t.specialisationsRequired,
+          })),
+        });
       }
 
       // 6b. Re-insert Specialisation, ProgramData, ProgramDataAlternative with
@@ -632,7 +661,9 @@ async function restoreConfigArchive(zip: JSZip): Promise<NextResponse> {
           data: archiveProgramData.map((p) => ({
             id: p.id,
             programName: p.programName,
-            specialisationId: p.specialisationId,
+            specialisationId: p.specialisationId ?? null,
+            tierId: p.tierId ?? null,
+            purpose: p.purpose ?? "qualification",
             level: p.level,
             trainingType: p.trainingType ?? null,
             trainingTitle: p.trainingTitle ?? null,
@@ -662,6 +693,7 @@ async function restoreConfigArchive(zip: JSZip): Promise<NextResponse> {
         );
       };
       await resetSequence("programs");
+      await resetSequence("program_tiers");
       await resetSequence("specialisations");
       await resetSequence("program_data");
       await resetSequence("program_data_alternatives");

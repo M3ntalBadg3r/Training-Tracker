@@ -5,8 +5,12 @@ import { safeDecodeParam } from "@/lib/utils";
 
 /**
  * PATCH /api/admin/program-data/program/[programName]
- * Renames a program: updates the registry Program row and every ProgramData
- * requirement sharing the old name. Body: { newName }.
+ * Updates a program. Body may carry:
+ *  - newName: rename the program (updates the registry Program row, cascades to
+ *    program_tiers via the FK, and updates every ProgramData row sharing the
+ *    old name).
+ *  - isTiered / deploymentMode: tier configuration flags.
+ * Any subset may be provided; a settings-only PATCH omits newName.
  */
 export async function PATCH(
   request: NextRequest,
@@ -25,22 +29,12 @@ export async function PATCH(
   }
 
   const body = await request.json();
-  const newName = typeof body?.newName === "string" ? body.newName.trim() : "";
-  if (!newName) {
-    return NextResponse.json({ error: "Program name is required" }, { status: 400 });
-  }
-  if (newName === oldName) {
-    return NextResponse.json({ success: true, updated: 0 });
-  }
-
-  // Collision check against both the registry and existing requirements.
-  const [collideProgram, collideRows] = await Promise.all([
-    prisma.program.findUnique({ where: { name: newName } }),
-    prisma.programData.count({ where: { programName: newName } }),
-  ]);
-  if (collideProgram || collideRows > 0) {
-    return NextResponse.json({ error: "A program with this name already exists" }, { status: 409 });
-  }
+  const rawNewName = typeof body?.newName === "string" ? body.newName.trim() : "";
+  const wantsRename = rawNewName !== "" && rawNewName !== oldName;
+  const hasIsTiered = typeof body?.isTiered === "boolean";
+  const hasDeploymentMode = typeof body?.deploymentMode === "string";
+  const deploymentMode =
+    body?.deploymentMode === "perAchievedSpecialisation" ? "perAchievedSpecialisation" : "flat";
 
   // Existence check: the program must exist either in the registry or as rows.
   const [existingProgram, existingRows] = await Promise.all([
@@ -51,18 +45,42 @@ export async function PATCH(
     return NextResponse.json({ error: "Program not found" }, { status: 404 });
   }
 
-  const updated = await prisma.$transaction(async (tx) => {
-    if (existingProgram) {
-      await tx.program.update({ where: { name: oldName }, data: { name: newName } });
-    } else {
-      // Registry row missing (legacy data) — create it under the new name.
-      await tx.program.create({ data: { name: newName } });
+  if (wantsRename) {
+    // Collision check against both the registry and existing requirements.
+    const [collideProgram, collideRows] = await Promise.all([
+      prisma.program.findUnique({ where: { name: rawNewName } }),
+      prisma.programData.count({ where: { programName: rawNewName } }),
+    ]);
+    if (collideProgram || collideRows > 0) {
+      return NextResponse.json({ error: "A program with this name already exists" }, { status: 409 });
     }
-    const res = await tx.programData.updateMany({
-      where: { programName: oldName },
-      data: { programName: newName },
-    });
-    return res.count;
+  }
+
+  const finalName = wantsRename ? rawNewName : oldName;
+
+  const updated = await prisma.$transaction(async (tx) => {
+    const settings: { isTiered?: boolean; deploymentMode?: string } = {};
+    if (hasIsTiered) settings.isTiered = body.isTiered;
+    if (hasDeploymentMode) settings.deploymentMode = deploymentMode;
+
+    if (existingProgram) {
+      await tx.program.update({
+        where: { name: oldName },
+        data: { ...(wantsRename ? { name: rawNewName } : {}), ...settings },
+      });
+    } else {
+      // Registry row missing (legacy data) — create it under the final name.
+      await tx.program.create({ data: { name: finalName, ...settings } });
+    }
+    if (wantsRename) {
+      const res = await tx.programData.updateMany({
+        where: { programName: oldName },
+        data: { programName: rawNewName },
+      });
+      // program_tiers.programName cascades via the FK's ON UPDATE CASCADE.
+      return res.count;
+    }
+    return 0;
   });
 
   return NextResponse.json({ success: true, updated });

@@ -116,13 +116,27 @@ export interface ProgramSummaryRow {
   specialisations: string[];
   levels: string[];
   hasMinimumPerTheatre: boolean;
+  isTiered: boolean;
+  deploymentMode: string;
+  tierCount: number;
+}
+
+export interface ProgramTierRow {
+  id: number;
+  programName: string;
+  name: string;
+  sortOrder: number;
+  specialisationsRequired: number;
 }
 
 export interface ProgramDataRow {
   id: number;
   programName: string;
-  specialisationId: number;
-  specialisationName: string;
+  specialisationId: number | null;
+  specialisationName: string | null;
+  tierId: number | null;
+  tierName: string | null;
+  purpose: string;
   level: string;
   trainingType: string | null;
   trainingTitle: string | null;

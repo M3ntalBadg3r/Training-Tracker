@@ -11,6 +11,7 @@ import {
   Building2,
   MapPin,
   Map,
+  Layers,
   ExternalLink,
 } from "lucide-react";
 import { useCompanyScope } from "@/components/company/CompanyScopeProvider";
@@ -19,15 +20,19 @@ import {
   SpecialisationCard,
   ExportMenu,
   LoadingSpinner,
+  TierLadder,
   TRAINING_TYPE_LABELS,
   type AlternativeEntry,
   type Specialisation,
   type StudentEntry,
+  type TierBlock,
 } from "@/components/programs/ProgramCompliance";
 
 interface ProgramMeta {
   levels: string[];
   hasMinimumPerTheatre: boolean;
+  isTiered?: boolean;
+  deploymentMode?: string;
 }
 
 export default function ProgramDetailPage() {
@@ -84,6 +89,13 @@ export default function ProgramDetailPage() {
   const [globalSpecs, setGlobalSpecs] = useState<Specialisation[]>([]);
   const [globalLoading, setGlobalLoading] = useState(false);
 
+  // Tier ladder (tiered programs only)
+  const [tierOpen, setTierOpen] = useState(true);
+  const [tierLevel, setTierLevel] = useState("");
+  const [tierScopeValue, setTierScopeValue] = useState("");
+  const [tierBlock, setTierBlock] = useState<TierBlock | null>(null);
+  const [tierLoading, setTierLoading] = useState(false);
+
   // Student modal
   const [showStudents, setShowStudents] = useState(false);
   const [studentList, setStudentList] = useState<StudentEntry[]>([]);
@@ -100,6 +112,8 @@ export default function ProgramDetailPage() {
   const hasTheatre = meta?.levels.includes("Theatre") ?? false;
   const hasGlobal = meta?.levels.includes("Global") ?? false;
   const gdStyleGlobal = meta?.hasMinimumPerTheatre ?? false;
+  const isTiered = meta?.isTiered ?? false;
+  const tierNeedsScope = (tierLevel === "country" || tierLevel === "theatre") && !tierScopeValue;
   // When the program only has a Global Report (no Country/Region/Theatre
   // sections), the Global export lives in the page header — between the
   // company dropdown and the help button — rather than under the heading.
@@ -180,6 +194,32 @@ export default function ProgramDetailPage() {
       .catch(() => {})
       .finally(() => setGlobalLoading(false));
   }, [globalOpen, companyId, companyQS, horizonQS, apiBase]);
+
+  // Default the tier level to the broadest configured level once meta loads.
+  useEffect(() => {
+    if (!meta?.isTiered || tierLevel) return;
+    if (meta.levels.includes("Global")) setTierLevel("global");
+    else if (meta.levels.includes("Theatre")) setTierLevel("theatre");
+    else if (meta.levels.includes("Country")) setTierLevel("country");
+  }, [meta, tierLevel]);
+
+  // Tier ladder
+  useEffect(() => {
+    if (!isTiered || companyId === null || !tierOpen || !tierLevel) return;
+    if ((tierLevel === "country" || tierLevel === "theatre") && !tierScopeValue) {
+      setTierBlock(null);
+      return;
+    }
+    setTierLoading(true);
+    const params = new URLSearchParams({ level: tierLevel });
+    if (tierLevel === "country") params.set("country", tierScopeValue);
+    if (tierLevel === "theatre") params.set("theatre", tierScopeValue);
+    fetch(`${apiBase}?${params.toString()}${companyQS}${horizonQS}`)
+      .then((r) => r.json())
+      .then((data) => setTierBlock(data.tiers ?? null))
+      .catch(() => {})
+      .finally(() => setTierLoading(false));
+  }, [isTiered, tierOpen, tierLevel, tierScopeValue, companyId, companyQS, horizonQS, apiBase]);
 
   const viewStudents = async (
     trainingTitle: string,
@@ -407,6 +447,64 @@ export default function ProgramDetailPage() {
           <a href="/admin/program-data" className="text-blue-600 hover:underline">Admin &rsaquo; Program Data</a>{" "}
           using this program name.
         </div>
+      )}
+
+      {/* Tier Status (tiered programs) */}
+      {isTiered && (
+        <section className="mb-6">
+          <button
+            onClick={() => setTierOpen((p) => !p)}
+            className="w-full flex items-center gap-2 p-4 bg-white rounded-lg border border-gray-200 hover:bg-gray-50"
+          >
+            {tierOpen ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
+            <Layers size={20} className="text-indigo-600" />
+            <span className="text-lg font-semibold">Tier Status</span>
+          </button>
+          {tierOpen && (
+            <div className="mt-2 bg-white rounded-lg border border-gray-200 p-4">
+              <div className="flex flex-wrap items-center gap-3 mb-4">
+                <select
+                  value={tierLevel}
+                  onChange={(e) => { setTierLevel(e.target.value); setTierScopeValue(""); }}
+                  className="px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
+                >
+                  {hasGlobal && <option value="global">Global</option>}
+                  {hasTheatre && <option value="theatre">By Theatre</option>}
+                  {hasCountry && <option value="country">By Country</option>}
+                </select>
+                {tierLevel === "country" && (
+                  <select
+                    value={tierScopeValue}
+                    onChange={(e) => setTierScopeValue(e.target.value)}
+                    className="px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm min-w-[200px]"
+                  >
+                    <option value="">Select a country...</option>
+                    {countries.map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                )}
+                {tierLevel === "theatre" && (
+                  <select
+                    value={tierScopeValue}
+                    onChange={(e) => setTierScopeValue(e.target.value)}
+                    className="px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm min-w-[200px]"
+                  >
+                    <option value="">Select a theatre...</option>
+                    {theatres.map((t) => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                )}
+              </div>
+              {tierLoading ? (
+                <LoadingSpinner />
+              ) : tierNeedsScope ? (
+                <p className="text-sm text-gray-500">Select a {tierLevel} to view tier status.</p>
+              ) : !tierBlock ? (
+                <p className="text-sm text-gray-500">No tier data for this program.</p>
+              ) : (
+                <TierLadder block={tierBlock} />
+              )}
+            </div>
+          )}
+        </section>
       )}
 
       {/* Country Report */}

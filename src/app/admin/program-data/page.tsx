@@ -44,6 +44,8 @@ export default function ProgramDataPage() {
   // New / Rename / Delete program
   const [showNew, setShowNew] = useState(false);
   const [newName, setNewName] = useState("");
+  const [newIsTiered, setNewIsTiered] = useState(false);
+  const [newDeploymentMode, setNewDeploymentMode] = useState("flat");
   const [newError, setNewError] = useState("");
   const [renameTarget, setRenameTarget] = useState<ProgramSummaryRow | null>(null);
   const [renameValue, setRenameValue] = useState("");
@@ -56,6 +58,8 @@ export default function ProgramDataPage() {
   interface ImportRow {
     programName?: string;
     specialisationName?: string;
+    tierName?: string;
+    purpose?: string;
     level?: string;
     trainingType?: string;
     trainingFullTitle?: string;
@@ -119,7 +123,7 @@ export default function ProgramDataPage() {
     const res = await fetch("/api/admin/program-data/program", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: trimmed }),
+      body: JSON.stringify({ name: trimmed, isTiered: newIsTiered, deploymentMode: newDeploymentMode }),
     });
     if (!res.ok) {
       const result = await res.json().catch(() => ({}));
@@ -128,6 +132,8 @@ export default function ProgramDataPage() {
     }
     setShowNew(false);
     setNewName("");
+    setNewIsTiered(false);
+    setNewDeploymentMode("flat");
     router.push(`/admin/program-data/${encodeURIComponent(trimmed)}`);
   };
 
@@ -177,6 +183,9 @@ export default function ProgramDataPage() {
     if (p.levels.length > 0) {
       parts.push(`levels: ${p.levels.map((l) => LEVEL_LABELS[l] || l).join(", ")}`);
     }
+    if (p.isTiered) {
+      parts.push(`tiered · ${p.tierCount} tier${p.tierCount === 1 ? "" : "s"}`);
+    }
     return parts.join(" · ");
   };
 
@@ -184,6 +193,8 @@ export default function ProgramDataPage() {
   const exportColumns = [
     { key: "programName" as const, header: "Program Name" },
     { key: "specialisationName" as const, header: "Specialisation" },
+    { key: "tierName" as const, header: "Tier" },
+    { key: "purpose" as const, header: "Purpose" },
     { key: "level" as const, header: "Level" },
     { key: "trainingType" as const, header: "Training Type" },
     { key: "trainingFullTitle" as const, header: "Training" },
@@ -193,14 +204,20 @@ export default function ProgramDataPage() {
   ];
 
   const exportData = [...allRows]
-    .sort((a, b) => a.programName.localeCompare(b.programName) || a.specialisationName.localeCompare(b.specialisationName))
+    .sort(
+      (a, b) =>
+        a.programName.localeCompare(b.programName) ||
+        (a.specialisationName ?? "").localeCompare(b.specialisationName ?? "")
+    )
     .map((r) => {
       const altsLabel = r.alternatives && r.alternatives.length > 0
         ? r.alternatives.map((a) => a.trainingFullTitle).join("|")
         : "";
       return {
         programName: r.programName,
-        specialisationName: r.specialisationName,
+        specialisationName: r.specialisationName ?? "",
+        tierName: r.tierName ?? "",
+        purpose: r.purpose,
         level: r.level,
         trainingType: r.trainingType ? trainingTypeLabel(r.trainingType) : "—",
         trainingFullTitle: r.trainingFullTitle || "—",
@@ -216,6 +233,9 @@ export default function ProgramDataPage() {
     program: "programName",
     specialisation: "specialisationName",
     specialization: "specialisationName",
+    tier: "tierName",
+    tiername: "tierName",
+    purpose: "purpose",
     level: "level",
     trainingtype: "trainingType",
     type: "trainingType",
@@ -534,6 +554,30 @@ export default function ProgramDataPage() {
               onKeyDown={(e) => { if (e.key === "Enter") handleNewProgram(); }}
             />
           </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="new-tiered"
+              checked={newIsTiered}
+              onChange={(e) => setNewIsTiered(e.target.checked)}
+              className="w-4 h-4"
+            />
+            <label htmlFor="new-tiered" className="text-sm">Tiered program (unlocks tiers by achieved specialisations)</label>
+          </div>
+          {newIsTiered && (
+            <div>
+              <label className="block text-sm font-medium mb-1">Deployment requirement handling</label>
+              <select
+                value={newDeploymentMode}
+                onChange={(e) => setNewDeploymentMode(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
+              >
+                <option value="flat">Flat — each tier lists its own deployment requirements</option>
+                <option value="perAchievedSpecialisation">Per achieved specialisation — each achieved specialisation&apos;s deployment requirements must be met</option>
+              </select>
+              <p className="mt-1 text-xs text-gray-500">You can change this later on the program&apos;s page.</p>
+            </div>
+          )}
           <div className="flex justify-end gap-2 pt-2">
             <button onClick={() => setShowNew(false)} className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
             <button onClick={handleNewProgram} className="flex items-center gap-1 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">
