@@ -48,6 +48,13 @@ export interface Specialisation {
   compliant?: boolean;
   projectedCompliant?: boolean;
   requirements: Requirement[];
+  // Deployment ("delivery") requirements for this specialisation. They do NOT
+  // affect whether the specialisation is achieved (that stays on `requirements`
+  // / `compliant`), but a tier that uses the specialisation requires them too,
+  // so the level reports surface them with their own met/not-met state.
+  deploymentRequirements?: Requirement[];
+  deploymentCompliant?: boolean;
+  projectedDeploymentCompliant?: boolean;
 }
 
 export interface StudentEntry {
@@ -198,6 +205,8 @@ export function ComplianceTable({
   unitLabel: string;
 }) {
   const maxReqs = Math.max(...specialisations.map((s) => s.requirements.length), 0);
+  const maxDepReqs = Math.max(...specialisations.map((s) => s.deploymentRequirements?.length ?? 0), 0);
+  const colCount = specialisations.length + 1;
 
   return (
     <div className="overflow-x-auto">
@@ -229,6 +238,31 @@ export function ComplianceTable({
               unitLabel={unitLabel}
             />
           ))}
+          {maxDepReqs > 0 && (
+            <>
+              <tr>
+                <td colSpan={colCount} className="px-4 py-2 border border-gray-200 bg-indigo-50">
+                  <div className="text-sm font-semibold text-indigo-800">Deployment requirements</div>
+                  <div className="text-xs text-indigo-700/80">
+                    Required together with the specialisation to qualify for tiers that use it. These do not change
+                    whether the specialisation itself is achieved.
+                  </div>
+                </td>
+              </tr>
+              {Array.from({ length: maxDepReqs }).map((_, reqIdx) => (
+                <RequirementRowGroup
+                  key={`dep-${reqIdx}`}
+                  reqIdx={reqIdx}
+                  specialisations={specialisations}
+                  level={level}
+                  filterValue={filterValue}
+                  onViewStudents={onViewStudents}
+                  unitLabel={unitLabel}
+                  deployment
+                />
+              ))}
+            </>
+          )}
         </tbody>
       </table>
     </div>
@@ -242,6 +276,7 @@ function RequirementRowGroup({
   filterValue,
   onViewStudents,
   unitLabel,
+  deployment = false,
 }: {
   reqIdx: number;
   specialisations: Specialisation[];
@@ -249,7 +284,10 @@ function RequirementRowGroup({
   filterValue: string;
   onViewStudents: ViewStudentsFn;
   unitLabel: string;
+  deployment?: boolean;
 }) {
+  const reqsOf = (spec: Specialisation) =>
+    deployment ? spec.deploymentRequirements ?? [] : spec.requirements;
   return (
     <>
       {/* Training name row */}
@@ -258,7 +296,7 @@ function RequirementRowGroup({
           Training
         </td>
         {specialisations.map((spec) => {
-          const req = spec.requirements[reqIdx];
+          const req = reqsOf(spec)[reqIdx];
           return (
             <td key={spec.name} className="px-4 py-2 text-center border border-gray-200">
               {req ? (
@@ -291,7 +329,7 @@ function RequirementRowGroup({
           Required
         </td>
         {specialisations.map((spec) => {
-          const req = spec.requirements[reqIdx];
+          const req = reqsOf(spec)[reqIdx];
           return (
             <td key={spec.name} className="px-4 py-2 text-center border border-gray-200">
               {req ? (
@@ -311,7 +349,7 @@ function RequirementRowGroup({
           Attained
         </td>
         {specialisations.map((spec) => {
-          const req = spec.requirements[reqIdx];
+          const req = reqsOf(spec)[reqIdx];
           if (!req) {
             return (
               <td key={spec.name} className="px-4 py-2 text-center border border-gray-200">
@@ -357,6 +395,8 @@ function RequirementRowGroup({
  * and a table of requirements, each expandable to a per-theatre breakdown.
  */
 export function SpecialisationCard({ spec }: { spec: Specialisation }) {
+  const deploymentReqs = spec.deploymentRequirements ?? [];
+  const hasDeployment = deploymentReqs.length > 0;
   return (
     <div className="mb-6 bg-white rounded-lg border border-gray-200 overflow-hidden">
       {(() => {
@@ -367,12 +407,30 @@ export function SpecialisationCard({ spec }: { spec: Specialisation }) {
           : "nonCompliant";
         const label =
           state === "compliant" ? "Compliant" : state === "atRisk" ? "At Risk" : "Not Compliant";
+        const depState: RiskState = spec.deploymentCompliant
+          ? spec.projectedDeploymentCompliant === false
+            ? "atRisk"
+            : "compliant"
+          : "nonCompliant";
+        const depLabel =
+          depState === "compliant"
+            ? "Deployment: Met"
+            : depState === "atRisk"
+              ? "Deployment: At Risk"
+              : "Deployment: Not Met";
         return (
-          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <div className="flex items-center justify-between gap-2 px-5 py-4 border-b border-gray-100">
             <h2 className="text-lg font-semibold">{spec.name}</h2>
-            <span className={`px-3 py-1 rounded-full text-sm font-medium ${RISK_BADGE[state]}`}>
-              {label}
-            </span>
+            <div className="flex items-center gap-2">
+              {hasDeployment && (
+                <span className={`px-3 py-1 rounded-full text-xs font-medium ${RISK_BADGE[depState]}`}>
+                  {depLabel}
+                </span>
+              )}
+              <span className={`px-3 py-1 rounded-full text-sm font-medium ${RISK_BADGE[state]}`}>
+                {label}
+              </span>
+            </div>
           </div>
         );
       })()}
@@ -393,6 +451,22 @@ export function SpecialisationCard({ spec }: { spec: Specialisation }) {
             {spec.requirements.map((req, i) => (
               <RequirementRows key={i} req={req} />
             ))}
+            {hasDeployment && (
+              <>
+                <tr className="bg-indigo-50">
+                  <td colSpan={7} className="px-4 py-2">
+                    <div className="text-sm font-semibold text-indigo-800">Deployment requirements</div>
+                    <div className="text-xs text-indigo-700/80">
+                      Required together with the specialisation to qualify for tiers that use it. These do not
+                      change whether the specialisation itself is achieved.
+                    </div>
+                  </td>
+                </tr>
+                {deploymentReqs.map((req, i) => (
+                  <RequirementRows key={`dep-${i}`} req={req} />
+                ))}
+              </>
+            )}
           </tbody>
         </table>
       </div>
@@ -689,6 +763,14 @@ export function TierLadder({ block }: { block: TierBlock }) {
                   <span className="ml-2 text-gray-500">
                     (need {tier.specialisationsRequired - achieved} more)
                   </span>
+                )}
+              </div>
+              <div className="mt-1 text-xs text-gray-500">
+                Achieved:{" "}
+                {block.achievedSpecialisations.length > 0 ? (
+                  <span className="text-gray-700">{block.achievedSpecialisations.join(", ")}</span>
+                ) : (
+                  <span className="italic">none yet</span>
                 )}
               </div>
 

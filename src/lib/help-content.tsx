@@ -1776,10 +1776,12 @@ const helpSections: Record<string, HelpSection> = {
           Shown for <strong>tiered</strong> programs. Pick a scope (Global, or by
           Theatre / Country) to see the partner&apos;s <strong>highest tier
           achieved</strong> and progress toward the next one. Each tier card shows how
-          many specialisations are achieved versus required, plus any Deployment cert
-          requirements with their distinct-holder counts (expand a requirement to see the
-          per-theatre breakdown). With a &ldquo;Compliance as of&rdquo; horizon selected,
-          the banner also shows the projected highest tier once expiring certs drop out.
+          many specialisations are achieved versus required (and <strong>lists which
+          specialisations</strong> are currently achieved at that scope), plus any
+          Deployment cert requirements with their distinct-holder counts (expand a
+          requirement to see the per-theatre breakdown). With a &ldquo;Compliance as
+          of&rdquo; horizon selected, the banner also shows the projected highest tier once
+          expiring certs drop out.
         </p>
 
         <h3>Country &amp; Region Reports</h3>
@@ -1790,6 +1792,15 @@ const helpSections: Record<string, HelpSection> = {
           a specialisation, with rows for the training name, required count, and
           attained count. Green means the requirement is met; red means it is
           not. Click <strong>View</strong> to list the qualifying students.
+        </p>
+        <p>
+          Where a specialisation has <strong>Deployment requirements</strong> (tiered
+          programs in <em>per-achieved-specialisation</em> mode), they appear in their own
+          sub-section below the qualifying rows. A specialisation is still achieved on its
+          qualifying requirements alone, but a tier that uses it also needs these
+          deployment requirements — so they&apos;re shown here (with their own met/not-met
+          state) rather than hidden. Exports gain a <strong>Purpose</strong> column
+          (Qualification / Deployment).
         </p>
 
         <h3>Theatre Report</h3>

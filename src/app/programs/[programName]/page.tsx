@@ -259,13 +259,14 @@ export default function ProgramDetailPage() {
   const buildExportData = (specs: Specialisation[], levelLabel: string, filterValue: string) => {
     const rows: Record<string, string | number>[] = [];
     for (const spec of specs) {
-      for (const req of spec.requirements) {
+      const emit = (req: Specialisation["requirements"][number], purpose: string) => {
         let trainingLabel = req.trainingFullTitle;
         if (req.alternatives && req.alternatives.length > 0) {
           trainingLabel += " (or " + req.alternatives.map((a) => a.trainingFullTitle).join(", ") + ")";
         }
         const row: Record<string, string | number> = {
           specialisation: spec.name,
+          purpose,
           training: trainingLabel,
           type: req.trainingType ? TRAINING_TYPE_LABELS[req.trainingType] || req.trainingType : "—",
           required: req.quantityRequired,
@@ -281,13 +282,16 @@ export default function ProgramDetailPage() {
         row.level = levelLabel;
         row.filter = filterValue;
         rows.push(row);
-      }
+      };
+      spec.requirements.forEach((req) => emit(req, "Qualification"));
+      (spec.deploymentRequirements ?? []).forEach((req) => emit(req, "Deployment"));
     }
     return rows;
   };
 
   const exportCols = [
     { key: "specialisation", header: "Specialisation" },
+    { key: "purpose", header: "Purpose" },
     { key: "training", header: "Training" },
     { key: "type", header: "Type" },
     { key: "required", header: "Required" },
@@ -308,7 +312,7 @@ export default function ProgramDetailPage() {
   const buildGlobalDiamondExport = () => {
     const rows: Record<string, string | number>[] = [];
     for (const spec of globalSpecs) {
-      for (const req of spec.requirements) {
+      const emit = (req: Specialisation["requirements"][number], purpose: string) => {
         let trainingLabel = req.trainingFullTitle;
         if (req.alternatives && req.alternatives.length > 0) {
           trainingLabel += " (or " + req.alternatives.map((a) => a.trainingFullTitle).join(", ") + ")";
@@ -325,6 +329,7 @@ export default function ProgramDetailPage() {
             : {};
         rows.push({
           specialisation: spec.name,
+          purpose,
           training: trainingLabel,
           type: req.trainingType ? TRAINING_TYPE_LABELS[req.trainingType] || req.trainingType : "—",
           required: req.quantityRequired,
@@ -342,6 +347,7 @@ export default function ProgramDetailPage() {
             const tProjected = req.projectedTheatreBreakdown?.find((p) => p.theatre === t.theatre)?.count ?? t.count;
             rows.push({
               specialisation: spec.name,
+              purpose,
               training: req.trainingFullTitle,
               type: req.trainingType ? TRAINING_TYPE_LABELS[req.trainingType] || req.trainingType : "—",
               required: req.quantityRequired,
@@ -355,13 +361,16 @@ export default function ProgramDetailPage() {
             });
           }
         }
-      }
+      };
+      spec.requirements.forEach((req) => emit(req, "Qualification"));
+      (spec.deploymentRequirements ?? []).forEach((req) => emit(req, "Deployment"));
     }
     return rows;
   };
 
   const gdExportCols = [
     { key: "specialisation", header: "Specialisation" },
+    { key: "purpose", header: "Purpose" },
     { key: "training", header: "Training" },
     { key: "type", header: "Type" },
     { key: "required", header: "Global Required" },
