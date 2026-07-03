@@ -1688,7 +1688,7 @@ const helpSections: Record<string, HelpSection> = {
             </tr>
             <tr>
               <td><strong>Training</strong></td>
-              <td>The specific training required, filtered by the selected Type.</td>
+              <td>The specific training required, filtered by the selected Type. Each training name is listed once, even if it&apos;s backed by more than one catalogue record — the requirement counts anyone holding <em>any</em> record under that name.</td>
             </tr>
             <tr>
               <td><strong>Quantity Required</strong></td>

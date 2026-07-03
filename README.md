@@ -893,7 +893,7 @@ Each requirement specifies:
 | **Specialisation** | The product or solution area for this requirement. Shared across programs; managed via a controlled dropdown — click **+** or **Manage Specialisations** to add new ones. |
 | **Level** | Whether the requirement applies at Country, Theatre, or Global level |
 | **Type** | Certification, Accreditation, Instructor-Led Training, OLX, or OLX Sub-Item |
-| **Training** | The specific training required (filtered by the selected Type) |
+| **Training** | The specific training required (filtered by the selected Type). Listed once per name even if backed by multiple catalogue records; a requirement counts anyone holding **any** record under that name |
 | **Quantity Required** | For Country/Theatre: number of people needed. For Global: number of compliant theatres needed. |
 
 Each distinct program automatically gets its own compliance dashboard under **Programs**.

@@ -53,6 +53,72 @@ export function extractTitles(rows: ProgramRequirement[]): string[] {
 }
 
 /**
+ * Multiple `trainingTitle`s can legitimately share one `fullTitle` (common from
+ * imports), and the app counts a person who holds *any* such variant (the
+ * training catalogue and dashboards group by fullTitle + trainingType). A
+ * program requirement stores a single representative `trainingTitle`, so before
+ * counting we expand it to its whole sibling group (same fullTitle + type).
+ *
+ * Returns the flat list of titles to fetch (all siblings) plus a map from each
+ * requested title to every trainingTitle in its group (including itself), so
+ * callers can merge sibling email sets under the requested key. Single-variant
+ * names resolve to `[self]`, making this a no-op for them.
+ */
+async function resolveSiblingTitles(trainingTitles: string[]): Promise<{
+  fetchTitles: string[];
+  groupMembers: Map<string, string[]>;
+}> {
+  const pairKey = (fullTitle: string, type: string) => `${fullTitle}::${type}`;
+
+  const requested = await prisma.trainingData.findMany({
+    where: { trainingTitle: { in: trainingTitles } },
+    select: { trainingTitle: true, fullTitle: true, trainingType: true },
+  });
+
+  // Titles with no catalogue row (shouldn't happen via FK) stay singleton.
+  if (requested.length === 0) {
+    const groupMembers = new Map<string, string[]>();
+    for (const t of trainingTitles) groupMembers.set(t, [t]);
+    return { fetchTitles: [...new Set(trainingTitles)], groupMembers };
+  }
+
+  // Distinct (fullTitle, trainingType) pairs — keep the enum-typed trainingType
+  // from the query result so the OR filter matches Prisma's where input type.
+  const seenPair = new Set<string>();
+  const orPairs: { fullTitle: string; trainingType: (typeof requested)[number]["trainingType"] }[] = [];
+  for (const r of requested) {
+    const k = pairKey(r.fullTitle, r.trainingType);
+    if (!seenPair.has(k)) {
+      seenPair.add(k);
+      orPairs.push({ fullTitle: r.fullTitle, trainingType: r.trainingType });
+    }
+  }
+
+  const siblings = await prisma.trainingData.findMany({
+    where: { OR: orPairs },
+    select: { trainingTitle: true, fullTitle: true, trainingType: true },
+  });
+
+  const membersByPair = new Map<string, string[]>();
+  for (const s of siblings) {
+    const k = pairKey(s.fullTitle, s.trainingType);
+    if (!membersByPair.has(k)) membersByPair.set(k, []);
+    membersByPair.get(k)!.push(s.trainingTitle);
+  }
+
+  const reqByTitle = new Map(requested.map((r) => [r.trainingTitle, r]));
+  const groupMembers = new Map<string, string[]>();
+  const fetchSet = new Set<string>();
+  for (const t of trainingTitles) {
+    const r = reqByTitle.get(t);
+    const members = r ? membersByPair.get(pairKey(r.fullTitle, r.trainingType)) ?? [t] : [t];
+    groupMembers.set(t, members);
+    for (const m of members) fetchSet.add(m);
+  }
+  return { fetchTitles: [...fetchSet], groupMembers };
+}
+
+/**
  * Email-sets keyed by training title for a given scope, considering only
  * trainings that are valid *as of* `asOf` — i.e. completed on or before `asOf`
  * (`completedDate <= asOf`) and not yet expired (`expiryDate > asOf`). The
@@ -61,6 +127,11 @@ export function extractTitles(rows: ProgramRequirement[]): string[] {
  * that month. For `asOf = now` (and future horizons) the completedDate clause
  * is always satisfied by existing rows, so live/forecast callers are
  * unaffected. Empty input → empty map.
+ *
+ * Each requested title is expanded to its fullTitle+type sibling group and the
+ * group's holders are merged under the requested key, so a requirement counts
+ * anyone holding any catalogue variant of the chosen training (see
+ * `resolveSiblingTitles`).
  */
 export async function getEmailSetsByTitle(
   trainingTitles: string[],
@@ -69,6 +140,8 @@ export async function getEmailSetsByTitle(
 ): Promise<Map<string, Set<string>>> {
   if (trainingTitles.length === 0) return new Map();
   if (Array.isArray(scope.companyIds) && scope.companyIds.length === 0) return new Map();
+
+  const { fetchTitles, groupMembers } = await resolveSiblingTitles(trainingTitles);
 
   const studentFilter: Record<string, unknown> = {};
   if (scope.country) studentFilter.country = scope.country;
@@ -80,7 +153,7 @@ export async function getEmailSetsByTitle(
 
   const rows = await prisma.trainingTaken.findMany({
     where: {
-      trainingTitle: { in: trainingTitles },
+      trainingTitle: { in: fetchTitles },
       completedDate: { lte: asOf },
       expiryDate: { gt: asOf },
       ...(Object.keys(studentFilter).length > 0 ? { student: studentFilter } : {}),
@@ -88,10 +161,22 @@ export async function getEmailSetsByTitle(
     select: { trainingTitle: true, email: true },
   });
 
-  const map = new Map<string, Set<string>>();
+  const rawByTitle = new Map<string, Set<string>>();
   for (const r of rows) {
-    if (!map.has(r.trainingTitle)) map.set(r.trainingTitle, new Set());
-    map.get(r.trainingTitle)!.add(r.email);
+    if (!rawByTitle.has(r.trainingTitle)) rawByTitle.set(r.trainingTitle, new Set());
+    rawByTitle.get(r.trainingTitle)!.add(r.email);
+  }
+
+  // Merge each requested title's sibling group into one union, keyed by the
+  // requested title so unionAttained lookups see every variant's holders.
+  const map = new Map<string, Set<string>>();
+  for (const [requested, members] of groupMembers) {
+    const u = new Set<string>();
+    for (const m of members) {
+      const s = rawByTitle.get(m);
+      if (s) for (const e of s) u.add(e);
+    }
+    map.set(requested, u);
   }
   return map;
 }
@@ -107,9 +192,12 @@ export async function getEmailSetsByTitleAndTheatre(
 ): Promise<Map<string, Map<string, Set<string>>>> {
   if (trainingTitles.length === 0) return new Map();
   if (Array.isArray(companyIds) && companyIds.length === 0) return new Map();
+
+  const { fetchTitles, groupMembers } = await resolveSiblingTitles(trainingTitles);
+
   const rows = await prisma.trainingTaken.findMany({
     where: {
-      trainingTitle: { in: trainingTitles },
+      trainingTitle: { in: fetchTitles },
       completedDate: { lte: asOf },
       expiryDate: { gt: asOf },
       ...(Array.isArray(companyIds) && companyIds.length > 0
@@ -123,16 +211,33 @@ export async function getEmailSetsByTitleAndTheatre(
     },
   });
 
-  const map = new Map<string, Map<string, Set<string>>>();
+  const rawByTitle = new Map<string, Map<string, Set<string>>>();
   for (const r of rows) {
-    let byTheatre = map.get(r.trainingTitle);
+    let byTheatre = rawByTitle.get(r.trainingTitle);
     if (!byTheatre) {
       byTheatre = new Map();
-      map.set(r.trainingTitle, byTheatre);
+      rawByTitle.set(r.trainingTitle, byTheatre);
     }
     const theatre = r.student.theatre;
     if (!byTheatre.has(theatre)) byTheatre.set(theatre, new Set());
     byTheatre.get(theatre)!.add(r.email);
+  }
+
+  // Merge each requested title's sibling group per theatre, keyed by the
+  // requested title (see resolveSiblingTitles).
+  const map = new Map<string, Map<string, Set<string>>>();
+  for (const [requested, members] of groupMembers) {
+    const merged = new Map<string, Set<string>>();
+    for (const m of members) {
+      const byTheatre = rawByTitle.get(m);
+      if (!byTheatre) continue;
+      for (const [theatre, emails] of byTheatre) {
+        if (!merged.has(theatre)) merged.set(theatre, new Set());
+        const set = merged.get(theatre)!;
+        for (const e of emails) set.add(e);
+      }
+    }
+    map.set(requested, merged);
   }
   return map;
 }

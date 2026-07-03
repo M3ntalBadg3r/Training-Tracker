@@ -30,6 +30,9 @@ interface FormState {
   level: string;
   trainingType: string;
   trainingTitle: string;
+  // The training is selected by its fullTitle (the dropdown is deduped per
+  // fullTitle); trainingTitle holds the representative variant sent to the API.
+  trainingFullTitle: string;
   quantityRequired: number;
   minimumPerTheatre: number | null;
 }
@@ -40,6 +43,7 @@ const EMPTY_FORM: FormState = {
   level: "",
   trainingType: "",
   trainingTitle: "",
+  trainingFullTitle: "",
   quantityRequired: 1,
   minimumPerTheatre: null,
 };
@@ -140,6 +144,7 @@ export default function RequirementModal({
         level: initial.level,
         trainingType: initial.trainingType ?? "",
         trainingTitle: initial.trainingTitle ?? "",
+        trainingFullTitle: initial.trainingFullTitle ?? "",
         quantityRequired: initial.quantityRequired,
         minimumPerTheatre: initial.minimumPerTheatre ?? null,
       });
@@ -313,7 +318,7 @@ export default function RequirementModal({
                   value={form.trainingType}
                   onChange={(e) => {
                     const type = e.target.value;
-                    setForm((f) => ({ ...f, trainingType: type, trainingTitle: "" }));
+                    setForm((f) => ({ ...f, trainingType: type, trainingTitle: "", trainingFullTitle: "" }));
                     fetchTrainingsByType(type);
                   }}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
@@ -325,13 +330,17 @@ export default function RequirementModal({
               <div>
                 <label className="block text-sm font-medium mb-1">Training</label>
                 <select
-                  value={form.trainingTitle}
-                  onChange={(e) => setForm((f) => ({ ...f, trainingTitle: e.target.value }))}
+                  value={form.trainingFullTitle}
+                  onChange={(e) => {
+                    const fullTitle = e.target.value;
+                    const opt = trainingOptions.find((o) => o.fullTitle === fullTitle);
+                    setForm((f) => ({ ...f, trainingFullTitle: fullTitle, trainingTitle: opt?.trainingTitle ?? "" }));
+                  }}
                   disabled={!form.trainingType}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm disabled:opacity-50"
                 >
                   <option value="">{form.trainingType ? "Select training..." : "Select a type first..."}</option>
-                  {trainingOptions.map((t) => <option key={t.trainingTitle} value={t.trainingTitle}>{t.fullTitle}</option>)}
+                  {trainingOptions.map((t) => <option key={t.trainingTitle} value={t.fullTitle}>{t.fullTitle}</option>)}
                 </select>
               </div>
               {form.level === "Global" && (
@@ -387,17 +396,17 @@ export default function RequirementModal({
                       <div className="flex-[2]">
                         <label className="block text-xs font-medium mb-1 text-gray-600">Training</label>
                         <select
-                          value={alt.trainingTitle}
+                          value={alt.trainingFullTitle}
                           onChange={(e) => {
-                            const title = e.target.value;
-                            const opt = (altTrainingOptions[`${idx}`] || []).find((o) => o.trainingTitle === title);
-                            setAlternatives((prev) => prev.map((a, i) => i === idx ? { ...a, trainingTitle: title, trainingFullTitle: opt?.fullTitle ?? "" } : a));
+                            const fullTitle = e.target.value;
+                            const opt = (altTrainingOptions[`${idx}`] || []).find((o) => o.fullTitle === fullTitle);
+                            setAlternatives((prev) => prev.map((a, i) => i === idx ? { ...a, trainingTitle: opt?.trainingTitle ?? "", trainingFullTitle: fullTitle } : a));
                           }}
                           disabled={!alt.trainingType}
                           className="w-full px-2 py-1.5 border border-gray-300 rounded bg-white text-sm disabled:opacity-50"
                         >
                           <option value="">{alt.trainingType ? "Select training..." : "Select type first..."}</option>
-                          {(altTrainingOptions[`${idx}`] || []).map((t) => <option key={t.trainingTitle} value={t.trainingTitle}>{t.fullTitle}</option>)}
+                          {(altTrainingOptions[`${idx}`] || []).map((t) => <option key={t.trainingTitle} value={t.fullTitle}>{t.fullTitle}</option>)}
                         </select>
                       </div>
                       <button
