@@ -892,7 +892,8 @@ Tick **Tiered program** when creating a program to unlock **tiers** (e.g. Tier A
 On a tiered program's page a **Tiers** section lets you add tiers (name, ladder order, and how many achieved specialisations each requires) and choose how each tier's **Deployment** cert requirements are handled:
 
 - **Flat** — each tier lists its own deployment cert requirements.
-- **Per achieved specialisation** — each achieved specialisation's own deployment cert requirements must be met (added as requirements with the **Deployment** purpose).
+- **Per achieved specialisation** — each achieved specialisation's own deployment cert requirements must be met (added as requirements with the **Deployment** purpose). The same set applies to every tier.
+- **Per tier, per achieved specialisation** — each tier lists its own deployment cert requirements **for each specialisation**, so they scale up the ladder. When adding a tier's deployment requirement you pick which specialisation it applies to; the tier is met when, for every achieved specialisation, that tier's deployment certs for that specialisation are all met. A tier with no deployment requirements (e.g. the entry tier) is met on its specialisation count alone. Example: Tier A needs 1 specialisation and 0 deployment certs; Tier B needs 2 specialisations and 3 deployment certs per specialisation; Tier C needs 3 specialisations and 4 per specialisation.
 
 Because compliance counts **distinct people**, a requirement such as "2 of Cert A or Cert B" needs two *different* individuals — one person holding both certs still counts once.
 

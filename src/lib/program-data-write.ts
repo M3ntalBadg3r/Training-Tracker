@@ -2,10 +2,12 @@
  * Shared validation + serialization for ProgramData requirement writes
  * (POST /api/admin/program-data and PUT /api/admin/program-data/[id]).
  *
- * A requirement belongs to EITHER a specialisation (specialisationId) OR a tier
- * (tierId) — exactly one. Specialisation rows carry a `purpose`
- * ("qualification" earns the specialisation, "deployment" is used by tiers in
- * "perAchievedSpecialisation" mode); tier rows are always deployment.
+ * A requirement belongs to a specialisation (specialisationId) and/or a tier
+ * (tierId) — at least one must be set. Specialisation-only rows carry a
+ * `purpose` ("qualification" earns the specialisation, "deployment" is used by
+ * tiers in "perAchievedSpecialisation" mode). Tier rows are always deployment;
+ * a tier row may ALSO carry a specialisationId (a "perTierPerSpecialisation"
+ * deployment requirement: that tier's deployment certs for that specialisation).
  */
 import prisma from "@/lib/prisma";
 
@@ -41,8 +43,8 @@ export async function validateRequirementBody(body: Record<string, unknown>): Pr
   const tierId = body.tierId == null ? null : Number(body.tierId);
   const hasSpec = specialisationId != null && !Number.isNaN(specialisationId);
   const hasTier = tierId != null && !Number.isNaN(tierId);
-  if (hasSpec === hasTier) {
-    return err("Requirement must belong to either a specialisation or a tier");
+  if (!hasSpec && !hasTier) {
+    return err("Requirement must belong to a specialisation or a tier");
   }
 
   const level = typeof body.level === "string" ? body.level : "";

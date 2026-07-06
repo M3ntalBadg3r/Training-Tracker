@@ -105,8 +105,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Program name is required" }, { status: 400 });
   }
   const isTiered = body?.isTiered === true;
-  const deploymentMode =
-    body?.deploymentMode === "perAchievedSpecialisation" ? "perAchievedSpecialisation" : "flat";
+  const DEPLOYMENT_MODES = ["flat", "perAchievedSpecialisation", "perTierPerSpecialisation"];
+  const deploymentMode = DEPLOYMENT_MODES.includes(body?.deploymentMode) ? body.deploymentMode : "flat";
 
   const existing = await prisma.program.findUnique({ where: { name } });
   if (existing) {

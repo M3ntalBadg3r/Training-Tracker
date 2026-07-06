@@ -128,8 +128,10 @@ export async function POST(request: NextRequest) {
     }
     const hasSpec = specialisationName !== "";
     const hasTier = tierName !== "";
-    if (hasSpec === hasTier) {
-      errors.push({ row: rowNum, message: "Provide either a Specialisation or a Tier (exactly one)" });
+    // A row must name a Specialisation and/or a Tier. Both together is a
+    // per-tier-per-specialisation deployment requirement.
+    if (!hasSpec && !hasTier) {
+      errors.push({ row: rowNum, message: "Provide a Specialisation and/or a Tier" });
       skipped++;
       continue;
     }
@@ -238,7 +240,7 @@ export async function POST(request: NextRequest) {
       await prisma.program.update({ where: { name: programName }, data: { isTiered: true } });
     }
 
-    // --- Resolve the requirement's scope (specialisation or tier) ---
+    // --- Resolve the requirement's scope (specialisation and/or tier) ---
     let specId: number | null = null;
     let tierId: number | null = null;
     if (hasTier) {
@@ -258,7 +260,8 @@ export async function POST(request: NextRequest) {
         tierCache.set(tierKey, cached);
       }
       tierId = cached;
-    } else {
+    }
+    if (hasSpec) {
       specId = specCache.get(specialisationName.toLowerCase()) ?? null;
       if (specId === null) {
         let spec = await prisma.specialisation.findFirst({ where: { name: specialisationName } });

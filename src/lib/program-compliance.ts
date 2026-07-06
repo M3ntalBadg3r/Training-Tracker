@@ -327,6 +327,12 @@ export interface TierLadderInput {
     specialisationsRequired: number;
     /** Deployment requirement ids for "flat" mode. */
     deploymentReqIds: number[];
+    /**
+     * Deployment requirement ids keyed by specialisation name, for
+     * "perTierPerSpecialisation" mode: this tier's deployment certs for each
+     * specialisation. Only the achieved specialisations' entries are enforced.
+     */
+    deploymentReqIdsBySpec?: Map<string, number[]>;
   }[];
   specs: {
     name: string;
@@ -366,6 +372,9 @@ export interface TierLadderSnapshot {
  *  - "perAchievedSpecialisation": every achieved specialisation's deployment
  *    requirements. (If no specialisation is achieved there is nothing extra to
  *    prove, so deployment is trivially met and the gate is the spec count.)
+ *  - "perTierPerSpecialisation": for every achieved specialisation, this tier's
+ *    own deployment requirements for that specialisation. (Same trivial-met
+ *    behaviour when a tier has no rows for a spec, or no spec is achieved.)
  */
 export function evaluateTierLadder(
   input: TierLadderInput,
@@ -384,7 +393,10 @@ export function evaluateTierLadder(
     s.qualifyingReqIds.forEach((i) => referenced.add(i));
     s.deploymentReqIds.forEach((i) => referenced.add(i));
   }
-  for (const t of tiers) t.deploymentReqIds.forEach((i) => referenced.add(i));
+  for (const t of tiers) {
+    t.deploymentReqIds.forEach((i) => referenced.add(i));
+    t.deploymentReqIdsBySpec?.forEach((ids) => ids.forEach((i) => referenced.add(i)));
+  }
 
   for (const id of referenced) {
     const req = requirements.get(id);
@@ -419,6 +431,10 @@ export function evaluateTierLadder(
         const s = specByName.get(name);
         return !s || s.deploymentReqIds.every((id) => reqCompliant.get(id) === true);
       });
+    } else if (deploymentMode === "perTierPerSpecialisation") {
+      deploymentMet = [...achievedSpecs].every((name) =>
+        (t.deploymentReqIdsBySpec?.get(name) ?? []).every((id) => reqCompliant.get(id) === true)
+      );
     } else {
       deploymentMet = t.deploymentReqIds.every((id) => reqCompliant.get(id) === true);
     }

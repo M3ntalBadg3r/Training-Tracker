@@ -33,8 +33,8 @@ export async function PATCH(
   const wantsRename = rawNewName !== "" && rawNewName !== oldName;
   const hasIsTiered = typeof body?.isTiered === "boolean";
   const hasDeploymentMode = typeof body?.deploymentMode === "string";
-  const deploymentMode =
-    body?.deploymentMode === "perAchievedSpecialisation" ? "perAchievedSpecialisation" : "flat";
+  const DEPLOYMENT_MODES = ["flat", "perAchievedSpecialisation", "perTierPerSpecialisation"];
+  const deploymentMode = DEPLOYMENT_MODES.includes(body?.deploymentMode) ? body.deploymentMode : "flat";
 
   // Existence check: the program must exist either in the registry or as rows.
   const [existingProgram, existingRows] = await Promise.all([

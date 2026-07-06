@@ -130,11 +130,12 @@ export async function GET(
   // specialisation's deployment-purpose rows: they do NOT affect achievement,
   // but a tier that uses the specialisation requires them too, so the level
   // reports surface them alongside the qualifying requirements. Tier-scoped rows
-  // (specialisationId null) remain the tier ladder's concern.
+  // (tierId set — whether or not they also carry a specialisationId, as in
+  // "perTierPerSpecialisation" mode) remain the tier ladder's concern.
   const specMap = new Map<string, ProgramDataRow[]>();
   const specDepMap = new Map<string, ProgramDataRow[]>();
   for (const pd of programData) {
-    if (pd.specialisationId == null || !pd.specialisation) continue;
+    if (pd.specialisationId == null || !pd.specialisation || pd.tierId != null) continue;
     const key = pd.specialisation.name;
     const target = pd.purpose === "deployment" ? specDepMap : specMap;
     if (!target.has(key)) target.set(key, []);
@@ -511,11 +512,13 @@ async function computeTierBlock(params: {
     });
   }
 
-  // Split specialisation rows into qualifying vs deployment purpose.
+  // Split specialisation-scoped rows (tierId == null) into qualifying vs
+  // deployment purpose. Rows that also carry a tierId are per-tier deployment
+  // requirements ("perTierPerSpecialisation" mode) handled separately below.
   const specQual = new Map<string, number[]>();
   const specDep = new Map<string, number[]>();
   for (const r of levelRows) {
-    if (r.specialisationId == null || !r.specialisation) continue;
+    if (r.specialisationId == null || !r.specialisation || r.tierId != null) continue;
     const name = r.specialisation.name;
     const target = r.purpose === "deployment" ? specDep : specQual;
     if (!target.has(name)) target.set(name, []);
@@ -528,12 +531,22 @@ async function computeTierBlock(params: {
     deploymentReqIds: specDep.get(name) ?? [],
   }));
 
-  // Tier-scoped deployment rows (flat mode).
+  // Tier-scoped deployment rows: flat mode = tierId only; perTierPerSpecialisation
+  // = tierId + specialisationId (grouped by tier, then specialisation name).
   const tierDepIds = new Map<number, number[]>();
+  const tierSpecDepIds = new Map<number, Map<string, number[]>>();
   for (const r of levelRows) {
     if (r.tierId == null) continue;
-    if (!tierDepIds.has(r.tierId)) tierDepIds.set(r.tierId, []);
-    tierDepIds.get(r.tierId)!.push(r.id);
+    if (r.specialisationId != null && r.specialisation) {
+      const byName = tierSpecDepIds.get(r.tierId) ?? new Map<string, number[]>();
+      const list = byName.get(r.specialisation.name) ?? [];
+      list.push(r.id);
+      byName.set(r.specialisation.name, list);
+      tierSpecDepIds.set(r.tierId, byName);
+    } else {
+      if (!tierDepIds.has(r.tierId)) tierDepIds.set(r.tierId, []);
+      tierDepIds.get(r.tierId)!.push(r.id);
+    }
   }
 
   const tiersInput = tiers.map((t) => ({
@@ -542,6 +555,7 @@ async function computeTierBlock(params: {
     sortOrder: t.sortOrder,
     specialisationsRequired: t.specialisationsRequired,
     deploymentReqIds: tierDepIds.get(t.id) ?? [],
+    deploymentReqIdsBySpec: tierSpecDepIds.get(t.id) ?? new Map<string, number[]>(),
   }));
 
   const input: TierLadderInput = { tiers: tiersInput, specs, requirements, deploymentMode };
@@ -596,6 +610,12 @@ async function computeTierBlock(params: {
       deploymentRequirements = [];
       for (const name of [...snapNow.achievedSpecs].sort()) {
         for (const id of specDep.get(name) ?? []) deploymentRequirements.push(buildDepReq(id, name));
+      }
+    } else if (deploymentMode === "perTierPerSpecialisation") {
+      deploymentRequirements = [];
+      const byName = tierSpecDepIds.get(t.id);
+      for (const name of [...snapNow.achievedSpecs].sort()) {
+        for (const id of byName?.get(name) ?? []) deploymentRequirements.push(buildDepReq(id, name));
       }
     } else {
       deploymentRequirements = (tierDepIds.get(t.id) ?? []).map((id) => buildDepReq(id, null));

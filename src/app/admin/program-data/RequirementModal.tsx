@@ -75,6 +75,12 @@ interface Props {
    * vs deployment purpose selector.
    */
   allowPurpose?: boolean;
+  /**
+   * When true (tiered program in "perTierPerSpecialisation" mode, tier scope), a
+   * tier deployment requirement is scoped to a specialisation — show a
+   * specialisation picker and send its id alongside the tierId.
+   */
+  tierRequiresSpecialisation?: boolean;
 }
 
 /**
@@ -92,6 +98,7 @@ export default function RequirementModal({
   onSpecialisationAdded,
   scope = { kind: "specialisation" },
   allowPurpose = false,
+  tierRequiresSpecialisation = false,
 }: Props) {
   const isEdit = initial !== null;
   const isTierScope = scope.kind === "tier";
@@ -167,12 +174,20 @@ export default function RequirementModal({
 
   const handleSave = async () => {
     setFormError("");
+    if (isTierScope && tierRequiresSpecialisation && !form.specialisationId) {
+      setFormError("Please select a specialisation for this deployment requirement");
+      return;
+    }
     setSaving(true);
     try {
       const payload = {
         programName,
         ...(isTierScope
-          ? { tierId: scope.tierId, purpose: "deployment" }
+          ? {
+              tierId: scope.tierId,
+              purpose: "deployment",
+              ...(tierRequiresSpecialisation ? { specialisationId: form.specialisationId } : {}),
+            }
           : { specialisationId: form.specialisationId, purpose: allowPurpose ? form.purpose : "qualification" }),
         level: form.level,
         trainingType: noTraining ? null : form.trainingType,
@@ -230,12 +245,40 @@ export default function RequirementModal({
             </div>
           </div>
           {isTierScope ? (
-            <div>
-              <label className="block text-sm font-medium mb-1">Tier</label>
-              <div className="px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-sm text-gray-700">
-                {scope.tierName} · deployment requirement
+            <>
+              <div>
+                <label className="block text-sm font-medium mb-1">Tier</label>
+                <div className="px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-sm text-gray-700">
+                  {scope.tierName} · deployment requirement
+                </div>
               </div>
-            </div>
+              {tierRequiresSpecialisation && (
+                <div>
+                  <label className="block text-sm font-medium mb-1">Specialisation</label>
+                  <div className="flex gap-2">
+                    <select
+                      value={form.specialisationId}
+                      onChange={(e) => setForm((f) => ({ ...f, specialisationId: Number(e.target.value) }))}
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
+                    >
+                      <option value={0}>Select specialisation...</option>
+                      {specialisations.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                    <button
+                      onClick={() => { setShowAddSpec(true); setAddSpecError(""); setNewSpecName(""); }}
+                      className="px-3 py-2 text-sm bg-gray-100 border border-gray-300 rounded-lg hover:bg-gray-200"
+                      title="Add new specialisation"
+                    >
+                      <Plus size={16} />
+                    </button>
+                  </div>
+                  <p className="mt-1 text-xs text-gray-500">
+                    This deployment requirement applies to the chosen specialisation, and is enforced once
+                    for each achieved specialisation at this tier.
+                  </p>
+                </div>
+              )}
+            </>
           ) : (
             <>
               <div>

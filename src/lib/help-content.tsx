@@ -1653,7 +1653,15 @@ const helpSections: Record<string, HelpSection> = {
           <li><strong>Flat</strong> — each tier lists its own deployment cert requirements.</li>
           <li><strong>Per achieved specialisation</strong> — each achieved specialisation&apos;s
             own deployment cert requirements must be met (add these as requirements with
-            purpose <em>Deployment</em>).</li>
+            purpose <em>Deployment</em>). The same set applies to every tier.</li>
+          <li><strong>Per tier, per achieved specialisation</strong> — each tier lists its own
+            deployment cert requirements <em>for each specialisation</em>, so they scale up the
+            ladder. When adding a tier&apos;s deployment requirement you pick which specialisation
+            it applies to; the tier is met when, for every achieved specialisation, that tier&apos;s
+            deployment certs for that specialisation are all met (a tier with no deployment
+            requirements is met on its specialisation count alone). For example, Tier A might need
+            1 specialisation and no deployment certs, Tier B 2 specialisations plus 3 deployment
+            certs per specialisation, and Tier C 3 specialisations plus 4 per specialisation.</li>
         </ul>
         <p>
           Because compliance counts <strong>distinct people</strong>, a requirement for

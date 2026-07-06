@@ -113,6 +113,12 @@ export default function ProgramRequirementsPage() {
   }, [programName]);
 
   const allowPurpose = isTiered && deploymentMode === "perAchievedSpecialisation";
+  // In "perTierPerSpecialisation" mode a tier deployment requirement is scoped
+  // to a specialisation, so the tier-requirement modal must offer a spec picker.
+  const tierRequiresSpecialisation = isTiered && deploymentMode === "perTierPerSpecialisation";
+  // Tiers list their own deployment requirements in every mode except
+  // "perAchievedSpecialisation" (where they come from the specialisations).
+  const showTierDeploymentLists = deploymentMode !== "perAchievedSpecialisation";
 
   const changeDeploymentMode = async (mode: string) => {
     setDeploymentMode(mode);
@@ -135,9 +141,10 @@ export default function ProgramRequirementsPage() {
   const SortIcon = ({ col }: { col: string }) =>
     sortCol === col ? (sortDir === "asc" ? <ChevronUp size={14} /> : <ChevronDown size={14} />) : null;
 
-  // Specialisation-scoped rows drive the main requirements table; tier-scoped
-  // deployment rows are shown under their tier instead.
-  const specRows = useMemo(() => rows.filter((r) => r.specialisationId != null), [rows]);
+  // Specialisation-scoped rows (no tier) drive the main requirements table;
+  // tier-scoped rows — including per-tier-per-specialisation deployment rows
+  // that carry both a tier and a specialisation — are shown under their tier.
+  const specRows = useMemo(() => rows.filter((r) => r.specialisationId != null && r.tierId == null), [rows]);
   const tierReqsByTier = useMemo(() => {
     const map = new Map<number, ProgramDataRow[]>();
     for (const r of rows) {
@@ -259,6 +266,7 @@ export default function ProgramRequirementsPage() {
             >
               <option value="flat">Flat — each tier lists its own deployment requirements</option>
               <option value="perAchievedSpecialisation">Per achieved specialisation — each achieved specialisation&apos;s deployment requirements must be met</option>
+              <option value="perTierPerSpecialisation">Per tier, per achieved specialisation — each tier lists its own deployment requirements for each specialisation</option>
             </select>
           </div>
 
@@ -293,7 +301,7 @@ export default function ProgramRequirementsPage() {
                       </div>
                     </div>
 
-                    {deploymentMode === "flat" && (
+                    {showTierDeploymentLists && (
                       <div className="mt-3">
                         <div className="flex items-center justify-between mb-1">
                           <span className="text-xs font-medium text-gray-600 uppercase tracking-wide">Deployment requirements</span>
@@ -311,6 +319,9 @@ export default function ProgramRequirementsPage() {
                             {reqs.map((r) => (
                               <li key={r.id} className="flex items-center justify-between text-sm">
                                 <span>
+                                  {r.specialisationName && (
+                                    <span className="font-medium text-gray-700">{r.specialisationName}: </span>
+                                  )}
                                   <span className="text-gray-500">{LEVEL_LABELS[r.level] || r.level} · </span>
                                   {r.quantityRequired}× {r.trainingFullTitle || "—"}
                                   {r.alternatives.length > 0 && (
@@ -324,6 +335,11 @@ export default function ProgramRequirementsPage() {
                               </li>
                             ))}
                           </ul>
+                        )}
+                        {tierRequiresSpecialisation && reqs.length > 0 && (
+                          <p className="mt-1 text-xs text-gray-400">
+                            Enforced once per achieved specialisation.
+                          </p>
                         )}
                       </div>
                     )}
@@ -478,6 +494,7 @@ export default function ProgramRequirementsPage() {
         onSpecialisationAdded={fetchSpecialisations}
         scope={reqScope}
         allowPurpose={allowPurpose}
+        tierRequiresSpecialisation={tierRequiresSpecialisation}
       />
 
       {/* Add / Edit Tier */}
