@@ -1935,6 +1935,54 @@ const helpSections: Record<string, HelpSection> = {
       </>
     ),
   },
+  "admin-specialisations": {
+    title: "Specialisations",
+    content: (
+      <>
+        <p>
+          Specialisations are the building blocks of partner programs. Each
+          specialisation groups the training requirements a partner must meet,
+          and tiered programs unlock tiers based on how many specialisations a
+          partner has achieved. This page manages the master list.
+        </p>
+
+        <h3>Adding &amp; Renaming</h3>
+        <p>
+          Use <strong>Add Specialisation</strong> to create a new entry. Names
+          must be unique. Renaming a specialisation updates it everywhere it is
+          referenced (program requirements, tiers, and compliance dashboards).
+          You can also still add a specialisation inline from the program-data
+          requirement editor — both routes feed the same list.
+        </p>
+
+        <h3>Searching &amp; Filtering</h3>
+        <p>
+          Use the search box to find a specialisation by name. The filter
+          switches between <strong>All</strong>, <strong>In use</strong>{" "}
+          (referenced by at least one program requirement), and{" "}
+          <strong>Unused</strong>. Click a column header to sort by name or by
+          usage count.
+        </p>
+
+        <h3>Deleting</h3>
+        <p>
+          A specialisation can only be deleted when no program requirement
+          references it. The <strong>Used by programs</strong> column shows the
+          current usage count; remove or reassign those requirements first.
+        </p>
+
+        <h3>Import &amp; Export</h3>
+        <p>
+          Use <strong>Import Specialisations</strong> to bulk-create entries
+          from a CSV or Excel file with a single <code>Name</code> column. The
+          wizard auto-maps the column, shows a preview, and reports how many were
+          created or skipped (names that already exist are skipped).{" "}
+          <strong>Export</strong> downloads the current list as CSV, Excel, or
+          PDF.
+        </p>
+      </>
+    ),
+  },
   "api-keys": {
     title: "API Keys",
     content: (

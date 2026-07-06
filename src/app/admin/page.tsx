@@ -17,6 +17,7 @@ import {
   Tag,
   SlidersHorizontal,
   KeyRound,
+  Award,
 } from "lucide-react";
 import { useAuth } from "@/components/auth/AuthProvider";
 
@@ -36,6 +37,7 @@ const ADMIN_CARDS: AdminCard[] = [
   { href: "/admin/program-data", title: "Program Data", description: "Manage partner program compliance requirements", icon: ClipboardList, superAdminOnly: true },
   { href: "/admin/training-data", title: "Training Data", description: "Manage training programs", icon: BookOpen, superAdminOnly: true },
   { href: "/admin/product-types", title: "Product Types", description: "Manage the product type list", icon: Tag, superAdminOnly: true },
+  { href: "/admin/specialisations", title: "Specialisations", description: "Manage partner program specialisations", icon: Award, superAdminOnly: true },
   { href: "/admin/region-data", title: "Region Data", description: "Manage countries and regions", icon: Globe, superAdminOnly: true },
   { href: "/admin/system-settings", title: "System Settings", description: "Configure the default date format and other instance-wide settings", icon: SlidersHorizontal, superAdminOnly: true },
   { href: "/admin/api-keys", title: "API Keys", description: "Issue read-only public API keys scoped to companies", icon: KeyRound, superAdminOnly: true },

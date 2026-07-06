@@ -617,6 +617,16 @@ Navigate to **Admin > Product Types** to manage the list of product types used t
 - **Export** — Download the current list (including colour) as CSV, Excel, or PDF.
 - During a training-data import, product-type cells are matched case-insensitively against this list. Unknown values are reported as per-row errors rather than being silently changed.
 
+### Specialisations
+
+Navigate to **Admin > Specialisations** to manage the list of specialisations used by partner programs. Specialisations are the building blocks of a program's compliance requirements, and tiered programs unlock tiers based on how many specialisations a partner has achieved.
+
+- **Add / Rename** — Names must be unique. Renaming a specialisation updates it everywhere it is referenced. Specialisations can also still be created inline via the **+** next to the Specialisation dropdown when adding or editing a program requirement — both routes feed the same list.
+- **Search & Filter** — Search by name, filter by **All / In use / Unused**, and click a column header to sort by name or usage count.
+- **Delete** — Only possible when no program requirement references the specialisation. The **Used by programs** column shows the current usage count; remove or reassign those requirements first.
+- **Import** — Upload a CSV or Excel file with a single `Name` column to bulk-create specialisations. The wizard auto-maps the column and shows a preview; names that already exist are skipped.
+- **Export** — Download the current list as CSV, Excel, or PDF.
+
 ### User Management
 
 Navigate to **Admin > Users** to manage user accounts.
