@@ -354,6 +354,14 @@ export interface TierLadderSnapshot {
   tierCompliant: Map<number, boolean>;
   /** Distinct achieved-specialisation count (same for every tier). */
   achievedSpecCount: number;
+  /**
+   * Per-tier count of specialisations that meet ALL of that tier's criteria
+   * (achieved + all the tier's deployment reqs for that spec met — a spec with
+   * no deployment reqs for the tier counts on qualification alone). Only
+   * populated in "perTierPerSpecialisation" mode; drives that mode's tier gate
+   * and its per-tier display.
+   */
+  tierSatisfiedSpecCount: Map<number, number>;
   /** id of the highest (by sortOrder) compliant tier, or null. */
   highestAchievedTierId: number | null;
 }
@@ -372,9 +380,12 @@ export interface TierLadderSnapshot {
  *  - "perAchievedSpecialisation": every achieved specialisation's deployment
  *    requirements. (If no specialisation is achieved there is nothing extra to
  *    prove, so deployment is trivially met and the gate is the spec count.)
- *  - "perTierPerSpecialisation": for every achieved specialisation, this tier's
- *    own deployment requirements for that specialisation. (Same trivial-met
- *    behaviour when a tier has no rows for a spec, or no spec is achieved.)
+ *  - "perTierPerSpecialisation": the tier is met when at least
+ *    `specialisationsRequired` specialisations each meet ALL of the tier's
+ *    criteria — achieved AND all of that tier's deployment reqs for the spec met
+ *    (a spec with no deployment reqs for the tier counts on qualification
+ *    alone). Unmet specialisations simply don't count toward the total, so a
+ *    partner reaches the tier as soon as enough specialisations are fully met.
  */
 export function evaluateTierLadder(
   input: TierLadderInput,
@@ -422,6 +433,7 @@ export function evaluateTierLadder(
   const achievedSpecCount = achievedSpecs.size;
 
   const tierCompliant = new Map<number, boolean>();
+  const tierSatisfiedSpecCount = new Map<number, number>();
   let highestAchievedTierId: number | null = null;
   for (const t of [...tiers].sort((a, b) => a.sortOrder - b.sortOrder)) {
     const specsMet = achievedSpecCount >= t.specialisationsRequired;
@@ -432,9 +444,15 @@ export function evaluateTierLadder(
         return !s || s.deploymentReqIds.every((id) => reqCompliant.get(id) === true);
       });
     } else if (deploymentMode === "perTierPerSpecialisation") {
-      deploymentMet = [...achievedSpecs].every((name) =>
+      // Count specialisations that meet ALL of this tier's criteria: achieved AND
+      // every one of the tier's deployment reqs for that spec met (a spec with no
+      // deployment reqs counts on qualification alone). The tier is reached once
+      // enough such specialisations exist — unmet specialisations don't block.
+      const satisfied = [...achievedSpecs].filter((name) =>
         (t.deploymentReqIdsBySpec?.get(name) ?? []).every((id) => reqCompliant.get(id) === true)
-      );
+      ).length;
+      tierSatisfiedSpecCount.set(t.id, satisfied);
+      deploymentMet = satisfied >= t.specialisationsRequired;
     } else {
       deploymentMet = t.deploymentReqIds.every((id) => reqCompliant.get(id) === true);
     }
@@ -450,6 +468,7 @@ export function evaluateTierLadder(
     reqTheatreBreakdown,
     tierCompliant,
     achievedSpecCount,
+    tierSatisfiedSpecCount,
     highestAchievedTierId,
   };
 }

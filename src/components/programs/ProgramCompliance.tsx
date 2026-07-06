@@ -90,6 +90,13 @@ export interface TierInfo {
   specialisationsRequired: number;
   compliant: boolean;
   projectedCompliant: boolean | null;
+  /**
+   * "perTierPerSpecialisation" mode only: how many specialisations meet all of
+   * this tier's criteria (achieved + the tier's deployment reqs for that spec).
+   * null in the other modes, where the ladder-wide achieved count is shown.
+   */
+  satisfiedSpecialisationCount?: number | null;
+  projectedSatisfiedSpecialisationCount?: number | null;
   deploymentRequirements: TierDeploymentRequirement[];
 }
 
@@ -741,7 +748,14 @@ export function TierLadder({ block }: { block: TierBlock }) {
         <p className="text-sm text-gray-500">No tiers configured for this program yet.</p>
       ) : (
         sorted.map((tier) => {
-          const specsMet = achieved >= tier.specialisationsRequired;
+          // In "perTierPerSpecialisation" mode the tier gate is how many
+          // specialisations meet ALL of THIS tier's criteria (not the ladder-wide
+          // achieved count), so use the tier's own satisfied count when present.
+          const perTierPerSpec =
+            block.deploymentMode === "perTierPerSpecialisation" && tier.satisfiedSpecialisationCount != null;
+          const counted = perTierPerSpec ? tier.satisfiedSpecialisationCount! : achieved;
+          const specsMet = counted >= tier.specialisationsRequired;
+          const specLabel = perTierPerSpec ? "Specialisations meeting all criteria" : "Specialisations";
           const isNext = nextTier?.name === tier.name;
           return (
             <div
@@ -757,11 +771,11 @@ export function TierLadder({ block }: { block: TierBlock }) {
 
               <div className="mt-2 text-sm">
                 <span className={specsMet ? "text-green-700" : "text-red-700"}>
-                  Specialisations: {achieved} / {tier.specialisationsRequired}
+                  {specLabel}: {counted} / {tier.specialisationsRequired}
                 </span>
                 {!specsMet && (
                   <span className="ml-2 text-gray-500">
-                    (need {tier.specialisationsRequired - achieved} more)
+                    (need {tier.specialisationsRequired - counted} more)
                   </span>
                 )}
               </div>

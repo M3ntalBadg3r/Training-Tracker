@@ -626,6 +626,10 @@ async function computeTierBlock(params: {
       specialisationsRequired: t.specialisationsRequired,
       compliant: snapNow.tierCompliant.get(t.id) ?? false,
       projectedCompliant: snapProj ? snapProj.tierCompliant.get(t.id) ?? false : null,
+      // "perTierPerSpecialisation" only: how many specialisations meet all of the
+      // tier's criteria (drives that mode's per-tier count display); null otherwise.
+      satisfiedSpecialisationCount: snapNow.tierSatisfiedSpecCount.get(t.id) ?? null,
+      projectedSatisfiedSpecialisationCount: snapProj ? snapProj.tierSatisfiedSpecCount.get(t.id) ?? null : null,
       deploymentRequirements,
     };
   });
