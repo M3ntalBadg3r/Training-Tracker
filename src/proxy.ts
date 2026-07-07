@@ -45,6 +45,7 @@ const SUPER_ADMIN_PREFIXES = [
   "/admin/system-settings",
   "/api/admin/system-settings",
   "/api/admin/import-aliases",
+  "/admin/specialisations",
   "/api/admin/specialisations",
   "/admin/product-types",
   "/api/admin/product-types",

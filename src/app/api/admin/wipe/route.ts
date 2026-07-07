@@ -40,6 +40,7 @@ export async function POST(request: NextRequest) {
     await tx.olxSubItemRelation.deleteMany({});
     await tx.programDataAlternative.deleteMany({});
     await tx.programData.deleteMany({});
+    await tx.programTier.deleteMany({});
     await tx.program.deleteMany({});
     await tx.specialisation.deleteMany({});
     await tx.student.deleteMany({});

@@ -617,6 +617,16 @@ Navigate to **Admin > Product Types** to manage the list of product types used t
 - **Export** — Download the current list (including colour) as CSV, Excel, or PDF.
 - During a training-data import, product-type cells are matched case-insensitively against this list. Unknown values are reported as per-row errors rather than being silently changed.
 
+### Specialisations
+
+Navigate to **Admin > Specialisations** to manage the list of specialisations used by partner programs. Specialisations are the building blocks of a program's compliance requirements, and tiered programs unlock tiers based on how many specialisations a partner has achieved.
+
+- **Add / Rename** — Names must be unique. Renaming a specialisation updates it everywhere it is referenced. Specialisations can also still be created inline via the **+** next to the Specialisation dropdown when adding or editing a program requirement — both routes feed the same list.
+- **Search & Filter** — Search by name, filter by **All / In use / Unused**, and click a column header to sort by name or usage count.
+- **Delete** — Only possible when no program requirement references the specialisation. The **Used by programs** column shows the current usage count; remove or reassign those requirements first.
+- **Import** — Upload a CSV or Excel file with a single `Name` column to bulk-create specialisations. The wizard auto-maps the column and shows a preview; names that already exist are skipped.
+- **Export** — Download the current list as CSV, Excel, or PDF.
+
 ### User Management
 
 Navigate to **Admin > Users** to manage user accounts.
@@ -669,7 +679,7 @@ To move data to a **different** installation, click **Portable backup…** and c
 
 When you stand up a new Training Tracker instance and want to carry over the catalogue, regions, programs, and import aliases — but **not** any learner data — click **Config Backup** (standard, tied to `ENCRYPTION_KEY`) or **Portable config backup…** (passphrase-encrypted, restores anywhere). The file is saved as `training-tracker-config-<timestamp>.zip[.enc]`.
 
-A config backup contains: product types, region data, the full training catalogue, OLX parent/sub-item relationships, programs, specialisations, program data + alternatives, import aliases, and the system settings singleton. It explicitly excludes students, training-taken records, users, companies, scheduled exports, export credentials, and import metadata.
+A config backup contains: product types, region data, the full training catalogue, OLX parent/sub-item relationships, programs (incl. tiered-program settings), program tiers, specialisations, program data + alternatives, import aliases, and the system settings singleton. It explicitly excludes students, training-taken records, users, companies, scheduled exports, export credentials, and import metadata.
 
 Restoring a config backup wipes and replaces only the included reference tables and **leaves student and training-taken rows untouched**, so it is safe to run on a populated system when you just need to refresh the catalogue. Archive type is auto-detected on upload via a `kind` flag in `backup_metadata.json`; the upload form is shared with the standard restore.
 
@@ -875,6 +885,18 @@ The page shows a **box for each program**. From here you can:
 
 Click a box to open the program's page, which lists just that program's requirements and lets you **Add / Edit / Delete** them. When you add a requirement from a program's page it is attached to that program automatically — there is no program picker to get wrong. The requirements table can be filtered by **Specialisation**, **Level**, and **Type** via the column-header dropdowns. New specialisations are added inline from the **+** next to the Specialisation dropdown in the requirement form.
 
+#### Tiered programs
+
+Tick **Tiered program** when creating a program to unlock **tiers** (e.g. Tier A, Tier B, Tier C) that a partner reaches based on how many **specialisations** they have achieved. A specialisation is *achieved* (at a given country/theatre/global scope) once all of its qualifying (Sales/Pre-Sales) cert requirements are met by enough distinct people.
+
+On a tiered program's page a **Tiers** section lets you add tiers (name, ladder order, and how many achieved specialisations each requires) and choose how each tier's **Deployment** cert requirements are handled:
+
+- **Flat** — each tier lists its own deployment cert requirements.
+- **Per achieved specialisation** — each achieved specialisation's own deployment cert requirements must be met (added as requirements with the **Deployment** purpose). The same set applies to every tier.
+- **Per tier, per achieved specialisation** — each tier lists its own deployment cert requirements **for each specialisation**, so they scale up the ladder. When adding a tier's deployment requirement you pick which specialisation it applies to. The tier is reached when **at least `specialisations required`** specialisations each meet all of that tier's criteria — achieved **and** all of that tier's deployment certs for that specialisation (a specialisation with no deployment certs for the tier counts on qualification alone). Specialisations that aren't fully met simply don't count toward the total, so they don't block the tier once enough others are met. Example: Tier A needs 1 specialisation and 0 deployment certs; Tier B needs 2 specialisations each with 3 deployment certs; Tier C needs 3 specialisations each with 4 — so a partner with two specialisations fully deployed reaches Tier B even if a third specialisation's deployment certs aren't complete.
+
+Because compliance counts **distinct people**, a requirement such as "2 of Cert A or Cert B" needs two *different* individuals — one person holding both certs still counts once.
+
 Each requirement specifies:
 
 | Field | Description |
@@ -882,7 +904,7 @@ Each requirement specifies:
 | **Specialisation** | The product or solution area for this requirement. Shared across programs; managed via a controlled dropdown — click **+** or **Manage Specialisations** to add new ones. |
 | **Level** | Whether the requirement applies at Country, Theatre, or Global level |
 | **Type** | Certification, Accreditation, Instructor-Led Training, OLX, or OLX Sub-Item |
-| **Training** | The specific training required (filtered by the selected Type) |
+| **Training** | The specific training required (filtered by the selected Type). Listed once per name even if backed by multiple catalogue records; a requirement counts anyone holding **any** record under that name |
 | **Quantity Required** | For Country/Theatre: number of people needed. For Global: number of compliant theatres needed. |
 
 Each distinct program automatically gets its own compliance dashboard under **Programs**.
@@ -948,18 +970,20 @@ key in browser-side code.
 
 Partner programs are **fully data-driven**. Every distinct program name configured in **Admin > Program Data** automatically gets its own compliance dashboard at **Programs > _[name]_** — no code changes are required to add a new program. The dashboard at `/programs/[programName]` auto-adapts to how the program is configured.
 
-### Report sections
+### One scope selector drives the page
 
-The dashboard shows only the sections relevant to the program's configured requirement levels:
+A single **View** selector at the top of the dashboard — a **Level** dropdown (Global / By Theatre / By Region / By Country, limited to the program's configured levels) plus a **Value** dropdown for the chosen level (which theatre/region/country; hidden for Global) — drives the whole page. Picking a scope shows, for that scope, the **Tier Status** (for tiered programs) and the **one matching report**:
 
-| Section | Shown when | Filter | Shows |
-|---------|-----------|--------|-------|
-| **Country Report** | Program has Country-level requirements | Country dropdown | People per country with each required training vs. the requirement |
-| **Region Report** | Program has Country-level requirements | Region dropdown | The same, aggregated across all countries in a region |
-| **Theatre Report** | Program has Theatre-level requirements | Theatre dropdown | People per theatre with each required training vs. the requirement |
-| **Global Report** | Program has Global-level requirements | None | See below |
+| Report shown | When Level is | Shows |
+|---------|-----------|-------|
+| **Country Report** | By Country (Program has Country-level requirements) | People in that country with each required training vs. the requirement |
+| **Region Report** | By Region (Program has Country-level requirements) | The same, aggregated across all countries in the region |
+| **Theatre Report** | By Theatre (Program has Theatre-level requirements) | People in that theatre with each required training vs. the requirement |
+| **Global Report** | Global (Program has Global-level requirements) | See below |
 
-The Country/Region/Theatre reports display specialisations as columns with grouped rows showing the training name, required count, and attained count. Attained values are colour-coded **green** (met) or **red** (not met). Click **View** on any attained cell to see the qualifying students.
+For a **tiered** program the **Tier Status** section appears above the report and reflects the same scope — including **By Region** (aggregated across the region's countries). It shows the partner's **highest tier achieved** and, for each tier, how many specialisations are achieved versus required — the tier box also **lists which specialisations** are currently achieved at that scope — plus any **Deployment** cert requirements (with distinct-holder counts and a per-theatre breakdown). With a "Compliance as of" horizon selected, the banner also shows the projected highest tier once certificates expiring within the window drop out.
+
+The Country/Region/Theatre reports display specialisations as columns with grouped rows showing the training name, required count, and attained count. Attained values are colour-coded **green** (met) or **red** (not met). Click **View** on any attained cell to see the qualifying students. Where a specialisation has **Deployment** requirements (tiered programs in *per-achieved-specialisation* mode) they appear in a labelled **Deployment requirements** sub-section beneath the qualifying rows: a specialisation is still achieved on its qualifying requirements alone, but a tier that uses it also needs these deployment requirements, so they're surfaced here (with their own met/not-met state) rather than only inside Tier Status. The Global report shows the same deployment sub-section per specialisation card plus a **Deployment: Met / Not met** badge. Exports gain a **Purpose** column (Qualification / Deployment).
 
 ### Global report — two presentations
 

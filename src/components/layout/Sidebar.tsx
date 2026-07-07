@@ -40,6 +40,7 @@ import {
   UserCheck,
   History,
   KeyRound,
+  Award,
 } from "lucide-react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useTheme } from "@/components/theme/ThemeProvider";
@@ -56,6 +57,7 @@ const adminSubItems: { href: string; label: string; icon: typeof Users; superAdm
   { href: "/admin/program-data", label: "Program Data", icon: ClipboardList, superAdminOnly: true },
   { href: "/admin/training-data", label: "Training Data", icon: BookOpen, superAdminOnly: true },
   { href: "/admin/product-types", label: "Product Types", icon: Tag, superAdminOnly: true },
+  { href: "/admin/specialisations", label: "Specialisations", icon: Award, superAdminOnly: true },
   { href: "/admin/region-data", label: "Region Data", icon: Globe, superAdminOnly: true },
   { href: "/admin/system-settings", label: "System Settings", icon: SlidersHorizontal, superAdminOnly: true },
   { href: "/admin/api-keys", label: "API Keys", icon: KeyRound, superAdminOnly: true },

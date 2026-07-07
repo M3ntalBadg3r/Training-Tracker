@@ -19,21 +19,36 @@ export async function GET(request: NextRequest) {
     return handleAuthError(error);
   }
 
-  const rows = await prisma.programData.findMany({
-    select: { programName: true, level: true, minimumPerTheatre: true },
-  });
+  const [rows, registry, tiers] = await Promise.all([
+    prisma.programData.findMany({
+      select: { programName: true, level: true, minimumPerTheatre: true },
+    }),
+    prisma.program.findMany({ select: { name: true, isTiered: true } }),
+    prisma.programTier.findMany({ select: { programName: true } }),
+  ]);
+
+  const isTieredByName = new Map(registry.map((p) => [p.name, p.isTiered]));
+  const hasTiers = new Set(tiers.map((t) => t.programName));
 
   const byProgram = new Map<string, { levels: Set<string>; hasMinimumPerTheatre: boolean }>();
-  for (const r of rows) {
-    let entry = byProgram.get(r.programName);
+  const ensure = (name: string) => {
+    let entry = byProgram.get(name);
     if (!entry) {
       entry = { levels: new Set(), hasMinimumPerTheatre: false };
-      byProgram.set(r.programName, entry);
+      byProgram.set(name, entry);
     }
+    return entry;
+  };
+  for (const r of rows) {
+    const entry = ensure(r.programName);
     entry.levels.add(r.level);
     if (r.minimumPerTheatre != null && r.minimumPerTheatre > 0) {
       entry.hasMinimumPerTheatre = true;
     }
+  }
+  // Tiered programs with tiers but no requirements yet should still show.
+  for (const name of hasTiers) {
+    if (isTieredByName.get(name)) ensure(name);
   }
 
   const programs = [...byProgram.entries()]
@@ -41,6 +56,7 @@ export async function GET(request: NextRequest) {
       name,
       levels: [...info.levels],
       hasMinimumPerTheatre: info.hasMinimumPerTheatre,
+      isTiered: isTieredByName.get(name) === true,
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
 

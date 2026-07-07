@@ -48,6 +48,13 @@ export interface Specialisation {
   compliant?: boolean;
   projectedCompliant?: boolean;
   requirements: Requirement[];
+  // Deployment ("delivery") requirements for this specialisation. They do NOT
+  // affect whether the specialisation is achieved (that stays on `requirements`
+  // / `compliant`), but a tier that uses the specialisation requires them too,
+  // so the level reports surface them with their own met/not-met state.
+  deploymentRequirements?: Requirement[];
+  deploymentCompliant?: boolean;
+  projectedDeploymentCompliant?: boolean;
 }
 
 export interface StudentEntry {
@@ -57,6 +64,50 @@ export interface StudentEntry {
   theatre: string;
   completedDate: string;
   expiryDate: string;
+}
+
+// --- Tiered-program shapes (returned as `tiers` from the compliance API) ---
+
+export interface TierDeploymentRequirement {
+  specialisationName: string | null;
+  trainingType: string | null;
+  trainingTitle: string | null;
+  trainingFullTitle: string;
+  quantityRequired: number;
+  attained: number;
+  compliant: boolean;
+  minimumPerTheatre: number | null;
+  theatreBreakdown: { theatre: string; count: number; compliant: boolean }[] | null;
+  projectedAttained: number | null;
+  projectedCompliant: boolean | null;
+  projectedTheatreBreakdown: { theatre: string; count: number; compliant: boolean }[] | null;
+  alternatives: AlternativeEntry[];
+}
+
+export interface TierInfo {
+  name: string;
+  sortOrder: number;
+  specialisationsRequired: number;
+  compliant: boolean;
+  projectedCompliant: boolean | null;
+  /**
+   * "perTierPerSpecialisation" mode only: how many specialisations meet all of
+   * this tier's criteria (achieved + the tier's deployment reqs for that spec).
+   * null in the other modes, where the ladder-wide achieved count is shown.
+   */
+  satisfiedSpecialisationCount?: number | null;
+  projectedSatisfiedSpecialisationCount?: number | null;
+  deploymentRequirements: TierDeploymentRequirement[];
+}
+
+export interface TierBlock {
+  deploymentMode: string;
+  highestAchievedTier: string | null;
+  projectedHighestAchievedTier: string | null;
+  achievedSpecialisations: string[];
+  achievedSpecialisationCount: number;
+  projectedAchievedSpecialisationCount: number | null;
+  tiers: TierInfo[];
 }
 
 export type ViewStudentsFn = (
@@ -161,6 +212,8 @@ export function ComplianceTable({
   unitLabel: string;
 }) {
   const maxReqs = Math.max(...specialisations.map((s) => s.requirements.length), 0);
+  const maxDepReqs = Math.max(...specialisations.map((s) => s.deploymentRequirements?.length ?? 0), 0);
+  const colCount = specialisations.length + 1;
 
   return (
     <div className="overflow-x-auto">
@@ -192,6 +245,31 @@ export function ComplianceTable({
               unitLabel={unitLabel}
             />
           ))}
+          {maxDepReqs > 0 && (
+            <>
+              <tr>
+                <td colSpan={colCount} className="px-4 py-2 border border-gray-200 bg-indigo-50">
+                  <div className="text-sm font-semibold text-indigo-800">Deployment requirements</div>
+                  <div className="text-xs text-indigo-700/80">
+                    Required together with the specialisation to qualify for tiers that use it. These do not change
+                    whether the specialisation itself is achieved.
+                  </div>
+                </td>
+              </tr>
+              {Array.from({ length: maxDepReqs }).map((_, reqIdx) => (
+                <RequirementRowGroup
+                  key={`dep-${reqIdx}`}
+                  reqIdx={reqIdx}
+                  specialisations={specialisations}
+                  level={level}
+                  filterValue={filterValue}
+                  onViewStudents={onViewStudents}
+                  unitLabel={unitLabel}
+                  deployment
+                />
+              ))}
+            </>
+          )}
         </tbody>
       </table>
     </div>
@@ -205,6 +283,7 @@ function RequirementRowGroup({
   filterValue,
   onViewStudents,
   unitLabel,
+  deployment = false,
 }: {
   reqIdx: number;
   specialisations: Specialisation[];
@@ -212,7 +291,10 @@ function RequirementRowGroup({
   filterValue: string;
   onViewStudents: ViewStudentsFn;
   unitLabel: string;
+  deployment?: boolean;
 }) {
+  const reqsOf = (spec: Specialisation) =>
+    deployment ? spec.deploymentRequirements ?? [] : spec.requirements;
   return (
     <>
       {/* Training name row */}
@@ -221,7 +303,7 @@ function RequirementRowGroup({
           Training
         </td>
         {specialisations.map((spec) => {
-          const req = spec.requirements[reqIdx];
+          const req = reqsOf(spec)[reqIdx];
           return (
             <td key={spec.name} className="px-4 py-2 text-center border border-gray-200">
               {req ? (
@@ -254,7 +336,7 @@ function RequirementRowGroup({
           Required
         </td>
         {specialisations.map((spec) => {
-          const req = spec.requirements[reqIdx];
+          const req = reqsOf(spec)[reqIdx];
           return (
             <td key={spec.name} className="px-4 py-2 text-center border border-gray-200">
               {req ? (
@@ -274,7 +356,7 @@ function RequirementRowGroup({
           Attained
         </td>
         {specialisations.map((spec) => {
-          const req = spec.requirements[reqIdx];
+          const req = reqsOf(spec)[reqIdx];
           if (!req) {
             return (
               <td key={spec.name} className="px-4 py-2 text-center border border-gray-200">
@@ -320,6 +402,8 @@ function RequirementRowGroup({
  * and a table of requirements, each expandable to a per-theatre breakdown.
  */
 export function SpecialisationCard({ spec }: { spec: Specialisation }) {
+  const deploymentReqs = spec.deploymentRequirements ?? [];
+  const hasDeployment = deploymentReqs.length > 0;
   return (
     <div className="mb-6 bg-white rounded-lg border border-gray-200 overflow-hidden">
       {(() => {
@@ -330,12 +414,30 @@ export function SpecialisationCard({ spec }: { spec: Specialisation }) {
           : "nonCompliant";
         const label =
           state === "compliant" ? "Compliant" : state === "atRisk" ? "At Risk" : "Not Compliant";
+        const depState: RiskState = spec.deploymentCompliant
+          ? spec.projectedDeploymentCompliant === false
+            ? "atRisk"
+            : "compliant"
+          : "nonCompliant";
+        const depLabel =
+          depState === "compliant"
+            ? "Deployment: Met"
+            : depState === "atRisk"
+              ? "Deployment: At Risk"
+              : "Deployment: Not Met";
         return (
-          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <div className="flex items-center justify-between gap-2 px-5 py-4 border-b border-gray-100">
             <h2 className="text-lg font-semibold">{spec.name}</h2>
-            <span className={`px-3 py-1 rounded-full text-sm font-medium ${RISK_BADGE[state]}`}>
-              {label}
-            </span>
+            <div className="flex items-center gap-2">
+              {hasDeployment && (
+                <span className={`px-3 py-1 rounded-full text-xs font-medium ${RISK_BADGE[depState]}`}>
+                  {depLabel}
+                </span>
+              )}
+              <span className={`px-3 py-1 rounded-full text-sm font-medium ${RISK_BADGE[state]}`}>
+                {label}
+              </span>
+            </div>
           </div>
         );
       })()}
@@ -356,6 +458,22 @@ export function SpecialisationCard({ spec }: { spec: Specialisation }) {
             {spec.requirements.map((req, i) => (
               <RequirementRows key={i} req={req} />
             ))}
+            {hasDeployment && (
+              <>
+                <tr className="bg-indigo-50">
+                  <td colSpan={7} className="px-4 py-2">
+                    <div className="text-sm font-semibold text-indigo-800">Deployment requirements</div>
+                    <div className="text-xs text-indigo-700/80">
+                      Required together with the specialisation to qualify for tiers that use it. These do not
+                      change whether the specialisation itself is achieved.
+                    </div>
+                  </td>
+                </tr>
+                {deploymentReqs.map((req, i) => (
+                  <RequirementRows key={`dep-${i}`} req={req} />
+                ))}
+              </>
+            )}
           </tbody>
         </table>
       </div>
@@ -531,6 +649,157 @@ export function LoadingSpinner() {
   return (
     <div className="flex items-center justify-center py-8">
       <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600" />
+    </div>
+  );
+}
+
+/** One deployment requirement row inside a tier card (with per-theatre expand). */
+function TierRequirementRow({ req }: { req: TierDeploymentRequirement }) {
+  const [expanded, setExpanded] = useState(false);
+  const projected = req.projectedAttained ?? undefined;
+  const state = riskState(req.attained, projected, req.quantityRequired);
+  const hasBreakdown = req.theatreBreakdown && req.theatreBreakdown.length > 0;
+  return (
+    <div className={`rounded border ${RISK_BG[state]} border-gray-200 px-3 py-2`}>
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          {req.specialisationName && (
+            <span className="text-[11px] uppercase tracking-wide text-gray-500 mr-1">{req.specialisationName}:</span>
+          )}
+          <span className="text-sm">
+            {req.trainingFullTitle}
+            {req.alternatives.length > 0 && (
+              <span className="text-xs text-gray-500"> or {req.alternatives.map((a) => a.trainingFullTitle).join(", ")}</span>
+            )}
+          </span>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className={`text-sm font-semibold ${RISK_TEXT[state]}`}>
+            <AttainedValue attained={req.attained} projected={projected} /> / {req.quantityRequired}
+          </span>
+          {hasBreakdown && (
+            <button onClick={() => setExpanded((p) => !p)} className="text-gray-400 hover:text-gray-600">
+              {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+            </button>
+          )}
+        </div>
+      </div>
+      <ExpiringNote attained={req.attained} projected={projected} />
+      {expanded && hasBreakdown && (
+        <div className="mt-2 grid grid-cols-2 sm:grid-cols-3 gap-1">
+          {req.theatreBreakdown!.map((t) => {
+            const tProj = req.projectedTheatreBreakdown?.find((p) => p.theatre === t.theatre)?.count;
+            const tState = riskState(t.count, tProj, req.minimumPerTheatre ?? 0);
+            return (
+              <div key={t.theatre} className={`text-xs rounded px-2 py-1 ${RISK_BADGE[tState]}`}>
+                {t.theatre}: <AttainedValue attained={t.count} projected={tProj} />
+                {req.minimumPerTheatre ? ` / ${req.minimumPerTheatre}` : ""}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The tier ladder for a tiered program at a given level + scope: a highest-tier
+ * banner, the achieved specialisations, and one card per tier showing the
+ * specialisation gate + deployment requirements and whether it is reached.
+ */
+export function TierLadder({ block }: { block: TierBlock }) {
+  const achieved = block.achievedSpecialisationCount;
+  const projAchieved = block.projectedAchievedSpecialisationCount;
+  const sorted = [...block.tiers].sort((a, b) => a.sortOrder - b.sortOrder);
+  // Next tier to aim for = the lowest tier not currently compliant.
+  const nextTier = sorted.find((t) => !t.compliant) ?? null;
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-lg border border-gray-200 bg-white p-4">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <span className="text-sm text-gray-500">Highest tier achieved:</span>
+          <span className={`px-2.5 py-1 rounded-full text-sm font-semibold ${block.highestAchievedTier ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-600"}`}>
+            {block.highestAchievedTier ?? "None"}
+          </span>
+          {block.projectedHighestAchievedTier !== null &&
+            block.projectedHighestAchievedTier !== block.highestAchievedTier && (
+              <span className="text-sm text-amber-700">
+                → projected <strong>{block.projectedHighestAchievedTier ?? "None"}</strong>
+              </span>
+            )}
+        </div>
+        <div className="mt-2 text-sm text-gray-600">
+          <span className="font-medium">
+            {achieved}
+            {projAchieved !== null && projAchieved !== achieved && <span className="text-amber-700"> → {projAchieved}</span>}
+          </span>{" "}
+          specialisation{achieved === 1 ? "" : "s"} achieved
+          {block.achievedSpecialisations.length > 0 && (
+            <span className="ml-1 text-gray-500">
+              ({block.achievedSpecialisations.join(", ")})
+            </span>
+          )}
+        </div>
+      </div>
+
+      {sorted.length === 0 ? (
+        <p className="text-sm text-gray-500">No tiers configured for this program yet.</p>
+      ) : (
+        sorted.map((tier) => {
+          // In "perTierPerSpecialisation" mode the tier gate is how many
+          // specialisations meet ALL of THIS tier's criteria (not the ladder-wide
+          // achieved count), so use the tier's own satisfied count when present.
+          const perTierPerSpec =
+            block.deploymentMode === "perTierPerSpecialisation" && tier.satisfiedSpecialisationCount != null;
+          const counted = perTierPerSpec ? tier.satisfiedSpecialisationCount! : achieved;
+          const specsMet = counted >= tier.specialisationsRequired;
+          const specLabel = perTierPerSpec ? "Specialisations meeting all criteria" : "Specialisations";
+          const isNext = nextTier?.name === tier.name;
+          return (
+            <div
+              key={tier.name}
+              className={`rounded-lg border p-4 ${tier.compliant ? "border-green-300 bg-green-50/40" : isNext ? "border-blue-300 bg-blue-50/30" : "border-gray-200 bg-white"}`}
+            >
+              <div className="flex items-center justify-between">
+                <h3 className="text-base font-semibold text-gray-800">{tier.name}</h3>
+                <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${tier.compliant ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-600"}`}>
+                  {tier.compliant ? "Achieved" : isNext ? "Next tier" : "Not yet"}
+                </span>
+              </div>
+
+              <div className="mt-2 text-sm">
+                <span className={specsMet ? "text-green-700" : "text-red-700"}>
+                  {specLabel}: {counted} / {tier.specialisationsRequired}
+                </span>
+                {!specsMet && (
+                  <span className="ml-2 text-gray-500">
+                    (need {tier.specialisationsRequired - counted} more)
+                  </span>
+                )}
+              </div>
+              <div className="mt-1 text-xs text-gray-500">
+                Achieved:{" "}
+                {block.achievedSpecialisations.length > 0 ? (
+                  <span className="text-gray-700">{block.achievedSpecialisations.join(", ")}</span>
+                ) : (
+                  <span className="italic">none yet</span>
+                )}
+              </div>
+
+              {tier.deploymentRequirements.length > 0 && (
+                <div className="mt-3 space-y-1.5">
+                  <div className="text-xs font-medium text-gray-600 uppercase tracking-wide">Deployment requirements</div>
+                  {tier.deploymentRequirements.map((req, i) => (
+                    <TierRequirementRow key={`${req.trainingTitle ?? i}-${req.specialisationName ?? ""}`} req={req} />
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })
+      )}
     </div>
   );
 }

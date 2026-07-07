@@ -1639,6 +1639,40 @@ const helpSections: Record<string, HelpSection> = {
           programs at once.
         </p>
 
+        <h3>Tiered programs</h3>
+        <p>
+          Tick <strong>Tiered program</strong> when creating a program to unlock
+          <strong> tiers</strong> (e.g. Tier A, B, C) that a partner reaches based on how
+          many <strong>specialisations</strong> they have achieved. A specialisation is
+          achieved when all of its qualifying (Sales/Pre-Sales) cert requirements are met
+          by enough distinct people. On a tiered program&apos;s page a <strong>Tiers</strong>
+          section lets you add tiers (name, ladder order, and how many specialisations each
+          requires) and choose how <strong>Deployment</strong> cert requirements are handled:
+        </p>
+        <ul>
+          <li><strong>Flat</strong> — each tier lists its own deployment cert requirements.</li>
+          <li><strong>Per achieved specialisation</strong> — each achieved specialisation&apos;s
+            own deployment cert requirements must be met (add these as requirements with
+            purpose <em>Deployment</em>). The same set applies to every tier.</li>
+          <li><strong>Per tier, per achieved specialisation</strong> — each tier lists its own
+            deployment cert requirements <em>for each specialisation</em>, so they scale up the
+            ladder. When adding a tier&apos;s deployment requirement you pick which specialisation
+            it applies to. The tier is reached when <em>at least the required number of</em>
+            specialisations each meet all of that tier&apos;s criteria — achieved <em>and</em> all
+            of that tier&apos;s deployment certs for that specialisation (a specialisation with no
+            deployment certs for the tier counts on qualification alone). Specialisations that
+            aren&apos;t fully met don&apos;t count toward the total, so they don&apos;t block the
+            tier once enough others are met. For example, Tier A might need 1 specialisation and no
+            deployment certs, Tier B 2 specialisations each with 3 deployment certs, and Tier C 3
+            specialisations each with 4 — so a partner with two specialisations fully deployed
+            reaches Tier B even if a third specialisation&apos;s certs aren&apos;t complete.</li>
+        </ul>
+        <p>
+          Because compliance counts <strong>distinct people</strong>, a requirement for
+          &ldquo;2 of Cert A or Cert B&rdquo; needs two <em>different</em> individuals — one
+          person holding both certs still counts once.
+        </p>
+
         <h3>Fields</h3>
         <table>
           <thead>
@@ -1666,7 +1700,7 @@ const helpSections: Record<string, HelpSection> = {
             </tr>
             <tr>
               <td><strong>Training</strong></td>
-              <td>The specific training required, filtered by the selected Type.</td>
+              <td>The specific training required, filtered by the selected Type. Each training name is listed once, even if it&apos;s backed by more than one catalogue record — the requirement counts anyone holding <em>any</em> record under that name.</td>
             </tr>
             <tr>
               <td><strong>Quantity Required</strong></td>
@@ -1742,33 +1776,65 @@ const helpSections: Record<string, HelpSection> = {
       <>
         <p>
           Each program dashboard shows compliance status for a partner program.
-          The dashboard is fully data-driven — it automatically shows the
-          relevant report sections based on how the program is configured in{" "}
-          <strong>Admin &rsaquo; Program Data</strong>. A program with
-          country-level requirements gets Country and Region reports; a program
-          with theatre or global requirements gets Theatre and Global reports.
+          The dashboard is fully data-driven — it automatically adapts to how the
+          program is configured in <strong>Admin &rsaquo; Program Data</strong>.
+        </p>
+        <p>
+          A single <strong>View</strong> selector at the top drives the whole
+          page: a <strong>Level</strong> dropdown (Global / By Theatre / By Region
+          / By Country, limited to the program&apos;s configured levels) plus a
+          <strong> Value</strong> dropdown for the chosen level (which theatre /
+          region / country; hidden for Global). Picking a scope shows the{" "}
+          <strong>Tier Status</strong> (for tiered programs) and the one matching
+          report for that scope.
+        </p>
+
+        <h3>Tier Status</h3>
+        <p>
+          Shown for <strong>tiered</strong> programs, above the report and
+          following the page <strong>View</strong> scope (including By Region,
+          aggregated across the region&apos;s countries). It shows the
+          partner&apos;s <strong>highest tier achieved</strong> and progress toward
+          the next one. Each tier card shows how many specialisations are achieved
+          versus required (and <strong>lists which specialisations</strong> are
+          currently achieved at that scope), plus any Deployment cert requirements
+          with their distinct-holder counts (expand a requirement to see the
+          per-theatre breakdown). With a &ldquo;Compliance as of&rdquo; horizon
+          selected, the banner also shows the projected highest tier once expiring
+          certs drop out.
         </p>
 
         <h3>Country &amp; Region Reports</h3>
         <p>
-          Shown when the program has country-level requirements. Select a
-          country (or a region, which aggregates all of its countries) to see
-          whether each specialisation&apos;s requirements are met. Each column is
-          a specialisation, with rows for the training name, required count, and
-          attained count. Green means the requirement is met; red means it is
-          not. Click <strong>View</strong> to list the qualifying students.
+          Shown when the <strong>View</strong> level is By Country or By Region
+          (available when the program has country-level requirements). A region
+          aggregates all of its countries. Each column is a specialisation, with
+          rows for the training name, required count, and attained count. Green
+          means the requirement is met; red means it is not. Click{" "}
+          <strong>View</strong> to list the qualifying students.
+        </p>
+        <p>
+          Where a specialisation has <strong>Deployment requirements</strong> (tiered
+          programs in <em>per-achieved-specialisation</em> mode), they appear in their own
+          sub-section below the qualifying rows. A specialisation is still achieved on its
+          qualifying requirements alone, but a tier that uses it also needs these
+          deployment requirements — so they&apos;re shown here (with their own met/not-met
+          state) rather than hidden. Exports gain a <strong>Purpose</strong> column
+          (Qualification / Deployment).
         </p>
 
         <h3>Theatre Report</h3>
         <p>
-          Shown when the program has theatre-level requirements. Select a theatre
-          to view its compliance.
+          Shown when the <strong>View</strong> level is By Theatre (available when
+          the program has theatre-level requirements). Pick a theatre to view its
+          compliance.
         </p>
 
         <h3>Global Report</h3>
         <p>
-          Shown when the program has global-level requirements. Two presentations
-          are supported automatically:
+          Shown when the <strong>View</strong> level is Global (available when the
+          program has global-level requirements). Two presentations are supported
+          automatically:
         </p>
         <ul>
           <li>
@@ -1887,6 +1953,54 @@ const helpSections: Record<string, HelpSection> = {
           case-insensitively against this list. Unknown values are reported as
           per-row errors rather than being silently changed, so keep this list in
           sync with the values used in your spreadsheets.
+        </p>
+      </>
+    ),
+  },
+  "admin-specialisations": {
+    title: "Specialisations",
+    content: (
+      <>
+        <p>
+          Specialisations are the building blocks of partner programs. Each
+          specialisation groups the training requirements a partner must meet,
+          and tiered programs unlock tiers based on how many specialisations a
+          partner has achieved. This page manages the master list.
+        </p>
+
+        <h3>Adding &amp; Renaming</h3>
+        <p>
+          Use <strong>Add Specialisation</strong> to create a new entry. Names
+          must be unique. Renaming a specialisation updates it everywhere it is
+          referenced (program requirements, tiers, and compliance dashboards).
+          You can also still add a specialisation inline from the program-data
+          requirement editor — both routes feed the same list.
+        </p>
+
+        <h3>Searching &amp; Filtering</h3>
+        <p>
+          Use the search box to find a specialisation by name. The filter
+          switches between <strong>All</strong>, <strong>In use</strong>{" "}
+          (referenced by at least one program requirement), and{" "}
+          <strong>Unused</strong>. Click a column header to sort by name or by
+          usage count.
+        </p>
+
+        <h3>Deleting</h3>
+        <p>
+          A specialisation can only be deleted when no program requirement
+          references it. The <strong>Used by programs</strong> column shows the
+          current usage count; remove or reassign those requirements first.
+        </p>
+
+        <h3>Import &amp; Export</h3>
+        <p>
+          Use <strong>Import Specialisations</strong> to bulk-create entries
+          from a CSV or Excel file with a single <code>Name</code> column. The
+          wizard auto-maps the column, shows a preview, and reports how many were
+          created or skipped (names that already exist are skipped).{" "}
+          <strong>Export</strong> downloads the current list as CSV, Excel, or
+          PDF.
         </p>
       </>
     ),

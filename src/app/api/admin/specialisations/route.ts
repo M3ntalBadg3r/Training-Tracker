@@ -11,9 +11,16 @@ export async function GET(request: NextRequest) {
 
   const specialisations = await prisma.specialisation.findMany({
     orderBy: { name: "asc" },
+    include: { _count: { select: { programData: true } } },
   });
 
-  return NextResponse.json(specialisations);
+  return NextResponse.json(
+    specialisations.map((s) => ({
+      id: s.id,
+      name: s.name,
+      usageCount: s._count.programData,
+    }))
+  );
 }
 
 export async function POST(request: NextRequest) {

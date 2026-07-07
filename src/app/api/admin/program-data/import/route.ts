@@ -5,6 +5,8 @@ import { requireSuperAdmin, handleAuthError } from "@/lib/auth";
 interface RawRow {
   programName?: string;
   specialisationName?: string;
+  tierName?: string;
+  purpose?: string;
   level?: string;
   trainingType?: string;
   trainingFullTitle?: string;
@@ -98,6 +100,8 @@ export async function POST(request: NextRequest) {
 
   // Specialisation name → id cache (to avoid redundant DB calls)
   const specCache = new Map<string, number>();
+  // "programName tierNameLower" → tier id cache
+  const tierCache = new Map<string, number>();
   // Programs already registered this run (to avoid redundant upserts)
   const registeredPrograms = new Set<string>();
 
@@ -107,7 +111,9 @@ export async function POST(request: NextRequest) {
 
     // --- Required field presence ---
     const programName = raw.programName?.trim() ?? "";
-    const specialisationName = raw.specialisationName?.trim() ?? "";
+    const specialisationName = isNullMarker(raw.specialisationName?.trim() ?? "") ? "" : (raw.specialisationName?.trim() ?? "");
+    const tierName = isNullMarker(raw.tierName?.trim() ?? "") ? "" : (raw.tierName?.trim() ?? "");
+    const purpose = raw.purpose?.trim().toLowerCase() === "deployment" ? "deployment" : "qualification";
     const rawLevel = raw.level?.trim() ?? "";
     const rawTrainingType = isNullMarker(raw.trainingType?.trim() ?? "") ? "" : (raw.trainingType?.trim() ?? "");
     const rawTrainingFullTitle = isNullMarker(raw.trainingFullTitle?.trim() ?? "") ? "" : (raw.trainingFullTitle?.trim() ?? "");
@@ -120,8 +126,12 @@ export async function POST(request: NextRequest) {
       skipped++;
       continue;
     }
-    if (!specialisationName) {
-      errors.push({ row: rowNum, message: "Specialisation is required" });
+    const hasSpec = specialisationName !== "";
+    const hasTier = tierName !== "";
+    // A row must name a Specialisation and/or a Tier. Both together is a
+    // per-tier-per-specialisation deployment requirement.
+    if (!hasSpec && !hasTier) {
+      errors.push({ row: rowNum, message: "Provide a Specialisation and/or a Tier" });
       skipped++;
       continue;
     }
@@ -184,9 +194,10 @@ export async function POST(request: NextRequest) {
         continue;
       }
       resolvedTrainingTitle = trainingMatch.trainingTitle;
-    } else if (level !== "Global") {
-      // Non-global rows must have training
-      errors.push({ row: rowNum, message: "Training Type and Training are required for Country and Theatre level rows" });
+    } else if (level !== "Global" || hasTier) {
+      // Non-global rows must have training; tier deployment requirements always
+      // name a training (they can't be the APS "count theatres" placeholder).
+      errors.push({ row: rowNum, message: "Training Type and Training are required for Country/Theatre level rows and tier deployment requirements" });
       skipped++;
       continue;
     }
@@ -216,25 +227,50 @@ export async function POST(request: NextRequest) {
       continue;
     }
 
-    // --- Resolve/create specialisation ---
-    let specId = specCache.get(specialisationName.toLowerCase());
-    if (specId === undefined) {
-      let spec = await prisma.specialisation.findFirst({ where: { name: specialisationName } });
-      if (!spec) {
-        spec = await prisma.specialisation.create({ data: { name: specialisationName } });
-      }
-      specId = spec.id;
-      specCache.set(specialisationName.toLowerCase(), specId!);
-    }
-
-    // --- Register the program so it persists (incl. as an admin card) ---
+    // --- Register the program so it persists (incl. as an admin card).
+    //     A tier row implies a tiered program. ---
     if (!registeredPrograms.has(programName)) {
       await prisma.program.upsert({
         where: { name: programName },
-        create: { name: programName },
-        update: {},
+        create: { name: programName, isTiered: hasTier },
+        update: hasTier ? { isTiered: true } : {},
       });
       registeredPrograms.add(programName);
+    } else if (hasTier) {
+      await prisma.program.update({ where: { name: programName }, data: { isTiered: true } });
+    }
+
+    // --- Resolve the requirement's scope (specialisation and/or tier) ---
+    let specId: number | null = null;
+    let tierId: number | null = null;
+    if (hasTier) {
+      const tierKey = `${programName} ${tierName.toLowerCase()}`;
+      let cached = tierCache.get(tierKey);
+      if (cached === undefined) {
+        let tier = await prisma.programTier.findUnique({
+          where: { programName_name: { programName, name: tierName } },
+        });
+        if (!tier) {
+          const max = await prisma.programTier.aggregate({ where: { programName }, _max: { sortOrder: true } });
+          tier = await prisma.programTier.create({
+            data: { programName, name: tierName, sortOrder: (max._max.sortOrder ?? 0) + 1, specialisationsRequired: 1 },
+          });
+        }
+        cached = tier.id;
+        tierCache.set(tierKey, cached);
+      }
+      tierId = cached;
+    }
+    if (hasSpec) {
+      specId = specCache.get(specialisationName.toLowerCase()) ?? null;
+      if (specId === null) {
+        let spec = await prisma.specialisation.findFirst({ where: { name: specialisationName } });
+        if (!spec) {
+          spec = await prisma.specialisation.create({ data: { name: specialisationName } });
+        }
+        specId = spec.id;
+        specCache.set(specialisationName.toLowerCase(), specId);
+      }
     }
 
     // --- Create ProgramData record with alternatives ---
@@ -242,6 +278,8 @@ export async function POST(request: NextRequest) {
       data: {
         programName,
         specialisationId: specId,
+        tierId,
+        purpose: hasTier ? "deployment" : purpose,
         level: level as "Country" | "Theatre" | "Global",
         trainingType: resolvedTrainingType as "Certification" | "Accreditation" | "InstructorLedTraining" | null,
         trainingTitle: resolvedTrainingTitle,

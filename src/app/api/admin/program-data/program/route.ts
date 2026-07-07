@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
     return handleAuthError(error);
   }
 
-  const [programs, rows] = await Promise.all([
+  const [programs, rows, tiers] = await Promise.all([
     prisma.program.findMany({ orderBy: { name: "asc" } }),
     prisma.programData.findMany({
       select: {
@@ -25,6 +25,7 @@ export async function GET(request: NextRequest) {
         specialisation: { select: { name: true } },
       },
     }),
+    prisma.programTier.findMany({ select: { programName: true } }),
   ]);
 
   interface Agg {
@@ -32,19 +33,34 @@ export async function GET(request: NextRequest) {
     specialisations: Set<string>;
     levels: Set<string>;
     hasMinimumPerTheatre: boolean;
+    isTiered: boolean;
+    deploymentMode: string;
+    tierCount: number;
   }
   const agg = new Map<string, Agg>();
   const ensure = (name: string): Agg => {
     let a = agg.get(name);
     if (!a) {
-      a = { requirementCount: 0, specialisations: new Set(), levels: new Set(), hasMinimumPerTheatre: false };
+      a = {
+        requirementCount: 0,
+        specialisations: new Set(),
+        levels: new Set(),
+        hasMinimumPerTheatre: false,
+        isTiered: false,
+        deploymentMode: "flat",
+        tierCount: 0,
+      };
       agg.set(name, a);
     }
     return a;
   };
 
-  // Seed from the registry so empty programs are included.
-  for (const p of programs) ensure(p.name);
+  // Seed from the registry so empty programs are included (and carry settings).
+  for (const p of programs) {
+    const a = ensure(p.name);
+    a.isTiered = p.isTiered;
+    a.deploymentMode = p.deploymentMode;
+  }
 
   for (const r of rows) {
     const a = ensure(r.programName);
@@ -54,6 +70,8 @@ export async function GET(request: NextRequest) {
     if (r.minimumPerTheatre != null) a.hasMinimumPerTheatre = true;
   }
 
+  for (const t of tiers) ensure(t.programName).tierCount += 1;
+
   const result = [...agg.entries()]
     .map(([name, a]) => ({
       name,
@@ -61,6 +79,9 @@ export async function GET(request: NextRequest) {
       specialisations: [...a.specialisations].sort(),
       levels: [...a.levels].sort(),
       hasMinimumPerTheatre: a.hasMinimumPerTheatre,
+      isTiered: a.isTiered,
+      deploymentMode: a.deploymentMode,
+      tierCount: a.tierCount,
     }))
     .sort((x, y) => x.name.localeCompare(y.name));
 
@@ -83,12 +104,18 @@ export async function POST(request: NextRequest) {
   if (!name) {
     return NextResponse.json({ error: "Program name is required" }, { status: 400 });
   }
+  const isTiered = body?.isTiered === true;
+  const DEPLOYMENT_MODES = ["flat", "perAchievedSpecialisation", "perTierPerSpecialisation"];
+  const deploymentMode = DEPLOYMENT_MODES.includes(body?.deploymentMode) ? body.deploymentMode : "flat";
 
   const existing = await prisma.program.findUnique({ where: { name } });
   if (existing) {
     return NextResponse.json({ error: "A program with this name already exists" }, { status: 409 });
   }
 
-  const program = await prisma.program.create({ data: { name } });
-  return NextResponse.json({ id: program.id, name: program.name }, { status: 201 });
+  const program = await prisma.program.create({ data: { name, isTiered, deploymentMode } });
+  return NextResponse.json(
+    { id: program.id, name: program.name, isTiered: program.isTiered, deploymentMode: program.deploymentMode },
+    { status: 201 }
+  );
 }
