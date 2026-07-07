@@ -687,6 +687,7 @@ export default function ProgramDataPage() {
               >
                 <option value="flat">Flat — each tier lists its own deployment requirements</option>
                 <option value="perAchievedSpecialisation">Per achieved specialisation — each achieved specialisation&apos;s deployment requirements must be met</option>
+                <option value="perTierPerSpecialisation">Per tier, per achieved specialisation — each tier lists its own deployment requirements for each specialisation</option>
               </select>
               <p className="mt-1 text-xs text-gray-500">You can change this later on the program&apos;s page.</p>
             </div>
