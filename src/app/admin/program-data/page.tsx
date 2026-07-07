@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import PageHeader from "@/components/layout/PageHeader";
 import Modal from "@/components/ui/Modal";
-import { ProgramDataRow, ProgramSummaryRow } from "@/types";
+import { ProgramDataRow, ProgramSummaryRow, ProgramTierRow } from "@/types";
 import { trainingTypeLabel } from "@/lib/utils";
 import {
   Plus,
@@ -35,6 +35,7 @@ export default function ProgramDataPage() {
 
   const [programs, setPrograms] = useState<ProgramSummaryRow[]>([]);
   const [allRows, setAllRows] = useState<ProgramDataRow[]>([]);
+  const [allTiers, setAllTiers] = useState<ProgramTierRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -66,6 +67,9 @@ export default function ProgramDataPage() {
     quantityRequired?: string | number;
     minimumPerTheatre?: string | number | null;
     alternatives?: string;
+    deploymentMode?: string;
+    tierSortOrder?: string | number | null;
+    tierSpecialisationsRequired?: string | number | null;
   }
   interface ImportResult {
     created: number;
@@ -80,6 +84,7 @@ export default function ProgramDataPage() {
   const [importLoading, setImportLoading] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [importFileError, setImportFileError] = useState("");
+  const [overwriteAck, setOverwriteAck] = useState(false);
 
   const [lastImport, setLastImport] = useState<string | null>(null);
 
@@ -102,6 +107,13 @@ export default function ProgramDataPage() {
     } catch { /* ignore */ }
   };
 
+  const fetchTiers = async () => {
+    try {
+      const res = await fetch("/api/admin/program-tiers");
+      if (res.ok) setAllTiers(await res.json());
+    } catch { /* ignore */ }
+  };
+
   const fetchLastImport = () => {
     fetch("/api/import-metadata?key=program-data")
       .then((res) => res.json())
@@ -112,6 +124,7 @@ export default function ProgramDataPage() {
   useEffect(() => {
     fetchPrograms();
     fetchRows();
+    fetchTiers();
     fetchLastImport();
   }, []);
 
@@ -190,6 +203,11 @@ export default function ProgramDataPage() {
   };
 
   // --- Export (all programs) ---
+  // The export round-trips the full program structure so a re-import restores it
+  // exactly: the program-level Deployment Handling (deploymentMode) rides on every
+  // row, and each tier carries its ladder Order + Specialisations Required. Tiers
+  // that have no requirement rows (e.g. in "per achieved specialisation" mode) are
+  // emitted as blank "tier-definition" rows so they survive the round-trip too.
   const exportColumns = [
     { key: "programName" as const, header: "Program Name" },
     { key: "specialisationName" as const, header: "Specialisation" },
@@ -201,31 +219,85 @@ export default function ProgramDataPage() {
     { key: "quantityRequired" as const, header: "Quantity Required" },
     { key: "minimumPerTheatre" as const, header: "Min per Theatre" },
     { key: "alternatives" as const, header: "Alternatives" },
+    { key: "deploymentMode" as const, header: "Deployment Handling" },
+    { key: "tierOrder" as const, header: "Tier Order" },
+    { key: "tierSpecialisationsRequired" as const, header: "Tier Specialisations Required" },
   ];
 
-  const exportData = [...allRows]
-    .sort(
-      (a, b) =>
-        a.programName.localeCompare(b.programName) ||
-        (a.specialisationName ?? "").localeCompare(b.specialisationName ?? "")
-    )
-    .map((r) => {
-      const altsLabel = r.alternatives && r.alternatives.length > 0
-        ? r.alternatives.map((a) => a.trainingFullTitle).join("|")
-        : "";
-      return {
-        programName: r.programName,
-        specialisationName: r.specialisationName ?? "",
-        tierName: r.tierName ?? "",
-        purpose: r.purpose,
-        level: r.level,
-        trainingType: r.trainingType ? trainingTypeLabel(r.trainingType) : "—",
-        trainingFullTitle: r.trainingFullTitle || "—",
-        quantityRequired: r.quantityRequired,
-        minimumPerTheatre: r.minimumPerTheatre ?? "—",
-        alternatives: altsLabel,
-      };
-    });
+  interface ExportRow {
+    programName: string;
+    specialisationName: string;
+    tierName: string;
+    purpose: string;
+    level: string;
+    trainingType: string;
+    trainingFullTitle: string;
+    quantityRequired: string | number;
+    minimumPerTheatre: string | number;
+    alternatives: string;
+    deploymentMode: string;
+    tierOrder: string | number;
+    tierSpecialisationsRequired: string | number;
+  }
+
+  const deploymentModeByProgram = new Map(programs.map((p) => [p.name, p.deploymentMode]));
+  const tierById = new Map(allTiers.map((t) => [t.id, t]));
+  const usedTierIds = new Set(allRows.map((r) => r.tierId).filter((id): id is number => id != null));
+
+  const requirementExportRows: ExportRow[] = allRows.map((r) => {
+    const tier = r.tierId != null ? tierById.get(r.tierId) : undefined;
+    const altsLabel = r.alternatives && r.alternatives.length > 0
+      ? r.alternatives.map((a) => a.trainingFullTitle).join("|")
+      : "";
+    return {
+      programName: r.programName,
+      specialisationName: r.specialisationName ?? "",
+      tierName: r.tierName ?? "",
+      purpose: r.purpose,
+      level: r.level,
+      trainingType: r.trainingType ? trainingTypeLabel(r.trainingType) : "—",
+      trainingFullTitle: r.trainingFullTitle || "—",
+      quantityRequired: r.quantityRequired,
+      minimumPerTheatre: r.minimumPerTheatre ?? "—",
+      alternatives: altsLabel,
+      deploymentMode: deploymentModeByProgram.get(r.programName) ?? "",
+      tierOrder: tier ? tier.sortOrder : "",
+      tierSpecialisationsRequired: tier ? tier.specialisationsRequired : "",
+    };
+  });
+
+  // Tier-definition rows for tiers with no requirement rows referencing them.
+  const emptyTierExportRows: ExportRow[] = allTiers
+    .filter((t) => !usedTierIds.has(t.id))
+    .map((t) => ({
+      programName: t.programName,
+      specialisationName: "",
+      tierName: t.name,
+      purpose: "",
+      level: "",
+      trainingType: "",
+      trainingFullTitle: "",
+      quantityRequired: "",
+      minimumPerTheatre: "",
+      alternatives: "",
+      deploymentMode: deploymentModeByProgram.get(t.programName) ?? "",
+      tierOrder: t.sortOrder,
+      tierSpecialisationsRequired: t.specialisationsRequired,
+    }));
+
+  const exportData: ExportRow[] = [...requirementExportRows, ...emptyTierExportRows].sort(
+    (a, b) =>
+      a.programName.localeCompare(b.programName) ||
+      a.specialisationName.localeCompare(b.specialisationName) ||
+      a.tierName.localeCompare(b.tierName)
+  );
+
+  // --- Import overwrite warning ---
+  const hasExistingData = allRows.length > 0 || programs.length > 0;
+  const importAffectedPrograms = [
+    ...new Set(importRows.map((r) => r.programName?.trim()).filter((n): n is string => !!n)),
+  ].sort();
+  const needsOverwriteAck = hasExistingData && importAffectedPrograms.length > 0;
 
   // --- Import helpers ---
   const IMPORT_COLUMN_MAP: Record<string, keyof ImportRow> = {
@@ -255,6 +327,15 @@ export default function ProgramDataPage() {
     alternative: "alternatives",
     alts: "alternatives",
     oralternatives: "alternatives",
+    deploymenthandling: "deploymentMode",
+    deploymentmode: "deploymentMode",
+    deployment: "deploymentMode",
+    tierorder: "tierSortOrder",
+    sortorder: "tierSortOrder",
+    order: "tierSortOrder",
+    tierspecialisationsrequired: "tierSpecialisationsRequired",
+    specialisationsrequired: "tierSpecialisationsRequired",
+    specsrequired: "tierSpecialisationsRequired",
   };
 
   const normaliseHeader = (h: string) => h.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -363,6 +444,7 @@ export default function ProgramDataPage() {
       setImportStep("result");
       fetchPrograms();
       fetchRows();
+      fetchTiers();
       fetchLastImport();
     } catch {
       setImportResult({ created: 0, skipped: importRows.length, errors: [{ row: 0, message: "Import request failed" }] });
@@ -377,33 +459,63 @@ export default function ProgramDataPage() {
       {
         "Program Name": "Example Program",
         "Specialisation": "Example Specialisation",
+        "Tier": "",
+        "Purpose": "qualification",
         "Level": "Global",
         "Training Type": "Certification",
         "Training": "Example Certification",
         "Quantity Required": 30,
         "Minimum per Theatre": 6,
         "Alternatives": "",
+        "Deployment Handling": "",
+        "Tier Order": "",
+        "Tier Specialisations Required": "",
       },
       {
         "Program Name": "Example Program",
         "Specialisation": "Example Specialisation",
+        "Tier": "",
+        "Purpose": "qualification",
         "Level": "Country",
         "Training Type": "Certification",
         "Training": "Example Certification",
         "Quantity Required": 2,
         "Minimum per Theatre": "",
         "Alternatives": "Alternative Training A|Alternative Training B",
+        "Deployment Handling": "",
+        "Tier Order": "",
+        "Tier Specialisations Required": "",
+      },
+      {
+        "Program Name": "Example Tiered Program",
+        "Specialisation": "",
+        "Tier": "Tier A",
+        "Purpose": "",
+        "Level": "",
+        "Training Type": "",
+        "Training": "",
+        "Quantity Required": "",
+        "Minimum per Theatre": "",
+        "Alternatives": "",
+        "Deployment Handling": "flat",
+        "Tier Order": 1,
+        "Tier Specialisations Required": 1,
       },
     ];
     const templateCols = [
       { key: "Program Name", header: "Program Name" },
       { key: "Specialisation", header: "Specialisation" },
+      { key: "Tier", header: "Tier" },
+      { key: "Purpose", header: "Purpose" },
       { key: "Level", header: "Level" },
       { key: "Training Type", header: "Training Type" },
       { key: "Training", header: "Training" },
       { key: "Quantity Required", header: "Quantity Required" },
       { key: "Minimum per Theatre", header: "Minimum per Theatre" },
       { key: "Alternatives", header: "Alternatives" },
+      { key: "Deployment Handling", header: "Deployment Handling" },
+      { key: "Tier Order", header: "Tier Order" },
+      { key: "Tier Specialisations Required", header: "Tier Specialisations Required" },
     ];
     exportToCsv(templateData as never[], templateCols as never[], "program-data-import-template");
   };
@@ -416,6 +528,7 @@ export default function ProgramDataPage() {
     setImportLoading(false);
     setImportResult(null);
     setImportFileError("");
+    setOverwriteAck(false);
   };
 
   if (loading) {
@@ -693,9 +806,10 @@ export default function ProgramDataPage() {
               </div>
             )}
             <div className="pt-1 text-xs text-gray-500 space-y-1">
-              <p><strong>Expected columns:</strong> Program Name, Specialisation, Level, Training Type, Training, Quantity Required, Minimum per Theatre</p>
+              <p><strong>Expected columns:</strong> Program Name, Specialisation, Tier, Purpose, Level, Training Type, Training, Quantity Required, Minimum per Theatre, Deployment Handling, Tier Order, Tier Specialisations Required</p>
               <p>Training Type and Training are optional for Global-level rows with no specific training (these count compliant theatres).</p>
-              <p>Programs and specialisations are auto-created if they don&apos;t already exist.</p>
+              <p>Programs, tiers, and specialisations are auto-created if they don&apos;t already exist.</p>
+              <p><strong>Importing replaces</strong> the existing requirements of every program named in the file — it does not merge or add to them.</p>
             </div>
           </div>
         )}
@@ -777,6 +891,34 @@ export default function ProgramDataPage() {
               </div>
             )}
 
+            {needsOverwriteAck && (
+              <div className="space-y-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+                <div className="flex items-start gap-2">
+                  <AlertCircle size={16} className="shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-medium">Existing requirements will be replaced.</p>
+                    <p className="mt-0.5">
+                      Importing replaces all existing requirements for{" "}
+                      <strong>{importAffectedPrograms.length === 1 ? importAffectedPrograms[0] : `${importAffectedPrograms.length} programs`}</strong>
+                      {importAffectedPrograms.length > 1 && (
+                        <> ({importAffectedPrograms.join(", ")})</>
+                      )}
+                      {" "}with the rows in this file. Programs not in the file are left untouched.
+                    </p>
+                  </div>
+                </div>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={overwriteAck}
+                    onChange={(e) => setOverwriteAck(e.target.checked)}
+                    className="w-4 h-4"
+                  />
+                  <span>I understand existing requirements for these programs will be replaced.</span>
+                </label>
+              </div>
+            )}
+
             <div className="flex justify-end gap-2 pt-1">
               {!importValidated && (
                 <button
@@ -789,7 +931,7 @@ export default function ProgramDataPage() {
               )}
               <button
                 onClick={handleImport}
-                disabled={importLoading || (importValidated && importValidationErrors.length > 0)}
+                disabled={importLoading || (importValidated && importValidationErrors.length > 0) || (needsOverwriteAck && !overwriteAck)}
                 className="flex items-center gap-1 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
               >
                 <Upload size={16} />
