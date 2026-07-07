@@ -1638,6 +1638,18 @@ const helpSections: Record<string, HelpSection> = {
           along with every one of its requirements. Import and Export cover all
           programs at once.
         </p>
+        <p>
+          <strong>Import replaces, it does not merge.</strong> For every program named in
+          the file, its existing requirements are deleted and re-created from the file, so
+          re-importing an edited export never duplicates rows (programs not in the file are
+          left untouched). The preview warns you which programs will be replaced and asks
+          you to tick a confirmation before importing. Export and import round-trip the full
+          program structure — the program-level <strong>Deployment Handling</strong> and,
+          for tiered programs, each tier&apos;s <strong>Tier Order</strong> and
+          <strong> Tier Specialisations Required</strong> — so a program exported and
+          re-imported unchanged is restored exactly (tiers with no requirements of their own
+          travel as blank tier-definition rows).
+        </p>
 
         <h3>Tiered programs</h3>
         <p>
