@@ -1776,34 +1776,42 @@ const helpSections: Record<string, HelpSection> = {
       <>
         <p>
           Each program dashboard shows compliance status for a partner program.
-          The dashboard is fully data-driven — it automatically shows the
-          relevant report sections based on how the program is configured in{" "}
-          <strong>Admin &rsaquo; Program Data</strong>. A program with
-          country-level requirements gets Country and Region reports; a program
-          with theatre or global requirements gets Theatre and Global reports.
+          The dashboard is fully data-driven — it automatically adapts to how the
+          program is configured in <strong>Admin &rsaquo; Program Data</strong>.
+        </p>
+        <p>
+          A single <strong>View</strong> selector at the top drives the whole
+          page: a <strong>Level</strong> dropdown (Global / By Theatre / By Region
+          / By Country, limited to the program&apos;s configured levels) plus a
+          <strong> Value</strong> dropdown for the chosen level (which theatre /
+          region / country; hidden for Global). Picking a scope shows the{" "}
+          <strong>Tier Status</strong> (for tiered programs) and the one matching
+          report for that scope.
         </p>
 
         <h3>Tier Status</h3>
         <p>
-          Shown for <strong>tiered</strong> programs. Pick a scope (Global, or by
-          Theatre / Country) to see the partner&apos;s <strong>highest tier
-          achieved</strong> and progress toward the next one. Each tier card shows how
-          many specialisations are achieved versus required (and <strong>lists which
-          specialisations</strong> are currently achieved at that scope), plus any
-          Deployment cert requirements with their distinct-holder counts (expand a
-          requirement to see the per-theatre breakdown). With a &ldquo;Compliance as
-          of&rdquo; horizon selected, the banner also shows the projected highest tier once
-          expiring certs drop out.
+          Shown for <strong>tiered</strong> programs, above the report and
+          following the page <strong>View</strong> scope (including By Region,
+          aggregated across the region&apos;s countries). It shows the
+          partner&apos;s <strong>highest tier achieved</strong> and progress toward
+          the next one. Each tier card shows how many specialisations are achieved
+          versus required (and <strong>lists which specialisations</strong> are
+          currently achieved at that scope), plus any Deployment cert requirements
+          with their distinct-holder counts (expand a requirement to see the
+          per-theatre breakdown). With a &ldquo;Compliance as of&rdquo; horizon
+          selected, the banner also shows the projected highest tier once expiring
+          certs drop out.
         </p>
 
         <h3>Country &amp; Region Reports</h3>
         <p>
-          Shown when the program has country-level requirements. Select a
-          country (or a region, which aggregates all of its countries) to see
-          whether each specialisation&apos;s requirements are met. Each column is
-          a specialisation, with rows for the training name, required count, and
-          attained count. Green means the requirement is met; red means it is
-          not. Click <strong>View</strong> to list the qualifying students.
+          Shown when the <strong>View</strong> level is By Country or By Region
+          (available when the program has country-level requirements). A region
+          aggregates all of its countries. Each column is a specialisation, with
+          rows for the training name, required count, and attained count. Green
+          means the requirement is met; red means it is not. Click{" "}
+          <strong>View</strong> to list the qualifying students.
         </p>
         <p>
           Where a specialisation has <strong>Deployment requirements</strong> (tiered
@@ -1817,14 +1825,16 @@ const helpSections: Record<string, HelpSection> = {
 
         <h3>Theatre Report</h3>
         <p>
-          Shown when the program has theatre-level requirements. Select a theatre
-          to view its compliance.
+          Shown when the <strong>View</strong> level is By Theatre (available when
+          the program has theatre-level requirements). Pick a theatre to view its
+          compliance.
         </p>
 
         <h3>Global Report</h3>
         <p>
-          Shown when the program has global-level requirements. Two presentations
-          are supported automatically:
+          Shown when the <strong>View</strong> level is Global (available when the
+          program has global-level requirements). Two presentations are supported
+          automatically:
         </p>
         <ul>
           <li>

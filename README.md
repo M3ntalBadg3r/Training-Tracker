@@ -970,19 +970,18 @@ key in browser-side code.
 
 Partner programs are **fully data-driven**. Every distinct program name configured in **Admin > Program Data** automatically gets its own compliance dashboard at **Programs > _[name]_** — no code changes are required to add a new program. The dashboard at `/programs/[programName]` auto-adapts to how the program is configured.
 
-### Report sections
+### One scope selector drives the page
 
-The dashboard shows only the sections relevant to the program's configured requirement levels:
+A single **View** selector at the top of the dashboard — a **Level** dropdown (Global / By Theatre / By Region / By Country, limited to the program's configured levels) plus a **Value** dropdown for the chosen level (which theatre/region/country; hidden for Global) — drives the whole page. Picking a scope shows, for that scope, the **Tier Status** (for tiered programs) and the **one matching report**:
 
-| Section | Shown when | Filter | Shows |
-|---------|-----------|--------|-------|
-| **Country Report** | Program has Country-level requirements | Country dropdown | People per country with each required training vs. the requirement |
-| **Region Report** | Program has Country-level requirements | Region dropdown | The same, aggregated across all countries in a region |
-| **Theatre Report** | Program has Theatre-level requirements | Theatre dropdown | People per theatre with each required training vs. the requirement |
-| **Global Report** | Program has Global-level requirements | None | See below |
-| **Tier Status** | Program is **tiered** | Level (Global / Theatre / Country) + scope | Highest tier achieved and progress to the next — see below |
+| Report shown | When Level is | Shows |
+|---------|-----------|-------|
+| **Country Report** | By Country (Program has Country-level requirements) | People in that country with each required training vs. the requirement |
+| **Region Report** | By Region (Program has Country-level requirements) | The same, aggregated across all countries in the region |
+| **Theatre Report** | By Theatre (Program has Theatre-level requirements) | People in that theatre with each required training vs. the requirement |
+| **Global Report** | Global (Program has Global-level requirements) | See below |
 
-For a **tiered** program, the **Tier Status** section is the primary view. Pick a scope (Global, or by Theatre/Country) to see the partner's **highest tier achieved** and, for each tier, how many specialisations are achieved versus required — the tier box also **lists which specialisations** are currently achieved at that scope — plus any **Deployment** cert requirements (with distinct-holder counts and a per-theatre breakdown). With a "Compliance as of" horizon selected, the banner also shows the projected highest tier once certificates expiring within the window drop out.
+For a **tiered** program the **Tier Status** section appears above the report and reflects the same scope — including **By Region** (aggregated across the region's countries). It shows the partner's **highest tier achieved** and, for each tier, how many specialisations are achieved versus required — the tier box also **lists which specialisations** are currently achieved at that scope — plus any **Deployment** cert requirements (with distinct-holder counts and a per-theatre breakdown). With a "Compliance as of" horizon selected, the banner also shows the projected highest tier once certificates expiring within the window drop out.
 
 The Country/Region/Theatre reports display specialisations as columns with grouped rows showing the training name, required count, and attained count. Attained values are colour-coded **green** (met) or **red** (not met). Click **View** on any attained cell to see the qualifying students. Where a specialisation has **Deployment** requirements (tiered programs in *per-achieved-specialisation* mode) they appear in a labelled **Deployment requirements** sub-section beneath the qualifying rows: a specialisation is still achieved on its qualifying requirements alone, but a tier that uses it also needs these deployment requirements, so they're surfaced here (with their own met/not-met state) rather than only inside Tier Status. The Global report shows the same deployment sub-section per specialisation card plus a **Deployment: Met / Not met** badge. Exports gain a **Purpose** column (Qualification / Deployment).
 

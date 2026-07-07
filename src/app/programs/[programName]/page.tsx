@@ -1,12 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useParams } from "next/navigation";
+import Link from "next/link";
 import PageHeader from "@/components/layout/PageHeader";
 import Modal from "@/components/ui/Modal";
 import {
-  ChevronDown,
-  ChevronRight,
   Globe,
   Building2,
   MapPin,
@@ -34,6 +33,8 @@ interface ProgramMeta {
   isTiered?: boolean;
   deploymentMode?: string;
 }
+
+type ScopeLevel = "global" | "theatre" | "region" | "country";
 
 export default function ProgramDetailPage() {
   const params = useParams<{ programName: string }>();
@@ -69,32 +70,16 @@ export default function ProgramDetailPage() {
   const [regions, setRegions] = useState<string[]>([]);
   const [theatres, setTheatres] = useState<string[]>([]);
 
-  // Section data
-  const [countryOpen, setCountryOpen] = useState(false);
-  const [selectedCountry, setSelectedCountry] = useState("");
-  const [countrySpecs, setCountrySpecs] = useState<Specialisation[]>([]);
-  const [countryLoading, setCountryLoading] = useState(false);
+  // Single page-level scope: a level plus (for non-global levels) a value. This
+  // one selection drives BOTH the Tier Status block and the matching report,
+  // which the API returns together in a single response per level.
+  const [scopeLevel, setScopeLevel] = useState<ScopeLevel>("global");
+  const [scopeValue, setScopeValue] = useState("");
+  const [scopeInitialised, setScopeInitialised] = useState(false);
 
-  const [regionOpen, setRegionOpen] = useState(false);
-  const [selectedRegion, setSelectedRegion] = useState("");
-  const [regionSpecs, setRegionSpecs] = useState<Specialisation[]>([]);
-  const [regionLoading, setRegionLoading] = useState(false);
-
-  const [theatreOpen, setTheatreOpen] = useState(false);
-  const [selectedTheatre, setSelectedTheatre] = useState("");
-  const [theatreSpecs, setTheatreSpecs] = useState<Specialisation[]>([]);
-  const [theatreLoading, setTheatreLoading] = useState(false);
-
-  const [globalOpen, setGlobalOpen] = useState(false);
-  const [globalSpecs, setGlobalSpecs] = useState<Specialisation[]>([]);
-  const [globalLoading, setGlobalLoading] = useState(false);
-
-  // Tier ladder (tiered programs only)
-  const [tierOpen, setTierOpen] = useState(true);
-  const [tierLevel, setTierLevel] = useState("");
-  const [tierScopeValue, setTierScopeValue] = useState("");
+  const [specs, setSpecs] = useState<Specialisation[]>([]);
   const [tierBlock, setTierBlock] = useState<TierBlock | null>(null);
-  const [tierLoading, setTierLoading] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   // Student modal
   const [showStudents, setShowStudents] = useState(false);
@@ -102,22 +87,18 @@ export default function ProgramDetailPage() {
   const [studentLoading, setStudentLoading] = useState(false);
   const [studentTitle, setStudentTitle] = useState("");
 
-  // Export menus
-  const [showExportCountry, setShowExportCountry] = useState(false);
-  const [showExportRegion, setShowExportRegion] = useState(false);
-  const [showExportTheatre, setShowExportTheatre] = useState(false);
-  const [showExportGlobal, setShowExportGlobal] = useState(false);
+  // Export menu (single — one report is shown at a time)
+  const [showExport, setShowExport] = useState(false);
 
   const hasCountry = meta?.levels.includes("Country") ?? false;
   const hasTheatre = meta?.levels.includes("Theatre") ?? false;
   const hasGlobal = meta?.levels.includes("Global") ?? false;
   const gdStyleGlobal = meta?.hasMinimumPerTheatre ?? false;
   const isTiered = meta?.isTiered ?? false;
-  const tierNeedsScope = (tierLevel === "country" || tierLevel === "theatre") && !tierScopeValue;
-  // When the program only has a Global Report (no Country/Region/Theatre
-  // sections), the Global export lives in the page header — between the
-  // company dropdown and the help button — rather than under the heading.
-  const globalOnly = hasGlobal && !hasCountry && !hasTheatre;
+
+  const needsValue = scopeLevel !== "global";
+  const scopeValues = scopeLevel === "theatre" ? theatres : scopeLevel === "region" ? regions : countries;
+  const scopeMissing = needsValue && !scopeValue;
 
   // Initial load — fetch metadata + available countries/regions/theatres.
   useEffect(() => {
@@ -133,93 +114,54 @@ export default function ProgramDetailPage() {
       .catch(() => {});
   }, [companyId, companyQS, apiBase]);
 
-  // Default the open section sensibly once we know which levels exist.
+  // Default the scope once we know which levels exist: pick the broadest
+  // configured level, and auto-select the first value for value-requiring levels.
   useEffect(() => {
-    if (!meta) return;
-    const levels = meta.levels;
-    if (levels.includes("Country")) setCountryOpen(true);
-    else if (levels.includes("Theatre")) setTheatreOpen(true);
-    else if (levels.includes("Global")) setGlobalOpen(true);
-  }, [meta]);
-
-  // Country report
-  useEffect(() => {
-    if (!selectedCountry || companyId === null) {
-      setCountrySpecs([]);
-      return;
+    if (!meta || scopeInitialised || meta.levels.length === 0) return;
+    if (meta.levels.includes("Global")) {
+      setScopeLevel("global");
+      setScopeValue("");
+    } else if (meta.levels.includes("Theatre")) {
+      setScopeLevel("theatre");
+      setScopeValue(theatres[0] ?? "");
+    } else if (meta.levels.includes("Country")) {
+      setScopeLevel("country");
+      setScopeValue(countries[0] ?? "");
     }
-    setCountryLoading(true);
-    fetch(`${apiBase}?level=country&country=${encodeURIComponent(selectedCountry)}${companyQS}${horizonQS}`)
-      .then((r) => r.json())
-      .then((data) => setCountrySpecs(data.specialisations || []))
-      .catch(() => {})
-      .finally(() => setCountryLoading(false));
-  }, [selectedCountry, companyId, companyQS, horizonQS, apiBase]);
+    setScopeInitialised(true);
+  }, [meta, scopeInitialised, theatres, countries]);
 
-  // Region report
-  useEffect(() => {
-    if (!selectedRegion || companyId === null) {
-      setRegionSpecs([]);
-      return;
-    }
-    setRegionLoading(true);
-    fetch(`${apiBase}?level=region&region=${encodeURIComponent(selectedRegion)}${companyQS}${horizonQS}`)
-      .then((r) => r.json())
-      .then((data) => setRegionSpecs(data.specialisations || []))
-      .catch(() => {})
-      .finally(() => setRegionLoading(false));
-  }, [selectedRegion, companyId, companyQS, horizonQS, apiBase]);
+  const changeScopeLevel = (level: ScopeLevel) => {
+    setScopeLevel(level);
+    if (level === "global") setScopeValue("");
+    else if (level === "theatre") setScopeValue(theatres[0] ?? "");
+    else if (level === "region") setScopeValue(regions[0] ?? "");
+    else setScopeValue(countries[0] ?? "");
+  };
 
-  // Theatre report
+  // Single scoped fetch — returns both the specialisations report and the tier
+  // block for the selected scope.
   useEffect(() => {
-    if (!selectedTheatre || companyId === null) {
-      setTheatreSpecs([]);
-      return;
-    }
-    setTheatreLoading(true);
-    fetch(`${apiBase}?level=theatre&theatre=${encodeURIComponent(selectedTheatre)}${companyQS}${horizonQS}`)
-      .then((r) => r.json())
-      .then((data) => setTheatreSpecs(data.specialisations || []))
-      .catch(() => {})
-      .finally(() => setTheatreLoading(false));
-  }, [selectedTheatre, companyId, companyQS, horizonQS, apiBase]);
-
-  // Global report
-  useEffect(() => {
-    if (!globalOpen || companyId === null) return;
-    setGlobalLoading(true);
-    fetch(`${apiBase}?level=global${companyQS}${horizonQS}`)
-      .then((r) => r.json())
-      .then((data) => setGlobalSpecs(data.specialisations || []))
-      .catch(() => {})
-      .finally(() => setGlobalLoading(false));
-  }, [globalOpen, companyId, companyQS, horizonQS, apiBase]);
-
-  // Default the tier level to the broadest configured level once meta loads.
-  useEffect(() => {
-    if (!meta?.isTiered || tierLevel) return;
-    if (meta.levels.includes("Global")) setTierLevel("global");
-    else if (meta.levels.includes("Theatre")) setTierLevel("theatre");
-    else if (meta.levels.includes("Country")) setTierLevel("country");
-  }, [meta, tierLevel]);
-
-  // Tier ladder
-  useEffect(() => {
-    if (!isTiered || companyId === null || !tierOpen || !tierLevel) return;
-    if ((tierLevel === "country" || tierLevel === "theatre") && !tierScopeValue) {
+    if (companyId === null || !scopeInitialised) return;
+    if (needsValue && !scopeValue) {
+      setSpecs([]);
       setTierBlock(null);
       return;
     }
-    setTierLoading(true);
-    const params = new URLSearchParams({ level: tierLevel });
-    if (tierLevel === "country") params.set("country", tierScopeValue);
-    if (tierLevel === "theatre") params.set("theatre", tierScopeValue);
-    fetch(`${apiBase}?${params.toString()}${companyQS}${horizonQS}`)
+    setLoading(true);
+    const qs = new URLSearchParams({ level: scopeLevel });
+    if (scopeLevel === "country") qs.set("country", scopeValue);
+    else if (scopeLevel === "region") qs.set("region", scopeValue);
+    else if (scopeLevel === "theatre") qs.set("theatre", scopeValue);
+    fetch(`${apiBase}?${qs.toString()}${companyQS}${horizonQS}`)
       .then((r) => r.json())
-      .then((data) => setTierBlock(data.tiers ?? null))
+      .then((data) => {
+        setSpecs(data.specialisations || []);
+        setTierBlock(data.tiers ?? null);
+      })
       .catch(() => {})
-      .finally(() => setTierLoading(false));
-  }, [isTiered, tierOpen, tierLevel, tierScopeValue, companyId, companyQS, horizonQS, apiBase]);
+      .finally(() => setLoading(false));
+  }, [scopeLevel, scopeValue, needsValue, scopeInitialised, companyId, companyQS, horizonQS, apiBase]);
 
   const viewStudents = async (
     trainingTitle: string,
@@ -256,9 +198,9 @@ export default function ProgramDetailPage() {
   };
 
   // APS-style flat export (Country / Region / Theatre / theatre-count Global).
-  const buildExportData = (specs: Specialisation[], levelLabel: string, filterValue: string) => {
+  const buildExportData = (specList: Specialisation[], levelLabel: string, filterValue: string) => {
     const rows: Record<string, string | number>[] = [];
-    for (const spec of specs) {
+    for (const spec of specList) {
       const emit = (req: Specialisation["requirements"][number], purpose: string) => {
         let trainingLabel = req.trainingFullTitle;
         if (req.alternatives && req.alternatives.length > 0) {
@@ -311,7 +253,7 @@ export default function ProgramDetailPage() {
   // Global Diamond-style export (global counts + per-theatre breakdown rows).
   const buildGlobalDiamondExport = () => {
     const rows: Record<string, string | number>[] = [];
-    for (const spec of globalSpecs) {
+    for (const spec of specs) {
       const emit = (req: Specialisation["requirements"][number], purpose: string) => {
         let trainingLabel = req.trainingFullTitle;
         if (req.alternatives && req.alternatives.length > 0) {
@@ -392,17 +334,23 @@ export default function ProgramDetailPage() {
   const sectionSlug = programName.replace(/[^a-z0-9]+/gi, "-").toLowerCase();
   const horizonSuffix = horizonMonths > 0 ? `-plus${horizonMonths}mo` : "";
 
-  const renderGlobalExport = (align: "left" | "right") =>
-    globalSpecs.length > 0 ? (
-      <ExportMenu
-        show={showExportGlobal}
-        setShow={setShowExportGlobal}
-        data={gdStyleGlobal ? buildGlobalDiamondExport() : buildExportData(globalSpecs, "Global", "Global")}
-        columns={gdStyleGlobal ? gdExportCols : exportCols}
-        filename={`${sectionSlug}-global${horizonSuffix}`}
-        align={align}
-      />
-    ) : null;
+  // Report presentation for the selected scope.
+  const REPORT_META: Record<ScopeLevel, { label: string; icon: ReactNode; unit: "people" | "theatres" }> = {
+    country: { label: "Country Report", icon: <MapPin size={20} className="text-blue-600" />, unit: "people" },
+    region: { label: "Region Report", icon: <Map size={20} className="text-teal-600" />, unit: "people" },
+    theatre: { label: "Theatre Report", icon: <Building2 size={20} className="text-purple-600" />, unit: "people" },
+    global: { label: "Global Report", icon: <Globe size={20} className="text-green-600" />, unit: "theatres" },
+  };
+  const report = REPORT_META[scopeLevel];
+  const reportTitle = needsValue && scopeValue ? `${report.label} — ${scopeValue}` : report.label;
+
+  const exportData = gdStyleGlobal && scopeLevel === "global"
+    ? buildGlobalDiamondExport()
+    : buildExportData(specs, report.label.replace(" Report", ""), needsValue ? scopeValue : "Global");
+  const exportColumns = gdStyleGlobal && scopeLevel === "global" ? gdExportCols : exportCols;
+  const exportFilename = `${sectionSlug}-${scopeLevel}${needsValue && scopeValue ? `-${scopeValue}` : ""}${horizonSuffix}`;
+
+  const noLevels = meta !== null && meta.levels.length === 0;
 
   return (
     <div>
@@ -434,7 +382,6 @@ export default function ProgramDetailPage() {
               <option value={6}>+6 months</option>
               <option value={12}>+12 months</option>
             </select>
-            {globalOnly && renderGlobalExport("right")}
           </div>
         }
       />
@@ -450,271 +397,107 @@ export default function ProgramDetailPage() {
         </div>
       )}
 
-      {meta && meta.levels.length === 0 && (
+      {noLevels && (
         <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-500">
           No compliance data configured for <strong>{programName}</strong>. Add requirements in{" "}
-          <a href="/admin/program-data" className="text-blue-600 hover:underline">Admin &rsaquo; Program Data</a>{" "}
+          <Link href="/admin/program-data" className="text-blue-600 hover:underline">Admin &rsaquo; Program Data</Link>{" "}
           using this program name.
         </div>
       )}
 
-      {/* Tier Status (tiered programs) */}
-      {isTiered && (
-        <section className="mb-6">
-          <button
-            onClick={() => setTierOpen((p) => !p)}
-            className="w-full flex items-center gap-2 p-4 bg-white rounded-lg border border-gray-200 hover:bg-gray-50"
-          >
-            {tierOpen ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
-            <Layers size={20} className="text-indigo-600" />
-            <span className="text-lg font-semibold">Tier Status</span>
-          </button>
-          {tierOpen && (
-            <div className="mt-2 bg-white rounded-lg border border-gray-200 p-4">
-              <div className="flex flex-wrap items-center gap-3 mb-4">
-                <select
-                  value={tierLevel}
-                  onChange={(e) => { setTierLevel(e.target.value); setTierScopeValue(""); }}
-                  className="px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
-                >
-                  {hasGlobal && <option value="global">Global</option>}
-                  {hasTheatre && <option value="theatre">By Theatre</option>}
-                  {hasCountry && <option value="country">By Country</option>}
-                </select>
-                {tierLevel === "country" && (
-                  <select
-                    value={tierScopeValue}
-                    onChange={(e) => setTierScopeValue(e.target.value)}
-                    className="px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm min-w-[200px]"
-                  >
-                    <option value="">Select a country...</option>
-                    {countries.map((c) => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                )}
-                {tierLevel === "theatre" && (
-                  <select
-                    value={tierScopeValue}
-                    onChange={(e) => setTierScopeValue(e.target.value)}
-                    className="px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm min-w-[200px]"
-                  >
-                    <option value="">Select a theatre...</option>
-                    {theatres.map((t) => <option key={t} value={t}>{t}</option>)}
-                  </select>
-                )}
-              </div>
-              {tierLoading ? (
-                <LoadingSpinner />
-              ) : tierNeedsScope ? (
-                <p className="text-sm text-gray-500">Select a {tierLevel} to view tier status.</p>
-              ) : !tierBlock ? (
-                <p className="text-sm text-gray-500">No tier data for this program.</p>
-              ) : (
-                <TierLadder block={tierBlock} />
-              )}
-            </div>
-          )}
-        </section>
-      )}
+      {meta && meta.levels.length > 0 && (
+        <>
+          {/* Page-level scope selector — drives both the tier status and report. */}
+          <div className="mb-6 flex flex-wrap items-center gap-3 bg-white rounded-lg border border-gray-200 p-4">
+            <label className="text-sm font-medium text-gray-700">View</label>
+            <select
+              value={scopeLevel}
+              onChange={(e) => changeScopeLevel(e.target.value as ScopeLevel)}
+              className="px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
+            >
+              {hasGlobal && <option value="global">Global</option>}
+              {hasTheatre && <option value="theatre">By Theatre</option>}
+              {hasCountry && <option value="region">By Region</option>}
+              {hasCountry && <option value="country">By Country</option>}
+            </select>
+            {needsValue && (
+              <select
+                value={scopeValue}
+                onChange={(e) => setScopeValue(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm min-w-[200px]"
+              >
+                <option value="">Select a {scopeLevel}...</option>
+                {scopeValues.map((v) => <option key={v} value={v}>{v}</option>)}
+              </select>
+            )}
+          </div>
 
-      {/* Country Report */}
-      {hasCountry && (
-        <section className="mb-6">
-          <button
-            onClick={() => setCountryOpen((p) => !p)}
-            className="w-full flex items-center gap-2 p-4 bg-white rounded-lg border border-gray-200 hover:bg-gray-50"
-          >
-            {countryOpen ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
-            <MapPin size={20} className="text-blue-600" />
-            <span className="text-lg font-semibold">Country Report</span>
-          </button>
-          {countryOpen && (
-            <div className="mt-2 bg-white rounded-lg border border-gray-200 p-4">
-              <div className="flex items-center gap-3 mb-4">
-                <select
-                  value={selectedCountry}
-                  onChange={(e) => setSelectedCountry(e.target.value)}
-                  className="px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm min-w-[200px]"
-                >
-                  <option value="">Select a country...</option>
-                  {countries.map((c) => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
-                </select>
-                {selectedCountry && countrySpecs.length > 0 && (
-                  <ExportMenu
-                    show={showExportCountry}
-                    setShow={setShowExportCountry}
-                    data={buildExportData(countrySpecs, "Country", selectedCountry)}
-                    columns={exportCols}
-                    filename={`${sectionSlug}-country-${selectedCountry}${horizonSuffix}`}
-                  />
+          {/* Tier Status (tiered programs) */}
+          {isTiered && (
+            <section className="mb-6">
+              <div className="flex items-center gap-2 p-4 bg-white rounded-lg border border-gray-200">
+                <Layers size={20} className="text-indigo-600" />
+                <span className="text-lg font-semibold">Tier Status</span>
+              </div>
+              <div className="mt-2 bg-white rounded-lg border border-gray-200 p-4">
+                {loading ? (
+                  <LoadingSpinner />
+                ) : scopeMissing ? (
+                  <p className="text-sm text-gray-500">Select a {scopeLevel} to view tier status.</p>
+                ) : !tierBlock ? (
+                  <p className="text-sm text-gray-500">No tier data for this program.</p>
+                ) : (
+                  <TierLadder block={tierBlock} />
                 )}
               </div>
-              {countryLoading ? (
-                <LoadingSpinner />
-              ) : !selectedCountry ? (
-                <p className="text-sm text-gray-500">Select a country to view compliance data.</p>
-              ) : countrySpecs.length === 0 ? (
-                <p className="text-sm text-gray-500">No country-level requirements found for this program.</p>
-              ) : (
-                <ComplianceTable
-                  specialisations={countrySpecs}
-                  level="country"
-                  filterValue={selectedCountry}
-                  onViewStudents={viewStudents}
-                  unitLabel="people"
+            </section>
+          )}
+
+          {/* Compliance report for the selected scope */}
+          <section className="mb-6">
+            <div className="flex items-center justify-between gap-3 p-4 bg-white rounded-lg border border-gray-200">
+              <div className="flex items-center gap-2">
+                {report.icon}
+                <span className="text-lg font-semibold">{reportTitle}</span>
+              </div>
+              {!scopeMissing && specs.length > 0 && (
+                <ExportMenu
+                  show={showExport}
+                  setShow={setShowExport}
+                  data={exportData}
+                  columns={exportColumns}
+                  filename={exportFilename}
+                  align="right"
                 />
               )}
             </div>
-          )}
-        </section>
-      )}
-
-      {/* Region Report (derived from country-level requirements) */}
-      {hasCountry && (
-        <section className="mb-6">
-          <button
-            onClick={() => setRegionOpen((p) => !p)}
-            className="w-full flex items-center gap-2 p-4 bg-white rounded-lg border border-gray-200 hover:bg-gray-50"
-          >
-            {regionOpen ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
-            <Map size={20} className="text-teal-600" />
-            <span className="text-lg font-semibold">Region Report</span>
-          </button>
-          {regionOpen && (
-            <div className="mt-2 bg-white rounded-lg border border-gray-200 p-4">
-              <div className="flex items-center gap-3 mb-4">
-                <select
-                  value={selectedRegion}
-                  onChange={(e) => setSelectedRegion(e.target.value)}
-                  className="px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm min-w-[200px]"
-                >
-                  <option value="">Select a region...</option>
-                  {regions.map((r) => (
-                    <option key={r} value={r}>{r}</option>
-                  ))}
-                </select>
-                {selectedRegion && regionSpecs.length > 0 && (
-                  <ExportMenu
-                    show={showExportRegion}
-                    setShow={setShowExportRegion}
-                    data={buildExportData(regionSpecs, "Region", selectedRegion)}
-                    columns={exportCols}
-                    filename={`${sectionSlug}-region-${selectedRegion}${horizonSuffix}`}
-                  />
-                )}
-              </div>
-              {regionLoading ? (
-                <LoadingSpinner />
-              ) : !selectedRegion ? (
-                <p className="text-sm text-gray-500">Select a region to view compliance data across all countries in that region.</p>
-              ) : regionSpecs.length === 0 ? (
-                <p className="text-sm text-gray-500">No country-level requirements found for this program.</p>
-              ) : (
-                <ComplianceTable
-                  specialisations={regionSpecs}
-                  level="region"
-                  filterValue={selectedRegion}
-                  onViewStudents={viewStudents}
-                  unitLabel="people"
-                />
-              )}
-            </div>
-          )}
-        </section>
-      )}
-
-      {/* Theatre Report */}
-      {hasTheatre && (
-        <section className="mb-6">
-          <button
-            onClick={() => setTheatreOpen((p) => !p)}
-            className="w-full flex items-center gap-2 p-4 bg-white rounded-lg border border-gray-200 hover:bg-gray-50"
-          >
-            {theatreOpen ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
-            <Building2 size={20} className="text-purple-600" />
-            <span className="text-lg font-semibold">Theatre Report</span>
-          </button>
-          {theatreOpen && (
-            <div className="mt-2 bg-white rounded-lg border border-gray-200 p-4">
-              <div className="flex items-center gap-3 mb-4">
-                <select
-                  value={selectedTheatre}
-                  onChange={(e) => setSelectedTheatre(e.target.value)}
-                  className="px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm min-w-[200px]"
-                >
-                  <option value="">Select a theatre...</option>
-                  {theatres.map((t) => (
-                    <option key={t} value={t}>{t}</option>
-                  ))}
-                </select>
-                {selectedTheatre && theatreSpecs.length > 0 && (
-                  <ExportMenu
-                    show={showExportTheatre}
-                    setShow={setShowExportTheatre}
-                    data={buildExportData(theatreSpecs, "Theatre", selectedTheatre)}
-                    columns={exportCols}
-                    filename={`${sectionSlug}-theatre-${selectedTheatre}${horizonSuffix}`}
-                  />
-                )}
-              </div>
-              {theatreLoading ? (
-                <LoadingSpinner />
-              ) : !selectedTheatre ? (
-                <p className="text-sm text-gray-500">Select a theatre to view compliance data.</p>
-              ) : theatreSpecs.length === 0 ? (
-                <p className="text-sm text-gray-500">No theatre-level requirements found for this program.</p>
-              ) : (
-                <ComplianceTable
-                  specialisations={theatreSpecs}
-                  level="theatre"
-                  filterValue={selectedTheatre}
-                  onViewStudents={viewStudents}
-                  unitLabel="people"
-                />
-              )}
-            </div>
-          )}
-        </section>
-      )}
-
-      {/* Global Report */}
-      {hasGlobal && (
-        <section className="mb-6">
-          <button
-            onClick={() => setGlobalOpen((p) => !p)}
-            className="w-full flex items-center gap-2 p-4 bg-white rounded-lg border border-gray-200 hover:bg-gray-50"
-          >
-            {globalOpen ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
-            <Globe size={20} className="text-green-600" />
-            <span className="text-lg font-semibold">Global Report</span>
-          </button>
-          {globalOpen && (
             <div className="mt-2">
-              {/* In a global-only view the export lives in the page header. */}
-              {!globalOnly && globalSpecs.length > 0 && (
-                <div className="flex items-center gap-3 mb-4">{renderGlobalExport("left")}</div>
-              )}
-              {globalLoading ? (
-                <LoadingSpinner />
-              ) : globalSpecs.length === 0 ? (
-                <p className="text-sm text-gray-500">No global-level requirements found for this program.</p>
-              ) : gdStyleGlobal ? (
-                globalSpecs.map((spec) => <SpecialisationCard key={spec.name} spec={spec} />)
+              {loading ? (
+                <div className="bg-white rounded-lg border border-gray-200 p-4"><LoadingSpinner /></div>
+              ) : scopeMissing ? (
+                <div className="bg-white rounded-lg border border-gray-200 p-4">
+                  <p className="text-sm text-gray-500">Select a {scopeLevel} to view compliance data.</p>
+                </div>
+              ) : specs.length === 0 ? (
+                <div className="bg-white rounded-lg border border-gray-200 p-4">
+                  <p className="text-sm text-gray-500">No {scopeLevel}-level requirements found for this program.</p>
+                </div>
+              ) : scopeLevel === "global" && gdStyleGlobal ? (
+                specs.map((spec) => <SpecialisationCard key={spec.name} spec={spec} />)
               ) : (
                 <div className="bg-white rounded-lg border border-gray-200 p-4">
                   <ComplianceTable
-                    specialisations={globalSpecs}
-                    level="global"
-                    filterValue=""
+                    specialisations={specs}
+                    level={scopeLevel}
+                    filterValue={needsValue ? scopeValue : ""}
                     onViewStudents={viewStudents}
-                    unitLabel="theatres"
+                    unitLabel={report.unit}
                   />
                 </div>
               )}
             </div>
-          )}
-        </section>
+          </section>
+        </>
       )}
 
       {/* Student Modal */}
