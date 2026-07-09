@@ -41,6 +41,7 @@ import {
   History,
   KeyRound,
   Award,
+  Info,
 } from "lucide-react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useTheme } from "@/components/theme/ThemeProvider";
@@ -405,6 +406,13 @@ export default function Sidebar() {
             >
               {theme === "dark" ? <Sun size={20} className="text-slate-400" /> : <Moon size={20} className="text-slate-400" />}
             </button>
+            <Link
+              href="/about"
+              className="p-1 rounded hover:bg-slate-700 transition-colors"
+              title="About"
+            >
+              <Info size={20} className="text-slate-400" />
+            </Link>
             <button
               onClick={logout}
               className="p-1 rounded hover:bg-slate-700 transition-colors"
@@ -441,6 +449,17 @@ export default function Sidebar() {
               {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
               <span>{theme === "dark" ? "Light Mode" : "Night Mode"}</span>
             </button>
+            <Link
+              href="/about"
+              className={`w-full flex items-center gap-2 px-2 py-1.5 text-sm rounded transition-colors ${
+                pathname === "/about"
+                  ? "bg-slate-700 text-white"
+                  : "text-slate-400 hover:text-white hover:bg-slate-700"
+              }`}
+            >
+              <Info size={16} />
+              <span>About</span>
+            </Link>
             <button
               onClick={logout}
               className="w-full flex items-center gap-2 px-2 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"

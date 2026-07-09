@@ -243,6 +243,10 @@ throttle. The attempt log is kept for 30 days and pruned automatically.
 
 Click **My Account** in the sidebar to view your profile and manage MFA settings.
 
+### About page
+
+Click **About** in the sidebar footer (between Night Mode and Sign out) to open the **About Training Tracker** page. It shows a short description of the application, the **current version** you're running, the developer credit, and quick links to the **release notes** and the **GitHub repository** (both open in a new tab).
+
 ### Multi-Factor Authentication (MFA)
 
 Any user can enable TOTP-based MFA from **My Account**. Click **Enable MFA**, scan the QR code with your authenticator app (Google Authenticator, Authy, Microsoft Authenticator, etc.), and enter the verification code. Once enabled, login requires a 6-digit code from your authenticator app. You can disable MFA from the same page (requires your password). Admins can also disable MFA for any user via **Admin > Users**.
