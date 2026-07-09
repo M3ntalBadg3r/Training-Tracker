@@ -6,6 +6,7 @@ import {
   setAuthCookie,
   verifyMfaToken,
   isRequestSecure,
+  DEFAULT_IDLE_MS,
 } from "@/lib/auth";
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 
@@ -55,13 +56,19 @@ export async function POST(request: NextRequest) {
   // If the session was locked by the pendingMfaEnrollment claim, re-issue a
   // normal cookie so the user can navigate the app immediately.
   if (authUser.pendingMfaEnrollment) {
-    const newToken = await createToken({
-      sub: updated.id,
-      username: updated.username,
-      role: updated.role,
-      displayName: updated.displayName,
-    });
-    setAuthCookie(response, newToken, isRequestSecure(request));
+    // Preserve the original login's absolute-cap anchor and idle window so
+    // completing enrolment doesn't reset the session clock.
+    const idleMs = authUser.idleMs ?? DEFAULT_IDLE_MS;
+    const newToken = await createToken(
+      {
+        sub: updated.id,
+        username: updated.username,
+        role: updated.role,
+        displayName: updated.displayName,
+      },
+      { idleMs, sessionStart: authUser.sessionStart }
+    );
+    setAuthCookie(response, newToken, isRequestSecure(request), idleMs / 1000);
   }
 
   return response;

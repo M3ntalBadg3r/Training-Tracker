@@ -1240,6 +1240,32 @@ const helpSections: Record<string, HelpSection> = {
           switching back and forth only changes how dates are parsed and shown going
           forward.
         </p>
+
+        <h3>Session Timeout</h3>
+        <p>
+          On the <strong>Session</strong> tab, set how long a signed-in user can be
+          <strong> inactive</strong> before they are automatically signed out (default
+          <strong> 30 minutes</strong>, adjustable between 5 minutes and 24 hours).
+        </p>
+        <ul>
+          <li>
+            A warning dialog with a live countdown appears about a minute before the
+            timeout, so an active user can click <strong>Stay signed in</strong> to
+            continue.
+          </li>
+          <li>
+            Ongoing activity keeps the session alive automatically &mdash; the timer
+            only counts genuine inactivity.
+          </li>
+          <li>
+            A fixed <strong>absolute cap</strong> (8 hours by default) still applies:
+            every session ends once it reaches the cap, even for a continuously-active
+            user, requiring a fresh sign-in.
+          </li>
+        </ul>
+        <p>
+          Changes take effect the next time a user signs in.
+        </p>
       </>
     ),
   },

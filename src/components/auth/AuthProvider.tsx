@@ -17,10 +17,18 @@ interface AuthUser {
   displayName: string;
 }
 
+interface SessionTiming {
+  // Idle window (ms) baked into the current session token.
+  idleMs: number;
+  // Absolute (hard) logout deadline, epoch ms.
+  sessionExpiresAt: number;
+}
+
 interface AuthContextType {
   user: AuthUser | null;
   isAdmin: boolean;
   loading: boolean;
+  session: SessionTiming | null;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
 }
@@ -29,6 +37,7 @@ const AuthContext = createContext<AuthContextType>({
   user: null,
   isAdmin: false,
   loading: true,
+  session: null,
   logout: async () => {},
   refreshUser: async () => {},
 });
@@ -41,6 +50,7 @@ const PUBLIC_PATHS = ["/login", "/setup"];
 
 export default function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
+  const [session, setSession] = useState<SessionTiming | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
   const pathname = usePathname();
@@ -53,11 +63,18 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
       if (res.ok) {
         const data = await res.json();
         setUser(data);
+        if (typeof data.idleMs === "number" && typeof data.sessionExpiresAt === "number") {
+          setSession({ idleMs: data.idleMs, sessionExpiresAt: data.sessionExpiresAt });
+        } else {
+          setSession(null);
+        }
       } else {
         setUser(null);
+        setSession(null);
       }
     } catch {
       setUser(null);
+      setSession(null);
     } finally {
       setLoading(false);
     }
@@ -74,6 +91,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(async () => {
     await fetch("/api/auth/logout", { method: "POST" });
     setUser(null);
+    setSession(null);
     router.push("/login");
   }, [router]);
 
@@ -83,6 +101,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
         user,
         isAdmin: user?.role === "Admin" || user?.role === "SuperAdmin",
         loading,
+        session,
         logout,
         refreshUser: fetchUser,
       }}

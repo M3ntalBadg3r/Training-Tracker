@@ -4,8 +4,9 @@ import { useState } from "react";
 import PageHeader from "@/components/layout/PageHeader";
 import DateFormatSection from "./DateFormatSection";
 import ImportAliasesSection from "./ImportAliasesSection";
+import SessionSection from "./SessionSection";
 
-type Tab = "dateFormat" | "importAliases";
+type Tab = "dateFormat" | "session" | "importAliases";
 
 export default function SystemSettingsPage() {
   const [tab, setTab] = useState<Tab>("dateFormat");
@@ -19,12 +20,21 @@ export default function SystemSettingsPage() {
           <TabButton active={tab === "dateFormat"} onClick={() => setTab("dateFormat")}>
             Date Format
           </TabButton>
+          <TabButton active={tab === "session"} onClick={() => setTab("session")}>
+            Session
+          </TabButton>
           <TabButton active={tab === "importAliases"} onClick={() => setTab("importAliases")}>
             Import Aliases
           </TabButton>
         </div>
 
-        {tab === "dateFormat" ? <DateFormatSection /> : <ImportAliasesSection />}
+        {tab === "dateFormat" ? (
+          <DateFormatSection />
+        ) : tab === "session" ? (
+          <SessionSection />
+        ) : (
+          <ImportAliasesSection />
+        )}
       </div>
     </div>
   );
