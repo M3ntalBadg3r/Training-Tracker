@@ -10,12 +10,14 @@ export async function GET(request: NextRequest) {
   }
 
   const type = request.nextUrl.searchParams.get("type");
-  if (!type || !["Certification", "Accreditation", "InstructorLedTraining"].includes(type)) {
+  // Certification/Accreditation/InstructorLedTraining are used by Programs; OLX
+  // is additionally offered to the Offerings requirement picker (OLX parents).
+  if (!type || !["Certification", "Accreditation", "InstructorLedTraining", "OLX"].includes(type)) {
     return NextResponse.json({ error: "Valid type parameter is required" }, { status: 400 });
   }
 
   const trainings = await prisma.trainingData.findMany({
-    where: { trainingType: type as "Certification" | "Accreditation" | "InstructorLedTraining" },
+    where: { trainingType: type as "Certification" | "Accreditation" | "InstructorLedTraining" | "OLX" },
     select: {
       trainingTitle: true,
       fullTitle: true,

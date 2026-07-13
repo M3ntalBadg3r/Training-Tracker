@@ -91,17 +91,45 @@ export async function generateBackupZip(): Promise<{
   buffer: ArrayBuffer;
   timestamp: string;
 }> {
-  const [productTypes, regionData, trainingData, students, trainingTaken, importMetadata, users, importAliases] =
-    await Promise.all([
-      prisma.productType.findMany({ orderBy: { id: "asc" } }),
-      prisma.regionData.findMany({ orderBy: { country: "asc" } }),
-      prisma.trainingData.findMany({ orderBy: { trainingTitle: "asc" } }),
-      prisma.student.findMany({ orderBy: { email: "asc" } }),
-      prisma.trainingTaken.findMany({ orderBy: { id: "asc" } }),
-      prisma.importMetadata.findMany(),
-      prisma.user.findMany({ orderBy: { id: "asc" } }),
-      prisma.importAlias.findMany({ orderBy: { id: "asc" } }),
-    ]);
+  const [
+    productTypes,
+    regionData,
+    trainingData,
+    students,
+    trainingTaken,
+    importMetadata,
+    users,
+    importAliases,
+    olxSubItemRelations,
+    programs,
+    programTiers,
+    specialisations,
+    programData,
+    programDataAlternatives,
+    offerings,
+    offeringSpecialisations,
+    offeringData,
+    offeringDataAlternatives,
+  ] = await Promise.all([
+    prisma.productType.findMany({ orderBy: { id: "asc" } }),
+    prisma.regionData.findMany({ orderBy: { country: "asc" } }),
+    prisma.trainingData.findMany({ orderBy: { trainingTitle: "asc" } }),
+    prisma.student.findMany({ orderBy: { email: "asc" } }),
+    prisma.trainingTaken.findMany({ orderBy: { id: "asc" } }),
+    prisma.importMetadata.findMany(),
+    prisma.user.findMany({ orderBy: { id: "asc" } }),
+    prisma.importAlias.findMany({ orderBy: { id: "asc" } }),
+    prisma.olxSubItemRelation.findMany({ orderBy: [{ parentTrainingTitle: "asc" }, { subItemTrainingTitle: "asc" }] }),
+    prisma.program.findMany({ orderBy: { id: "asc" } }),
+    prisma.programTier.findMany({ orderBy: { id: "asc" } }),
+    prisma.specialisation.findMany({ orderBy: { id: "asc" } }),
+    prisma.programData.findMany({ orderBy: { id: "asc" } }),
+    prisma.programDataAlternative.findMany({ orderBy: { id: "asc" } }),
+    prisma.offering.findMany({ orderBy: { id: "asc" } }),
+    prisma.offeringSpecialisation.findMany({ orderBy: [{ offeringName: "asc" }, { specialisationId: "asc" }] }),
+    prisma.offeringData.findMany({ orderBy: { id: "asc" } }),
+    prisma.offeringDataAlternative.findMany({ orderBy: { id: "asc" } }),
+  ]);
 
   const zip = new JSZip();
   zip.file(
@@ -123,6 +151,18 @@ export async function generateBackupZip(): Promise<{
   zip.file("training_taken.json", JSON.stringify(trainingTaken, null, 2));
   zip.file("import_metadata.json", JSON.stringify(importMetadata, null, 2));
   zip.file("import_aliases.json", JSON.stringify(importAliases, null, 2));
+  // Reference/config tables (Programs + Offerings) are included in full backups
+  // too, so a full restore rebuilds them (see restoreReferenceData).
+  zip.file("olx_sub_item_relations.json", JSON.stringify(olxSubItemRelations, null, 2));
+  zip.file("programs.json", JSON.stringify(programs, null, 2));
+  zip.file("program_tiers.json", JSON.stringify(programTiers, null, 2));
+  zip.file("specialisations.json", JSON.stringify(specialisations, null, 2));
+  zip.file("program_data.json", JSON.stringify(programData, null, 2));
+  zip.file("program_data_alternatives.json", JSON.stringify(programDataAlternatives, null, 2));
+  zip.file("offerings.json", JSON.stringify(offerings, null, 2));
+  zip.file("offering_specialisations.json", JSON.stringify(offeringSpecialisations, null, 2));
+  zip.file("offering_data.json", JSON.stringify(offeringData, null, 2));
+  zip.file("offering_data_alternatives.json", JSON.stringify(offeringDataAlternatives, null, 2));
   // Exclude sensitive fields (password hashes, MFA secrets) from backup
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const safeUsers = users.map(({ passwordHash: _ph, mfaSecret: _ms, ...rest }: typeof users[number]) => rest);
@@ -154,6 +194,10 @@ export async function generateConfigZip(): Promise<{
     specialisations,
     programData,
     programDataAlternatives,
+    offerings,
+    offeringSpecialisations,
+    offeringData,
+    offeringDataAlternatives,
     importAliases,
     systemSetting,
   ] = await Promise.all([
@@ -166,6 +210,10 @@ export async function generateConfigZip(): Promise<{
     prisma.specialisation.findMany({ orderBy: { id: "asc" } }),
     prisma.programData.findMany({ orderBy: { id: "asc" } }),
     prisma.programDataAlternative.findMany({ orderBy: { id: "asc" } }),
+    prisma.offering.findMany({ orderBy: { id: "asc" } }),
+    prisma.offeringSpecialisation.findMany({ orderBy: [{ offeringName: "asc" }, { specialisationId: "asc" }] }),
+    prisma.offeringData.findMany({ orderBy: { id: "asc" } }),
+    prisma.offeringDataAlternative.findMany({ orderBy: { id: "asc" } }),
     prisma.importAlias.findMany({ orderBy: { id: "asc" } }),
     prisma.systemSetting.findUnique({ where: { id: 1 } }),
   ]);
@@ -192,6 +240,10 @@ export async function generateConfigZip(): Promise<{
   zip.file("specialisations.json", JSON.stringify(specialisations, null, 2));
   zip.file("program_data.json", JSON.stringify(programData, null, 2));
   zip.file("program_data_alternatives.json", JSON.stringify(programDataAlternatives, null, 2));
+  zip.file("offerings.json", JSON.stringify(offerings, null, 2));
+  zip.file("offering_specialisations.json", JSON.stringify(offeringSpecialisations, null, 2));
+  zip.file("offering_data.json", JSON.stringify(offeringData, null, 2));
+  zip.file("offering_data_alternatives.json", JSON.stringify(offeringDataAlternatives, null, 2));
   zip.file("import_aliases.json", JSON.stringify(importAliases, null, 2));
   zip.file("system_setting.json", JSON.stringify(systemSetting, null, 2));
 
@@ -343,6 +395,10 @@ export async function POST(request: NextRequest) {
     ? await readJson("import_aliases.json")
     : [];
 
+  // Reference/config tables (Programs + Offerings) — present in newer full
+  // backups only; older archives leave these untouched.
+  const referenceArchive = await readReferenceArchive(zip);
+
   // Restore inside a transaction: wipe then re-insert in FK order
   await prisma.$transaction(async (tx: PrismaTransactionClient) => {
     await tx.trainingTaken.deleteMany({});
@@ -363,6 +419,9 @@ export async function POST(request: NextRequest) {
     if (trainingData.length > 0) {
       await tx.trainingData.createMany({ data: trainingData });
     }
+    // Rebuild Programs + Offerings reference data (after TrainingData exists as
+    // an FK target). No-op for older archives that predate these files.
+    await restoreReferenceData(tx, referenceArchive);
     if (students.length > 0) {
       await tx.student.createMany({ data: students });
     }
@@ -441,6 +500,9 @@ export async function POST(request: NextRequest) {
       importMetadata: importMetadata.length,
       users: users.length,
       importAliases: importAliases.length,
+      programData: referenceArchive.programData.length,
+      offerings: referenceArchive.offerings.length,
+      offeringData: referenceArchive.offeringData.length,
     },
   });
 }
@@ -507,6 +569,12 @@ async function restoreConfigArchive(zip: JSZip): Promise<NextResponse> {
   type ProgramDataRow = any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   type ProgramDataAlternativeRow = any;
+  type OfferingRow = { id: number; name: string; description: string | null; link: string | null; createdAt?: string };
+  type OfferingSpecialisationRow = { offeringName: string; specialisationId: number };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  type OfferingDataRow = any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  type OfferingDataAlternativeRow = any;
   type ImportAliasRow = { id: number; targetField: string; alias: string; createdAt: string };
   type SystemSettingRow = { id: number; dateFormat: string; updatedAt: string; updatedById: number | null } | null;
 
@@ -521,6 +589,15 @@ async function restoreConfigArchive(zip: JSZip): Promise<NextResponse> {
   const archiveProgramData = await readJson<ProgramDataRow[]>("program_data.json");
   const archiveProgramDataAlternatives = await readJson<ProgramDataAlternativeRow[]>(
     "program_data_alternatives.json"
+  );
+  // Offering files are optional — older config archives predate offerings.
+  const archiveOfferings = await readJson<OfferingRow[]>("offerings.json");
+  const archiveOfferingSpecialisations = await readJson<OfferingSpecialisationRow[]>(
+    "offering_specialisations.json"
+  );
+  const archiveOfferingData = await readJson<OfferingDataRow[]>("offering_data.json");
+  const archiveOfferingDataAlternatives = await readJson<OfferingDataAlternativeRow[]>(
+    "offering_data_alternatives.json"
   );
   const archiveImportAliases = await readJson<ImportAliasRow[]>("import_aliases.json");
   const systemSettingFile = zip.file("system_setting.json");
@@ -544,6 +621,12 @@ async function restoreConfigArchive(zip: JSZip): Promise<NextResponse> {
       await tx.programData.deleteMany({});
       await tx.programTier.deleteMany({});
       await tx.program.deleteMany({});
+      // Offerings — child-first; offering_data → specialisations is ON DELETE
+      // RESTRICT, so clear them before specialisation.deleteMany below.
+      await tx.offeringDataAlternative.deleteMany({});
+      await tx.offeringData.deleteMany({});
+      await tx.offeringSpecialisation.deleteMany({});
+      await tx.offering.deleteMany({});
       await tx.specialisation.deleteMany({});
       await tx.olxSubItemRelation.deleteMany({});
       await tx.importAlias.deleteMany({});
@@ -685,6 +768,55 @@ async function restoreConfigArchive(zip: JSZip): Promise<NextResponse> {
         });
       }
 
+      // 6c. Re-insert Offerings (parent first) then their specialisation links,
+      //     requirements and alternatives, with explicit ids preserved so the
+      //     internal FKs match the archive. Specialisation + TrainingData already
+      //     exist by now (steps 4 + 6b).
+      if (archiveOfferings.length > 0) {
+        await tx.offering.createMany({
+          data: archiveOfferings.map((o) => ({
+            id: o.id,
+            name: o.name,
+            description: o.description ?? null,
+            link: o.link ?? null,
+            createdAt: o.createdAt ? new Date(o.createdAt) : new Date(),
+          })),
+        });
+      }
+      if (archiveOfferingSpecialisations.length > 0) {
+        await tx.offeringSpecialisation.createMany({
+          data: archiveOfferingSpecialisations.map((s) => ({
+            offeringName: s.offeringName,
+            specialisationId: s.specialisationId,
+          })),
+          skipDuplicates: true,
+        });
+      }
+      if (archiveOfferingData.length > 0) {
+        await tx.offeringData.createMany({
+          data: archiveOfferingData.map((o) => ({
+            id: o.id,
+            offeringName: o.offeringName,
+            specialisationId: o.specialisationId,
+            trainingType: o.trainingType ?? null,
+            trainingTitle: o.trainingTitle ?? null,
+            quantityRequired: o.quantityRequired,
+            createdAt: o.createdAt ? new Date(o.createdAt) : new Date(),
+            updatedAt: o.updatedAt ? new Date(o.updatedAt) : new Date(),
+          })),
+        });
+      }
+      if (archiveOfferingDataAlternatives.length > 0) {
+        await tx.offeringDataAlternative.createMany({
+          data: archiveOfferingDataAlternatives.map((a) => ({
+            id: a.id,
+            offeringDataId: a.offeringDataId,
+            trainingType: a.trainingType,
+            trainingTitle: a.trainingTitle,
+          })),
+        });
+      }
+
       // 7. Reset autoincrement sequences for the tables we inserted with
       //    explicit ids, otherwise the next admin-created row will collide.
       const resetSequence = async (table: string) => {
@@ -697,6 +829,9 @@ async function restoreConfigArchive(zip: JSZip): Promise<NextResponse> {
       await resetSequence("specialisations");
       await resetSequence("program_data");
       await resetSequence("program_data_alternatives");
+      await resetSequence("offerings");
+      await resetSequence("offering_data");
+      await resetSequence("offering_data_alternatives");
       await resetSequence("product_types");
 
       // 8. Re-insert ImportAliases (id stripped so Postgres assigns fresh ones).
@@ -746,8 +881,217 @@ async function restoreConfigArchive(zip: JSZip): Promise<NextResponse> {
       specialisations: archiveSpecialisations.length,
       programData: archiveProgramData.length,
       programDataAlternatives: archiveProgramDataAlternatives.length,
+      offerings: archiveOfferings.length,
+      offeringData: archiveOfferingData.length,
       importAliases: archiveImportAliases.length,
       systemSetting: archiveSystemSetting ? 1 : 0,
     },
   });
+}
+
+/**
+ * Reference/config data (Programs + Offerings + Specialisations + OLX relations)
+ * parsed from a FULL backup archive. Full backups now carry these tables so a
+ * full restore rebuilds them. Older full backups predate the files — `present`
+ * is false then, and {@link restoreReferenceData} leaves the tables untouched
+ * (matching the historical behaviour where full restore never touched them).
+ */
+export interface ReferenceArchive {
+  present: boolean;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  olxRelations: any[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  programs: any[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  programTiers: any[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  specialisations: any[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  programData: any[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  programDataAlternatives: any[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  offerings: any[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  offeringSpecialisations: any[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  offeringData: any[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  offeringDataAlternatives: any[];
+}
+
+/** Read the reference/config tables from a full backup zip (all optional). */
+export async function readReferenceArchive(zip: JSZip): Promise<ReferenceArchive> {
+  const read = async (name: string) => {
+    const f = zip.file(name);
+    if (!f) return [];
+    return JSON.parse(await f.async("string"));
+  };
+  const present = !!(
+    zip.file("programs.json") ||
+    zip.file("offerings.json") ||
+    zip.file("specialisations.json")
+  );
+  return {
+    present,
+    olxRelations: await read("olx_sub_item_relations.json"),
+    programs: await read("programs.json"),
+    programTiers: await read("program_tiers.json"),
+    specialisations: await read("specialisations.json"),
+    programData: await read("program_data.json"),
+    programDataAlternatives: await read("program_data_alternatives.json"),
+    offerings: await read("offerings.json"),
+    offeringSpecialisations: await read("offering_specialisations.json"),
+    offeringData: await read("offering_data.json"),
+    offeringDataAlternatives: await read("offering_data_alternatives.json"),
+  };
+}
+
+/**
+ * Rebuild the reference/config tables inside a full-restore transaction. Must be
+ * called AFTER TrainingData has been (re)inserted, since program/offering
+ * requirements and OLX relations FK to training_data. No-op when the archive
+ * predates these files, so old full backups restore exactly as before.
+ */
+export async function restoreReferenceData(
+  tx: PrismaTransactionClient,
+  a: ReferenceArchive
+): Promise<void> {
+  if (!a.present) return;
+
+  // Wipe child-first (offering_data / program_data → specialisations is
+  // ON DELETE RESTRICT, so specialisations clear last).
+  await tx.programDataAlternative.deleteMany({});
+  await tx.programData.deleteMany({});
+  await tx.programTier.deleteMany({});
+  await tx.program.deleteMany({});
+  await tx.offeringDataAlternative.deleteMany({});
+  await tx.offeringData.deleteMany({});
+  await tx.offeringSpecialisation.deleteMany({});
+  await tx.offering.deleteMany({});
+  await tx.specialisation.deleteMany({});
+  await tx.olxSubItemRelation.deleteMany({});
+
+  // Insert parent-first. Explicit ids preserved so internal FKs line up.
+  if (a.olxRelations.length > 0) {
+    await tx.olxSubItemRelation.createMany({
+      data: a.olxRelations.map((r) => ({
+        parentTrainingTitle: r.parentTrainingTitle,
+        subItemTrainingTitle: r.subItemTrainingTitle,
+      })),
+      skipDuplicates: true,
+    });
+  }
+  if (a.specialisations.length > 0) {
+    await tx.specialisation.createMany({ data: a.specialisations.map((s) => ({ id: s.id, name: s.name })) });
+  }
+  if (a.programs.length > 0) {
+    await tx.program.createMany({
+      data: a.programs.map((p) => ({
+        id: p.id,
+        name: p.name,
+        isTiered: p.isTiered ?? false,
+        deploymentMode: p.deploymentMode ?? "flat",
+        createdAt: p.createdAt ? new Date(p.createdAt) : new Date(),
+      })),
+    });
+  }
+  if (a.programTiers.length > 0) {
+    await tx.programTier.createMany({
+      data: a.programTiers.map((t) => ({
+        id: t.id,
+        programName: t.programName,
+        name: t.name,
+        sortOrder: t.sortOrder,
+        specialisationsRequired: t.specialisationsRequired,
+      })),
+    });
+  }
+  if (a.programData.length > 0) {
+    await tx.programData.createMany({
+      data: a.programData.map((p) => ({
+        id: p.id,
+        programName: p.programName,
+        specialisationId: p.specialisationId ?? null,
+        tierId: p.tierId ?? null,
+        purpose: p.purpose ?? "qualification",
+        level: p.level,
+        trainingType: p.trainingType ?? null,
+        trainingTitle: p.trainingTitle ?? null,
+        quantityRequired: p.quantityRequired,
+        minimumPerTheatre: p.minimumPerTheatre ?? null,
+        createdAt: p.createdAt ? new Date(p.createdAt) : new Date(),
+        updatedAt: p.updatedAt ? new Date(p.updatedAt) : new Date(),
+      })),
+    });
+  }
+  if (a.programDataAlternatives.length > 0) {
+    await tx.programDataAlternative.createMany({
+      data: a.programDataAlternatives.map((x) => ({
+        id: x.id,
+        programDataId: x.programDataId,
+        trainingType: x.trainingType,
+        trainingTitle: x.trainingTitle,
+      })),
+    });
+  }
+  if (a.offerings.length > 0) {
+    await tx.offering.createMany({
+      data: a.offerings.map((o) => ({
+        id: o.id,
+        name: o.name,
+        description: o.description ?? null,
+        link: o.link ?? null,
+        createdAt: o.createdAt ? new Date(o.createdAt) : new Date(),
+      })),
+    });
+  }
+  if (a.offeringSpecialisations.length > 0) {
+    await tx.offeringSpecialisation.createMany({
+      data: a.offeringSpecialisations.map((s) => ({
+        offeringName: s.offeringName,
+        specialisationId: s.specialisationId,
+      })),
+      skipDuplicates: true,
+    });
+  }
+  if (a.offeringData.length > 0) {
+    await tx.offeringData.createMany({
+      data: a.offeringData.map((o) => ({
+        id: o.id,
+        offeringName: o.offeringName,
+        specialisationId: o.specialisationId,
+        trainingType: o.trainingType ?? null,
+        trainingTitle: o.trainingTitle ?? null,
+        quantityRequired: o.quantityRequired,
+        createdAt: o.createdAt ? new Date(o.createdAt) : new Date(),
+        updatedAt: o.updatedAt ? new Date(o.updatedAt) : new Date(),
+      })),
+    });
+  }
+  if (a.offeringDataAlternatives.length > 0) {
+    await tx.offeringDataAlternative.createMany({
+      data: a.offeringDataAlternatives.map((x) => ({
+        id: x.id,
+        offeringDataId: x.offeringDataId,
+        trainingType: x.trainingType,
+        trainingTitle: x.trainingTitle,
+      })),
+    });
+  }
+
+  // Reset autoincrement sequences for tables inserted with explicit ids.
+  const resetSequence = async (table: string) => {
+    await tx.$executeRawUnsafe(
+      `SELECT setval(pg_get_serial_sequence('"${table}"', 'id'), COALESCE((SELECT MAX(id) FROM "${table}"), 1))`
+    );
+  };
+  await resetSequence("programs");
+  await resetSequence("program_tiers");
+  await resetSequence("specialisations");
+  await resetSequence("program_data");
+  await resetSequence("program_data_alternatives");
+  await resetSequence("offerings");
+  await resetSequence("offering_data");
+  await resetSequence("offering_data_alternatives");
 }

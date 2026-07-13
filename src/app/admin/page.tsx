@@ -18,6 +18,7 @@ import {
   SlidersHorizontal,
   KeyRound,
   Award,
+  Package,
 } from "lucide-react";
 import { useAuth } from "@/components/auth/AuthProvider";
 
@@ -35,6 +36,7 @@ const ADMIN_CARDS: AdminCard[] = [
   { href: "/admin/users", title: "User Management", description: "Manage user accounts, roles, and MFA", icon: Users, superAdminOnly: true },
   { href: "/admin/companies", title: "Companies", description: "Add, rename, and delete companies", icon: Building2, superAdminOnly: true },
   { href: "/admin/program-data", title: "Program Data", description: "Manage partner program compliance requirements", icon: ClipboardList, superAdminOnly: true },
+  { href: "/admin/offerings", title: "Offerings", description: "Manage joint product offerings and their supporting trainings", icon: Package, superAdminOnly: true },
   { href: "/admin/training-data", title: "Training Data", description: "Manage training programs", icon: BookOpen, superAdminOnly: true },
   { href: "/admin/product-types", title: "Product Types", description: "Manage the product type list", icon: Tag, superAdminOnly: true },
   { href: "/admin/specialisations", title: "Specialisations", description: "Manage partner program specialisations", icon: Award, superAdminOnly: true },

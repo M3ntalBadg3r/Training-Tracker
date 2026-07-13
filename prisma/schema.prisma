@@ -93,6 +93,8 @@ model TrainingData {
   trainingsTaken          TrainingTaken[]
   programData             ProgramData[]
   programDataAlternatives ProgramDataAlternative[]
+  offeringData            OfferingData[]
+  offeringDataAlternatives OfferingDataAlternative[]
 
   // OLX parent ↔ sub-item membership (many-to-many).
   // `parentMemberships` are rows where THIS training is a sub-item that belongs
@@ -200,7 +202,9 @@ model Specialisation {
   id   Int    @id @default(autoincrement())
   name String @unique
 
-  programData ProgramData[]
+  programData             ProgramData[]
+  offeringData            OfferingData[]
+  offeringSpecialisations OfferingSpecialisation[]
 
   @@map("specialisations")
 }
@@ -244,6 +248,71 @@ model ProgramDataAlternative {
   trainingData TrainingData @relation(fields: [trainingTitle], references: [trainingTitle], onDelete: Cascade)
 
   @@map("program_data_alternatives")
+}
+
+// ---------------------------------------------------------------------------
+// Offerings — a partner's ability to deliver a joint product offering. Mirrors
+// the Program feature (join on the string natural key Offering.name) but is
+// simpler: no tiers, no ProgramLevel, no deployment purpose. Each requirement
+// belongs to a specialisation; the viewer splits every count into Onshore (a
+// selected country/region) and Offshore (the rest of that theatre).
+// ---------------------------------------------------------------------------
+model Offering {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique
+  description String?
+  link        String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  specialisations OfferingSpecialisation[]
+  offeringData    OfferingData[]
+
+  @@map("offerings")
+}
+
+// Persists a "selected but possibly empty" specialisation on an offering, so a
+// specialisation section renders on the detail page before any trainings are
+// added (unlike Programs, which derive specialisations from requirement rows).
+model OfferingSpecialisation {
+  offeringName     String @map("offering_name")
+  specialisationId Int    @map("specialisation_id")
+
+  offering       Offering       @relation(fields: [offeringName], references: [name], onDelete: Cascade, onUpdate: Cascade)
+  specialisation Specialisation @relation(fields: [specialisationId], references: [id], onDelete: Cascade)
+
+  @@id([offeringName, specialisationId])
+  @@map("offering_specialisations")
+}
+
+model OfferingData {
+  id               Int           @id @default(autoincrement())
+  offeringName     String        @map("offering_name")
+  specialisationId Int           @map("specialisation_id")
+  trainingType     TrainingType? @map("training_type")
+  trainingTitle    String?       @map("training_title")
+  quantityRequired Int           @map("quantity_required")
+  createdAt        DateTime      @default(now()) @map("created_at")
+  updatedAt        DateTime      @updatedAt @map("updated_at")
+
+  offering       Offering       @relation(fields: [offeringName], references: [name], onDelete: Cascade, onUpdate: Cascade)
+  specialisation Specialisation @relation(fields: [specialisationId], references: [id])
+  trainingData   TrainingData?  @relation(fields: [trainingTitle], references: [trainingTitle], onDelete: Cascade)
+  alternatives   OfferingDataAlternative[]
+
+  @@index([offeringName])
+  @@map("offering_data")
+}
+
+model OfferingDataAlternative {
+  id             Int          @id @default(autoincrement())
+  offeringDataId Int          @map("offering_data_id")
+  trainingType   TrainingType @map("training_type")
+  trainingTitle  String       @map("training_title")
+
+  offeringData OfferingData @relation(fields: [offeringDataId], references: [id], onDelete: Cascade)
+  trainingData TrainingData @relation(fields: [trainingTitle], references: [trainingTitle], onDelete: Cascade)
+
+  @@map("offering_data_alternatives")
 }
 
 model User {

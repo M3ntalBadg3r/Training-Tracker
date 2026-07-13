@@ -32,6 +32,7 @@ Built with Next.js, React, PostgreSQL, and Prisma.
   - [API Keys](#public-api)
 - [Public API](#public-api)
 - [Partner Programs](#partner-programs)
+- [Offerings](#offerings)
 - [Data Model](#data-model)
 - [Exporting Data](#exporting-data)
 
@@ -952,11 +953,14 @@ curl -H "Authorization: Bearer tt_live_xxxxxxxx" \
 | `GET /api/public/v1/students` | Student roster (name, email, theatre, country, company) |
 | `GET /api/public/v1/training-records` | Per-completion training records (latest per learner & training) |
 | `GET /api/public/v1/reports/{reportType}` | Report aggregates — `trained-not-certified`, `legacy-gap`, `learner-scorecard`, `by-product`, `by-function`, `expiring-soon`, `currently-expired`, `last-12-months` |
+| `GET /api/public/v1/offerings` | Offering definitions (specialisations + supporting trainings). Add `?country=` or `?region=` for Onshore/Offshore compliance figures; `?name=` for one offering |
+| `GET /api/public/v1/programs` | Partner program list (configured levels, per-theatre-minimum flag, tiered flag) |
+| `GET /api/public/v1/programs/{programName}` | Per-program compliance. `?level=country\|region\|theatre\|global` with `?country=`/`?region=`/`?theatre=`; `?horizonMonths=3\|6\|12` for a forward-looking projection; `?trainingTitle=&students=true` for the holder roster |
 
 All endpoints accept an optional `?companyId=` to narrow to a single granted
 company; `training-records` also accepts `?theatre=`, `?region=`, `?country=`,
 and `?activeOnly=true`. A request for a company the key cannot read returns no
-rows.
+rows (program compliance figures are scoped to the key's companies the same way).
 
 ### Security
 
@@ -1006,6 +1010,51 @@ A **Compliance as of** selector in the dashboard header lets you look ahead and 
 - Attained figures display as **current → projected** (e.g. `5 → 3`), with a **▼N expiring** note showing how many people lose a qualifying certificate within the window.
 - Requirements (and theatres) that are compliant today but will fall below their requirement by the chosen horizon are shaded **amber** with an **At Risk** status — an early warning to schedule renewals before compliance breaks. Green stays compliant through the horizon; red is already non-compliant today.
 - Section exports gain **Projected**, **Expiring**, and **Projected Compliant** columns reflecting the selected horizon, and the file name carries a `-plusNmo` suffix.
+
+---
+
+## Offerings
+
+**Offerings** track a partner's ability to deliver a **joint product offering** —
+for example, "Network Security Modernization" might require capability across
+several specialisations such as cloud security, browser security and next-gen
+firewall. Each offering bundles one or more **specialisations** (the same list as
+**Admin > Specialisations**), and each specialisation lists the supporting
+trainings (Certifications, Accreditations, ILTs, OLXs) needed to deliver it —
+with **alternatives** (any one counts) and a **minimum required** number.
+
+Offerings appear in their own **Offerings** section in the sidebar (one child
+link per offering, generated automatically) with a dashboard at
+`/offerings/[name]`.
+
+### Configuring offerings
+
+Under **Admin > Offerings** (SuperAdmin):
+
+- **New Offering** — enter a name, description, link and pick the specialisations
+  it covers.
+- On the offering's editor page, for each specialisation add the supporting
+  trainings (type + training + a minimum count + optional alternatives).
+- **Import / Export** — round-trip the whole structure as CSV/Excel (with a
+  downloadable template and a dry-run validation preview). Import is a
+  per-offering overwrite.
+
+### Viewing an offering — Onshore & Offshore
+
+Open an offering and choose a **Country** or **Region**. Nothing is shown until
+you make a selection. For each specialisation you then see, per required
+training:
+
+| Column | Meaning |
+| --- | --- |
+| **Onshore** | Distinct people holding the training in the selected country (or the region's countries), shown as `attained / required` with a **Met / Not met** badge. |
+| **Offshore** | The rest of that country/region's **theatre** — every other country in the theatre, with the onshore countries removed. This is the wider capability available to support delivery, and is informational (it doesn't change the Met status). |
+
+Figures are scoped to the company selected in the header. Click **View** on any
+count to list the people behind it, and use **Export** for the current view.
+Offerings are included in both full and config backups, and are queryable via the
+public API (`GET /api/public/v1/offerings`, with optional `?country=`/`?region=`
+for compliance figures).
 
 ---
 

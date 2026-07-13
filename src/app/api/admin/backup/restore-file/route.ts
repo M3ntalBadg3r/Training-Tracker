@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma, { type PrismaTransactionClient } from "@/lib/prisma";
 import JSZip from "jszip";
 import { requireSuperAdmin, handleAuthError } from "@/lib/auth";
-import { loadBackupArchive } from "../route";
+import { loadBackupArchive, readReferenceArchive, restoreReferenceData } from "../route";
 import { prepareBackupRestore } from "@/lib/product-types";
 import path from "path";
 import fs from "fs";
@@ -103,6 +103,9 @@ export async function POST(request: NextRequest) {
       ? await readJson("import_aliases.json")
       : [];
 
+    // Reference/config tables (Programs + Offerings) — newer archives only.
+    const referenceArchive = await readReferenceArchive(zip);
+
     await prisma.$transaction(async (tx: PrismaTransactionClient) => {
       await tx.trainingTaken.deleteMany({});
       await tx.student.deleteMany({});
@@ -122,6 +125,8 @@ export async function POST(request: NextRequest) {
       if (trainingData.length > 0) {
         await tx.trainingData.createMany({ data: trainingData });
       }
+      // Rebuild Programs + Offerings reference data (after TrainingData exists).
+      await restoreReferenceData(tx, referenceArchive);
       if (students.length > 0) {
         await tx.student.createMany({ data: students });
       }
@@ -194,6 +199,9 @@ export async function POST(request: NextRequest) {
         importMetadata: importMetadata.length,
         users: users.length,
         importAliases: importAliases.length,
+        programData: referenceArchive.programData.length,
+        offerings: referenceArchive.offerings.length,
+        offeringData: referenceArchive.offeringData.length,
       },
     });
   } catch (err) {

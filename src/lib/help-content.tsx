@@ -629,6 +629,32 @@ const helpSections: Record<string, HelpSection> = {
     ),
   },
 
+  offerings: {
+    title: "Offerings",
+    content: (
+      <>
+        <p>
+          <strong>Offerings</strong> track a partner&apos;s ability to deliver a
+          joint product offering. Each offering bundles one or more{" "}
+          <strong>specialisations</strong>, and each specialisation lists the
+          supporting trainings (Certifications, Accreditations, ILTs, OLXs) — with
+          alternatives and a minimum required count — needed to deliver it.
+        </p>
+        <ul>
+          <li>Pick a <strong>Country</strong> or <strong>Region</strong> to see capability. Nothing is shown until you make a selection.</li>
+          <li><strong>Onshore</strong> counts the distinct people who hold each training in the selected country (or the region&apos;s countries). A <strong>Met / Not met</strong> badge compares the Onshore count against the minimum required.</li>
+          <li><strong>Offshore</strong> counts the rest of that country/region&apos;s <strong>theatre</strong>, with the onshore countries removed — the wider capability available to support delivery. Offshore is informational and doesn&apos;t change the Met status.</li>
+          <li>Figures are scoped to the company selected in the header. Use <strong>Export</strong> for the current view, and click <strong>View</strong> on any count to list the people behind it.</li>
+        </ul>
+        <p className="text-sm text-gray-500">
+          Offerings are configured under <strong>Admin &gt; Offerings</strong>
+          (create, edit, import/export). They are included in both full and
+          config backups.
+        </p>
+      </>
+    ),
+  },
+
   admin: {
     title: "Admin",
     content: (
@@ -2076,6 +2102,8 @@ const helpSections: Record<string, HelpSection> = {
             <tr><td><code>GET /api/public/v1/students</code></td><td>Student roster for the key&rsquo;s companies.</td></tr>
             <tr><td><code>GET /api/public/v1/training-records</code></td><td>Per-completion training records (latest per learner &amp; training).</td></tr>
             <tr><td><code>GET /api/public/v1/reports/&#123;type&#125;</code></td><td>Report aggregates (e.g. <code>expiring-soon</code>, <code>legacy-gap</code>, <code>learner-scorecard</code>).</td></tr>
+            <tr><td><code>GET /api/public/v1/programs</code></td><td>Partner program list (levels, per-theatre-minimum flag, tiered flag).</td></tr>
+            <tr><td><code>GET /api/public/v1/programs/&#123;name&#125;</code></td><td>Per-program compliance — <code>?level=</code>, <code>?horizonMonths=</code>, and <code>?trainingTitle=&amp;students=true</code> for the holder roster.</td></tr>
           </tbody>
         </table>
         <p>
