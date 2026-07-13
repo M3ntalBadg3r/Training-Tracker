@@ -42,6 +42,7 @@ import {
   KeyRound,
   Award,
   Info,
+  Package,
 } from "lucide-react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useTheme } from "@/components/theme/ThemeProvider";
@@ -92,9 +93,12 @@ export default function Sidebar() {
   const [collapsed, setCollapsed] = useState(true);
   const [adminOpen, setAdminOpen] = useState(false);
   const [programsOpen, setProgramsOpen] = useState(false);
+  const [offeringsOpen, setOfferingsOpen] = useState(false);
   const [reportsOpen, setReportsOpen] = useState(false);
   // Programs submenu is data-driven — one entry per configured program.
   const [programSubItems, setProgramSubItems] = useState<{ href: string; label: string }[]>([]);
+  // Offerings submenu is data-driven — one entry per configured offering.
+  const [offeringSubItems, setOfferingSubItems] = useState<{ href: string; label: string }[]>([]);
 
   useEffect(() => {
     fetch("/api/programs")
@@ -108,10 +112,22 @@ export default function Sidebar() {
         );
       })
       .catch(() => {});
+    fetch("/api/offerings")
+      .then((r) => r.json())
+      .then((d: { offerings?: { name: string }[] }) => {
+        setOfferingSubItems(
+          (d.offerings || []).map((o) => ({
+            href: `/offerings/${encodeURIComponent(o.name)}`,
+            label: o.name,
+          }))
+        );
+      })
+      .catch(() => {});
   }, []);
 
   const isAdminActive = pathname.startsWith("/admin");
   const isProgramsActive = pathname.startsWith("/programs");
+  const isOfferingsActive = pathname.startsWith("/offerings");
   const isReportsActive = pathname === "/reports" || pathname.startsWith("/reports/");
 
   useEffect(() => {
@@ -128,6 +144,11 @@ export default function Sidebar() {
   useEffect(() => {
     if (isProgramsActive) setProgramsOpen(true);
   }, [isProgramsActive]);
+
+  // Auto-expand offerings submenu when on an offerings page
+  useEffect(() => {
+    if (isOfferingsActive) setOfferingsOpen(true);
+  }, [isOfferingsActive]);
 
   // Auto-expand reports submenu when on a reports sub-page
   useEffect(() => {
@@ -240,6 +261,73 @@ export default function Sidebar() {
                         }`}
                       >
                         <ShieldCheck size={16} className="shrink-0" />
+                        <span>{item.label}</span>
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Offerings with sub-items */}
+        <div>
+          {collapsed ? (
+            <Link
+              href="/offerings"
+              className={`flex items-center gap-3 px-4 py-3 transition-colors ${
+                isOfferingsActive
+                  ? "bg-slate-700 text-white border-l-4 border-blue-400"
+                  : "text-slate-300 hover:bg-slate-800 hover:text-white border-l-4 border-transparent"
+              }`}
+              title="Offerings"
+            >
+              <Package size={20} className="shrink-0" />
+            </Link>
+          ) : (
+            <>
+              <button
+                onClick={() => setOfferingsOpen((prev) => !prev)}
+                className={`w-full flex items-center gap-3 px-4 py-3 transition-colors ${
+                  isOfferingsActive
+                    ? "bg-slate-700 text-white border-l-4 border-blue-400"
+                    : "text-slate-300 hover:bg-slate-800 hover:text-white border-l-4 border-transparent"
+                }`}
+              >
+                <Package size={20} className="shrink-0" />
+                <span className="flex-1 text-left">Offerings</span>
+                <ChevronDown
+                  size={16}
+                  className={`transition-transform ${offeringsOpen ? "rotate-0" : "-rotate-90"}`}
+                />
+              </button>
+              {offeringsOpen && (
+                <div className="ml-4 border-l border-slate-700">
+                  <Link
+                    href="/offerings"
+                    className={`flex items-center gap-3 px-4 py-2 text-sm transition-colors ${
+                      pathname === "/offerings"
+                        ? "text-white bg-slate-700"
+                        : "text-slate-400 hover:text-white hover:bg-slate-800"
+                    }`}
+                  >
+                    <Package size={16} className="shrink-0" />
+                    <span>Overview</span>
+                  </Link>
+                  {offeringSubItems.map((item) => {
+                    const isActive = pathname === item.href;
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        className={`flex items-center gap-3 px-4 py-2 text-sm transition-colors ${
+                          isActive
+                            ? "text-white bg-slate-700"
+                            : "text-slate-400 hover:text-white hover:bg-slate-800"
+                        }`}
+                      >
+                        <Package size={16} className="shrink-0" />
                         <span>{item.label}</span>
                       </Link>
                     );

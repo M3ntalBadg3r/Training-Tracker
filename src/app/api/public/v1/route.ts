@@ -54,6 +54,12 @@ export async function GET(request: NextRequest) {
       { method: "GET", path: "/api/public/v1/training-records", description: "Per-completion training records" },
       {
         method: "GET",
+        path: "/api/public/v1/offerings",
+        description:
+          "Offering definitions (specialisations + supporting trainings). Add ?country= or ?region= for Onshore/Offshore compliance; ?name= for one offering.",
+      },
+      {
+        method: "GET",
         path: "/api/public/v1/reports/{reportType}",
         description: "Report aggregates",
         reportTypes: [

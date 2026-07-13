@@ -147,6 +147,33 @@ export interface ProgramDataRow {
 }
 
 
+// --- Offerings ---
+export interface OfferingDataAlternativeRow {
+  trainingType: string;
+  trainingTitle: string;
+  trainingFullTitle: string;
+}
+
+export interface OfferingSummaryRow {
+  name: string;
+  description: string | null;
+  link: string | null;
+  specialisations: string[];
+  requirementCount: number;
+}
+
+export interface OfferingDataRow {
+  id: number;
+  offeringName: string;
+  specialisationId: number;
+  specialisationName: string | null;
+  trainingType: string | null;
+  trainingTitle: string | null;
+  trainingFullTitle: string | null;
+  quantityRequired: number;
+  alternatives: OfferingDataAlternativeRow[];
+}
+
 export interface ColumnDef<T> {
   key: string;
   header: string;

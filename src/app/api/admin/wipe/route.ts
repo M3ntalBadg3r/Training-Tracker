@@ -42,6 +42,12 @@ export async function POST(request: NextRequest) {
     await tx.programData.deleteMany({});
     await tx.programTier.deleteMany({});
     await tx.program.deleteMany({});
+    // Offerings — child-first; offering_data → specialisations is ON DELETE
+    // RESTRICT, so these must all clear before specialisation.deleteMany below.
+    await tx.offeringDataAlternative.deleteMany({});
+    await tx.offeringData.deleteMany({});
+    await tx.offeringSpecialisation.deleteMany({});
+    await tx.offering.deleteMany({});
     await tx.specialisation.deleteMany({});
     await tx.student.deleteMany({});
     await tx.scheduledExport.deleteMany({});

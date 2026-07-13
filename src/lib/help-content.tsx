@@ -629,6 +629,32 @@ const helpSections: Record<string, HelpSection> = {
     ),
   },
 
+  offerings: {
+    title: "Offerings",
+    content: (
+      <>
+        <p>
+          <strong>Offerings</strong> track a partner&apos;s ability to deliver a
+          joint product offering. Each offering bundles one or more{" "}
+          <strong>specialisations</strong>, and each specialisation lists the
+          supporting trainings (Certifications, Accreditations, ILTs, OLXs) — with
+          alternatives and a minimum required count — needed to deliver it.
+        </p>
+        <ul>
+          <li>Pick a <strong>Country</strong> or <strong>Region</strong> to see capability. Nothing is shown until you make a selection.</li>
+          <li><strong>Onshore</strong> counts the distinct people who hold each training in the selected country (or the region&apos;s countries). A <strong>Met / Not met</strong> badge compares the Onshore count against the minimum required.</li>
+          <li><strong>Offshore</strong> counts the rest of that country/region&apos;s <strong>theatre</strong>, with the onshore countries removed — the wider capability available to support delivery. Offshore is informational and doesn&apos;t change the Met status.</li>
+          <li>Figures are scoped to the company selected in the header. Use <strong>Export</strong> for the current view, and click <strong>View</strong> on any count to list the people behind it.</li>
+        </ul>
+        <p className="text-sm text-gray-500">
+          Offerings are configured under <strong>Admin &gt; Offerings</strong>
+          (create, edit, import/export). They are included in both full and
+          config backups.
+        </p>
+      </>
+    ),
+  },
+
   admin: {
     title: "Admin",
     content: (
