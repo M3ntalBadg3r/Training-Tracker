@@ -11,7 +11,17 @@ import {
 } from "@/lib/crypto";
 
 const COOKIE_NAME = "tt-auth";
-const JWT_EXPIRY = "8h";
+
+// Idle (inactivity) session window used when a caller doesn't supply one — kept
+// in sync with lib/system-settings.ts DEFAULT_SESSION_IDLE_MINUTES.
+export const DEFAULT_IDLE_MINUTES = 30;
+export const DEFAULT_IDLE_MS = DEFAULT_IDLE_MINUTES * 60 * 1000;
+
+// Absolute maximum session length. Even a continuously-active user is forced to
+// re-authenticate this long after login. Fixed (env-overridable), not the
+// per-user idle window.
+export const ABSOLUTE_SESSION_MS =
+  (Number(process.env.SESSION_ABSOLUTE_HOURS) || 8) * 60 * 60 * 1000;
 
 function getJwtSecret(): Uint8Array {
   const secret = process.env.JWT_SECRET;
@@ -52,16 +62,38 @@ export interface TokenPayload {
   // When true, the session is in a locked state until MFA enrolment completes;
   // proxy.ts only allows the /setup-mfa page and the MFA setup/verify endpoints.
   pendingMfaEnrollment?: boolean;
+  // Epoch ms of the original login — anchors the absolute-session cap. Set once
+  // at login/enrolment; preserved (not reset) as the proxy slides the token.
+  sessionStart?: number;
+  // Idle window (ms) baked into the token so the edge proxy can slide the
+  // expiry without a DB read. Defaults apply for legacy tokens minted before
+  // this claim existed.
+  idleMs?: number;
 }
 
-export async function createToken(payload: TokenPayload): Promise<string> {
+interface CreateTokenOptions {
+  idleMs?: number;
+  sessionStart?: number;
+}
+
+export async function createToken(
+  payload: TokenPayload,
+  options: CreateTokenOptions = {}
+): Promise<string> {
   const { sub, pendingMfaEnrollment, ...rest } = payload;
-  const claims: Record<string, unknown> = { ...rest, sub: String(sub) };
+  const idleMs = options.idleMs ?? payload.idleMs ?? DEFAULT_IDLE_MS;
+  const sessionStart = options.sessionStart ?? payload.sessionStart ?? Date.now();
+  const claims: Record<string, unknown> = {
+    ...rest,
+    sub: String(sub),
+    sessionStart,
+    idleMs,
+  };
   if (pendingMfaEnrollment) claims.pendingMfaEnrollment = true;
   return new SignJWT(claims)
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
-    .setExpirationTime(JWT_EXPIRY)
+    .setExpirationTime(Math.floor((Date.now() + idleMs) / 1000))
     .sign(getJwtSecret());
 }
 
@@ -76,6 +108,9 @@ export async function verifyToken(
       role: payload.role as string,
       displayName: payload.displayName as string,
       pendingMfaEnrollment: payload.pendingMfaEnrollment === true,
+      sessionStart:
+        typeof payload.sessionStart === "number" ? payload.sessionStart : undefined,
+      idleMs: typeof payload.idleMs === "number" ? payload.idleMs : undefined,
     };
   } catch {
     return null;
@@ -106,14 +141,16 @@ export function isRequestSecure(request: NextRequest): boolean {
 export function setAuthCookie(
   response: NextResponse,
   token: string,
-  secure: boolean
+  secure: boolean,
+  maxAgeSeconds: number = DEFAULT_IDLE_MS / 1000
 ): void {
   response.cookies.set(COOKIE_NAME, token, {
     httpOnly: true,
     secure,
     sameSite: "strict",
     path: "/",
-    maxAge: 8 * 60 * 60, // 8 hours
+    // Cookie lifetime tracks the sliding idle window; re-set on every slide.
+    maxAge: Math.floor(maxAgeSeconds),
   });
 }
 

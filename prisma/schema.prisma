@@ -327,10 +327,11 @@ model ImportAlias {
 // the default date format). Application code must upsert with id: 1; the
 // migration also adds a CHECK constraint as defence-in-depth.
 model SystemSetting {
-  id          Int      @id @default(1)
-  dateFormat  String   @default("DD/MM/YYYY") @map("date_format")
-  updatedAt   DateTime @updatedAt @map("updated_at")
-  updatedById Int?     @map("updated_by_id")
+  id                 Int      @id @default(1)
+  dateFormat         String   @default("DD/MM/YYYY") @map("date_format")
+  sessionIdleMinutes Int      @default(30) @map("session_idle_minutes")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+  updatedById        Int?     @map("updated_by_id")
 
   updatedBy User? @relation("SystemSettingUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
 

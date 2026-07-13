@@ -19,6 +19,7 @@ import {
   registerSuccess,
 } from "@/lib/login-attempts";
 import { recordLoginFailure } from "@/lib/failed-attempts";
+import { getSessionIdleMinutes } from "@/lib/system-settings";
 
 function retryAfterResponse(message: string, retryAfterMs: number) {
   const retryAfterSec = Math.ceil(retryAfterMs / 1000);
@@ -106,13 +107,17 @@ export async function POST(request: NextRequest) {
     // to /setup-mfa until they enrol.
     const pendingMfaEnrollment = user.mustEnableMfa && !user.mfaEnabled;
 
-    const token = await createToken({
-      sub: user.id,
-      username: user.username,
-      role: user.role,
-      displayName: user.displayName,
-      pendingMfaEnrollment,
-    });
+    const idleMs = (await getSessionIdleMinutes()) * 60 * 1000;
+    const token = await createToken(
+      {
+        sub: user.id,
+        username: user.username,
+        role: user.role,
+        displayName: user.displayName,
+        pendingMfaEnrollment,
+      },
+      { idleMs, sessionStart: Date.now() }
+    );
 
     // Fire-and-forget last-login update so we don't add DB latency to login.
     void prisma.user
@@ -130,7 +135,7 @@ export async function POST(request: NextRequest) {
       pendingMfaEnrollment,
     });
 
-    setAuthCookie(response, token, isRequestSecure(request));
+    setAuthCookie(response, token, isRequestSecure(request), idleMs / 1000);
     return response;
   } catch (error) {
     console.error("Login error:", error);
