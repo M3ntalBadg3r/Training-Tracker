@@ -954,11 +954,13 @@ curl -H "Authorization: Bearer tt_live_xxxxxxxx" \
 | `GET /api/public/v1/training-records` | Per-completion training records (latest per learner & training) |
 | `GET /api/public/v1/reports/{reportType}` | Report aggregates — `trained-not-certified`, `legacy-gap`, `learner-scorecard`, `by-product`, `by-function`, `expiring-soon`, `currently-expired`, `last-12-months` |
 | `GET /api/public/v1/offerings` | Offering definitions (specialisations + supporting trainings). Add `?country=` or `?region=` for Onshore/Offshore compliance figures; `?name=` for one offering |
+| `GET /api/public/v1/programs` | Partner program list (configured levels, per-theatre-minimum flag, tiered flag) |
+| `GET /api/public/v1/programs/{programName}` | Per-program compliance. `?level=country\|region\|theatre\|global` with `?country=`/`?region=`/`?theatre=`; `?horizonMonths=3\|6\|12` for a forward-looking projection; `?trainingTitle=&students=true` for the holder roster |
 
 All endpoints accept an optional `?companyId=` to narrow to a single granted
 company; `training-records` also accepts `?theatre=`, `?region=`, `?country=`,
 and `?activeOnly=true`. A request for a company the key cannot read returns no
-rows.
+rows (program compliance figures are scoped to the key's companies the same way).
 
 ### Security
 

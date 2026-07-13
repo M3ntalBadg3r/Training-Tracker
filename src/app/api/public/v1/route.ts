@@ -58,6 +58,13 @@ export async function GET(request: NextRequest) {
         description:
           "Offering definitions (specialisations + supporting trainings). Add ?country= or ?region= for Onshore/Offshore compliance; ?name= for one offering.",
       },
+      { method: "GET", path: "/api/public/v1/programs", description: "Partner program list (levels, per-theatre minimums, tiered flag)" },
+      {
+        method: "GET",
+        path: "/api/public/v1/programs/{programName}",
+        description:
+          "Per-program compliance. ?level=country|region|theatre|global with ?country=/?region=/?theatre=; ?horizonMonths=3|6|12 for a forward projection; ?trainingTitle=&students=true for the holder roster.",
+      },
       {
         method: "GET",
         path: "/api/public/v1/reports/{reportType}",
