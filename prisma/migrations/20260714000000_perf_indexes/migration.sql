@@ -20,6 +20,11 @@ CREATE INDEX "training_taken_training_title_completed_date_expiry_date_idx" ON "
 CREATE INDEX "training_taken_training_title_email_idx" ON "training_taken"("training_title", "email");
 
 -- CreateIndex
+-- Standalone completed_date index for the "achieved in last N months" report,
+-- which filters completed_date across all titles (no training_title predicate).
+CREATE INDEX "training_taken_completed_date_idx" ON "training_taken"("completed_date");
+
+-- CreateIndex
 CREATE INDEX "students_country_idx" ON "students"("country");
 
 -- CreateIndex

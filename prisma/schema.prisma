@@ -75,6 +75,10 @@ model TrainingTaken {
   @@index([trainingTitle, expiryDate])
   @@index([trainingTitle, completedDate, expiryDate])
   @@index([trainingTitle, email])
+  // Standalone completedDate index for the "achieved in last N months" report,
+  // which filters completedDate across all titles (no trainingTitle predicate,
+  // so the title-led composite above can't serve it).
+  @@index([completedDate])
   @@map("training_taken")
 }
 

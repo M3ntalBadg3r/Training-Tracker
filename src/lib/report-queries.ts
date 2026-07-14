@@ -104,7 +104,17 @@ const TYPE_LABELS: Record<string, string> = {
   OLXSubItem: "OLX Sub-Item",
 };
 
-async function fetchAllTrainingRecords(companyId?: CompanyScope): Promise<TrainingRecordRow[]> {
+async function fetchAllTrainingRecords(
+  companyId?: CompanyScope,
+  // Optional lower bound on completedDate, pushed into SQL. Safe to pre-filter
+  // ONLY on completedDate: the dedup below keeps the row with the greatest
+  // completedDate per (email, fullTitle, type), so narrowing by a completedDate
+  // floor can never drop the row dedup would have picked (if the latest is below
+  // the floor, the whole group is out either way). Do NOT reuse this for an
+  // expiryDate filter — that would let an older expired row survive after the
+  // latest active row is filtered out, changing the result.
+  completedAfter?: Date,
+): Promise<TrainingRecordRow[]> {
   const ids = toCompanyIdList(companyId);
   // OLX sub-items don't represent stand-alone completions — they roll up into
   // their parent OLX once the full set is taken. Exclude them from
@@ -112,6 +122,7 @@ async function fetchAllTrainingRecords(companyId?: CompanyScope): Promise<Traini
   const rawRecords = await prisma.trainingTaken.findMany({
     where: {
       trainingData: { trainingType: { not: "OLXSubItem" } },
+      ...(completedAfter ? { completedDate: { gte: completedAfter } } : {}),
       ...(ids ? { student: { companyId: { in: ids } } } : {}),
     },
     include: {
@@ -267,53 +278,95 @@ export async function fetchTrainedNotCertified(companyId?: CompanyScope): Promis
   });
   const certFullTitleMap = new Map(certData.map((c: typeof certData[number]) => [c.trainingTitle, c.fullTitle]));
 
-  const results: TrainedNotCertifiedRow[] = [];
-  const now = new Date();
+  // Batch the per-title queries the loop used to run. Instead of 3 queries per
+  // cert-bearing ILT/OLX title, fetch all completions, all certification
+  // holdings, and all uncertified students in one query each, then group in
+  // memory. Results are identical to the per-title version.
+  type IltCompletion = { completedDate: Date; expiryDate: Date };
 
+  // 1) All completions for the cert-bearing ILT/OLX titles → most-recent per
+  //    (title, email).
+  const iltTitles = iltWithCert.map((i) => i.trainingTitle);
+  const allIltRecords = await prisma.trainingTaken.findMany({
+    where: {
+      trainingTitle: { in: iltTitles },
+      ...(ids ? { student: { companyId: { in: ids } } } : {}),
+    },
+    select: { trainingTitle: true, email: true, completedDate: true, expiryDate: true },
+  });
+  const iltByTitle = new Map<string, Map<string, IltCompletion>>();
+  for (const rec of allIltRecords) {
+    let byEmail = iltByTitle.get(rec.trainingTitle);
+    if (!byEmail) {
+      byEmail = new Map<string, IltCompletion>();
+      iltByTitle.set(rec.trainingTitle, byEmail);
+    }
+    const existing = byEmail.get(rec.email);
+    if (!existing || rec.completedDate > existing.completedDate) {
+      byEmail.set(rec.email, { completedDate: rec.completedDate, expiryDate: rec.expiryDate });
+    }
+  }
+
+  // 2) Holders of every mapped certification, keyed by cert title. No company
+  //    filter needed: we only ever consult these for emails that appear in the
+  //    (already company-scoped) ILT completions above, and an email maps to a
+  //    single student/company.
+  const certEmailsByTitle = new Map<string, Set<string>>();
+  if (certTitles.size > 0) {
+    const certRecords = await prisma.trainingTaken.findMany({
+      where: { trainingTitle: { in: Array.from(certTitles) } },
+      select: { trainingTitle: true, email: true },
+    });
+    for (const rec of certRecords) {
+      if (!certEmailsByTitle.has(rec.trainingTitle)) certEmailsByTitle.set(rec.trainingTitle, new Set());
+      certEmailsByTitle.get(rec.trainingTitle)!.add(rec.email);
+    }
+  }
+
+  // Per ILT, compute the uncertified holders (in memory) and collect the global
+  // set so the student lookup can also be a single query.
+  const perIlt: {
+    ilt: (typeof iltWithCert)[number];
+    uncertifiedEmails: string[];
+    iltByEmail: Map<string, IltCompletion>;
+  }[] = [];
+  const allUncertified = new Set<string>();
   for (const ilt of iltWithCert) {
     if (ilt.certification.length === 0) continue;
-
-    const iltRecords = await prisma.trainingTaken.findMany({
-      where: {
-        trainingTitle: ilt.trainingTitle,
-        ...(ids ? { student: { companyId: { in: ids } } } : {}),
-      },
-      select: { email: true, completedDate: true, expiryDate: true },
-    });
-    if (iltRecords.length === 0) continue;
-
-    const iltByEmail = new Map<string, { completedDate: Date; expiryDate: Date }>();
-    for (const rec of iltRecords) {
-      const existing = iltByEmail.get(rec.email);
-      if (!existing || rec.completedDate > existing.completedDate) {
-        iltByEmail.set(rec.email, { completedDate: rec.completedDate, expiryDate: rec.expiryDate });
-      }
-    }
-
-    const iltEmails = Array.from(iltByEmail.keys());
+    const iltByEmail = iltByTitle.get(ilt.trainingTitle);
+    if (!iltByEmail || iltByEmail.size === 0) continue;
 
     // Certifications mapped to a training are alternatives (OR): a student is
-    // only "not certified" if they hold NONE of them. Find students holding ANY
-    // mapped cert and flag the rest.
-    const certStudents = await prisma.trainingTaken.findMany({
-      where: { trainingTitle: { in: ilt.certification }, email: { in: iltEmails } },
-      select: { email: true },
-      distinct: ["email"],
-    });
-
-    const certifiedEmails = new Set(certStudents.map((s: typeof certStudents[number]) => s.email));
-    const uncertifiedEmails = iltEmails.filter((e) => !certifiedEmails.has(e));
+    // only "not certified" if they hold NONE of them.
+    const certifiedEmails = new Set<string>();
+    for (const cert of ilt.certification) {
+      const holders = certEmailsByTitle.get(cert);
+      if (holders) for (const e of holders) certifiedEmails.add(e);
+    }
+    const uncertifiedEmails = Array.from(iltByEmail.keys()).filter((e) => !certifiedEmails.has(e));
     if (uncertifiedEmails.length === 0) continue;
 
-    const students = await prisma.student.findMany({
-      where: { email: { in: uncertifiedEmails } },
-      include: { regionData: true },
-    });
+    perIlt.push({ ilt, uncertifiedEmails, iltByEmail });
+    for (const e of uncertifiedEmails) allUncertified.add(e);
+  }
 
+  if (allUncertified.size === 0) return [];
+
+  // 3) All uncertified students in one query.
+  const students = await prisma.student.findMany({
+    where: { email: { in: Array.from(allUncertified) } },
+    include: { regionData: true },
+  });
+  const studentMap = new Map(students.map((s: (typeof students)[number]) => [s.email, s]));
+
+  const results: TrainedNotCertifiedRow[] = [];
+  const now = new Date();
+  for (const { ilt, uncertifiedEmails, iltByEmail } of perIlt) {
     const certFull = ilt.certification.map((c: string) => certFullTitleMap.get(c) ?? c).join(" or ");
-
-    for (const student of students) {
-      const iltRecord = iltByEmail.get(student.email)!;
+    for (const email of uncertifiedEmails) {
+      const student = studentMap.get(email);
+      if (!student) continue;
+      const iltRecord = iltByEmail.get(email)!;
       results.push({
         fullName: student.fullName,
         email: student.email,
@@ -470,10 +523,11 @@ export async function fetchAchievedLast12Months(companyId?: CompanyScope): Promi
   const cutoff = new Date();
   cutoff.setFullYear(cutoff.getFullYear() - 1);
 
-  const records = await fetchAllTrainingRecords(companyId);
-  return records
-    .filter((r) => new Date(r.completedDate) >= cutoff)
-    .sort((a, b) => b.completedDate.localeCompare(a.completedDate));
+  // Narrow by completedDate in SQL (backed by the training_taken(completed_date)
+  // index). Equivalent to filtering after dedup because the dedup keeps the
+  // greatest-completedDate row per group — see fetchAllTrainingRecords.
+  const records = await fetchAllTrainingRecords(companyId, cutoff);
+  return records.sort((a, b) => b.completedDate.localeCompare(a.completedDate));
 }
 
 // ─── Column definitions per report ─────────────────────────────────────────────
