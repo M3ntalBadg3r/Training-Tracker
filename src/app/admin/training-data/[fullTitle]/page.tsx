@@ -117,6 +117,21 @@ export default function FullTitleDetailPage() {
     [allRows]
   );
 
+  // Certifications this Full Title's ILT/OLX members lead to (recommended prep
+  // before the exam), deduped and shown as display Full Titles.
+  const leadsToCertFulls = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          members
+            .filter((m) => m.trainingType === "InstructorLedTraining" || m.trainingType === "OLX")
+            .flatMap((m) => m.certification ?? [])
+            .map((ct) => titleToFull.get(ct) ?? ct)
+        )
+      ),
+    [members, titleToFull]
+  );
+
   // Expand selected replacement Full Titles → underlying Cert/Accred training
   // titles (server re-validates via sanitizeLegacyFields).
   const expandFullTitles = (fulls: string[]): string[] => {
@@ -360,7 +375,7 @@ export default function FullTitleDetailPage() {
       )}
 
       {/* Summary */}
-      <section className="mb-6 grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <section className={`mb-6 grid grid-cols-2 sm:grid-cols-4 ${leadsToCertFulls.length > 0 ? "xl:grid-cols-5" : ""} gap-3`}>
         <div className="bg-white rounded-lg border border-gray-200 p-3">
           <div className="text-xs text-gray-500">Training titles</div>
           <div className="text-lg font-semibold">{meta?.memberCount ?? members.length}</div>
@@ -377,6 +392,12 @@ export default function FullTitleDetailPage() {
           <div className="text-xs text-gray-500">Function(s)</div>
           <div className="text-sm font-medium">{(meta?.functions ?? []).map((f) => FUNCTION_TYPE_LABELS[f] || f).join(", ")}</div>
         </div>
+        {leadsToCertFulls.length > 0 && (
+          <div className="bg-white rounded-lg border border-gray-200 p-3">
+            <div className="text-xs text-gray-500">Leads to Certification(s)</div>
+            <div className="text-sm font-medium">{leadsToCertFulls.join(", ")}</div>
+          </div>
+        )}
       </section>
 
       {/* Bulk actions */}
@@ -493,7 +514,6 @@ export default function FullTitleDetailPage() {
                   <th className="px-4 py-3 text-left font-semibold text-gray-700">Function</th>
                   <th className="px-4 py-3 text-left font-semibold text-gray-700">Link</th>
                   <th className="px-4 py-3 text-left font-semibold text-gray-700">Legacy</th>
-                  <th className="px-4 py-3 text-left font-semibold text-gray-700">Certification</th>
                   <th className="px-4 py-3 text-left font-semibold text-gray-700">Actions</th>
                 </tr>
               </thead>
@@ -554,20 +574,6 @@ export default function FullTitleDetailPage() {
                         ) : <span className="text-gray-300">-</span>}
                       </td>
                       <td className="px-4 py-3">
-                        {(t.trainingType === "InstructorLedTraining" || t.trainingType === "OLX") ? (
-                          (t.certification?.length ?? 0) > 0 ? (
-                            <span
-                              className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800"
-                              title={`Grants: ${(t.certification ?? []).map((ct) => titleToFull.get(ct) ?? ct).join(", ")}`}
-                            >
-                              {t.certification!.length} cert{t.certification!.length === 1 ? "" : "s"}
-                            </span>
-                          ) : (
-                            <span className="text-xs text-gray-400">None</span>
-                          )
-                        ) : <span className="text-gray-300">-</span>}
-                      </td>
-                      <td className="px-4 py-3">
                         <div className="flex gap-2">
                           {isEditing ? (
                             <>
@@ -588,8 +594,8 @@ export default function FullTitleDetailPage() {
                 {/* Expanded editors for the row being edited */}
                 {editingTitle && (editValues.trainingType === "InstructorLedTraining" || editValues.trainingType === "OLX") && (
                   <tr className="bg-blue-50/40 border-b border-gray-100">
-                    <td colSpan={8} className="px-4 py-3">
-                      <div className="text-xs font-semibold text-gray-600 mb-1">Certifications granted</div>
+                    <td colSpan={7} className="px-4 py-3">
+                      <div className="text-xs font-semibold text-gray-600 mb-1">Leads to Certification(s)</div>
                       <div className="max-h-32 overflow-y-auto border border-gray-200 rounded px-2 py-1 text-sm space-y-1 bg-white max-w-md">
                         {certificationOptions.length === 0 ? <span className="text-gray-400 text-xs">No certifications available.</span> : certificationOptions.map((c) => (
                           <label key={c} className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 rounded px-1">
@@ -605,7 +611,7 @@ export default function FullTitleDetailPage() {
                 )}
                 {editingTitle && LEGACY_ELIGIBLE.includes(editValues.trainingType) && (
                   <tr className="bg-blue-50/40 border-b border-gray-100">
-                    <td colSpan={8} className="px-4 py-3">
+                    <td colSpan={7} className="px-4 py-3">
                       <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-gray-600">
                         <input type="checkbox" checked={editValues.isLegacy}
                           onChange={(e) => setEditValues((p) => ({ ...p, isLegacy: e.target.checked, replacedByFulls: e.target.checked ? p.replacedByFulls : [] }))}
@@ -625,7 +631,7 @@ export default function FullTitleDetailPage() {
                 )}
                 {editingTitle && (editValues.trainingType === "OLX" || editValues.trainingType === "OLXSubItem") && (
                   <tr className="bg-blue-50/40 border-b border-gray-100">
-                    <td colSpan={8} className="px-4 py-3">
+                    <td colSpan={7} className="px-4 py-3">
                       {editValues.trainingType === "OLX" ? (
                         <div className="max-w-md">
                           <div className="text-xs font-semibold text-gray-600 mb-1">Sub-Items (none = single-item OLX)</div>

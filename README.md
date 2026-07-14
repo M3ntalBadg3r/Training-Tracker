@@ -561,7 +561,7 @@ Manage the definitions of all training programs in the system.
 | **Product** | One of the configured product types (managed in Admin > Product Types) |
 | **Function** | Sales, Pre-Sales, or Deployments |
 | **Link** | Optional URL to training resources |
-| **Certification** | Certification mapping (ILT only — see below) |
+| **Certification** | The Certification(s) an ILT/OLX **leads to** (recommended prep — see below) |
 | **Legacy** | Marks a Certification/Accreditation as retired/superseded (see below) |
 | **Replacement** | The Cert/Accreditation(s) that replace a legacy training |
 
@@ -592,9 +592,9 @@ When a student import references a training title that doesn't exist yet, it is 
 
 #### Certification Mapping
 
-The **Certification** column is available for trainings of type **Instructor-Led Training** and **OLX** (parent). It allows you to map an ILT or an OLX parent to one or more Certifications that it leads to. OLX Sub-Items cannot carry certifications.
+The **Certification** mapping is available for trainings of type **Instructor-Led Training** and **OLX** (parent). It records which Certification(s) the training **leads to** — i.e. the ILT/OLX is the recommended preparation before sitting the exam that earns the cert; it does **not** itself grant the cert. OLX Sub-Items cannot carry certifications.
 
-An ILT/OLX that has a mapped certification is highlighted so you can see it without entering edit mode: a green **Cert** badge appears next to the Full Title in the list (hover for the certification names), and the Full Title detail page has a **Certification** column showing an "N cert(s)" badge per mapped Training Title.
+Where an ILT/OLX leads to a certification is surfaced without entering edit mode: in the list, a **"→ Leads to: …"** subline appears under the Full Title (naming the certification(s)); on the Full Title detail page, a **Leads to Certification(s)** card in the summary row lists the deduplicated certifications drawn from all mapped Training Titles.
 
 - When editing or adding an ILT, a checkbox list of all available Certifications is shown.
 - Select one or more Certifications to create the mapping.

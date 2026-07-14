@@ -292,11 +292,6 @@ function TrainingDataPageInner() {
         products: Array.from(new Set(members.map((m) => m.productType))),
         functions: Array.from(new Set(members.map((m) => m.function))),
         anyLegacy: members.some((m) => m.isLegacy),
-        anyCert: members.some(
-          (m) =>
-            (m.trainingType === "InstructorLedTraining" || m.trainingType === "OLX") &&
-            (m.certification?.length ?? 0) > 0
-        ),
         certTitles: Array.from(
           new Set(
             members
@@ -1670,14 +1665,6 @@ function TrainingDataPageInner() {
                               Legacy
                             </span>
                           )}
-                          {g.anyCert && (
-                            <span
-                              className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800"
-                              title={`Grants certification: ${g.certTitles.join(", ")}`}
-                            >
-                              Cert
-                            </span>
-                          )}
                           {isExpandable && (
                             <span className="text-xs text-gray-500">({g.subItems.length} sub-item{g.subItems.length === 1 ? "" : "s"})</span>
                           )}
@@ -1690,6 +1677,11 @@ function TrainingDataPageInner() {
                           ) : (
                             <div className="text-xs italic text-orange-700 mt-0.5">→ No replacement defined</div>
                           )
+                        )}
+                        {g.certTitles.length > 0 && (
+                          <div className="text-xs text-gray-500 mt-0.5">
+                            → Leads to: <span className="text-gray-700">{g.certTitles.join(", ")}</span>
+                          </div>
                         )}
                       </td>
                       <td className="px-4 py-3 text-gray-600">{g.members.length}</td>
@@ -1864,7 +1856,7 @@ function TrainingDataPageInner() {
           </div>
           {(newTraining.trainingType === "InstructorLedTraining" || newTraining.trainingType === "OLX") && (
             <div>
-              <label className="block text-sm font-medium mb-1">Certification</label>
+              <label className="block text-sm font-medium mb-1">Leads to Certification(s)</label>
               <div className="max-h-40 overflow-y-auto border border-gray-300 rounded-lg px-3 py-2 text-sm space-y-1">
                 {certificationOptions.length === 0 && (
                   <span className="text-gray-400 text-xs">No certifications available</span>

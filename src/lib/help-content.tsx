@@ -893,11 +893,13 @@ const helpSections: Record<string, HelpSection> = {
             <tr>
               <td><strong>Certification</strong></td>
               <td>
-                Certification mapping (ILT and OLX parent only). Trainings that
-                grant a certification show a green <strong>Cert</strong> badge in
-                the list and a <strong>Certification</strong> column on the Full
-                Title detail page, so you can spot mapped certs without opening
-                each row.
+                The Certification(s) an ILT or OLX parent <strong>leads to</strong>{" "}
+                &mdash; the recommended preparation before sitting the exam that
+                earns the cert (the training does not itself grant it). Shown
+                without opening each row: a <strong>&ldquo;&rarr; Leads
+                to: &hellip;&rdquo;</strong> subline under the Full Title in the
+                list, and a <strong>Leads to Certification(s)</strong> card on the
+                Full Title detail page.
               </td>
             </tr>
             <tr>
