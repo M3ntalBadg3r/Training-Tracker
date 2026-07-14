@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { ShieldCheck } from "lucide-react";
 
@@ -80,7 +81,7 @@ export default function SetupMfaPage() {
           ) : qrCode ? (
             <form onSubmit={handleVerify} className="space-y-4">
               <div className="flex justify-center">
-                <img src={qrCode} alt="MFA QR Code" className="w-48 h-48" />
+                <Image src={qrCode} alt="MFA QR Code" width={192} height={192} unoptimized className="w-48 h-48" />
               </div>
               <div>
                 <p className="text-xs text-gray-500 mb-1">

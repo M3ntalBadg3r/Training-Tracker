@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, useMemo } from "react";
+import { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import PageHeader from "@/components/layout/PageHeader";
 import Modal from "@/components/ui/Modal";
 import { RegionDataRow } from "@/types";
@@ -130,24 +130,24 @@ export default function RegionDataPage() {
     }
   };
 
-  const fetchLastImport = () => {
+  const fetchLastImport = useCallback(() => {
     fetch("/api/import-metadata?key=region-data")
       .then((res) => res.json())
       .then((data) => { if (data?.timestamp) setLastImport(data.timestamp); })
       .catch(() => {});
-  };
-
-  useEffect(() => {
-    fetchRegions();
-    fetchLastImport();
   }, []);
 
-  const fetchRegions = () => {
+  const fetchRegions = useCallback(() => {
     fetch("/api/region-data")
       .then((r) => r.json())
       .then((data) => { setRegions(data); setLoading(false); })
       .catch(() => setLoading(false));
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchRegions();
+    fetchLastImport();
+  }, [fetchRegions, fetchLastImport]);
 
   const handleAddRegion = async () => {
     if (!newCountry || !newRegionValue) return;

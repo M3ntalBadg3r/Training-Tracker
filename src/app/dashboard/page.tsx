@@ -77,10 +77,16 @@ export default function DashboardPage() {
   const productColors = useProductTypeColors();
   const companyScope = useCompanyScope();
   const [data, setData] = useState<DashboardData | null>(null);
-  const [loading, setLoading] = useState(true);
   const [selectedTheatre, setSelectedTheatre] = useState("Global");
   const [theatreLoading, setTheatreLoading] = useState(false);
   const cache = useRef<Record<string, DashboardData>>({});
+  // Full-page loading is derived (loadedKey !== requestKey) rather than set
+  // synchronously in the effect, so a scope/theatre change re-shows the spinner
+  // without a set-state-in-effect violation. The key is only written in the
+  // effect's async callback.
+  const [loadedKey, setLoadedKey] = useState<string | null>(null);
+  const requestKey = `${companyScope.selected}::${selectedTheatre}`;
+  const loading = loadedKey !== requestKey;
 
   const fetchDashboard = useCallback(async (theatre: string) => {
     const params = new URLSearchParams();
@@ -97,14 +103,21 @@ export default function DashboardPage() {
   // Initial load + reload when the company scope changes
   useEffect(() => {
     cache.current = {};
-    setLoading(true);
+    let cancelled = false;
     fetchDashboard(selectedTheatre)
       .then((d) => {
-        setData(d);
-        setLoading(false);
+        if (!cancelled) {
+          setData(d);
+          setLoadedKey(requestKey);
+        }
       })
-      .catch(() => setLoading(false));
-  }, [fetchDashboard, selectedTheatre]);
+      .catch(() => {
+        if (!cancelled) setLoadedKey(requestKey);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [fetchDashboard, selectedTheatre, requestKey]);
 
   const handleTheatreChange = async (theatre: string) => {
     setSelectedTheatre(theatre);

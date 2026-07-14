@@ -164,7 +164,6 @@ export async function generateBackupZip(): Promise<{
   zip.file("offering_data.json", JSON.stringify(offeringData, null, 2));
   zip.file("offering_data_alternatives.json", JSON.stringify(offeringDataAlternatives, null, 2));
   // Exclude sensitive fields (password hashes, MFA secrets) from backup
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const safeUsers = users.map(({ passwordHash: _ph, mfaSecret: _ms, ...rest }: typeof users[number]) => rest);
   zip.file("users.json", JSON.stringify(safeUsers, null, 2));
 

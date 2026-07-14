@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import PageHeader from "@/components/layout/PageHeader";
@@ -12,6 +12,7 @@ import { groupRows, GroupByMode } from "@/lib/group-by";
 import { useTableSort, SortAccessor } from "@/hooks/useTableSort";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
+import { useFetchJson } from "@/hooks/useFetchJson";
 import { useDateFormat } from "@/components/date-format/DateFormatProvider";
 import { Search, Download, ArrowLeft, Award, ShieldCheck, GraduationCap, CircleCheck } from "lucide-react";
 import {
@@ -75,8 +76,11 @@ export default function ByFunctionPage() {
   const chart = useChartTheme();
   const companyScope = useCompanyScope();
   const { formatDate } = useDateFormat();
-  const [trainingRecords, setTrainingRecords] = useState<TrainingRecordRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data: recordsData, loading } = useFetchJson<TrainingRecordRow[]>(
+    withCompany("/api/reports/training-records", companyScope.selected),
+    { enabled: !companyScope.loading }
+  );
+  const trainingRecords = useMemo(() => recordsData ?? [], [recordsData]);
 
   const [search, setSearch] = useState("");
   const [filterFunction, setFilterFunction] = useState("");
@@ -85,15 +89,6 @@ export default function ByFunctionPage() {
   const [dateRange, setDateRange] = useState<DateRangeValue>({ from: null, to: null });
   const [groupBy, setGroupBy] = useState<GroupByMode | null>(null);
   const [countPeople, setCountPeople] = useState(false);
-
-  useEffect(() => {
-    if (companyScope.loading) return;
-    setLoading(true);
-    fetch(withCompany("/api/reports/training-records", companyScope.selected))
-      .then((r) => r.json())
-      .then((d) => { setTrainingRecords(d); setLoading(false); })
-      .catch(() => setLoading(false));
-  }, [companyScope.loading, companyScope.selected]);
 
   const functions = useMemo(() => [...new Set(trainingRecords.map((r) => r.function))].filter(Boolean).sort(), [trainingRecords]);
   const types = useMemo(() => [...new Set(trainingRecords.map((r) => r.trainingType))].filter(Boolean).sort(), [trainingRecords]);

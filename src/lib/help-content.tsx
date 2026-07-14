@@ -1143,7 +1143,7 @@ const helpSections: Record<string, HelpSection> = {
         <h3>Columns</h3>
         <ul>
           <li><strong>Username</strong> &mdash; Stored in lowercase. Login is case-insensitive (typing <code>Alice</code>, <code>alice</code>, or <code>ALICE</code> all match the same account).</li>
-          <li><strong>MFA</strong> &mdash; <em>Enabled</em> (green) when the user has set up an authenticator, <em>Required</em> (amber) when an admin has flagged the user with <strong>mustEnableMfa</strong> but they haven't enrolled yet, otherwise <em>Disabled</em>.</li>
+          <li><strong>MFA</strong> &mdash; <em>Enabled</em> (green) when the user has set up an authenticator, <em>Required</em> (amber) when an admin has flagged the user with <strong>mustEnableMfa</strong> but they haven&apos;t enrolled yet, otherwise <em>Disabled</em>.</li>
           <li><strong>Last login</strong> &mdash; Date and time of the most recent successful login (24-hour format).</li>
           <li><strong>Last IP</strong> &mdash; Source IP of the most recent login, taken from the <code>X-Forwarded-For</code> header.</li>
         </ul>

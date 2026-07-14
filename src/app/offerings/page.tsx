@@ -35,7 +35,7 @@ export default function OfferingsPage() {
       ) : offerings.length === 0 ? (
         <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-500">
           No offerings configured yet. Add them in{" "}
-          <a href="/admin/offerings" className="text-blue-600 hover:underline">Admin &rsaquo; Offerings</a>.
+          <Link href="/admin/offerings" className="text-blue-600 hover:underline">Admin &rsaquo; Offerings</Link>.
         </div>
       ) : (
         <section className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

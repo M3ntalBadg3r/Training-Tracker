@@ -16,12 +16,16 @@ interface HexColorPickerFieldProps {
 export default function HexColorPickerField({ value, onChange, emptyLabel = "No colour" }: HexColorPickerFieldProps) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState(value ?? "");
+  const [syncedValue, setSyncedValue] = useState(value ?? "");
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Keep the text input in sync when the parent value changes.
-  useEffect(() => {
+  // Keep the text input in sync when the parent value changes. Done during
+  // render (React's "adjust state while rendering" pattern) rather than in an
+  // effect.
+  if (syncedValue !== (value ?? "")) {
     setText(value ?? "");
-  }, [value]);
+    setSyncedValue(value ?? "");
+  }
 
   // Close on outside click.
   useEffect(() => {

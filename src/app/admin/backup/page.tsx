@@ -139,19 +139,6 @@ export default function BackupPage() {
   const [serverRestoring, setServerRestoring] = useState(false);
   const [deletingFile, setDeletingFile] = useState<string | null>(null);
 
-  // Load schedule and files on mount
-  useEffect(() => {
-    fetch("/api/admin/backup/schedule")
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.enabled !== undefined) {
-          setSchedule({ ...data, time: utcToLocal(data.time) });
-        }
-      })
-      .catch(() => {});
-    loadBackupFiles();
-  }, []);
-
   const loadBackupFiles = useCallback(async () => {
     setLoadingFiles(true);
     try {
@@ -164,6 +151,19 @@ export default function BackupPage() {
       setLoadingFiles(false);
     }
   }, []);
+
+  // Load schedule and files on mount
+  useEffect(() => {
+    fetch("/api/admin/backup/schedule")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.enabled !== undefined) {
+          setSchedule({ ...data, time: utcToLocal(data.time) });
+        }
+      })
+      .catch(() => {});
+    loadBackupFiles();
+  }, [loadBackupFiles]);
 
   // --- Manual backup handlers ---
 

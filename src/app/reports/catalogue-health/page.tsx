@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import PageHeader from "@/components/layout/PageHeader";
 import KpiStrip from "@/components/ui/KpiStrip";
@@ -9,6 +9,7 @@ import { useProductTypeColors } from "@/hooks/useProductTypeColors";
 import { useTableSort, SortAccessor } from "@/hooks/useTableSort";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
+import { useFetchJson } from "@/hooks/useFetchJson";
 import { ArrowLeft, Download, BookOpen, AlertOctagon, AlertTriangle, TrendingDown } from "lucide-react";
 import {
   BarChart,
@@ -72,20 +73,14 @@ export default function CatalogueHealthPage() {
   const chart = useChartTheme();
   const productColors = useProductTypeColors();
   const companyScope = useCompanyScope();
-  const [rows, setRows] = useState<CatalogueRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data: catalogueData, loading } = useFetchJson<{ rows?: CatalogueRow[] }>(
+    withCompany("/api/reports/catalogue-health", companyScope.selected),
+    { enabled: !companyScope.loading }
+  );
+  const rows = useMemo(() => catalogueData?.rows ?? [], [catalogueData]);
   const [filterProduct, setFilterProduct] = useState("");
   const [filterType, setFilterType] = useState("");
   const [filterStatus, setFilterStatus] = useState<"all" | "zero" | "expiring">("all");
-
-  useEffect(() => {
-    if (companyScope.loading) return;
-    setLoading(true);
-    fetch(withCompany("/api/reports/catalogue-health", companyScope.selected))
-      .then((r) => r.json())
-      .then((d) => { setRows(d.rows ?? []); setLoading(false); })
-      .catch(() => setLoading(false));
-  }, [companyScope.loading, companyScope.selected]);
 
   const products = useMemo(() => [...new Set(rows.map((r) => r.productType))].sort(), [rows]);
   const types = useMemo(() => [...new Set(rows.map((r) => r.trainingType))].sort(), [rows]);

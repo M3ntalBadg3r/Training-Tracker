@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import PageHeader from "@/components/layout/PageHeader";
@@ -12,6 +12,7 @@ import { groupRows, GroupByMode, resolveBucket } from "@/lib/group-by";
 import { useTableSort, SortAccessor } from "@/hooks/useTableSort";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
+import { useFetchJson } from "@/hooks/useFetchJson";
 import { useDateFormat } from "@/components/date-format/DateFormatProvider";
 import { Search, Download, ArrowLeft, AlertCircle, Award, GraduationCap, Users } from "lucide-react";
 import {
@@ -61,8 +62,12 @@ export default function TrainedNotCertifiedPage() {
   const chart = useChartTheme();
   const productColors = useProductTypeColors();
   const { formatDate } = useDateFormat();
-  const [reportData, setReportData] = useState<TrainedNotCertifiedRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const companyScope = useCompanyScope();
+  const { data: reportRaw, loading } = useFetchJson<TrainedNotCertifiedRow[]>(
+    withCompany("/api/reports/trained-not-certified", companyScope.selected),
+    { enabled: !companyScope.loading }
+  );
+  const reportData = useMemo(() => reportRaw ?? [], [reportRaw]);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [filterTheatre, setFilterTheatre] = useState("");
@@ -73,17 +78,6 @@ export default function TrainedNotCertifiedPage() {
   const [filterCert, setFilterCert] = useState("");
   const [filterActive, setFilterActive] = useState("");
   const [groupBy, setGroupBy] = useState<GroupByMode | null>("theatre");
-
-  const companyScope = useCompanyScope();
-
-  useEffect(() => {
-    if (companyScope.loading) return;
-    setLoading(true);
-    fetch(withCompany("/api/reports/trained-not-certified", companyScope.selected))
-      .then((r) => r.json())
-      .then((d) => { setReportData(d); setLoading(false); })
-      .catch(() => setLoading(false));
-  }, [companyScope.loading, companyScope.selected]);
 
   const theatres = useMemo(() => [...new Set(reportData.map((r) => r.theatre))].filter(Boolean).sort(), [reportData]);
   const regions = useMemo(() => [...new Set(reportData.map((r) => r.region))].filter(Boolean).sort(), [reportData]);

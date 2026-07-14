@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState, useMemo } from "react";
 import PageHeader from "@/components/layout/PageHeader";
 import Modal from "@/components/ui/Modal";
 import { Plus, Pencil, Trash2, KeyRound, ShieldOff, Unlock } from "lucide-react";
 import { useDateFormat } from "@/components/date-format/DateFormatProvider";
 import FailedAttemptsPanel from "@/components/admin/FailedAttemptsPanel";
+import { useFetchJson } from "@/hooks/useFetchJson";
 
 interface CompanyOption {
   id: number;
@@ -39,9 +40,15 @@ const ROLE_BADGE: Record<string, string> = {
 
 export default function UserManagementPage() {
   const { formatDateTime } = useDateFormat();
-  const [users, setUsers] = useState<UserRow[]>([]);
-  const [companies, setCompanies] = useState<CompanyOption[]>([]);
-  const [loading, setLoading] = useState(true);
+  // `reload` is aliased as fetchUsers so mutation handlers can refresh the list;
+  // the hook derives `loading` without a setState-in-effect.
+  const { data: usersData, loading, reload: fetchUsers } = useFetchJson<UserRow[]>("/api/admin/users");
+  const users = usersData ?? [];
+  const { data: companiesData } = useFetchJson<CompanyOption[]>("/api/admin/companies");
+  const companies = useMemo<CompanyOption[]>(
+    () => (companiesData ?? []).map((c) => ({ id: c.id, name: c.name })),
+    [companiesData]
+  );
 
   const [showAdd, setShowAdd] = useState(false);
   const [addForm, setAddForm] = useState({
@@ -79,25 +86,6 @@ export default function UserManagementPage() {
 
   // Bumped to force the failed-attempts panel to refetch after an unlock here.
   const [panelReload, setPanelReload] = useState(0);
-
-  const fetchUsers = async () => {
-    const res = await fetch("/api/admin/users");
-    if (res.ok) setUsers(await res.json());
-    setLoading(false);
-  };
-
-  const fetchCompanies = async () => {
-    const res = await fetch("/api/admin/companies");
-    if (res.ok) {
-      const data = (await res.json()) as { id: number; name: string }[];
-      setCompanies(data.map((c) => ({ id: c.id, name: c.name })));
-    }
-  };
-
-  useEffect(() => {
-    fetchUsers();
-    fetchCompanies();
-  }, []);
 
   const handleAddUser = async () => {
     setAddError("");

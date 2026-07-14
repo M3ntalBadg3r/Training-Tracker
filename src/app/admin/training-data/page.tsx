@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, useMemo } from "react";
+import { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import PageHeader from "@/components/layout/PageHeader";
 import Modal from "@/components/ui/Modal";
@@ -330,6 +330,25 @@ export default function TrainingDataPage() {
   // "new" = type a brand-new Full Title; "existing" = attach to a group below.
   const [incompleteFullTitleMode, setIncompleteFullTitleMode] = useState<"new" | "existing">("new");
 
+  const fetchRawTrainingData = useCallback(() => {
+    return fetch("/api/training-data/all")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data) setTrainingList(data);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, []);
+
+  const fetchLastImport = useCallback(() => {
+    fetch("/api/import-metadata?key=training-data")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data?.timestamp) setLastImport(data.timestamp);
+      })
+      .catch(() => {});
+  }, []);
+
   const handleMarkComplete = async (trainingTitle: string) => {
     setMarkingComplete(trainingTitle);
     await fetch(`/api/training-data/${encodeURIComponent(trainingTitle)}`, { method: "PATCH" });
@@ -415,42 +434,25 @@ export default function TrainingDataPage() {
     replacement: (t.replacedBy ?? []).join(", "),
   });
 
-  const fetchLastImport = () => {
-    fetch("/api/import-metadata?key=training-data")
-      .then((res) => res.json())
+  const fetchProductTypes = useCallback(() => {
+    return fetch("/api/admin/product-types")
+      .then((res) => (res.ok ? (res.json() as Promise<{ name: string }[]>) : null))
       .then((data) => {
-        if (data?.timestamp) setLastImport(data.timestamp);
-      })
-      .catch(() => {});
-  };
+        if (!data) return;
+        const names = data.map((p) => p.name);
+        setProductTypes(names);
+        if (names.length > 0) {
+          setNewTraining((prev) => (prev.productType ? prev : { ...prev, productType: names[0] }));
+          setDefaults((prev) => (prev.productType ? prev : { ...prev, productType: names[0] }));
+        }
+      });
+  }, []);
 
   useEffect(() => {
     fetchRawTrainingData();
     fetchLastImport();
     fetchProductTypes();
-  }, []);
-
-  const fetchRawTrainingData = async () => {
-    const res = await fetch("/api/training-data/all");
-    if (res.ok) {
-      const data = await res.json();
-      setTrainingList(data);
-    }
-    setLoading(false);
-  };
-
-  const fetchProductTypes = async () => {
-    const res = await fetch("/api/admin/product-types");
-    if (res.ok) {
-      const data: { name: string }[] = await res.json();
-      const names = data.map((p) => p.name);
-      setProductTypes(names);
-      if (names.length > 0) {
-        setNewTraining((prev) => (prev.productType ? prev : { ...prev, productType: names[0] }));
-        setDefaults((prev) => (prev.productType ? prev : { ...prev, productType: names[0] }));
-      }
-    }
-  };
+  }, [fetchRawTrainingData, fetchLastImport, fetchProductTypes]);
 
   const handleAddTraining = async () => {
     if (!newTraining.trainingTitle || !newTraining.fullTitle) return;

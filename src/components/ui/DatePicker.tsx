@@ -41,15 +41,18 @@ export default function DatePicker({
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
   const [error, setError] = useState(false);
+  const [synced, setSynced] = useState<{ value: string; format: string } | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
 
-  // Keep the visible text in sync with the bound ISO value whenever either
-  // the value or the user's format changes.
-  useEffect(() => {
+  // Keep the visible text in sync with the bound ISO value whenever either the
+  // value or the user's format changes. Done during render (React's "adjust
+  // state while rendering" pattern) rather than in an effect.
+  if (!synced || synced.value !== value || synced.format !== format) {
     const d = isoToDate(value);
     setText(d ? formatDateWith(d, format) : "");
     setError(false);
-  }, [value, format]);
+    setSynced({ value, format });
+  }
 
   useEffect(() => {
     if (!open) return;

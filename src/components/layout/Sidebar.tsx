@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -86,12 +86,35 @@ const reportSubItems = [
   { href: "/reports/renewal-forecast", label: "Renewal Forecast", icon: RefreshCw },
 ];
 
+const SIDEBAR_EVENT = "tt-sidebar-collapsed-change";
+
+function getCollapsedSnapshot(): boolean {
+  if (typeof window === "undefined") return true;
+  const stored = localStorage.getItem("sidebar-collapsed");
+  return stored === null ? true : stored === "true";
+}
+
+function getCollapsedServerSnapshot(): boolean {
+  return true;
+}
+
+function subscribeSidebar(callback: () => void): () => void {
+  window.addEventListener("storage", callback);
+  window.addEventListener(SIDEBAR_EVENT, callback);
+  return () => {
+    window.removeEventListener("storage", callback);
+    window.removeEventListener(SIDEBAR_EVENT, callback);
+  };
+}
+
 export default function Sidebar() {
   const pathname = usePathname();
   const { user, isAdmin, logout } = useAuth();
   const isSuperAdmin = user?.role === "SuperAdmin";
   const { theme, toggleTheme } = useTheme();
-  const [collapsed, setCollapsed] = useState(true);
+  // Collapse state lives in localStorage; read via useSyncExternalStore so there
+  // is no setState-in-effect on mount (server snapshot defaults to collapsed).
+  const collapsed = useSyncExternalStore(subscribeSidebar, getCollapsedSnapshot, getCollapsedServerSnapshot);
   const [adminOpen, setAdminOpen] = useState(false);
   const [programsOpen, setProgramsOpen] = useState(false);
   const [offeringsOpen, setOfferingsOpen] = useState(false);
@@ -131,36 +154,32 @@ export default function Sidebar() {
   const isOfferingsActive = pathname.startsWith("/offerings");
   const isReportsActive = pathname === "/reports" || pathname.startsWith("/reports/");
 
-  useEffect(() => {
-    const stored = localStorage.getItem("sidebar-collapsed");
-    if (stored !== null) setCollapsed(stored === "true");
-  }, []);
-
-  // Auto-expand admin submenu when on an admin page
-  useEffect(() => {
-    if (isAdminActive) setAdminOpen(true);
-  }, [isAdminActive]);
-
-  // Auto-expand programs submenu when on a programs page
-  useEffect(() => {
-    if (isProgramsActive) setProgramsOpen(true);
-  }, [isProgramsActive]);
-
-  // Auto-expand offerings submenu when on an offerings page
-  useEffect(() => {
-    if (isOfferingsActive) setOfferingsOpen(true);
-  }, [isOfferingsActive]);
-
-  // Auto-expand reports submenu when on a reports sub-page
-  useEffect(() => {
-    if (isReportsActive) setReportsOpen(true);
-  }, [isReportsActive]);
+  // Auto-expand a submenu on the rising edge of its section becoming active,
+  // while still allowing the user to collapse it manually afterwards. Done with
+  // React's "adjust state while rendering" pattern (tracking the previous active
+  // flags) instead of one setState-in-effect per submenu.
+  const [prevActive, setPrevActive] = useState({ admin: false, programs: false, offerings: false, reports: false });
+  if (
+    prevActive.admin !== isAdminActive ||
+    prevActive.programs !== isProgramsActive ||
+    prevActive.offerings !== isOfferingsActive ||
+    prevActive.reports !== isReportsActive
+  ) {
+    if (isAdminActive && !prevActive.admin) setAdminOpen(true);
+    if (isProgramsActive && !prevActive.programs) setProgramsOpen(true);
+    if (isOfferingsActive && !prevActive.offerings) setOfferingsOpen(true);
+    if (isReportsActive && !prevActive.reports) setReportsOpen(true);
+    setPrevActive({
+      admin: isAdminActive,
+      programs: isProgramsActive,
+      offerings: isOfferingsActive,
+      reports: isReportsActive,
+    });
+  }
 
   const toggle = () => {
-    setCollapsed((prev) => {
-      localStorage.setItem("sidebar-collapsed", String(!prev));
-      return !prev;
-    });
+    localStorage.setItem("sidebar-collapsed", String(!collapsed));
+    window.dispatchEvent(new Event(SIDEBAR_EVENT));
   };
 
   return (

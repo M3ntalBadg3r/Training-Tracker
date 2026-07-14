@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState, useMemo } from "react";
 import PageHeader from "@/components/layout/PageHeader";
 import Modal from "@/components/ui/Modal";
 import { Plus, Trash2, Pencil, Ban, Power, Copy, Check } from "lucide-react";
 import { useDateFormat } from "@/components/date-format/DateFormatProvider";
 import FailedAttemptsPanel from "@/components/admin/FailedAttemptsPanel";
+import { useFetchJson } from "@/hooks/useFetchJson";
 
 interface CompanyOption {
   id: number;
@@ -35,9 +36,15 @@ function keyStatus(key: ApiKeyRow): { label: string; className: string } {
 
 export default function ApiKeysPage() {
   const { formatDateTime } = useDateFormat();
-  const [keys, setKeys] = useState<ApiKeyRow[]>([]);
-  const [companies, setCompanies] = useState<CompanyOption[]>([]);
-  const [loading, setLoading] = useState(true);
+  // `reload` is aliased as fetchKeys so mutation handlers can refresh the list;
+  // the hook derives `loading` without a setState-in-effect.
+  const { data: keysData, loading, reload: fetchKeys } = useFetchJson<ApiKeyRow[]>("/api/admin/api-keys");
+  const keys = keysData ?? [];
+  const { data: companiesData } = useFetchJson<CompanyOption[]>("/api/admin/companies");
+  const companies = useMemo<CompanyOption[]>(
+    () => (companiesData ?? []).map((c) => ({ id: c.id, name: c.name })),
+    [companiesData]
+  );
 
   const [showAdd, setShowAdd] = useState(false);
   const [addForm, setAddForm] = useState({ name: "", companyIds: [] as number[], expiresAt: "" });
@@ -53,25 +60,6 @@ export default function ApiKeysPage() {
   // The plaintext key is shown exactly once, immediately after creation.
   const [createdKey, setCreatedKey] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-
-  const fetchKeys = async () => {
-    const res = await fetch("/api/admin/api-keys");
-    if (res.ok) setKeys(await res.json());
-    setLoading(false);
-  };
-
-  const fetchCompanies = async () => {
-    const res = await fetch("/api/admin/companies");
-    if (res.ok) {
-      const data = (await res.json()) as { id: number; name: string }[];
-      setCompanies(data.map((c) => ({ id: c.id, name: c.name })));
-    }
-  };
-
-  useEffect(() => {
-    fetchKeys();
-    fetchCompanies();
-  }, []);
 
   const handleAdd = async () => {
     setAddError("");

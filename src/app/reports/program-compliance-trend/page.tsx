@@ -8,6 +8,7 @@ import { useChartTheme, tooltipStyle } from "@/lib/chart-theme";
 import { useTableSort, SortAccessor } from "@/hooks/useTableSort";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
+import { useFetchJson } from "@/hooks/useFetchJson";
 import { ArrowLeft, Download, TrendingUp, ShieldCheck, Award, BarChart3 } from "lucide-react";
 import {
   LineChart,
@@ -66,13 +67,23 @@ function ExportMenu({ data, columns, filename }: { data: Record<string, unknown>
 export default function ProgramComplianceTrendPage() {
   const chart = useChartTheme();
   const companyScope = useCompanyScope();
-  const [data, setData] = useState<TrendResponse | null>(null);
-  const [loading, setLoading] = useState(true);
   const [program, setProgram] = useState("");
   const [regionRows, setRegionRows] = useState<RegionRow[]>([]);
   const [theatre, setTheatre] = useState("");
   const [region, setRegion] = useState("");
   const [country, setCountry] = useState("");
+
+  const trendUrl = useMemo(() => {
+    const params = new URLSearchParams();
+    if (program) params.set("program", program);
+    if (country) params.set("country", country);
+    else if (region) params.set("region", region);
+    else if (theatre) params.set("theatre", theatre);
+    const qs = params.toString();
+    const base = `/api/reports/program-compliance-trend${qs ? `?${qs}` : ""}`;
+    return withCompany(base, companyScope.selected);
+  }, [program, country, region, theatre, companyScope.selected]);
+  const { data, loading } = useFetchJson<TrendResponse>(trendUrl, { enabled: !companyScope.loading });
 
   // Region data (theatre/region/country) for the scope filters — global, not company-scoped.
   useEffect(() => {
@@ -81,22 +92,6 @@ export default function ProgramComplianceTrendPage() {
       .then((rows: RegionRow[]) => setRegionRows(Array.isArray(rows) ? rows : []))
       .catch(() => setRegionRows([]));
   }, []);
-
-  useEffect(() => {
-    if (companyScope.loading) return;
-    setLoading(true);
-    const params = new URLSearchParams();
-    if (program) params.set("program", program);
-    if (country) params.set("country", country);
-    else if (region) params.set("region", region);
-    else if (theatre) params.set("theatre", theatre);
-    const qs = params.toString();
-    const base = `/api/reports/program-compliance-trend${qs ? `?${qs}` : ""}`;
-    fetch(withCompany(base, companyScope.selected))
-      .then((r) => r.json())
-      .then((d) => { setData(d); setLoading(false); })
-      .catch(() => setLoading(false));
-  }, [program, theatre, region, country, companyScope.loading, companyScope.selected]);
 
   // Cascading filter option lists (theatre → region → country).
   const theatreOptions = useMemo(
