@@ -169,11 +169,12 @@ const helpSections: Record<string, HelpSection> = {
             Theatre, Country, and Region. Click <strong>Edit</strong> to modify
             Full Name, Email, or Country. Theatre and Region are auto-derived
             from the chosen country (read-only). If the student&apos;s current
-            country has no theatre yet (post-migration), it will appear in the
-            dropdown with a &quot;needs theatre&quot; suffix &mdash; pick a
-            properly-configured country, or ask a SuperAdmin to set the theatre
-            in Region Data. Changes are previewed in a confirmation modal
-            before saving.
+            country has no theatre set in Region Data, it appears in the
+            dropdown with a short &quot;&#9888; no theatre&quot; marker (and the
+            Theatre box explains it) &mdash; pick a properly-configured country,
+            or ask a SuperAdmin to set the theatre in Region Data. A country
+            that already has a theatre is never flagged. Changes are previewed
+            in a confirmation modal before saving.
           </li>
           <li>
             <strong>Summary Badges</strong> &mdash; Counts of active
@@ -891,7 +892,15 @@ const helpSections: Record<string, HelpSection> = {
             </tr>
             <tr>
               <td><strong>Certification</strong></td>
-              <td>Certification mapping (ILT and OLX parent only)</td>
+              <td>
+                The Certification(s) an ILT or OLX parent <strong>leads to</strong>{" "}
+                &mdash; the recommended preparation before sitting the exam that
+                earns the cert (the training does not itself grant it). Shown
+                without opening each row: a <strong>&ldquo;&rarr; Leads
+                to: &hellip;&rdquo;</strong> subline under the Full Title in the
+                list, and a <strong>Leads to Certification(s)</strong> card on the
+                Full Title detail page.
+              </td>
             </tr>
             <tr>
               <td><strong>Parent Training Title</strong></td>
@@ -932,7 +941,9 @@ const helpSections: Record<string, HelpSection> = {
             <strong>Search / Filter</strong> &mdash; Search by training title or
             full title; filter by Type, Product, or Function. A{" "}
             <strong>Show legacy only</strong> toggle scopes the list to retired
-            Certs/Accreds.
+            Certs/Accreds. Your search, filters, legacy toggle, and sort are
+            remembered when you open a training and click <strong>Back</strong>{" "}
+            (they&rsquo;re kept in the page URL, so the view is bookmarkable too).
           </li>
           <li>
             <strong>Import</strong> &mdash; Upload a CSV or Excel file. Columns
