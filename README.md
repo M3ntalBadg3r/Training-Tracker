@@ -276,6 +276,7 @@ The `.env` file requires:
 | Variable | Description |
 |----------|-------------|
 | `DATABASE_URL` | PostgreSQL connection string |
+| `DATABASE_POOL_MAX` | *(Optional)* Maximum PostgreSQL connections in the app's connection pool. Defaults to `20`. Raise it when many users run heavy reports at once (ensure PostgreSQL's `max_connections` has headroom); lower it on very small servers. |
 | `JWT_SECRET` | Secret key for JWT token signing (minimum 32 characters required) |
 | `ENCRYPTION_KEY` | 64-character hex string (32 bytes) used to encrypt secrets at rest — TOTP shared secrets and OAuth/SMTP credentials. Generate with `openssl rand -hex 32`. **After enabling**, a SuperAdmin must POST `/api/admin/security/encrypt-secrets` once to seal any pre-existing rows. |
 | `CRON_SECRET` | *(Optional)* Required only when using the auto-backup / auto-export shell scripts. Generate with `openssl rand -hex 32`. |
