@@ -493,6 +493,7 @@ export default function FullTitleDetailPage() {
                   <th className="px-4 py-3 text-left font-semibold text-gray-700">Function</th>
                   <th className="px-4 py-3 text-left font-semibold text-gray-700">Link</th>
                   <th className="px-4 py-3 text-left font-semibold text-gray-700">Legacy</th>
+                  <th className="px-4 py-3 text-left font-semibold text-gray-700">Certification</th>
                   <th className="px-4 py-3 text-left font-semibold text-gray-700">Actions</th>
                 </tr>
               </thead>
@@ -553,6 +554,20 @@ export default function FullTitleDetailPage() {
                         ) : <span className="text-gray-300">-</span>}
                       </td>
                       <td className="px-4 py-3">
+                        {(t.trainingType === "InstructorLedTraining" || t.trainingType === "OLX") ? (
+                          (t.certification?.length ?? 0) > 0 ? (
+                            <span
+                              className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800"
+                              title={`Grants: ${(t.certification ?? []).map((ct) => titleToFull.get(ct) ?? ct).join(", ")}`}
+                            >
+                              {t.certification!.length} cert{t.certification!.length === 1 ? "" : "s"}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-gray-400">None</span>
+                          )
+                        ) : <span className="text-gray-300">-</span>}
+                      </td>
+                      <td className="px-4 py-3">
                         <div className="flex gap-2">
                           {isEditing ? (
                             <>
@@ -573,7 +588,7 @@ export default function FullTitleDetailPage() {
                 {/* Expanded editors for the row being edited */}
                 {editingTitle && (editValues.trainingType === "InstructorLedTraining" || editValues.trainingType === "OLX") && (
                   <tr className="bg-blue-50/40 border-b border-gray-100">
-                    <td colSpan={7} className="px-4 py-3">
+                    <td colSpan={8} className="px-4 py-3">
                       <div className="text-xs font-semibold text-gray-600 mb-1">Certifications granted</div>
                       <div className="max-h-32 overflow-y-auto border border-gray-200 rounded px-2 py-1 text-sm space-y-1 bg-white max-w-md">
                         {certificationOptions.length === 0 ? <span className="text-gray-400 text-xs">No certifications available.</span> : certificationOptions.map((c) => (
@@ -590,7 +605,7 @@ export default function FullTitleDetailPage() {
                 )}
                 {editingTitle && LEGACY_ELIGIBLE.includes(editValues.trainingType) && (
                   <tr className="bg-blue-50/40 border-b border-gray-100">
-                    <td colSpan={7} className="px-4 py-3">
+                    <td colSpan={8} className="px-4 py-3">
                       <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-gray-600">
                         <input type="checkbox" checked={editValues.isLegacy}
                           onChange={(e) => setEditValues((p) => ({ ...p, isLegacy: e.target.checked, replacedByFulls: e.target.checked ? p.replacedByFulls : [] }))}
@@ -610,7 +625,7 @@ export default function FullTitleDetailPage() {
                 )}
                 {editingTitle && (editValues.trainingType === "OLX" || editValues.trainingType === "OLXSubItem") && (
                   <tr className="bg-blue-50/40 border-b border-gray-100">
-                    <td colSpan={7} className="px-4 py-3">
+                    <td colSpan={8} className="px-4 py-3">
                       {editValues.trainingType === "OLX" ? (
                         <div className="max-w-md">
                           <div className="text-xs font-semibold text-gray-600 mb-1">Sub-Items (none = single-item OLX)</div>

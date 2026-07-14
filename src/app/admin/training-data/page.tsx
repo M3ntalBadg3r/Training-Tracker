@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState, useRef, useMemo, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState, useRef, useMemo, useCallback, Suspense } from "react";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import PageHeader from "@/components/layout/PageHeader";
 import Modal from "@/components/ui/Modal";
 import { TrainingDataRow } from "@/types";
@@ -104,8 +104,10 @@ interface UnrecognizedValue {
   mappedTo: string;    // what the user chose to map it to
 }
 
-export default function TrainingDataPage() {
+function TrainingDataPageInner() {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [trainingList, setTrainingList] = useState<TrainingDataRow[]>([]);
   // Product types are an admin-managed list, fetched at mount.
   const [productTypes, setProductTypes] = useState<string[]>([]);
@@ -134,15 +136,45 @@ export default function TrainingDataPage() {
   const [lastImport, setLastImport] = useState<string | null>(null);
   const [showExportMenu, setShowExportMenu] = useState(false);
 
-  // Search and filter state (DataTable-style)
-  const [searchTerm, setSearchTerm] = useState("");
-  const [searchColumn, setSearchColumn] = useState("all");
-  const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
-  const [legacyOnly, setLegacyOnly] = useState(false);
-  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+  // Search and filter state (DataTable-style). Seeded from the URL so that
+  // opening a training and clicking Back (router.back()) restores them; kept
+  // in sync via the mirror effect below.
+  const [searchTerm, setSearchTerm] = useState(() => searchParams.get("q") ?? "");
+  const [searchColumn, setSearchColumn] = useState(() => searchParams.get("qCol") ?? "all");
+  const [columnFilters, setColumnFilters] = useState<Record<string, string>>(() => {
+    const out: Record<string, string> = {};
+    searchParams.forEach((value, key) => {
+      if (key.startsWith("f_") && value) out[key.slice(2)] = value;
+    });
+    return out;
+  });
+  const [legacyOnly, setLegacyOnly] = useState(() => searchParams.get("legacy") === "true");
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">(() =>
+    searchParams.get("sortDir") === "desc" ? "desc" : "asc"
+  );
   // OLX parent groups expanded to reveal their nested sub-items (keyed by fullTitle).
   const [expandedParents, setExpandedParents] = useState<Record<string, boolean>>({});
   const debouncedSearch = useDebounce(searchTerm);
+
+  // Mirror the search/filter/sort state to the URL so navigating into a
+  // training's detail page and clicking Back restores the exact view. The raw
+  // (not debounced) search term is written so there's no debounce race on
+  // navigation; the debounce still governs filtering only.
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (searchTerm) params.set("q", searchTerm);
+    if (searchColumn && searchColumn !== "all") params.set("qCol", searchColumn);
+    for (const [key, value] of Object.entries(columnFilters)) {
+      if (value) params.set(`f_${key}`, value);
+    }
+    if (legacyOnly) params.set("legacy", "true");
+    if (sortDirection === "desc") params.set("sortDir", "desc");
+    const qs = params.toString();
+    const next = qs ? `${pathname}?${qs}` : pathname;
+    if (qs !== searchParams.toString()) {
+      router.replace(next, { scroll: false });
+    }
+  }, [searchTerm, searchColumn, columnFilters, legacyOnly, sortDirection, pathname, router, searchParams]);
 
   // trainingTitle → fullTitle map covering every row, so legacy `replacedBy`
   // arrays (which store internal trainingTitle keys) can be rendered as the
@@ -260,6 +292,19 @@ export default function TrainingDataPage() {
         products: Array.from(new Set(members.map((m) => m.productType))),
         functions: Array.from(new Set(members.map((m) => m.function))),
         anyLegacy: members.some((m) => m.isLegacy),
+        anyCert: members.some(
+          (m) =>
+            (m.trainingType === "InstructorLedTraining" || m.trainingType === "OLX") &&
+            (m.certification?.length ?? 0) > 0
+        ),
+        certTitles: Array.from(
+          new Set(
+            members
+              .filter((m) => m.trainingType === "InstructorLedTraining" || m.trainingType === "OLX")
+              .flatMap((m) => m.certification ?? [])
+              .map((ct) => trainingTitleToFullTitle.get(ct) ?? ct)
+          )
+        ),
         replacedByFulls: Array.from(
           new Set(
             members
@@ -1625,6 +1670,14 @@ export default function TrainingDataPage() {
                               Legacy
                             </span>
                           )}
+                          {g.anyCert && (
+                            <span
+                              className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800"
+                              title={`Grants certification: ${g.certTitles.join(", ")}`}
+                            >
+                              Cert
+                            </span>
+                          )}
                           {isExpandable && (
                             <span className="text-xs text-gray-500">({g.subItems.length} sub-item{g.subItems.length === 1 ? "" : "s"})</span>
                           )}
@@ -1959,5 +2012,19 @@ export default function TrainingDataPage() {
         </div>
       </Modal>
     </div>
+  );
+}
+
+export default function TrainingDataPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center h-64">
+          <div className="text-gray-500">Loading training data...</div>
+        </div>
+      }
+    >
+      <TrainingDataPageInner />
+    </Suspense>
   );
 }

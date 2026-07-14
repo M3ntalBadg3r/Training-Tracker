@@ -143,6 +143,7 @@ export default function StudentRecordPage({
     country: "",
   });
   const [countries, setCountries] = useState<CountryOption[]>([]);
+  const [countriesLoaded, setCountriesLoaded] = useState(false);
 
   // Pending training mutations (applied on Save)
   const [deletedTrainingIds, setDeletedTrainingIds] = useState<number[]>([]);
@@ -205,7 +206,8 @@ export default function StudentRecordPage({
       fetch("/api/region-data/countries")
         .then((res) => (res.ok ? res.json() : []))
         .then((data: CountryOption[]) => setCountries(Array.isArray(data) ? data : []))
-        .catch(() => setCountries([]));
+        .catch(() => setCountries([]))
+        .finally(() => setCountriesLoaded(true));
     }
   }, [editing, countries.length]);
 
@@ -216,7 +218,17 @@ export default function StudentRecordPage({
     const byCountry = new Map(countries.map((c) => [c.country, c]));
     const usable = countries.filter((c) => !!c.theatre);
     const result = usable.map((c) => ({ option: c, needsTheatre: false }));
-    if (student && student.country && !byCountry.get(student.country)?.theatre) {
+    // Only ever flag the student's own country as "needs theatre" once the
+    // Region-Data catalogue has actually loaded (and returned rows). Otherwise
+    // the memo runs against an empty list and mis-flags a properly-configured
+    // country as needing a theatre — the truncated "(needs theatre)" bug.
+    if (
+      countriesLoaded &&
+      countries.length > 0 &&
+      student &&
+      student.country &&
+      !byCountry.get(student.country)?.theatre
+    ) {
       const existing = byCountry.get(student.country);
       const synthetic: CountryOption = existing ?? {
         country: student.country,
@@ -226,7 +238,7 @@ export default function StudentRecordPage({
       result.unshift({ option: synthetic, needsTheatre: true });
     }
     return result;
-  }, [countries, student]);
+  }, [countries, countriesLoaded, student]);
 
   const selectedEditCountry = useMemo(
     () => countryOptions.find((c) => c.option.country === editForm.country)?.option ?? null,
@@ -699,14 +711,21 @@ export default function StudentRecordPage({
                       onChange={(e) =>
                         setEditForm((f) => ({ ...f, country: e.target.value }))
                       }
-                      className="border border-gray-300 rounded-lg px-3 py-2 w-full bg-white"
+                      disabled={!countriesLoaded}
+                      className="border border-gray-300 rounded-lg px-3 py-2 w-full bg-white disabled:bg-gray-50 disabled:text-gray-500"
                     >
-                      {countryOptions.map(({ option, needsTheatre }) => (
-                        <option key={option.country} value={option.country}>
-                          {option.country}
-                          {needsTheatre ? " (needs theatre — fix in Region Data)" : ""}
+                      {!countriesLoaded ? (
+                        <option value={editForm.country}>
+                          {editForm.country || "Loading countries…"}
                         </option>
-                      ))}
+                      ) : (
+                        countryOptions.map(({ option, needsTheatre }) => (
+                          <option key={option.country} value={option.country}>
+                            {option.country}
+                            {needsTheatre ? " ⚠ no theatre" : ""}
+                          </option>
+                        ))
+                      )}
                     </select>
                   </div>
                 </div>
@@ -716,10 +735,14 @@ export default function StudentRecordPage({
                       Theatre
                     </label>
                     <div className="border border-gray-200 bg-gray-50 rounded-lg px-3 py-2 text-sm text-gray-700 min-h-[38px]">
-                      {selectedEditCountry?.theatre ?? (
-                        <span className="text-amber-600">
-                          Country has no theatre — set it in Region Data
-                        </span>
+                      {!countriesLoaded ? (
+                        <span className="text-gray-400">…</span>
+                      ) : (
+                        selectedEditCountry?.theatre ?? (
+                          <span className="text-amber-600">
+                            Country has no theatre — set it in Region Data
+                          </span>
+                        )
                       )}
                     </div>
                   </div>

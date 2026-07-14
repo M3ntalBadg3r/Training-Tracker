@@ -383,7 +383,7 @@ Click **View** on any row to open the student's detailed record. The table's sea
 
 The student detail page shows:
 
-- **Contact Information** — Full Name, Email, Theatre, Country, and Region. Click **Edit** to modify Full Name, Email, or Country. Theatre and Region are auto-derived from the selected country (read-only). If the student's current country has no Theatre yet (post-migration), the dropdown shows it with a "needs theatre" suffix — switch to a configured country, or ask a SuperAdmin to set the Theatre in Region Data. Changes are previewed in a confirmation modal before saving.
+- **Contact Information** — Full Name, Email, Theatre, Country, and Region. Click **Edit** to modify Full Name, Email, or Country. Theatre and Region are auto-derived from the selected country (read-only). If the student's current country has no Theatre set in Region Data, the dropdown shows it with a short "⚠ no theatre" marker (and the Theatre box explains it) — switch to a configured country, or ask a SuperAdmin to set the Theatre in Region Data. A country that already has a Theatre is never flagged. Changes are previewed in a confirmation modal before saving.
 - **Summary Badges** — Counts of active Certifications, Accreditations, Instructor-Led Trainings, and OLX completed, plus an **Expiring in 6 Months** badge counting the student's active Certifications and Accreditations whose expiry falls within the next six months.
 - **Achievement Over Time** — A chart of the student's completed training per month across their full history.
 - **Training Records** — A table of all trainings completed by the student, including Title (with link if available), Type, Product, Function, Completed Date, Expiry Date, and Active status.
@@ -571,7 +571,7 @@ The list shows **one row per Full Title** — the first-class "record". Because 
 
 - **Add Training** — Click **Add Training** to open a modal form for creating a new training entry.
 - **Edit (open the Full Title)** — Click **Edit** on any row (or click the row) to open the **Full Title detail page**, which lists every Training Title mapped to that Full Title and offers group-wide bulk actions (see below).
-- **Search / Filter** — Search by training title or full title; filter by Type, Product, or Function. A **Show legacy only** toggle scopes the list to retired Certs/Accreds.
+- **Search / Filter** — Search by training title or full title; filter by Type, Product, or Function. A **Show legacy only** toggle scopes the list to retired Certs/Accreds. Your search, filters, legacy toggle, and sort are **remembered when you open a training and click Back** (they are mirrored to the page URL, so the filtered view is also bookmarkable).
 - **Import** — Upload a CSV or Excel file. Columns can be mapped to all fields including Certification. The system supports common aliases for type values (e.g. `ILT`, `cert`, `pre-sales`).
 - **Export** — Download all training data as CSV or Excel (one row per Training Title, so it round-trips with import).
 
@@ -593,6 +593,8 @@ When a student import references a training title that doesn't exist yet, it is 
 #### Certification Mapping
 
 The **Certification** column is available for trainings of type **Instructor-Led Training** and **OLX** (parent). It allows you to map an ILT or an OLX parent to one or more Certifications that it leads to. OLX Sub-Items cannot carry certifications.
+
+An ILT/OLX that has a mapped certification is highlighted so you can see it without entering edit mode: a green **Cert** badge appears next to the Full Title in the list (hover for the certification names), and the Full Title detail page has a **Certification** column showing an "N cert(s)" badge per mapped Training Title.
 
 - When editing or adding an ILT, a checkbox list of all available Certifications is shown.
 - Select one or more Certifications to create the mapping.
