@@ -97,12 +97,18 @@ export default function TrainingTakenPage({
       .catch(() => setLoading(false));
   }, [fullTitle, trainingType, theatre, region, country, activeOnly, urlCompanyId, selected, scopeLoading]);
 
+  // Reset the OLX/legacy detail panels when the training type changes
+  // (adjust-during-render), so their effects only ever fetch, never reset.
+  const [prevType, setPrevType] = useState(trainingType);
+  if (prevType !== trainingType) {
+    setPrevType(trainingType);
+    setSubItems([]);
+    setLegacy(null);
+  }
+
   // For OLX parents, fetch the sub-item list to display nested under this view.
   useEffect(() => {
-    if (trainingType !== "OLX") {
-      setSubItems([]);
-      return;
-    }
+    if (trainingType !== "OLX") return;
     fetch("/api/training-data/all")
       .then((res) => (res.ok ? res.json() : []))
       .then((all: { trainingTitle: string; fullTitle: string; trainingType: string; subItems?: string[] }[]) => {
@@ -119,10 +125,7 @@ export default function TrainingTakenPage({
 
   // For legacy Certifications/Accreditations, surface the replacement(s).
   useEffect(() => {
-    if (trainingType !== "Certification" && trainingType !== "Accreditation") {
-      setLegacy(null);
-      return;
-    }
+    if (trainingType !== "Certification" && trainingType !== "Accreditation") return;
     fetch("/api/training-data/all")
       .then((res) => (res.ok ? res.json() : []))
       .then((all: { trainingTitle: string; fullTitle: string; trainingType: string; isLegacy?: boolean; replacedBy?: string[] }[]) => {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import PageHeader from "@/components/layout/PageHeader";
@@ -12,6 +12,7 @@ import { groupRows, GroupByMode } from "@/lib/group-by";
 import { useTableSort, SortAccessor } from "@/hooks/useTableSort";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
+import { useFetchJson } from "@/hooks/useFetchJson";
 import { useDateFormat } from "@/components/date-format/DateFormatProvider";
 import { Search, Download, ArrowLeft, History, AlertCircle, AlertTriangle, Ban } from "lucide-react";
 import {
@@ -100,8 +101,12 @@ export default function LegacyGapPage() {
   const chart = useChartTheme();
   const productColors = useProductTypeColors();
   const { formatDate } = useDateFormat();
-  const [records, setRecords] = useState<LegacyGapRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const companyScope = useCompanyScope();
+  const { data: recordsData, loading } = useFetchJson<LegacyGapRow[]>(
+    withCompany("/api/reports/legacy-gap", companyScope.selected),
+    { enabled: !companyScope.loading }
+  );
+  const records = useMemo(() => recordsData ?? [], [recordsData]);
 
   const [search, setSearch] = useState("");
   const [filterWindow, setFilterWindow] = useState("all"); // all | expired | 1 | 3 | 6 | 12
@@ -118,16 +123,6 @@ export default function LegacyGapPage() {
   const [requireActive, setRequireActive] = useState(true);
 
   const now = useMemo(() => new Date(), []);
-  const companyScope = useCompanyScope();
-
-  useEffect(() => {
-    if (companyScope.loading) return;
-    setLoading(true);
-    fetch(withCompany("/api/reports/legacy-gap", companyScope.selected))
-      .then((r) => r.json())
-      .then((d) => { setRecords(d); setLoading(false); })
-      .catch(() => setLoading(false));
-  }, [companyScope.loading, companyScope.selected]);
 
   const products = useMemo(() => [...new Set(records.map((r) => r.productType))].filter(Boolean).sort(), [records]);
 

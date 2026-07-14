@@ -85,7 +85,6 @@ export function prepareBackupRestore(
   let nextId = 1;
   const trainingDataRows = trainingDataJson.map((row) => {
     if (row.productTypeId != null) return row;
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { productType, ...rest } = row;
     const name = (typeof productType === "string" && productType.trim()) || "Unspecified";
     let id = nameToId.get(name);

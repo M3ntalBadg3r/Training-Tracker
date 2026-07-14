@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import PageHeader from "@/components/layout/PageHeader";
 import Modal from "@/components/ui/Modal";
 import { Plus, Pencil, Trash2, Building2 } from "lucide-react";
+import { useFetchJson } from "@/hooks/useFetchJson";
 
 interface CompanyRow {
   id: number;
@@ -13,8 +14,10 @@ interface CompanyRow {
 }
 
 export default function CompaniesPage() {
-  const [companies, setCompanies] = useState<CompanyRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  // `reload` is aliased as fetchCompanies so mutation handlers can refresh the
+  // list; the hook derives `loading` without a setState-in-effect.
+  const { data: companiesData, loading, reload: fetchCompanies } = useFetchJson<CompanyRow[]>("/api/admin/companies");
+  const companies = companiesData ?? [];
 
   const [showAdd, setShowAdd] = useState(false);
   const [addName, setAddName] = useState("");
@@ -26,16 +29,6 @@ export default function CompaniesPage() {
 
   const [deleteCompany, setDeleteCompany] = useState<CompanyRow | null>(null);
   const [deleteError, setDeleteError] = useState("");
-
-  const fetchCompanies = async () => {
-    const res = await fetch("/api/admin/companies");
-    if (res.ok) setCompanies(await res.json());
-    setLoading(false);
-  };
-
-  useEffect(() => {
-    fetchCompanies();
-  }, []);
 
   const handleAdd = async () => {
     setAddError("");

@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, useCallback, ReactNode } from "react";
+import { createContext, useContext, useEffect, useCallback, useSyncExternalStore, ReactNode } from "react";
 
 type Theme = "light" | "dark";
 
@@ -18,28 +18,40 @@ export function useTheme() {
   return useContext(ThemeContext);
 }
 
-export default function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setTheme] = useState<Theme>("light");
+// The theme lives in localStorage; we read it via useSyncExternalStore so there
+// is no setState-in-effect on mount and no hydration mismatch (the server
+// snapshot is always "light").
+const THEME_EVENT = "tt-theme-change";
 
+function getThemeSnapshot(): Theme {
+  return typeof window !== "undefined" && localStorage.getItem("theme") === "dark" ? "dark" : "light";
+}
+
+function getThemeServerSnapshot(): Theme {
+  return "light";
+}
+
+function subscribeTheme(callback: () => void): () => void {
+  window.addEventListener("storage", callback);
+  window.addEventListener(THEME_EVENT, callback);
+  return () => {
+    window.removeEventListener("storage", callback);
+    window.removeEventListener(THEME_EVENT, callback);
+  };
+}
+
+export default function ThemeProvider({ children }: { children: ReactNode }) {
+  const theme = useSyncExternalStore(subscribeTheme, getThemeSnapshot, getThemeServerSnapshot);
+
+  // Reflect the current theme onto the document (DOM side-effect only — no state).
   useEffect(() => {
-    const stored = localStorage.getItem("theme") as Theme | null;
-    if (stored === "dark") {
-      setTheme("dark");
-      document.documentElement.classList.add("dark");
-    }
-  }, []);
+    document.documentElement.classList.toggle("dark", theme === "dark");
+  }, [theme]);
 
   const toggleTheme = useCallback(() => {
-    setTheme((prev) => {
-      const next = prev === "light" ? "dark" : "light";
-      localStorage.setItem("theme", next);
-      if (next === "dark") {
-        document.documentElement.classList.add("dark");
-      } else {
-        document.documentElement.classList.remove("dark");
-      }
-      return next;
-    });
+    const next: Theme = getThemeSnapshot() === "light" ? "dark" : "light";
+    localStorage.setItem("theme", next);
+    window.dispatchEvent(new Event(THEME_EVENT));
   }, []);
 
   return (

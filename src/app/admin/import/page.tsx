@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
+import Link from "next/link";
 import PageHeader from "@/components/layout/PageHeader";
 import Modal from "@/components/ui/Modal";
 import { Upload, FileSpreadsheet, CheckCircle, AlertCircle } from "lucide-react";
@@ -628,9 +629,9 @@ export default function ImportPage() {
                   </p>
                   <p className="text-sm text-amber-700">
                     Visit{" "}
-                    <a href="/admin/training-data" className="underline font-medium hover:text-amber-900">
+                    <Link href="/admin/training-data" className="underline font-medium hover:text-amber-900">
                       Training Data
-                    </a>{" "}
+                    </Link>{" "}
                     to fill in the details and mark each one complete.
                   </p>
                 </div>

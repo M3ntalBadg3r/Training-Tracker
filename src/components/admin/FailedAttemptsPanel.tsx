@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { ChevronDown, ChevronRight, RefreshCw, Unlock } from "lucide-react";
 import { useDateFormat } from "@/components/date-format/DateFormatProvider";
+import { useFetchJson } from "@/hooks/useFetchJson";
 
 interface Attempt {
   id: number;
@@ -54,26 +55,17 @@ export default function FailedAttemptsPanel({
 }) {
   const { formatDateTime } = useDateFormat();
   const [expanded, setExpanded] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [attempts, setAttempts] = useState<Attempt[]>([]);
-  const [lockedUsers, setLockedUsers] = useState<LockedUser[]>([]);
-  const [blockedIps, setBlockedIps] = useState<BlockedIp[]>([]);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    const res = await fetch(`/api/admin/failed-attempts?kind=${kind}`);
-    if (res.ok) {
-      const data = await res.json();
-      setAttempts(data.attempts ?? []);
-      setLockedUsers(data.lockedUsers ?? []);
-      setBlockedIps(data.blockedIps ?? []);
-    }
-    setLoading(false);
-  }, [kind]);
-
-  useEffect(() => {
-    if (expanded) load();
-  }, [expanded, reloadSignal, load]);
+  // The `reloadSignal` prop is folded into the URL so a parent bump forces a
+  // refetch; `enabled: expanded` skips fetching until the panel is opened.
+  const { data, loading: fetchLoading, reload } = useFetchJson<{
+    attempts?: Attempt[];
+    lockedUsers?: LockedUser[];
+    blockedIps?: BlockedIp[];
+  }>(`/api/admin/failed-attempts?kind=${kind}&_r=${reloadSignal}`, { enabled: expanded });
+  const loading = expanded && fetchLoading;
+  const attempts = data?.attempts ?? [];
+  const lockedUsers = data?.lockedUsers ?? [];
+  const blockedIps = data?.blockedIps ?? [];
 
   const unblock = async (scope: "username" | "ip", value: string) => {
     const res = await fetch("/api/admin/failed-attempts/unblock", {
@@ -82,7 +74,7 @@ export default function FailedAttemptsPanel({
       body: JSON.stringify({ scope, value }),
     });
     if (res.ok) {
-      await load();
+      reload();
       onChanged?.();
     }
   };
@@ -110,12 +102,12 @@ export default function FailedAttemptsPanel({
             tabIndex={0}
             onClick={(e) => {
               e.stopPropagation();
-              load();
+              reload();
             }}
             onKeyDown={(e) => {
               if (e.key === "Enter" || e.key === " ") {
                 e.stopPropagation();
-                load();
+                reload();
               }
             }}
             className="p-1.5 text-gray-500 hover:bg-gray-100 rounded"

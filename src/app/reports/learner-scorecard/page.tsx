@@ -110,10 +110,20 @@ export default function LearnerScorecardPage() {
   const companyScope = useCompanyScope();
   const { formatDate } = useDateFormat();
 
-  const [records, setRecords] = useState<TrainingRecordRow[]>([]);
-  const [students, setStudents] = useState<StudentRow[]>([]);
-  const [gaps, setGaps] = useState<GapRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Loading is derived (loaded.key !== requestKey), not set synchronously in the
+  // effect, so a company-scope change re-shows the spinner without a
+  // set-state-in-effect violation. State is only written in the async callbacks.
+  const [loaded, setLoaded] = useState<{
+    key: string;
+    records: TrainingRecordRow[];
+    students: StudentRow[];
+    gaps: GapRow[];
+  }>({ key: "__init__", records: [], students: [], gaps: [] });
+  const requestKey = companyScope.loading ? "__disabled__" : `sel:${companyScope.selected}`;
+  const loading = loaded.key !== requestKey;
+  const records = loaded.records;
+  const students = loaded.students;
+  const gaps = loaded.gaps;
 
   const [search, setSearch] = useState("");
   const [filterTheatre, setFilterTheatre] = useState("");
@@ -128,20 +138,29 @@ export default function LearnerScorecardPage() {
 
   useEffect(() => {
     if (companyScope.loading) return;
-    setLoading(true);
+    let cancelled = false;
     Promise.all([
       fetch(withCompany("/api/reports/training-records", companyScope.selected)).then((r) => r.json()),
       fetch(withCompany("/api/students", companyScope.selected)).then((r) => r.json()),
       fetch(withCompany("/api/reports/trained-not-certified", companyScope.selected)).then((r) => r.json()),
     ])
       .then(([recs, studs, gapRows]) => {
-        setRecords(Array.isArray(recs) ? recs : []);
-        setStudents(Array.isArray(studs) ? studs : []);
-        setGaps(Array.isArray(gapRows) ? gapRows : []);
-        setLoading(false);
+        if (!cancelled) {
+          setLoaded({
+            key: requestKey,
+            records: Array.isArray(recs) ? recs : [],
+            students: Array.isArray(studs) ? studs : [],
+            gaps: Array.isArray(gapRows) ? gapRows : [],
+          });
+        }
       })
-      .catch(() => setLoading(false));
-  }, [companyScope.loading, companyScope.selected]);
+      .catch(() => {
+        if (!cancelled) setLoaded((prev) => ({ ...prev, key: requestKey }));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [requestKey, companyScope.loading, companyScope.selected]);
 
   const windowCutoff = useMemo(() => addMonths(now, windowMonths), [now, windowMonths]);
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Image from "next/image";
 import PageHeader from "@/components/layout/PageHeader";
 import Modal from "@/components/ui/Modal";
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -458,7 +459,7 @@ export default function AccountPage() {
             </p>
             {qrCode && (
               <div className="flex justify-center">
-                <img src={qrCode} alt="MFA QR Code" className="w-48 h-48" />
+                <Image src={qrCode} alt="MFA QR Code" width={192} height={192} unoptimized className="w-48 h-48" />
               </div>
             )}
           </div>

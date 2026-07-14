@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { TrainingType, FunctionType } from "@prisma/client";
-import { requireAuth, handleAuthError, requireSuperAdmin } from "@/lib/auth";
+import { handleAuthError, requireSuperAdmin } from "@/lib/auth";
 import { recomputeAllStudentsForParent } from "@/lib/olx";
 
 const VALID_TRAINING_TYPES = new Set(Object.values(TrainingType));

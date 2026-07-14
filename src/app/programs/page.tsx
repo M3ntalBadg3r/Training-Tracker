@@ -48,7 +48,7 @@ export default function ProgramsPage() {
       ) : programs.length === 0 ? (
         <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-500">
           No programs configured yet. Add program requirements in{" "}
-          <a href="/admin/program-data" className="text-blue-600 hover:underline">Admin &rsaquo; Program Data</a>.
+          <Link href="/admin/program-data" className="text-blue-600 hover:underline">Admin &rsaquo; Program Data</Link>.
         </div>
       ) : (
         <section className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

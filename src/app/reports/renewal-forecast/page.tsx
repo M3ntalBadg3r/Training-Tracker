@@ -8,6 +8,7 @@ import { useChartTheme, tooltipStyle } from "@/lib/chart-theme";
 import { useTableSort, SortAccessor } from "@/hooks/useTableSort";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
+import { useFetchJson } from "@/hooks/useFetchJson";
 import { ArrowLeft, Download, RefreshCw, AlertTriangle, TrendingUp, RotateCcw } from "lucide-react";
 import {
   BarChart,
@@ -73,13 +74,22 @@ function ExportMenu({ data, columns, filename }: { data: Record<string, unknown>
 export default function RenewalForecastPage() {
   const chart = useChartTheme();
   const companyScope = useCompanyScope();
-  const [data, setData] = useState<ForecastResponse | null>(null);
-  const [loading, setLoading] = useState(true);
   const [filterProduct, setFilterProduct] = useState("");
   const [regionRows, setRegionRows] = useState<RegionRow[]>([]);
   const [theatre, setTheatre] = useState("");
   const [region, setRegion] = useState("");
   const [country, setCountry] = useState("");
+
+  const forecastUrl = useMemo(() => {
+    const params = new URLSearchParams();
+    if (country) params.set("country", country);
+    else if (region) params.set("region", region);
+    else if (theatre) params.set("theatre", theatre);
+    const qs = params.toString();
+    const base = `/api/reports/renewal-forecast${qs ? `?${qs}` : ""}`;
+    return withCompany(base, companyScope.selected);
+  }, [country, region, theatre, companyScope.selected]);
+  const { data, loading } = useFetchJson<ForecastResponse>(forecastUrl, { enabled: !companyScope.loading });
 
   // Region data (theatre/region/country) for the scope filters — global, not company-scoped.
   useEffect(() => {
@@ -88,21 +98,6 @@ export default function RenewalForecastPage() {
       .then((rows: RegionRow[]) => setRegionRows(Array.isArray(rows) ? rows : []))
       .catch(() => setRegionRows([]));
   }, []);
-
-  useEffect(() => {
-    if (companyScope.loading) return;
-    setLoading(true);
-    const params = new URLSearchParams();
-    if (country) params.set("country", country);
-    else if (region) params.set("region", region);
-    else if (theatre) params.set("theatre", theatre);
-    const qs = params.toString();
-    const base = `/api/reports/renewal-forecast${qs ? `?${qs}` : ""}`;
-    fetch(withCompany(base, companyScope.selected))
-      .then((r) => r.json())
-      .then((d) => { setData(d); setLoading(false); })
-      .catch(() => setLoading(false));
-  }, [companyScope.loading, companyScope.selected, theatre, region, country]);
 
   // Cascading filter option lists (theatre → region → country).
   const theatreOptions = useMemo(

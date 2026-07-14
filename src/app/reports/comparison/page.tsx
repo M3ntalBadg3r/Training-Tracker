@@ -138,9 +138,18 @@ export default function ComparisonPage() {
   const productColors = useProductTypeColors();
   const companyScope = useCompanyScope();
 
-  const [records, setRecords] = useState<TrainingRecordRow[]>([]);
-  const [students, setStudents] = useState<StudentRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Loading is derived (loaded.key !== requestKey), not set synchronously in the
+  // effect, so a company-scope change re-shows the spinner without a
+  // set-state-in-effect violation. State is only written in the async callbacks.
+  const [loaded, setLoaded] = useState<{ key: string; records: TrainingRecordRow[]; students: StudentRow[] }>({
+    key: "__init__",
+    records: [],
+    students: [],
+  });
+  const requestKey = companyScope.loading ? "__disabled__" : `sel:${companyScope.selected}`;
+  const loading = loaded.key !== requestKey;
+  const records = loaded.records;
+  const students = loaded.students;
 
   const [geoMode, setGeoMode] = useState<GroupByMode>("theatre");
   const [rangePreset, setRangePreset] = useState<RangePreset>("12m");
@@ -156,18 +165,27 @@ export default function ComparisonPage() {
 
   useEffect(() => {
     if (companyScope.loading) return;
-    setLoading(true);
+    let cancelled = false;
     Promise.all([
       fetch(withCompany("/api/reports/training-records", companyScope.selected)).then((r) => r.json()),
       fetch(withCompany("/api/students", companyScope.selected)).then((r) => r.json()),
     ])
       .then(([recs, studs]) => {
-        setRecords(Array.isArray(recs) ? recs : []);
-        setStudents(Array.isArray(studs) ? studs : []);
-        setLoading(false);
+        if (!cancelled) {
+          setLoaded({
+            key: requestKey,
+            records: Array.isArray(recs) ? recs : [],
+            students: Array.isArray(studs) ? studs : [],
+          });
+        }
       })
-      .catch(() => setLoading(false));
-  }, [companyScope.loading, companyScope.selected]);
+      .catch(() => {
+        if (!cancelled) setLoaded((prev) => ({ ...prev, key: requestKey }));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [requestKey, companyScope.loading, companyScope.selected]);
 
   const functions = useMemo(() => [...new Set(records.map((r) => r.function))].filter(Boolean).sort(), [records]);
   const products = useMemo(() => [...new Set(records.map((r) => r.productType))].filter(Boolean).sort(), [records]);
