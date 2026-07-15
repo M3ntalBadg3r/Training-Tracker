@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { requireSuperAdmin, handleAuthError } from "@/lib/auth";
+import { invalidateReportCache } from "@/lib/report-cache";
 import {
   validateRequirementBody,
   serializeProgramDataRow,
@@ -60,6 +61,7 @@ export async function PUT(
     });
   });
 
+  invalidateReportCache();
   return NextResponse.json(serializeProgramDataRow(record as unknown as ProgramDataRecord));
 }
 
@@ -80,5 +82,6 @@ export async function DELETE(
   }
 
   await prisma.programData.delete({ where: { id: recordId } });
+  invalidateReportCache();
   return NextResponse.json({ success: true });
 }

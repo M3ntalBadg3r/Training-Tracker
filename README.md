@@ -277,6 +277,7 @@ The `.env` file requires:
 |----------|-------------|
 | `DATABASE_URL` | PostgreSQL connection string |
 | `DATABASE_POOL_MAX` | *(Optional)* Maximum PostgreSQL connections in the app's connection pool. Defaults to `20`. Raise it when many users run heavy reports at once (ensure PostgreSQL's `max_connections` has headroom); lower it on very small servers. |
+| `REPORT_CACHE_TTL_MS` | *(Optional)* Lifetime, in milliseconds, of the short in-memory cache in front of the expensive dashboard/report/program-compliance pages. Defaults to `30000` (30 s). While an entry is fresh, concurrent viewers of the same page share one computation instead of each re-querying the database; the cache is also cleared immediately whenever the underlying data is edited or imported, so results stay current after a change. Set to `0` to disable caching entirely. |
 | `JWT_SECRET` | Secret key for JWT token signing (minimum 32 characters required) |
 | `ENCRYPTION_KEY` | 64-character hex string (32 bytes) used to encrypt secrets at rest — TOTP shared secrets and OAuth/SMTP credentials. Generate with `openssl rand -hex 32`. **After enabling**, a SuperAdmin must POST `/api/admin/security/encrypt-secrets` once to seal any pre-existing rows. |
 | `CRON_SECRET` | *(Optional)* Required only when using the auto-backup / auto-export shell scripts. Generate with `openssl rand -hex 32`. |

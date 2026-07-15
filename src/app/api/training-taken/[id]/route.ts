@@ -4,6 +4,7 @@ import { requireAuth, handleAuthError } from "@/lib/auth";
 import { parseDate, computeExpiryDate } from "@/lib/utils";
 import { canAccessCompany } from "@/lib/company-scope";
 import { recomputeParentsForSubItem } from "@/lib/olx";
+import { invalidateReportCache } from "@/lib/report-cache";
 
 async function getRecordOrForbid(
   id: number,
@@ -46,6 +47,7 @@ export async function DELETE(
   // If a sub-item was removed, the parent OLX may no longer be complete.
   await recomputeParentsForSubItem(check.email, check.trainingTitle);
 
+  invalidateReportCache();
   return NextResponse.json({ success: true });
 }
 
@@ -89,5 +91,6 @@ export async function PATCH(
   // Sub-item completion date changed → parent's "latest sub-item" date may shift.
   await recomputeParentsForSubItem(check.email, check.trainingTitle);
 
+  invalidateReportCache();
   return NextResponse.json(updated);
 }

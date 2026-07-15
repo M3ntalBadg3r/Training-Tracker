@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import prisma from "@/lib/prisma";
 import { requireAuth, handleAuthError } from "@/lib/auth";
 import { getAuthorizedCompanyIds, resolveCompanyFilter } from "@/lib/company-scope";
+import { cachedReport, scopeKey } from "@/lib/report-cache";
 
 /**
  * Renewal forecast.
@@ -46,6 +47,21 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ monthly: [], titleRows: [], globalRate: 0, historicalRenewed: 0, historicalLapsed: 0, scopeLabel });
   }
 
+  const body = await cachedReport(
+    `renewal-forecast|${scopeKey(companyFilter)}|${theatreParam}|${regionParam}|${countryParam}`,
+    () => computeRenewalForecast(companyFilter, countryParam, regionParam, theatreParam, scopeLabel),
+  );
+
+  return NextResponse.json(body, { headers: { "Cache-Control": "private, max-age=30" } });
+}
+
+async function computeRenewalForecast(
+  companyFilter: number[] | null,
+  countryParam: string,
+  regionParam: string,
+  theatreParam: string,
+  scopeLabel: string,
+) {
   const now = new Date();
   const horizonEnd = new Date(now);
   horizonEnd.setFullYear(horizonEnd.getFullYear() + 1);
@@ -225,12 +241,12 @@ export async function GET(request: NextRequest) {
   }));
   titleRows.sort((a, b) => b.projectedLapsed - a.projectedLapsed);
 
-  return NextResponse.json({
+  return {
     monthly,
     titleRows,
     globalRate: Number((globalRate * 100).toFixed(1)),
     historicalRenewed: globalRenewed,
     historicalLapsed: globalLapsed,
     scopeLabel,
-  });
+  };
 }

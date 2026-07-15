@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { requireAuth, handleAuthError } from "@/lib/auth";
 import { canAccessCompany, getAuthorizedCompanyIds, resolveCompanyFilter } from "@/lib/company-scope";
+import { invalidateReportCache } from "@/lib/report-cache";
 
 export async function GET(request: NextRequest) {
   let auth;
@@ -94,5 +95,6 @@ export async function POST(request: NextRequest) {
     data: { email, fullName, theatre: regionData.theatre, country, companyId: cid },
   });
 
+  invalidateReportCache();
   return NextResponse.json(student, { status: 201 });
 }

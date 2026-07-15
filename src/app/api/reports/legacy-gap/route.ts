@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, handleAuthError } from "@/lib/auth";
 import { getAuthorizedCompanyIds, resolveCompanyFilter } from "@/lib/company-scope";
 import { computeLegacyGaps } from "@/lib/legacy-gap";
+import { cachedReport, scopeKey } from "@/lib/report-cache";
 
 export async function GET(request: NextRequest) {
   let auth;
@@ -17,5 +18,9 @@ export async function GET(request: NextRequest) {
 
   // companyFilter === null means "all companies" (SuperAdmin); otherwise the
   // intersection of the caller's allowed companies and any ?companyId= filter.
-  return NextResponse.json(await computeLegacyGaps(companyFilter));
+  const rows = await cachedReport(
+    `legacy-gap|${scopeKey(companyFilter)}`,
+    () => computeLegacyGaps(companyFilter),
+  );
+  return NextResponse.json(rows, { headers: { "Cache-Control": "private, max-age=30" } });
 }

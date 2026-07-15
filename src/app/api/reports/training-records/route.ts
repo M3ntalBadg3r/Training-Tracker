@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { requireAuth, handleAuthError } from "@/lib/auth";
 import { getAuthorizedCompanyIds, resolveCompanyFilter } from "@/lib/company-scope";
+import { cachedReport, scopeKey } from "@/lib/report-cache";
 
 export async function GET(request: NextRequest) {
   let auth;
@@ -15,6 +16,15 @@ export async function GET(request: NextRequest) {
   const companyFilter = resolveCompanyFilter(allowed, request.nextUrl.searchParams.get("companyId"));
   if (companyFilter !== null && companyFilter.length === 0) return NextResponse.json([]);
 
+  const records = await cachedReport(
+    `training-records|${scopeKey(companyFilter)}`,
+    () => computeTrainingRecords(companyFilter),
+  );
+
+  return NextResponse.json(records, { headers: { "Cache-Control": "private, max-age=30" } });
+}
+
+async function computeTrainingRecords(companyFilter: number[] | null) {
   const rawRecords = await prisma.trainingTaken.findMany({
     where: {
       // OLX sub-items aren't stand-alone completions — they roll up into the
@@ -68,7 +78,7 @@ export async function GET(request: NextRequest) {
   };
 
   const now = new Date();
-  const records = Array.from(dedupeMap.values()).map((tt) => ({
+  return Array.from(dedupeMap.values()).map((tt) => ({
     fullName: tt.student.fullName,
     email: tt.email,
     theatre: tt.student.theatre,
@@ -83,6 +93,4 @@ export async function GET(request: NextRequest) {
     active: tt.expiryDate > now,
     isLegacy: tt.trainingData.isLegacy,
   }));
-
-  return NextResponse.json(records);
 }

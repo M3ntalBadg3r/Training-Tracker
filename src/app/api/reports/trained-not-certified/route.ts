@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { requireAuth, handleAuthError } from "@/lib/auth";
 import { getAuthorizedCompanyIds, resolveCompanyFilter } from "@/lib/company-scope";
+import { cachedReport, scopeKey } from "@/lib/report-cache";
 
 export async function GET(request: NextRequest) {
   let auth;
@@ -15,6 +16,15 @@ export async function GET(request: NextRequest) {
   const companyFilter = resolveCompanyFilter(allowed, request.nextUrl.searchParams.get("companyId"));
   if (companyFilter !== null && companyFilter.length === 0) return NextResponse.json([]);
 
+  const results = await cachedReport(
+    `trained-not-certified|${scopeKey(companyFilter)}`,
+    () => computeTrainedNotCertified(companyFilter),
+  );
+
+  return NextResponse.json(results, { headers: { "Cache-Control": "private, max-age=30" } });
+}
+
+async function computeTrainedNotCertified(companyFilter: number[] | null) {
   // Find all ILT and OLX trainings that have at least one certification
   // mapping. OLX parents are treated identically to ILT here — completion of
   // an OLX (all sub-items done) materialises a TrainingTaken row on the
@@ -28,7 +38,7 @@ export async function GET(request: NextRequest) {
   });
 
   if (iltWithCert.length === 0) {
-    return NextResponse.json([]);
+    return [];
   }
 
   // Collect all certification titles we need to look up
@@ -134,5 +144,5 @@ export async function GET(request: NextRequest) {
   // Sort by fullName
   results.sort((a, b) => a.fullName.localeCompare(b.fullName));
 
-  return NextResponse.json(results);
+  return results;
 }

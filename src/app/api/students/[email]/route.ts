@@ -3,6 +3,7 @@ import prisma, { type PrismaTransactionClient } from "@/lib/prisma";
 import { isActive, trainingTypeLabel, functionTypeLabel, safeDecodeParam } from "@/lib/utils";
 import { requireAuth, handleAuthError } from "@/lib/auth";
 import { canAccessCompany, getAuthorizedCompanyIds } from "@/lib/company-scope";
+import { invalidateReportCache } from "@/lib/report-cache";
 
 export async function GET(
   request: NextRequest,
@@ -209,6 +210,7 @@ export async function PUT(
       });
     });
 
+    invalidateReportCache();
     return NextResponse.json({ success: true, email: newEmail });
   }
 
@@ -222,6 +224,7 @@ export async function PUT(
     },
   });
 
+  invalidateReportCache();
   return NextResponse.json(student);
 }
 
@@ -249,5 +252,6 @@ export async function DELETE(
 
   await prisma.student.delete({ where: { email: decodedEmail } });
 
+  invalidateReportCache();
   return NextResponse.json({ success: true });
 }

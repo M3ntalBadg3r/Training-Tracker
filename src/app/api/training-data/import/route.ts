@@ -3,6 +3,7 @@ import prisma from "@/lib/prisma";
 import { TrainingType, FunctionType } from "@prisma/client";
 import { handleAuthError, requireSuperAdmin } from "@/lib/auth";
 import { recomputeAllStudentsForParent } from "@/lib/olx";
+import { invalidateReportCache } from "@/lib/report-cache";
 
 const VALID_TRAINING_TYPES = new Set(Object.values(TrainingType));
 const VALID_FUNCTION_TYPES = new Set(Object.values(FunctionType));
@@ -308,5 +309,6 @@ export async function POST(request: NextRequest) {
     create: { key: "training-data", timestamp: new Date() },
   });
 
+  invalidateReportCache();
   return NextResponse.json({ imported, updated, skipped, errors });
 }

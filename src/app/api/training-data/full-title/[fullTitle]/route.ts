@@ -6,6 +6,7 @@ import { recomputeAllStudentsForParent } from "@/lib/olx";
 import { safeDecodeParam } from "@/lib/utils";
 import { resolveProductTypeId } from "@/lib/product-types";
 import { sanitizeLegacyFields } from "@/lib/legacy-training";
+import { invalidateReportCache } from "@/lib/report-cache";
 
 const LEGACY_ELIGIBLE_TYPES = ["Certification", "Accreditation"];
 
@@ -182,6 +183,7 @@ export async function PATCH(
     }
   });
 
+  invalidateReportCache();
   return NextResponse.json({ success: true, fullTitle: rename ?? decoded });
 }
 
@@ -234,5 +236,6 @@ export async function DELETE(
     await recomputeAllStudentsForParent(p);
   }
 
+  invalidateReportCache();
   return NextResponse.json({ success: true });
 }
