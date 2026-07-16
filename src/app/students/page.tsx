@@ -5,9 +5,10 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import PageHeader from "@/components/layout/PageHeader";
 import DataTable, { type DataTableState } from "@/components/data-table/DataTable";
 import Modal from "@/components/ui/Modal";
-import { ColumnDef, CountryOption, StudentRow } from "@/types";
+import { ColumnDef, StudentRow } from "@/types";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
+import { useRegionData } from "@/hooks/useRegionData";
 import { Plus } from "lucide-react";
 
 interface CompanyOption { id: number; name: string }
@@ -67,7 +68,7 @@ function StudentsPageInner() {
   const [students, setStudents] = useState<(StudentRow & { companyName?: string | null })[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastImport, setLastImport] = useState<string | null>(null);
-  const [countries, setCountries] = useState<CountryOption[]>([]);
+  const { rows: countries } = useRegionData();
 
   const [showAdd, setShowAdd] = useState(false);
   const [addForm, setAddForm] = useState({
@@ -131,13 +132,6 @@ function StudentsPageInner() {
       .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [companyScope.loading, companyScope.selected]);
-
-  useEffect(() => {
-    fetch("/api/region-data/countries")
-      .then((res) => (res.ok ? res.json() : []))
-      .then((data: CountryOption[]) => setCountries(Array.isArray(data) ? data : []))
-      .catch(() => setCountries([]));
-  }, []);
 
   const handleAddStudent = async () => {
     setAddError("");

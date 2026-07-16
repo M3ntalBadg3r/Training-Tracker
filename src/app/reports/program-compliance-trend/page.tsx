@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import PageHeader from "@/components/layout/PageHeader";
 import KpiStrip from "@/components/ui/KpiStrip";
@@ -9,6 +9,7 @@ import { useTableSort, SortAccessor } from "@/hooks/useTableSort";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
 import { useFetchJson } from "@/hooks/useFetchJson";
+import { useRegionData } from "@/hooks/useRegionData";
 import { ArrowLeft, Download, TrendingUp, ShieldCheck, Award, BarChart3 } from "lucide-react";
 import {
   LineChart,
@@ -40,11 +41,6 @@ interface TrendResponse {
   scopeLabel: string;
 }
 
-interface RegionRow {
-  country: string;
-  region: string;
-  theatre: string | null;
-}
 
 function ExportMenu({ data, columns, filename }: { data: Record<string, unknown>[]; columns: { key: string; header: string }[]; filename: string }) {
   const [show, setShow] = useState(false);
@@ -68,7 +64,7 @@ export default function ProgramComplianceTrendPage() {
   const chart = useChartTheme();
   const companyScope = useCompanyScope();
   const [program, setProgram] = useState("");
-  const [regionRows, setRegionRows] = useState<RegionRow[]>([]);
+  const { rows: regionRows } = useRegionData();
   const [theatre, setTheatre] = useState("");
   const [region, setRegion] = useState("");
   const [country, setCountry] = useState("");
@@ -84,14 +80,6 @@ export default function ProgramComplianceTrendPage() {
     return withCompany(base, companyScope.selected);
   }, [program, country, region, theatre, companyScope.selected]);
   const { data, loading } = useFetchJson<TrendResponse>(trendUrl, { enabled: !companyScope.loading });
-
-  // Region data (theatre/region/country) for the scope filters — global, not company-scoped.
-  useEffect(() => {
-    fetch("/api/region-data/countries")
-      .then((r) => r.json())
-      .then((rows: RegionRow[]) => setRegionRows(Array.isArray(rows) ? rows : []))
-      .catch(() => setRegionRows([]));
-  }, []);
 
   // Cascading filter option lists (theatre → region → country).
   const theatreOptions = useMemo(

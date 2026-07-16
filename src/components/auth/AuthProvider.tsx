@@ -9,6 +9,7 @@ import {
   ReactNode,
 } from "react";
 import { useRouter, usePathname } from "next/navigation";
+import { fetchMe } from "@/lib/fetch-me";
 
 interface AuthUser {
   id: number;
@@ -57,11 +58,12 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
 
   const isPublicPath = PUBLIC_PATHS.some((p) => pathname.startsWith(p));
 
-  const fetchUser = useCallback(async () => {
+  // `force` bypasses the shared in-flight request so an explicit refresh
+  // (post-login / MFA / preference change) always re-reads.
+  const fetchUser = useCallback(async (force = false) => {
     try {
-      const res = await fetch("/api/auth/me");
-      if (res.ok) {
-        const data = await res.json();
+      const data = await fetchMe(force);
+      if (data) {
         setUser(data);
         if (typeof data.idleMs === "number" && typeof data.sessionExpiresAt === "number") {
           setSession({ idleMs: data.idleMs, sessionExpiresAt: data.sessionExpiresAt });
@@ -72,9 +74,6 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
         setUser(null);
         setSession(null);
       }
-    } catch {
-      setUser(null);
-      setSession(null);
     } finally {
       setLoading(false);
     }
@@ -95,6 +94,8 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
     router.push("/login");
   }, [router]);
 
+  const refreshUser = useCallback(() => fetchUser(true), [fetchUser]);
+
   return (
     <AuthContext.Provider
       value={{
@@ -103,7 +104,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
         loading,
         session,
         logout,
-        refreshUser: fetchUser,
+        refreshUser,
       }}
     >
       {children}
