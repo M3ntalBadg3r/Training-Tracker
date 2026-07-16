@@ -10,8 +10,9 @@ import { resolveOfferingGeo, computeOfferingCounts, type OfferingLevel } from "@
  * supporting training requirements (with alternatives + minimum required).
  *
  * When `?country=` or `?region=` is supplied, each requirement is additionally
- * annotated with Onshore + Offshore distinct-holder counts (and a `met` flag),
- * scoped to the API key's companies. `?name=` narrows to a single offering.
+ * annotated with Onshore + Nearshore + Offshore distinct-holder counts (and a
+ * `met` flag), scoped to the API key's companies. `?name=` narrows to a single
+ * offering.
  */
 export async function GET(request: NextRequest) {
   const ctx = await authorizePublicRequest(request);
@@ -42,7 +43,7 @@ export async function GET(request: NextRequest) {
 
   // Compute compliance once across all requirements when a scope is given.
   let geo: Awaited<ReturnType<typeof resolveOfferingGeo>> | null = null;
-  let counts: Map<number, { onshore: number; offshore: number }> = new Map();
+  let counts: Map<number, { onshore: number; nearshore: number; offshore: number }> = new Map();
   if (wantsCompliance) {
     geo = await resolveOfferingGeo(level, value);
     const allReqs = offerings.flatMap((o) =>
@@ -79,6 +80,7 @@ export async function GET(request: NextRequest) {
         ...(wantsCompliance
           ? {
               onshore: c?.onshore ?? 0,
+              nearshore: geo?.hasNearshore ? c?.nearshore ?? 0 : null,
               offshore: geo?.hasOffshore ? c?.offshore ?? 0 : null,
               met: (c?.onshore ?? 0) >= r.quantityRequired,
             }
@@ -95,7 +97,17 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     ...(wantsCompliance && geo
-      ? { scope: { level, value, onshoreCountries: geo.onshoreCountries, offshoreCountries: geo.offshoreCountries, hasOffshore: geo.hasOffshore } }
+      ? {
+          scope: {
+            level,
+            value,
+            onshoreCountries: geo.onshoreCountries,
+            nearshoreCountries: geo.nearshoreCountries,
+            offshoreCountries: geo.offshoreCountries,
+            hasNearshore: geo.hasNearshore,
+            hasOffshore: geo.hasOffshore,
+          },
+        }
       : {}),
     offerings: result,
   });

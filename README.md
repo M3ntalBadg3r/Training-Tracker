@@ -385,7 +385,7 @@ Click **View** on any row to open the student's detailed record. The table's sea
 
 The student detail page shows:
 
-- **Contact Information** — Full Name, Email, Theatre, Country, and Region. Click **Edit** to modify Full Name, Email, or Country. Theatre and Region are auto-derived from the selected country (read-only). If the student's current country has no Theatre set in Region Data, the dropdown shows it with a short "⚠ no theatre" marker (and the Theatre box explains it) — switch to a configured country, or ask a SuperAdmin to set the Theatre in Region Data. A country that already has a Theatre is never flagged. Changes are previewed in a confirmation modal before saving.
+- **Contact Information** — Full Name, Email, Theatre, Country, Region, and the student's **Company** (shown in the sub-line under their name). Click **Edit** to modify Full Name, Email, Country, or Company. Theatre and Region are auto-derived from the selected country (read-only); the Company dropdown lists the companies you have access to (changing it moves the student to that company). If the student's current country has no Theatre set in Region Data, the dropdown shows it with a short "⚠ no theatre" marker (and the Theatre box explains it) — switch to a configured country, or ask a SuperAdmin to set the Theatre in Region Data. A country that already has a Theatre is never flagged. Changes are previewed in a confirmation modal before saving.
 - **Summary Badges** — Counts of active Certifications, Accreditations, Instructor-Led Trainings, and OLX completed, plus an **Expiring in 6 Months** badge counting the student's active Certifications and Accreditations whose expiry falls within the next six months.
 - **Achievement Over Time** — A chart of the student's completed training per month across their full history.
 - **Training Records** — A table of all trainings completed by the student, including Title (with link if available), Type, Product, Function, Completed Date, Expiry Date, and Active status.
@@ -467,6 +467,7 @@ Navigate to **Reports** in the sidebar. Each report follows the same shape: a fo
 
 ### Common Features
 
+- **Theatre / Region / Country filters** — a cascading scope selector narrows the whole report to a chosen geography. Picking a theatre limits the region list to that theatre; picking a region limits the country list; changing a higher level resets the ones below it. Leave them on "All" to see everything.
 - **Group by** — toggle theatre / region / country grouping on the table. The hierarchy rolls up: country → region → theatre, with a fallback to theatre when a student's region is missing or `unknown`.
 - **Sortable columns** — every report table sorts by clicking a column header (click again to reverse; an ▲/▼ arrow marks the active column). Tables default to Full Name A–Z (or the report's natural primary column), and when grouping is on, rows sort within each theatre / region / country group.
 - **Date-range picker** — limit results to a window (where applicable) with presets for Last 30 / 90 days, Last 12 months, Year to date, and All time.
@@ -957,7 +958,7 @@ curl -H "Authorization: Bearer tt_live_xxxxxxxx" \
 | `GET /api/public/v1/students` | Student roster (name, email, theatre, country, company) |
 | `GET /api/public/v1/training-records` | Per-completion training records (latest per learner & training) |
 | `GET /api/public/v1/reports/{reportType}` | Report aggregates — `trained-not-certified`, `legacy-gap`, `learner-scorecard`, `by-product`, `by-function`, `expiring-soon`, `currently-expired`, `last-12-months` |
-| `GET /api/public/v1/offerings` | Offering definitions (specialisations + supporting trainings). Add `?country=` or `?region=` for Onshore/Offshore compliance figures; `?name=` for one offering |
+| `GET /api/public/v1/offerings` | Offering definitions (specialisations + supporting trainings). Add `?country=` or `?region=` for Onshore/Nearshore/Offshore compliance figures; `?name=` for one offering |
 | `GET /api/public/v1/programs` | Partner program list (configured levels, per-theatre-minimum flag, tiered flag) |
 | `GET /api/public/v1/programs/{programName}` | Per-program compliance. `?level=country\|region\|theatre\|global` with `?country=`/`?region=`/`?theatre=`; `?horizonMonths=3\|6\|12` for a forward-looking projection; `?trainingTitle=&students=true` for the holder roster |
 
@@ -1043,7 +1044,7 @@ Under **Admin > Offerings** (SuperAdmin):
   downloadable template and a dry-run validation preview). Import is a
   per-offering overwrite.
 
-### Viewing an offering — Onshore & Offshore
+### Viewing an offering — Onshore, Nearshore & Offshore
 
 Open an offering and choose a **Country** or **Region**. Nothing is shown until
 you make a selection. For each specialisation you then see, per required
@@ -1052,7 +1053,8 @@ training:
 | Column | Meaning |
 | --- | --- |
 | **Onshore** | Distinct people holding the training in the selected country (or the region's countries), shown as `attained / required` with a **Met / Not met** badge. |
-| **Offshore** | The rest of that country/region's **theatre** — every other country in the theatre, with the onshore countries removed. This is the wider capability available to support delivery, and is informational (it doesn't change the Met status). |
+| **Nearshore** | The rest of that country/region's **theatre** — every other country in the theatre, with the onshore countries removed. The wider in-theatre capability available to support delivery. |
+| **Offshore** | Everyone **worldwide** holding the training, with the onshore countries removed (so it includes the nearshore people plus every other theatre). Nearshore and Offshore are informational — they don't change the Met status. |
 
 Figures are scoped to the company selected in the header. Click **View** on any
 count to list the people behind it, and use **Export** for the current view.

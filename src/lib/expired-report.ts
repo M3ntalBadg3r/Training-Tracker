@@ -60,6 +60,8 @@ export interface ExpiredReportInput {
   search?: string;
   type?: string;
   theatre?: string;
+  region?: string;
+  country?: string;
   bucket?: string | null;
   excludeRetired?: boolean;
   groupBy?: GroupByMode | null;
@@ -79,7 +81,7 @@ export interface ExpiredReportResult {
   total: number;
   page: number;
   pageSize: number;
-  filterOptions: { types: string[]; theatres: string[] };
+  filterOptions: { types: string[]; theatres: string[]; regions: string[]; countries: string[] };
 }
 
 // ─── Sort (mirrors hooks/useTableSort compare semantics) ────────────────────────
@@ -140,6 +142,8 @@ export function computeFromRecords(
     search = "",
     type = "",
     theatre = "",
+    region = "",
+    country = "",
     bucket = null,
     excludeRetired = false,
     groupBy = null,
@@ -154,6 +158,8 @@ export function computeFromRecords(
   const filterOptions = {
     types: [...new Set(records.map((r) => r.trainingType))].filter(Boolean).sort(),
     theatres: [...new Set(records.map((r) => r.theatre))].filter(Boolean).sort(),
+    regions: [...new Set(records.map((r) => r.region))].filter(Boolean).sort(),
+    countries: [...new Set(records.map((r) => r.country))].filter(Boolean).sort(),
   };
 
   // The exact `filtered` predicate from the page.
@@ -165,6 +171,8 @@ export function computeFromRecords(
     if (search && !r.fullName.toLowerCase().includes(q) && !r.email.toLowerCase().includes(q)) return false;
     if (type && r.trainingType !== type) return false;
     if (theatre && r.theatre !== theatre) return false;
+    if (region && r.region !== region) return false;
+    if (country && r.country !== country) return false;
     if (bucket) {
       const b = bucketLapse(expiry, now);
       if (b !== bucket) return false;

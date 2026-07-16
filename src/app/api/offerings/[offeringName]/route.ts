@@ -13,10 +13,11 @@ import {
  * GET /api/offerings/[offeringName]
  * Data-driven offering dashboard. Returns the offering definition + the
  * countries/regions available for the scope selector, and — when a country or
- * region is selected — per-specialisation requirements with Onshore + Offshore
- * distinct-holder counts and Met flags. Company-scoped (compliance = students).
+ * region is selected — per-specialisation requirements with Onshore + Nearshore
+ * + Offshore distinct-holder counts and Met flags. Company-scoped (compliance =
+ * students).
  *
- * `?students=true&scope=onshore|offshore&trainingTitle=<csv>&level=&country=|region=`
+ * `?students=true&scope=onshore|nearshore|offshore&trainingTitle=<csv>&level=&country=|region=`
  * returns the drill-down student list for a requirement.
  */
 export async function GET(
@@ -50,10 +51,16 @@ export async function GET(
   if (studentsMode) {
     if (noCompanies) return NextResponse.json({ students: [] });
     const titles = (sp.get("trainingTitle") || "").split(",").map((t) => t.trim()).filter(Boolean);
-    const scopeSide = sp.get("scope") === "offshore" ? "offshore" : "onshore";
+    const scopeRaw = sp.get("scope");
+    const scopeSide = scopeRaw === "offshore" ? "offshore" : scopeRaw === "nearshore" ? "nearshore" : "onshore";
     if (titles.length === 0 || !value) return NextResponse.json({ students: [] });
     const geo = await resolveOfferingGeo(level, value);
-    const countries = scopeSide === "offshore" ? geo.offshoreCountries : geo.onshoreCountries;
+    const countries =
+      scopeSide === "offshore"
+        ? geo.offshoreCountries
+        : scopeSide === "nearshore"
+        ? geo.nearshoreCountries
+        : geo.onshoreCountries;
     return getOfferingStudents(titles, countries, companyFilter);
   }
 
@@ -94,6 +101,7 @@ export async function GET(
     quantityRequired: number;
     alternatives: { trainingType: string; trainingTitle: string; trainingFullTitle: string }[];
     onshore: number | null;
+    nearshore: number | null;
     offshore: number | null;
     met: boolean | null;
   }
@@ -118,6 +126,7 @@ export async function GET(
         trainingFullTitle: a.trainingData?.fullTitle ?? "—",
       })),
       onshore: null,
+      nearshore: null,
       offshore: null,
       met: null,
     });
@@ -138,8 +147,9 @@ export async function GET(
     const counts = await computeOfferingCounts(allReqs, geoOut, companyFilter);
     for (const spec of specMap.values()) {
       for (const req of spec.requirements) {
-        const c = counts.get(req.id) ?? { onshore: 0, offshore: 0 };
+        const c = counts.get(req.id) ?? { onshore: 0, nearshore: 0, offshore: 0 };
         req.onshore = c.onshore;
+        req.nearshore = geoOut.hasNearshore ? c.nearshore : null;
         req.offshore = geoOut.hasOffshore ? c.offshore : null;
         req.met = c.onshore >= req.quantityRequired;
       }

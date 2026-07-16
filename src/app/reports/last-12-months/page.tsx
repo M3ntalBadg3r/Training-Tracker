@@ -15,6 +15,7 @@ import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
 import { useFetchJson } from "@/hooks/useFetchJson";
 import { useDateFormat } from "@/components/date-format/DateFormatProvider";
+import GeoScopeFilter, { GeoScope, EMPTY_GEO_SCOPE } from "@/components/reports/GeoScopeFilter";
 import { Search, Download, ArrowLeft, Award, ShieldCheck, GraduationCap, TrendingUp } from "lucide-react";
 import {
   Area,
@@ -140,9 +141,8 @@ export default function AchievementOverTimePage() {
 
   const [search, setSearch] = useState("");
   const [filterType, setFilterType] = useState("");
-  const [filterTheatre, setFilterTheatre] = useState("");
+  const [geo, setGeo] = useState<GeoScope>(EMPTY_GEO_SCOPE);
   const [filterFunction, setFilterFunction] = useState("");
-  const [filterRegion, setFilterRegion] = useState("");
   const [filterProduct, setFilterProduct] = useState("");
   const [filterBucket, setFilterBucket] = useState<string | null>(null);
   const [groupBy, setGroupBy] = useState<GroupByMode | null>(null);
@@ -153,9 +153,7 @@ export default function AchievementOverTimePage() {
   const now = useMemo(() => new Date(), []);
 
   const types = useMemo(() => [...new Set(trainingRecords.map((r) => r.trainingType))].filter(Boolean).sort(), [trainingRecords]);
-  const theatres = useMemo(() => [...new Set(trainingRecords.map((r) => r.theatre))].filter(Boolean).sort(), [trainingRecords]);
   const functions = useMemo(() => [...new Set(trainingRecords.map((r) => r.function))].filter(Boolean).sort(), [trainingRecords]);
-  const regions = useMemo(() => [...new Set(trainingRecords.map((r) => r.region))].filter(Boolean).sort(), [trainingRecords]);
   const products = useMemo(() => [...new Set(trainingRecords.map((r) => r.productType))].filter(Boolean).sort(), [trainingRecords]);
 
   // Earliest completion date in the current dataset — used to tighten the
@@ -221,14 +219,15 @@ export default function AchievementOverTimePage() {
       if (completed < windowStart || completed > windowEnd) return false;
       if (search && !r.fullName.toLowerCase().includes(q) && !r.email.toLowerCase().includes(q)) return false;
       if (filterType && r.trainingType !== filterType) return false;
-      if (filterTheatre && r.theatre !== filterTheatre) return false;
+      if (geo.theatre && r.theatre !== geo.theatre) return false;
+      if (geo.region && r.region !== geo.region) return false;
+      if (geo.country && r.country !== geo.country) return false;
       if (filterFunction && r.function !== filterFunction) return false;
-      if (filterRegion && r.region !== filterRegion) return false;
       if (filterProduct && r.productType !== filterProduct) return false;
       if (filterBucket && bucketKey(completed) !== filterBucket) return false;
       return true;
     });
-  }, [trainingRecords, search, filterType, filterTheatre, filterFunction, filterRegion, filterProduct, filterBucket, windowStart, windowEnd, bucketKey]);
+  }, [trainingRecords, search, filterType, geo, filterFunction, filterProduct, filterBucket, windowStart, windowEnd, bucketKey]);
 
   // Records used to build the chart — same filters as the table EXCEPT bucket click
   const chartRecords = useMemo(() => {
@@ -236,13 +235,14 @@ export default function AchievementOverTimePage() {
     return trainingRecords.filter((r) => {
       if (search && !r.fullName.toLowerCase().includes(q) && !r.email.toLowerCase().includes(q)) return false;
       if (filterType && r.trainingType !== filterType) return false;
-      if (filterTheatre && r.theatre !== filterTheatre) return false;
+      if (geo.theatre && r.theatre !== geo.theatre) return false;
+      if (geo.region && r.region !== geo.region) return false;
+      if (geo.country && r.country !== geo.country) return false;
       if (filterFunction && r.function !== filterFunction) return false;
-      if (filterRegion && r.region !== filterRegion) return false;
       if (filterProduct && r.productType !== filterProduct) return false;
       return true;
     });
-  }, [trainingRecords, search, filterType, filterTheatre, filterFunction, filterRegion, filterProduct]);
+  }, [trainingRecords, search, filterType, geo, filterFunction, filterProduct]);
 
   // Build bucket axis for the chart. Use axisStart (the earliest record when
   // "All time" is selected) so we don't render decades of empty leading
@@ -532,17 +532,10 @@ export default function AchievementOverTimePage() {
                 <option value="">All Types</option>
                 {types.map((t) => <option key={t} value={t}>{t}</option>)}
               </select>
-              <select value={filterTheatre} onChange={(e) => setFilterTheatre(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
-                <option value="">All Theatres</option>
-                {theatres.map((t) => <option key={t} value={t}>{t}</option>)}
-              </select>
+              <GeoScopeFilter value={geo} onChange={setGeo} selectClassName="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white" />
               <select value={filterFunction} onChange={(e) => setFilterFunction(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
                 <option value="">All Functions</option>
                 {functions.map((f) => <option key={f} value={f}>{f}</option>)}
-              </select>
-              <select value={filterRegion} onChange={(e) => setFilterRegion(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
-                <option value="">All Regions</option>
-                {regions.map((r) => <option key={r} value={r}>{r}</option>)}
               </select>
               <select value={filterProduct} onChange={(e) => setFilterProduct(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
                 <option value="">All Products</option>

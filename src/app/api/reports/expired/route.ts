@@ -10,8 +10,9 @@ import type { GroupByMode } from "@/lib/group-by";
  * downloads a small summary (charts + KPIs + group subtotals) plus one page of
  * detail rows instead of the whole training-records dataset.
  *
- * Query params: companyId, search (q), type, theatre, bucket, excludeRetired,
- * groupBy (theatre|region|country), sort, sortDir, page, pageSize, all (export).
+ * Query params: companyId, search (q), type, theatre, region, country, bucket,
+ * excludeRetired, groupBy (theatre|region|country), sort, sortDir, page,
+ * pageSize, all (export).
  */
 export async function GET(request: NextRequest) {
   let auth;
@@ -32,7 +33,7 @@ export async function GET(request: NextRequest) {
       total: 0,
       page: 1,
       pageSize: 25,
-      filterOptions: { types: [], theatres: [] },
+      filterOptions: { types: [], theatres: [], regions: [], countries: [] },
     });
   }
 
@@ -40,6 +41,8 @@ export async function GET(request: NextRequest) {
   const search = p.get("q") || "";
   const type = p.get("type") || "";
   const theatre = p.get("theatre") || "";
+  const region = p.get("region") || "";
+  const country = p.get("country") || "";
   const bucket = p.get("bucket") || "";
   const excludeRetired = p.get("excludeRetired") === "true";
   const rawGroupBy = p.get("groupBy") || "";
@@ -58,6 +61,8 @@ export async function GET(request: NextRequest) {
     encodeURIComponent(search),
     type,
     theatre,
+    region,
+    country,
     bucket,
     excludeRetired ? "1" : "0",
     groupBy ?? "",
@@ -72,6 +77,8 @@ export async function GET(request: NextRequest) {
       search,
       type,
       theatre,
+      region,
+      country,
       bucket: bucket || null,
       excludeRetired,
       groupBy,

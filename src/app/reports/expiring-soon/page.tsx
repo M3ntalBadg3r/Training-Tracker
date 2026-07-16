@@ -13,6 +13,7 @@ import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
 import { useFetchJson } from "@/hooks/useFetchJson";
 import { useDateFormat } from "@/components/date-format/DateFormatProvider";
+import GeoScopeFilter, { GeoScope, EMPTY_GEO_SCOPE } from "@/components/reports/GeoScopeFilter";
 import { Search, Download, ArrowLeft, Clock, AlertTriangle, AlertCircle, CalendarClock } from "lucide-react";
 import {
   BarChart,
@@ -102,14 +103,13 @@ export default function ExpiringSoonPage() {
   const [search, setSearch] = useState("");
   const [filterWindow, setFilterWindow] = useState("12");
   const [filterType, setFilterType] = useState("");
-  const [filterTheatre, setFilterTheatre] = useState("");
+  const [geo, setGeo] = useState<GeoScope>(EMPTY_GEO_SCOPE);
   const [filterHorizon, setFilterHorizon] = useState<string | null>(null);
   const [groupBy, setGroupBy] = useState<GroupByMode | null>("theatre");
 
   const now = useMemo(() => new Date(), []);
 
   const types = useMemo(() => [...new Set(trainingRecords.map((r) => r.trainingType))].filter(Boolean).sort(), [trainingRecords]);
-  const theatres = useMemo(() => [...new Set(trainingRecords.map((r) => r.theatre))].filter(Boolean).sort(), [trainingRecords]);
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
@@ -121,14 +121,16 @@ export default function ExpiringSoonPage() {
       if (expiry <= now || expiry > cutoff) return false;
       if (search && !r.fullName.toLowerCase().includes(q) && !r.email.toLowerCase().includes(q)) return false;
       if (filterType && r.trainingType !== filterType) return false;
-      if (filterTheatre && r.theatre !== filterTheatre) return false;
+      if (geo.theatre && r.theatre !== geo.theatre) return false;
+      if (geo.region && r.region !== geo.region) return false;
+      if (geo.country && r.country !== geo.country) return false;
       if (filterHorizon) {
         const b = bucketHorizon(expiry, now);
         if (b !== filterHorizon) return false;
       }
       return true;
     });
-  }, [trainingRecords, search, filterWindow, filterType, filterTheatre, filterHorizon, now]);
+  }, [trainingRecords, search, filterWindow, filterType, geo, filterHorizon, now]);
 
   const horizonSeries = useMemo(() => {
     const counts: Record<string, { name: string; Certification: number; Accreditation: number; "Instructor-Led Training": number; OLX: number }> = {};
@@ -325,10 +327,7 @@ export default function ExpiringSoonPage() {
                 <option value="">All Types</option>
                 {types.map((t) => <option key={t} value={t}>{t}</option>)}
               </select>
-              <select value={filterTheatre} onChange={(e) => setFilterTheatre(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
-                <option value="">All Theatres</option>
-                {theatres.map((t) => <option key={t} value={t}>{t}</option>)}
-              </select>
+              <GeoScopeFilter value={geo} onChange={setGeo} selectClassName="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white" />
               <select value={groupBy ?? ""} onChange={(e) => setGroupBy((e.target.value as GroupByMode) || null)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
                 <option value="">No Grouping</option>
                 <option value="theatre">Group by Theatre</option>

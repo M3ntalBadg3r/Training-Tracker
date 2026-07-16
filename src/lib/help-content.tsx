@@ -166,9 +166,11 @@ const helpSections: Record<string, HelpSection> = {
         <ul>
           <li>
             <strong>Contact Information</strong> &mdash; Full Name, Email,
-            Theatre, Country, and Region. Click <strong>Edit</strong> to modify
-            Full Name, Email, or Country. Theatre and Region are auto-derived
-            from the chosen country (read-only). If the student&apos;s current
+            Theatre, Country, Region, and the student&apos;s <strong>Company</strong>
+            (shown in the sub-line under their name). Click <strong>Edit</strong>
+            to modify Full Name, Email, Country, or Company. Theatre and Region
+            are auto-derived from the chosen country (read-only); the Company
+            dropdown lists the companies you have access to. If the student&apos;s current
             country has no theatre set in Region Data, it appears in the
             dropdown with a short &quot;&#9888; no theatre&quot; marker (and the
             Theatre box explains it) &mdash; pick a properly-configured country,
@@ -480,6 +482,7 @@ const helpSections: Record<string, HelpSection> = {
           <li><strong>KPI strip</strong> — four headline metrics at the top of every report.</li>
           <li><strong>Charts above the table</strong> — bars/areas/leaderboards summarising the filtered data.</li>
           <li><strong>Drill-down</strong> — click a chart segment to filter the table in place; a small &quot;Clear filter&quot; link appears when active.</li>
+          <li><strong>Theatre / Region / Country filters</strong> &mdash; a cascading scope selector narrows the whole report to a chosen geography. Choosing a theatre limits the region list to that theatre, and choosing a region limits the country list; changing a higher level resets the ones below it. Leave them on &quot;All&quot; to see everything.</li>
           <li><strong>Group by</strong> &mdash; toggle theatre / region / country grouping. The hierarchy rolls up: country → region → theatre, with a fallback to theatre when region is missing or &quot;unknown&quot;.</li>
           <li><strong>Sortable columns</strong> — click any column header to sort the table; click again to reverse the direction (an ▲/▼ arrow marks the active column). Tables default to Full Name A–Z (or the report&rsquo;s natural primary column). When grouping is on, rows sort within each group.</li>
           <li><strong>Date-range picker</strong> — limit results to a date window (where applicable). Includes presets for Last 30/90 days, Last 12 months, YTD, and All time.</li>
@@ -645,7 +648,8 @@ const helpSections: Record<string, HelpSection> = {
         <ul>
           <li>Pick a <strong>Country</strong> or <strong>Region</strong> to see capability. Nothing is shown until you make a selection.</li>
           <li><strong>Onshore</strong> counts the distinct people who hold each training in the selected country (or the region&apos;s countries). A <strong>Met / Not met</strong> badge compares the Onshore count against the minimum required.</li>
-          <li><strong>Offshore</strong> counts the rest of that country/region&apos;s <strong>theatre</strong>, with the onshore countries removed — the wider capability available to support delivery. Offshore is informational and doesn&apos;t change the Met status.</li>
+          <li><strong>Nearshore</strong> counts the rest of that country/region&apos;s <strong>theatre</strong>, with the onshore countries removed — the wider in-theatre capability available to support delivery.</li>
+          <li><strong>Offshore</strong> counts everyone <strong>worldwide</strong> who holds the training, with the onshore countries removed (so it includes the nearshore people plus every other theatre). Nearshore and Offshore are informational and don&apos;t change the Met status.</li>
           <li>Figures are scoped to the company selected in the header. Use <strong>Export</strong> for the current view, and click <strong>View</strong> on any count to list the people behind it.</li>
         </ul>
         <p className="text-sm text-gray-500">

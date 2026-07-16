@@ -12,6 +12,7 @@ import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
 import { useDebounce } from "@/hooks/useDebounce";
 import { useDateFormat } from "@/components/date-format/DateFormatProvider";
+import GeoScopeFilter, { GeoScope, EMPTY_GEO_SCOPE } from "@/components/reports/GeoScopeFilter";
 import { Search, Download, ArrowLeft, CalendarX, AlertCircle, AlertTriangle, History, ChevronLeft, ChevronRight } from "lucide-react";
 import {
   BarChart,
@@ -50,7 +51,7 @@ interface ExpiredResponse {
   total: number;
   page: number;
   pageSize: number;
-  filterOptions: { types: string[]; theatres: string[] };
+  filterOptions: { types: string[]; theatres: string[]; regions: string[]; countries: string[] };
 }
 
 function typeBadgeClass(t: string): string {
@@ -104,7 +105,7 @@ export default function ExpiredPage() {
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 300);
   const [filterType, setFilterType] = useState("");
-  const [filterTheatre, setFilterTheatre] = useState("");
+  const [geo, setGeo] = useState<GeoScope>(EMPTY_GEO_SCOPE);
   const [filterBucket, setFilterBucket] = useState<string | null>(null);
   const [excludeRetired, setExcludeRetired] = useState(false);
   const [groupBy, setGroupBy] = useState<GroupByMode | null>("theatre");
@@ -123,7 +124,9 @@ export default function ExpiredPage() {
       const params = new URLSearchParams();
       if (debouncedSearch) params.set("q", debouncedSearch);
       if (filterType) params.set("type", filterType);
-      if (filterTheatre) params.set("theatre", filterTheatre);
+      if (geo.theatre) params.set("theatre", geo.theatre);
+      if (geo.region) params.set("region", geo.region);
+      if (geo.country) params.set("country", geo.country);
       if (filterBucket) params.set("bucket", filterBucket);
       if (excludeRetired) params.set("excludeRetired", "true");
       if (groupBy) params.set("groupBy", groupBy);
@@ -136,13 +139,13 @@ export default function ExpiredPage() {
       }
       return params;
     },
-    [debouncedSearch, filterType, filterTheatre, filterBucket, excludeRetired, groupBy, sortColumn, sortDir, page, pageSize]
+    [debouncedSearch, filterType, geo, filterBucket, excludeRetired, groupBy, sortColumn, sortDir, page, pageSize]
   );
 
   // Reset to page 1 whenever a filter/sort/scope changes (not on page/pageSize).
   useEffect(() => {
     setPage(1);
-  }, [debouncedSearch, filterType, filterTheatre, filterBucket, excludeRetired, groupBy, sortColumn, sortDir, companyScope.selected]);
+  }, [debouncedSearch, filterType, geo, filterBucket, excludeRetired, groupBy, sortColumn, sortDir, companyScope.selected]);
 
   useEffect(() => {
     if (companyScope.loading) return;
@@ -168,7 +171,6 @@ export default function ExpiredPage() {
   const groups = data?.groups ?? [];
   const total = data?.total ?? 0;
   const types = data?.filterOptions.types ?? [];
-  const theatres = data?.filterOptions.theatres ?? [];
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const rangeStart = total === 0 ? 0 : (page - 1) * pageSize + 1;
@@ -363,10 +365,7 @@ export default function ExpiredPage() {
                 <option value="">All Types</option>
                 {types.map((t) => <option key={t} value={t}>{t}</option>)}
               </select>
-              <select value={filterTheatre} onChange={(e) => setFilterTheatre(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
-                <option value="">All Theatres</option>
-                {theatres.map((t) => <option key={t} value={t}>{t}</option>)}
-              </select>
+              <GeoScopeFilter value={geo} onChange={setGeo} selectClassName="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white" />
               <select value={groupBy ?? ""} onChange={(e) => setGroupBy((e.target.value as GroupByMode) || null)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
                 <option value="">No Grouping</option>
                 <option value="theatre">Group by Theatre</option>
