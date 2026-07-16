@@ -7,6 +7,7 @@ import { recomputeParentsForMany } from "@/lib/olx";
 import { detectFormat, isDateFormat, parseDateWith, type DateFormat } from "@/lib/date-format";
 import { getSystemDateFormat } from "@/lib/system-settings";
 import { ensureDefaultProductTypeId } from "@/lib/product-types";
+import { invalidateReportCache } from "@/lib/report-cache";
 
 interface ImportRow {
   fullName: string;
@@ -440,5 +441,6 @@ export async function POST(request: NextRequest) {
     create: { key: "students", timestamp: new Date() },
   });
 
+  invalidateReportCache();
   return NextResponse.json(summary);
 }

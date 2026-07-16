@@ -6,6 +6,7 @@ import PageHeader from "@/components/layout/PageHeader";
 import DataTable from "@/components/data-table/DataTable";
 import Badge from "@/components/ui/Badge";
 import Modal from "@/components/ui/Modal";
+import { useRegionData } from "@/hooks/useRegionData";
 import {
   ColumnDef,
   CountryOption,
@@ -142,8 +143,10 @@ export default function StudentRecordPage({
     email: "",
     country: "",
   });
-  const [countries, setCountries] = useState<CountryOption[]>([]);
-  const [countriesLoaded, setCountriesLoaded] = useState(false);
+  // Region-data list for the edit dropdown — shared/cached, fetched lazily once
+  // editing starts. `countriesLoaded` gates the dropdown until the list is ready.
+  const { rows: countries, loading: countriesLoading } = useRegionData(editing);
+  const countriesLoaded = !countriesLoading;
 
   // Pending training mutations (applied on Save)
   const [deletedTrainingIds, setDeletedTrainingIds] = useState<number[]>([]);
@@ -199,17 +202,6 @@ export default function StudentRecordPage({
         .catch(() => {});
     }
   }, [editing, trainingCatalog.length]);
-
-  // Country list for the edit dropdown — fetch once when editing starts
-  useEffect(() => {
-    if (editing && countries.length === 0) {
-      fetch("/api/region-data/countries")
-        .then((res) => (res.ok ? res.json() : []))
-        .then((data: CountryOption[]) => setCountries(Array.isArray(data) ? data : []))
-        .catch(() => setCountries([]))
-        .finally(() => setCountriesLoaded(true));
-    }
-  }, [editing, countries.length]);
 
   // Country dropdown options: countries with theatre populated, plus the
   // student's current country (even if its theatre is missing) so the form

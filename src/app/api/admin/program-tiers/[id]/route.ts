@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { requireSuperAdmin, handleAuthError } from "@/lib/auth";
+import { invalidateReportCache } from "@/lib/report-cache";
 
 /**
  * PATCH /api/admin/program-tiers/[id]
@@ -56,6 +57,7 @@ export async function PATCH(
   }
 
   const tier = await prisma.programTier.update({ where: { id: tierId }, data });
+  invalidateReportCache();
   return NextResponse.json({
     id: tier.id,
     programName: tier.programName,
@@ -85,5 +87,6 @@ export async function DELETE(
   if (isNaN(tierId)) return NextResponse.json({ error: "Invalid ID" }, { status: 400 });
 
   await prisma.programTier.delete({ where: { id: tierId } });
+  invalidateReportCache();
   return NextResponse.json({ success: true });
 }

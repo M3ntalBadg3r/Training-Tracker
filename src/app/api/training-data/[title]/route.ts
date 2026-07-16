@@ -6,6 +6,7 @@ import { recomputeAllStudentsForParent } from "@/lib/olx";
 import { safeDecodeParam } from "@/lib/utils";
 import { resolveProductTypeId } from "@/lib/product-types";
 import { sanitizeLegacyFields, isLegacyEligible } from "@/lib/legacy-training";
+import { invalidateReportCache } from "@/lib/report-cache";
 
 export async function GET(
   _request: NextRequest,
@@ -238,6 +239,7 @@ export async function PUT(
       await recomputeAllStudentsForParent(p);
     }
 
+    invalidateReportCache();
     return NextResponse.json(training);
   }
 
@@ -302,6 +304,7 @@ export async function PUT(
     await recomputeAllStudentsForParent(p);
   }
 
+  invalidateReportCache();
   return NextResponse.json(training);
 }
 
@@ -326,6 +329,7 @@ export async function PATCH(
     data: { isIncomplete: false },
   });
 
+  invalidateReportCache();
   return NextResponse.json(training);
 }
 
@@ -361,5 +365,6 @@ export async function DELETE(
     await recomputeAllStudentsForParent(p);
   }
 
+  invalidateReportCache();
   return NextResponse.json({ success: true });
 }

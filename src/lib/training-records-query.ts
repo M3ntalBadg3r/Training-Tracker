@@ -1,30 +1,54 @@
-import { NextRequest, NextResponse } from "next/server";
+/**
+ * Shared deduped training-records query.
+ *
+ * Several server-side report aggregators need the same base dataset the
+ * `/api/reports/training-records` route produces: every completion in scope,
+ * OLX sub-items excluded, deduped to the most-recent row per
+ * (email, fullTitle, trainingType), with human-readable labels and ISO date
+ * strings. Centralised here so the report modules (expired, learner-scorecard, …)
+ * stay in lockstep on exactly how records are fetched and shaped.
+ *
+ * (The `/api/reports/training-records` route and `report-queries.ts` keep their
+ * own copies for now — the former feeds several client consumers directly and
+ * the latter returns date-only strings for scheduled exports.)
+ */
+
 import prisma from "@/lib/prisma";
-import { requireAuth, handleAuthError } from "@/lib/auth";
-import { getAuthorizedCompanyIds, resolveCompanyFilter } from "@/lib/company-scope";
-import { cachedReport, scopeKey } from "@/lib/report-cache";
 
-export async function GET(request: NextRequest) {
-  let auth;
-  try {
-    auth = await requireAuth(request);
-  } catch (error) {
-    return handleAuthError(error);
-  }
-
-  const allowed = await getAuthorizedCompanyIds(auth.sub, auth.role);
-  const companyFilter = resolveCompanyFilter(allowed, request.nextUrl.searchParams.get("companyId"));
-  if (companyFilter !== null && companyFilter.length === 0) return NextResponse.json([]);
-
-  const records = await cachedReport(
-    `training-records|${scopeKey(companyFilter)}`,
-    () => computeTrainingRecords(companyFilter),
-  );
-
-  return NextResponse.json(records, { headers: { "Cache-Control": "private, max-age=30" } });
+/** One deduped completion row — the same shape the training-records route returns. */
+export interface DedupedTrainingRecord {
+  fullName: string;
+  email: string;
+  theatre: string;
+  region: string;
+  country: string;
+  trainingTitle: string;
+  trainingType: string;
+  productType: string;
+  function: string;
+  completedDate: string;
+  expiryDate: string;
+  active: boolean;
+  isLegacy: boolean;
 }
 
-async function computeTrainingRecords(companyFilter: number[] | null) {
+const FUNCTION_LABELS: Record<string, string> = {
+  Sales: "Sales",
+  PreSales: "Pre-Sales",
+  Deployments: "Deployments",
+};
+
+const TYPE_LABELS: Record<string, string> = {
+  Certification: "Certification",
+  Accreditation: "Accreditation",
+  InstructorLedTraining: "Instructor-Led Training",
+  OLX: "OLX",
+  OLXSubItem: "OLX Sub-Item",
+};
+
+export async function fetchDedupedTrainingRecords(
+  companyFilter: number[] | null,
+): Promise<DedupedTrainingRecord[]> {
   const rawRecords = await prisma.trainingTaken.findMany({
     where: {
       // OLX sub-items aren't stand-alone completions — they roll up into the
@@ -53,7 +77,7 @@ async function computeTrainingRecords(companyFilter: number[] | null) {
     },
   });
 
-  // Deduplicate: keep one record per student + fullTitle + trainingType (most recent)
+  // Keep one record per student + fullTitle + trainingType (most recent).
   const dedupeMap = new Map<string, (typeof rawRecords)[number]>();
   for (const tt of rawRecords) {
     const key = `${tt.email}::${tt.trainingData.fullTitle}::${tt.trainingData.trainingType}`;
@@ -62,20 +86,6 @@ async function computeTrainingRecords(companyFilter: number[] | null) {
       dedupeMap.set(key, tt);
     }
   }
-
-  const FUNCTION_LABELS: Record<string, string> = {
-    Sales: "Sales",
-    PreSales: "Pre-Sales",
-    Deployments: "Deployments",
-  };
-
-  const TYPE_LABELS: Record<string, string> = {
-    Certification: "Certification",
-    Accreditation: "Accreditation",
-    InstructorLedTraining: "Instructor-Led Training",
-    OLX: "OLX",
-    OLXSubItem: "OLX Sub-Item",
-  };
 
   const now = new Date();
   return Array.from(dedupeMap.values()).map((tt) => ({

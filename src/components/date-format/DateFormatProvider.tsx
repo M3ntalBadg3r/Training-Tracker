@@ -8,6 +8,7 @@ import {
   isDateFormat,
   type DateFormat,
 } from "@/lib/date-format";
+import { fetchMe } from "@/lib/fetch-me";
 
 interface DateFormatContextValue {
   /** Effective format = user preference if set, else system default. */
@@ -50,22 +51,19 @@ export default function DateFormatProvider({ children }: { children: ReactNode }
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      try {
-        const res = await fetch("/api/auth/me");
-        if (!res.ok) return;
-        const data = await res.json();
-        if (cancelled) return;
+      // Shared with AuthProvider's mount fetch, so a page load hits /api/auth/me once.
+      const data = await fetchMe();
+      if (cancelled) return;
+      if (data) {
         if (isDateFormat(data.systemDateFormat)) setSystemFormatState(data.systemDateFormat);
         if (data.dateFormat === null || data.dateFormat === undefined) {
           setUserFormatState(null);
         } else if (isDateFormat(data.dateFormat)) {
           setUserFormatState(data.dateFormat);
         }
-      } catch {
-        // Leave defaults in place; the rest of the UI handles unauthenticated paths.
-      } finally {
-        if (!cancelled) setLoading(false);
       }
+      // On failure/unauthenticated, leave defaults in place.
+      setLoading(false);
     })();
     return () => {
       cancelled = true;

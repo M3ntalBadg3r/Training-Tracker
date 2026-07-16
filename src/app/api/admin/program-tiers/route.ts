@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { requireSuperAdmin, handleAuthError } from "@/lib/auth";
+import { invalidateReportCache } from "@/lib/report-cache";
 
 /**
  * GET /api/admin/program-tiers?programName=...
@@ -81,6 +82,7 @@ export async function POST(request: NextRequest) {
     data: { programName, name, sortOrder, specialisationsRequired },
   });
 
+  invalidateReportCache();
   return NextResponse.json(
     {
       id: tier.id,

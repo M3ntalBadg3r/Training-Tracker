@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { requireSuperAdmin, handleAuthError } from "@/lib/auth";
 import { safeDecodeParam } from "@/lib/utils";
+import { invalidateReportCache } from "@/lib/report-cache";
 
 /**
  * PATCH /api/admin/program-data/program/[programName]
@@ -83,6 +84,7 @@ export async function PATCH(
     return 0;
   });
 
+  invalidateReportCache();
   return NextResponse.json({ success: true, updated });
 }
 
@@ -113,5 +115,6 @@ export async function DELETE(
     return res.count;
   });
 
+  invalidateReportCache();
   return NextResponse.json({ success: true, deleted });
 }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { requireAuth, handleAuthError } from "@/lib/auth";
 import { getAuthorizedCompanyIds, resolveCompanyFilter } from "@/lib/company-scope";
+import { cachedReport, scopeKey } from "@/lib/report-cache";
 
 type TrainingRecord = {
   email: string;
@@ -146,8 +147,21 @@ export async function GET(request: NextRequest) {
   }
 
   const theatre = request.nextUrl.searchParams.get("theatre");
-  const filterByTheatre = theatre && theatre !== "Global";
+  const filterByTheatre = Boolean(theatre && theatre !== "Global");
 
+  const body = await cachedReport(
+    `dashboard|${scopeKey(companyFilter)}|${theatre || "Global"}`,
+    () => computeDashboard(companyFilter, theatre, filterByTheatre),
+  );
+
+  return NextResponse.json(body, { headers: { "Cache-Control": "private, max-age=30" } });
+}
+
+async function computeDashboard(
+  companyFilter: number[] | null,
+  theatre: string | null,
+  filterByTheatre: boolean,
+) {
   const companyStudentWhere = companyFilter ? { companyId: { in: companyFilter } } : {};
 
   // Fetch distinct theatres for the dropdown (scoped to allowed companies)
@@ -160,9 +174,10 @@ export async function GET(request: NextRequest) {
   const theatres = distinctTheatres.map((s: typeof distinctTheatres[number]) => s.theatre);
 
   // Combine theatre + company filters for Prisma queries
-  const studentWhere = { ...companyStudentWhere, ...(filterByTheatre ? { theatre } : {}) };
-  const trainingWhere = (filterByTheatre || companyFilter)
-    ? { student: { ...(filterByTheatre ? { theatre } : {}), ...(companyFilter ? { companyId: { in: companyFilter } } : {}) } }
+  const theatreFilter = filterByTheatre && theatre ? theatre : undefined;
+  const studentWhere = { ...companyStudentWhere, ...(theatreFilter ? { theatre: theatreFilter } : {}) };
+  const trainingWhere = (theatreFilter || companyFilter)
+    ? { student: { ...(theatreFilter ? { theatre: theatreFilter } : {}), ...(companyFilter ? { companyId: { in: companyFilter } } : {}) } }
     : {};
 
   // --- Top-level metrics ---
@@ -221,7 +236,7 @@ export async function GET(request: NextRequest) {
 
   const chartData = computeChartData(allTrainingTaken);
 
-  return NextResponse.json({
+  return {
     theatres,
     metrics: {
       totalStudents,
@@ -235,5 +250,5 @@ export async function GET(request: NextRequest) {
       olxStudents: olxStudents.size,
     },
     ...chartData,
-  });
+  };
 }

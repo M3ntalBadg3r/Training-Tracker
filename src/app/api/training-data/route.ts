@@ -6,6 +6,7 @@ import { getAuthorizedCompanyIds, resolveCompanyFilter } from "@/lib/company-sco
 import { recomputeAllStudentsForParent } from "@/lib/olx";
 import { resolveProductTypeId } from "@/lib/product-types";
 import { sanitizeLegacyFields } from "@/lib/legacy-training";
+import { invalidateReportCache } from "@/lib/report-cache";
 
 export async function GET(request: NextRequest) {
   let auth;
@@ -178,5 +179,6 @@ export async function POST(request: NextRequest) {
     await recomputeAllStudentsForParent(p);
   }
 
+  invalidateReportCache();
   return NextResponse.json(training, { status: 201 });
 }

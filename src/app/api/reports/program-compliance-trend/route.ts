@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { requireAuth, handleAuthError } from "@/lib/auth";
 import { getAuthorizedCompanyIds, resolveCompanyFilter } from "@/lib/company-scope";
+import { cachedReport, scopeKey } from "@/lib/report-cache";
 import {
   extractTitles,
   getEmailSetsByTitle,
@@ -48,6 +49,22 @@ export async function GET(request: NextRequest) {
   const countryParam = request.nextUrl.searchParams.get("country") || "";
   const regionParam = request.nextUrl.searchParams.get("region") || "";
   const theatreParam = request.nextUrl.searchParams.get("theatre") || "";
+
+  const body = await cachedReport(
+    `pct|${scopeKey(companyFilter)}|${programFilter || ""}|${theatreParam}|${regionParam}|${countryParam}`,
+    () => computeComplianceTrend(companyFilter, programFilter, countryParam, regionParam, theatreParam),
+  );
+
+  return NextResponse.json(body, { headers: { "Cache-Control": "private, max-age=30" } });
+}
+
+async function computeComplianceTrend(
+  companyFilter: number[] | null,
+  programFilter: string | null,
+  countryParam: string,
+  regionParam: string,
+  theatreParam: string,
+) {
   const geoScope: ComplianceScope = { companyIds: companyFilter };
   let scopeLabel = "Global · all theatres";
   if (countryParam) {
@@ -84,7 +101,7 @@ export async function GET(request: NextRequest) {
   type Row = typeof data[number];
 
   if (data.length === 0) {
-    return NextResponse.json({ snapshots: [], programs: [], specialisations: [], scopeLabel });
+    return { snapshots: [], programs: [], specialisations: [], scopeLabel };
   }
 
   // Build month boundaries: 12 months of history (incl. current) + 12 months
@@ -156,5 +173,5 @@ export async function GET(request: NextRequest) {
   const programs = [...new Set(data.map((r) => r.programName))].sort();
   const specialisations = [...new Set(data.map((r) => r.specialisation.name))].sort();
 
-  return NextResponse.json({ snapshots, programs, specialisations, scopeLabel });
+  return { snapshots, programs, specialisations, scopeLabel };
 }

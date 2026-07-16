@@ -5,6 +5,7 @@ import { isActive, parseDate, computeExpiryDate } from "@/lib/utils";
 import { requireAuth, handleAuthError } from "@/lib/auth";
 import { canAccessCompany, getAuthorizedCompanyIds, resolveCompanyFilter } from "@/lib/company-scope";
 import { recomputeParentsForSubItem } from "@/lib/olx";
+import { invalidateReportCache } from "@/lib/report-cache";
 
 export async function GET(request: NextRequest) {
   let auth;
@@ -169,5 +170,6 @@ export async function POST(request: NextRequest) {
   // OLX TrainingTaken row when this completes its sibling set.
   await recomputeParentsForSubItem(email, trainingTitle);
 
+  invalidateReportCache();
   return NextResponse.json(created, { status: 201 });
 }

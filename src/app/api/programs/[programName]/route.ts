@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, handleAuthError } from "@/lib/auth";
 import { getAuthorizedCompanyIds, resolveCompanyFilter } from "@/lib/company-scope";
 import { buildProgramReport, getProgramStudents } from "@/lib/program-report";
+import { cachedReport, scopeKey } from "@/lib/report-cache";
 
 /**
  * Unified, data-driven program compliance endpoint. The program is identified
@@ -64,12 +65,23 @@ export async function GET(
   const rawHorizon = parseInt(request.nextUrl.searchParams.get("horizonMonths") || "0", 10);
   const horizonMonths = [3, 6, 12].includes(rawHorizon) ? rawHorizon : 0;
 
+  // Encode the free-text program name / training titles so a literal "|" in the
+  // value can't collide with the key delimiter and cross views.
+  const scope = scopeKey(companyFilter);
+  const progKey = encodeURIComponent(programName);
+
   if (studentsMode && trainingTitleParam) {
     const titles = trainingTitleParam.split(",").map((t) => t.trim()).filter(Boolean);
-    const result = await getProgramStudents({ trainingTitles: titles, level, country, region, theatre, companyIds: companyFilter });
-    return NextResponse.json(result);
+    const result = await cachedReport(
+      `program-students|${progKey}|${scope}|${level}|${country}|${region}|${theatre}|${encodeURIComponent(trainingTitleParam)}`,
+      () => getProgramStudents({ trainingTitles: titles, level, country, region, theatre, companyIds: companyFilter }),
+    );
+    return NextResponse.json(result, { headers: { "Cache-Control": "private, max-age=30" } });
   }
 
-  const report = await buildProgramReport({ programName, level, country, region, theatre, horizonMonths, companyIds: companyFilter });
-  return NextResponse.json(report);
+  const report = await cachedReport(
+    `program|${progKey}|${scope}|${level}|${country}|${region}|${theatre}|${horizonMonths}`,
+    () => buildProgramReport({ programName, level, country, region, theatre, horizonMonths, companyIds: companyFilter }),
+  );
+  return NextResponse.json(report, { headers: { "Cache-Control": "private, max-age=30" } });
 }

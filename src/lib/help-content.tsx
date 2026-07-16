@@ -496,7 +496,7 @@ const helpSections: Record<string, HelpSection> = {
         <p>Horizon bar showing records expiring within 1/3/6/12 months, plus a theatre × month stacked bar showing where the cliff falls.</p>
 
         <h3>Currently Expired</h3>
-        <p>Every certification &amp; training whose latest completion has <em>already</em> lapsed (the inverse of Expiring Soon). Records are bucketed by how long ago they expired (≤1 month, 1–3, 3–6, 6–12, &gt; 12 months) with a stacked bar by training type and an &ldquo;Expired by Theatre&rdquo; chart. Click a band to filter the table; group by theatre/region/country, search, and export to CSV/Excel/PDF. Retired (legacy) certs are shown by default — tick <strong>Exclude retired (legacy) certs</strong> to hide them. Also available as a scheduled export.</p>
+        <p>Every certification &amp; training whose latest completion has <em>already</em> lapsed (the inverse of Expiring Soon). Records are bucketed by how long ago they expired (≤1 month, 1–3, 3–6, 6–12, &gt; 12 months) with a stacked bar by training type and an &ldquo;Expired by Theatre&rdquo; chart. Click a band to filter the table; group by theatre/region/country, search, and export to CSV/Excel/PDF. Retired (legacy) certs are shown by default — tick <strong>Exclude retired (legacy) certs</strong> to hide them. The detail table is <strong>paginated</strong> — use the page controls beneath it to page through results; charts, KPI cards and exports always cover the full filtered set. Also available as a scheduled export.</p>
 
         <h3>Achievement Over Time</h3>
         <p>Area chart of completions with a dashed prior-period comparison line, plus a top-10 leaderboard of trainings by completion count. Pick a preset time range (12, 6, 3, or 1 month) or a custom date range; the chart automatically buckets by day, week, or month based on the window. Click a point to filter the table to that bucket. Type/theatre/function/region/product filters update the chart as well as the table.</p>
@@ -570,6 +570,7 @@ const helpSections: Record<string, HelpSection> = {
           <li><strong>Last Achievement</strong> — most recent completion date across all of the learner&apos;s records.</li>
           <li>The whole roster is included, so learners with no completions appear with all-zero counts. OLX sub-items are excluded (the parent OLX counts once it&apos;s complete).</li>
           <li>Filter by theatre/region/country and search by name or email; every column is sortable and the table exports to CSV/Excel/PDF.</li>
+          <li>The detail table is <strong>paginated</strong> — use the controls beneath it to page through learners and change the page size; the KPI cards, leaderboard and exports always cover the full filtered set.</li>
         </ul>
       </>
     ),

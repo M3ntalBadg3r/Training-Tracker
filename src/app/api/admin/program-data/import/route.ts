@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { requireSuperAdmin, handleAuthError } from "@/lib/auth";
+import { invalidateReportCache } from "@/lib/report-cache";
 
 interface RawRow {
   programName?: string;
@@ -396,5 +397,6 @@ export async function POST(request: NextRequest) {
     { timeout: 120_000, maxWait: 10_000 }
   );
 
+  invalidateReportCache();
   return NextResponse.json({ created, skipped, errors });
 }

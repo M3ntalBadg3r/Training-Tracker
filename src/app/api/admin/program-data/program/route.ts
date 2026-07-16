@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { requireSuperAdmin, handleAuthError } from "@/lib/auth";
+import { invalidateReportCache } from "@/lib/report-cache";
 
 /**
  * GET /api/admin/program-data/program
@@ -114,6 +115,7 @@ export async function POST(request: NextRequest) {
   }
 
   const program = await prisma.program.create({ data: { name, isTiered, deploymentMode } });
+  invalidateReportCache();
   return NextResponse.json(
     { id: program.id, name: program.name, isTiered: program.isTiered, deploymentMode: program.deploymentMode },
     { status: 201 }

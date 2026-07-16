@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import PageHeader from "@/components/layout/PageHeader";
 import KpiStrip from "@/components/ui/KpiStrip";
 import DateRangePicker, { DateRangeValue } from "@/components/ui/DateRangePicker";
 import { useChartTheme, tooltipStyle } from "@/lib/chart-theme";
 import { useProductTypeColors } from "@/hooks/useProductTypeColors";
-import { resolveBucket, GroupByMode, GROUP_BY_LABEL } from "@/lib/group-by";
+import { GroupByMode, GROUP_BY_LABEL } from "@/lib/group-by";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
 import { ArrowLeft, Download, Users, GraduationCap, Map as MapIcon, AlertTriangle } from "lucide-react";
@@ -24,37 +24,14 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
-interface TrainingRecordRow {
-  fullName: string;
-  email: string;
-  theatre: string;
-  region: string;
-  country: string;
-  trainingTitle: string;
-  trainingType: string;
-  productType: string;
-  function: string;
-  completedDate: string;
-  expiryDate: string;
-  active: boolean;
-}
-
-interface StudentRow {
-  email: string;
-  fullName: string;
-  theatre: string | null;
-  country: string | null;
-  region: string | null;
-}
-
 type RangePreset = "12m" | "6m" | "3m" | "all" | "custom";
 
-const RANGE_PRESETS: { value: RangePreset; label: string; months: number | null }[] = [
-  { value: "12m", label: "Last 12 months", months: 12 },
-  { value: "6m", label: "Last 6 months", months: 6 },
-  { value: "3m", label: "Last 3 months", months: 3 },
-  { value: "all", label: "All time", months: null },
-  { value: "custom", label: "Custom range", months: null },
+const RANGE_PRESETS: { value: RangePreset; label: string }[] = [
+  { value: "12m", label: "Last 12 months" },
+  { value: "6m", label: "Last 6 months" },
+  { value: "3m", label: "Last 3 months" },
+  { value: "all", label: "All time" },
+  { value: "custom", label: "Custom range" },
 ];
 
 type CompareMode = "type" | "function" | "product" | "time";
@@ -66,59 +43,9 @@ const COMPARE_MODES: { value: CompareMode; label: string }[] = [
   { value: "time", label: "Over Time" },
 ];
 
-const TYPE_ORDER = ["Certification", "Accreditation", "Instructor-Led Training", "OLX"] as const;
-
 type SortKey =
-  | "bucket"
-  | "headcount"
-  | "cert"
-  | "accred"
-  | "ilt"
-  | "olx"
-  | "total"
-  | "perStudent"
-  | "exp3"
-  | "exp6";
-
-function monthKey(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-}
-
-function startOfDay(d: Date): Date {
-  const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
-  return x;
-}
-
-function endOfDay(d: Date): Date {
-  const x = new Date(d);
-  x.setHours(23, 59, 59, 999);
-  return x;
-}
-
-function addMonths(d: Date, n: number): Date {
-  const x = new Date(d);
-  x.setMonth(x.getMonth() + n);
-  return x;
-}
-
-function ExportMenu({ data, columns, filename }: { data: Record<string, unknown>[]; columns: { key: string; header: string }[]; filename: string }) {
-  const [show, setShow] = useState(false);
-  return (
-    <div className="relative">
-      <button onClick={() => setShow((p) => !p)} className="flex items-center gap-2 px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300">
-        <Download size={16} /> Export
-      </button>
-      {show && (
-        <div className="absolute right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[140px]">
-          <button onClick={() => { exportToCsv(data, columns as never, filename); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-t-lg">Export as CSV</button>
-          <button onClick={() => { exportToExcel(data, columns as never, filename); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100">Export as Excel</button>
-          <button onClick={() => { exportToPdf(data, columns as never, filename); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-b-lg">Export as PDF</button>
-        </div>
-      )}
-    </div>
-  );
-}
+  | "bucket" | "headcount" | "cert" | "accred" | "ilt" | "olx"
+  | "total" | "perStudent" | "exp3" | "exp6";
 
 interface BucketMetrics {
   bucket: string;
@@ -133,23 +60,39 @@ interface BucketMetrics {
   exp6: number;
 }
 
+interface ComparisonResponse {
+  metrics: BucketMetrics[];
+  totals: { headcount: number; cert: number; accred: number; ilt: number; olx: number; total: number; exp3: number; exp6: number };
+  chart: { mode: CompareMode; rows: Record<string, string | number>[]; series: string[] };
+  filterOptions: { functions: string[]; products: string[]; types: string[] };
+}
+
+function localYmd(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function ExportMenu({ onExport, busy }: { onExport: (fmt: "csv" | "excel" | "pdf") => void; busy: boolean }) {
+  const [show, setShow] = useState(false);
+  return (
+    <div className="relative">
+      <button onClick={() => setShow((p) => !p)} disabled={busy} className="flex items-center gap-2 px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300 disabled:opacity-50">
+        <Download size={16} /> {busy ? "Exporting…" : "Export"}
+      </button>
+      {show && !busy && (
+        <div className="absolute right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[140px]">
+          <button onClick={() => { onExport("csv"); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-t-lg">Export as CSV</button>
+          <button onClick={() => { onExport("excel"); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100">Export as Excel</button>
+          <button onClick={() => { onExport("pdf"); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-b-lg">Export as PDF</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ComparisonPage() {
   const chart = useChartTheme();
   const productColors = useProductTypeColors();
   const companyScope = useCompanyScope();
-
-  // Loading is derived (loaded.key !== requestKey), not set synchronously in the
-  // effect, so a company-scope change re-shows the spinner without a
-  // set-state-in-effect violation. State is only written in the async callbacks.
-  const [loaded, setLoaded] = useState<{ key: string; records: TrainingRecordRow[]; students: StudentRow[] }>({
-    key: "__init__",
-    records: [],
-    students: [],
-  });
-  const requestKey = companyScope.loading ? "__disabled__" : `sel:${companyScope.selected}`;
-  const loading = loaded.key !== requestKey;
-  const records = loaded.records;
-  const students = loaded.students;
 
   const [geoMode, setGeoMode] = useState<GroupByMode>("theatre");
   const [rangePreset, setRangePreset] = useState<RangePreset>("12m");
@@ -161,23 +104,38 @@ export default function ComparisonPage() {
   const [sortKey, setSortKey] = useState<SortKey>("total");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
-  const now = useMemo(() => new Date(), []);
+  const buildParams = useCallback(() => {
+    const params = new URLSearchParams();
+    params.set("geoMode", geoMode);
+    params.set("range", rangePreset);
+    if (rangePreset === "custom") {
+      if (customRange.from) params.set("from", localYmd(customRange.from));
+      if (customRange.to) params.set("to", localYmd(customRange.to));
+    }
+    if (filterFunction) params.set("func", filterFunction);
+    if (filterProduct) params.set("product", filterProduct);
+    if (filterType) params.set("type", filterType);
+    params.set("compareMode", compareMode);
+    return params;
+  }, [geoMode, rangePreset, customRange, filterFunction, filterProduct, filterType, compareMode]);
+
+  // Loading is derived (loaded.key !== requestKey), not set synchronously in the
+  // effect, so a control change re-shows the spinner without a
+  // set-state-in-effect violation. Stale data is kept until the new fetch lands.
+  const query = buildParams().toString();
+  const requestKey = companyScope.loading ? "__disabled__" : `${query}|sel:${companyScope.selected}`;
+  const [loaded, setLoaded] = useState<{ key: string; data: ComparisonResponse | null }>({ key: "__init__", data: null });
+  const loading = loaded.key !== requestKey;
+  const data = loaded.data;
 
   useEffect(() => {
     if (companyScope.loading) return;
+    const url = withCompany(`/api/reports/comparison?${query}`, companyScope.selected);
     let cancelled = false;
-    Promise.all([
-      fetch(withCompany("/api/reports/training-records", companyScope.selected)).then((r) => r.json()),
-      fetch(withCompany("/api/students", companyScope.selected)).then((r) => r.json()),
-    ])
-      .then(([recs, studs]) => {
-        if (!cancelled) {
-          setLoaded({
-            key: requestKey,
-            records: Array.isArray(recs) ? recs : [],
-            students: Array.isArray(studs) ? studs : [],
-          });
-        }
+    fetch(url)
+      .then((r) => r.json())
+      .then((d: ComparisonResponse) => {
+        if (!cancelled) setLoaded({ key: requestKey, data: d });
       })
       .catch(() => {
         if (!cancelled) setLoaded((prev) => ({ ...prev, key: requestKey }));
@@ -185,97 +143,14 @@ export default function ComparisonPage() {
     return () => {
       cancelled = true;
     };
-  }, [requestKey, companyScope.loading, companyScope.selected]);
+  }, [requestKey, query, companyScope.loading, companyScope.selected]);
 
-  const functions = useMemo(() => [...new Set(records.map((r) => r.function))].filter(Boolean).sort(), [records]);
-  const products = useMemo(() => [...new Set(records.map((r) => r.productType))].filter(Boolean).sort(), [records]);
-  const types = useMemo(() => [...new Set(records.map((r) => r.trainingType))].filter(Boolean).sort(), [records]);
-
-  // Completion time-range bounds. windowStart null = no lower bound (all time);
-  // windowEnd defaults to now unless a custom upper bound is set.
-  const { windowStart, windowEnd } = useMemo(() => {
-    if (rangePreset === "custom") {
-      return {
-        windowStart: customRange.from ? startOfDay(customRange.from) : null,
-        windowEnd: customRange.to ? endOfDay(customRange.to) : now,
-      };
-    }
-    if (rangePreset === "all") return { windowStart: null, windowEnd: now };
-    const months = RANGE_PRESETS.find((p) => p.value === rangePreset)?.months ?? 12;
-    const d = new Date(now.getFullYear(), now.getMonth() - (months - 1), 1);
-    d.setHours(0, 0, 0, 0);
-    return { windowStart: d, windowEnd: now };
-  }, [rangePreset, customRange, now]);
-
-  // Records passing the function/product/type filters (used everywhere). The
-  // time-range is applied separately so expiring-soon can ignore it.
-  const filteredRecords = useMemo(() => {
-    return records.filter((r) => {
-      if (filterFunction && r.function !== filterFunction) return false;
-      if (filterProduct && r.productType !== filterProduct) return false;
-      if (filterType && r.trainingType !== filterType) return false;
-      return true;
-    });
-  }, [records, filterFunction, filterProduct, filterType]);
-
-  // Headcount per bucket — distinct students at the chosen geo level.
-  const headcountByBucket = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const s of students) {
-      const b = resolveBucket(s, geoMode);
-      m.set(b, (m.get(b) ?? 0) + 1);
-    }
-    return m;
-  }, [students, geoMode]);
-
-  const exp3Cutoff = useMemo(() => addMonths(now, 3), [now]);
-  const exp6Cutoff = useMemo(() => addMonths(now, 6), [now]);
-
-  // Per-bucket comparison metrics.
-  const metrics: BucketMetrics[] = useMemo(() => {
-    const map = new Map<string, BucketMetrics>();
-    const ensure = (bucket: string): BucketMetrics => {
-      let row = map.get(bucket);
-      if (!row) {
-        row = { bucket, headcount: 0, cert: 0, accred: 0, ilt: 0, olx: 0, total: 0, perStudent: 0, exp3: 0, exp6: 0 };
-        map.set(bucket, row);
-      }
-      return row;
-    };
-
-    // Seed buckets from headcount so geographies with students but no
-    // completions in-window still appear.
-    for (const [bucket, count] of headcountByBucket) ensure(bucket).headcount = count;
-
-    for (const r of filteredRecords) {
-      const bucket = resolveBucket(r, geoMode);
-      const row = ensure(bucket);
-
-      const completed = new Date(r.completedDate);
-      const inWindow = (!windowStart || completed >= windowStart) && completed <= windowEnd;
-      if (inWindow) {
-        row.total += 1;
-        if (r.trainingType === "Certification") row.cert += 1;
-        else if (r.trainingType === "Accreditation") row.accred += 1;
-        else if (r.trainingType === "Instructor-Led Training") row.ilt += 1;
-        else if (r.trainingType === "OLX") row.olx += 1;
-      }
-
-      // Expiring-soon is forward-from-today and ignores the completion window.
-      if (r.active && r.expiryDate) {
-        const exp = new Date(r.expiryDate);
-        if (exp >= now && exp <= exp6Cutoff) {
-          row.exp6 += 1;
-          if (exp <= exp3Cutoff) row.exp3 += 1;
-        }
-      }
-    }
-
-    for (const row of map.values()) {
-      row.perStudent = row.headcount > 0 ? row.total / row.headcount : 0;
-    }
-    return Array.from(map.values());
-  }, [filteredRecords, headcountByBucket, geoMode, windowStart, windowEnd, now, exp3Cutoff, exp6Cutoff]);
+  const metrics = useMemo(() => data?.metrics ?? [], [data]);
+  const totals = data?.totals ?? { headcount: 0, cert: 0, accred: 0, ilt: 0, olx: 0, total: 0, exp3: 0, exp6: 0 };
+  const chartData = data?.chart ?? { mode: "type" as CompareMode, rows: [], series: [] };
+  const functions = data?.filterOptions.functions ?? [];
+  const products = data?.filterOptions.products ?? [];
+  const types = data?.filterOptions.types ?? [];
 
   const sortedMetrics = useMemo(() => {
     const arr = [...metrics];
@@ -289,95 +164,6 @@ export default function ComparisonPage() {
     });
     return arr;
   }, [metrics, sortKey, sortDir]);
-
-  const totals = useMemo(() => {
-    return metrics.reduce(
-      (acc, r) => {
-        acc.headcount += r.headcount;
-        acc.cert += r.cert;
-        acc.accred += r.accred;
-        acc.ilt += r.ilt;
-        acc.olx += r.olx;
-        acc.total += r.total;
-        acc.exp3 += r.exp3;
-        acc.exp6 += r.exp6;
-        return acc;
-      },
-      { headcount: 0, cert: 0, accred: 0, ilt: 0, olx: 0, total: 0, exp3: 0, exp6: 0 },
-    );
-  }, [metrics]);
-
-  // Records within the completion window (for the chart breakdowns).
-  const windowedRecords = useMemo(() => {
-    return filteredRecords.filter((r) => {
-      const d = new Date(r.completedDate);
-      if (windowStart && d < windowStart) return false;
-      return d <= windowEnd;
-    });
-  }, [filteredRecords, windowStart, windowEnd]);
-
-  // Top buckets by total trainings, used to cap chart series for readability.
-  const topBuckets = useMemo(() => {
-    return [...metrics].sort((a, b) => b.total - a.total).slice(0, 8).map((m) => m.bucket);
-  }, [metrics]);
-
-  // Grouped-bar chart data for type/function/product comparisons.
-  const breakdownChart = useMemo(() => {
-    if (compareMode === "time") return { rows: [], series: [] as string[] };
-    const seriesSet = new Set<string>();
-    const byBucket = new Map<string, Record<string, number>>();
-    for (const r of windowedRecords) {
-      const bucket = resolveBucket(r, geoMode);
-      const cat = compareMode === "type" ? r.trainingType : compareMode === "function" ? r.function : r.productType;
-      if (!cat) continue;
-      seriesSet.add(cat);
-      let entry = byBucket.get(bucket);
-      if (!entry) { entry = {}; byBucket.set(bucket, entry); }
-      entry[cat] = (entry[cat] ?? 0) + 1;
-    }
-    const series = compareMode === "type"
-      ? TYPE_ORDER.filter((t) => seriesSet.has(t))
-      : [...seriesSet].sort();
-    const rows = [...byBucket.entries()]
-      .map(([bucket, counts]) => ({ bucket, ...series.reduce((o, s) => ({ ...o, [s]: counts[s] ?? 0 }), {}) }))
-      .sort((a, b) => a.bucket.localeCompare(b.bucket));
-    return { rows, series: series as string[] };
-  }, [windowedRecords, compareMode, geoMode]);
-
-  // Over-time line chart: month buckets across the window, one line per geography.
-  const timeChart = useMemo(() => {
-    if (compareMode !== "time") return { rows: [], series: [] as string[] };
-    const start = windowStart ?? (() => {
-      let min: number | null = null;
-      for (const r of windowedRecords) {
-        const t = new Date(r.completedDate).getTime();
-        if (Number.isFinite(t) && (min === null || t < min)) min = t;
-      }
-      return min === null ? new Date(now.getFullYear(), now.getMonth(), 1) : new Date(min);
-    })();
-    const months: { key: string; label: string }[] = [];
-    let d = new Date(start.getFullYear(), start.getMonth(), 1);
-    const end = new Date(windowEnd.getFullYear(), windowEnd.getMonth(), 1);
-    while (d <= end) {
-      months.push({ key: monthKey(d), label: d.toLocaleDateString("en-GB", { month: "short", year: "2-digit" }) });
-      d = addMonths(d, 1);
-    }
-    const series = topBuckets;
-    const counts = new Map<string, Record<string, number>>();
-    for (const r of windowedRecords) {
-      const bucket = resolveBucket(r, geoMode);
-      if (!series.includes(bucket)) continue;
-      const k = monthKey(new Date(r.completedDate));
-      let entry = counts.get(k);
-      if (!entry) { entry = {}; counts.set(k, entry); }
-      entry[bucket] = (entry[bucket] ?? 0) + 1;
-    }
-    const rows = months.map((m) => ({
-      label: m.label,
-      ...series.reduce((o, s) => ({ ...o, [s]: counts.get(m.key)?.[s] ?? 0 }), {}),
-    }));
-    return { rows, series };
-  }, [compareMode, windowedRecords, geoMode, windowStart, windowEnd, topBuckets, now]);
 
   const geoLabel = GROUP_BY_LABEL[geoMode];
 
@@ -393,28 +179,32 @@ export default function ComparisonPage() {
     { key: "exp3", header: "Expiring 3mo" },
     { key: "exp6", header: "Expiring 6mo" },
   ];
-  const exportRows = sortedMetrics.map((r) => ({ ...r, perStudent: r.perStudent.toFixed(1) }));
+
+  const handleExport = (fmt: "csv" | "excel" | "pdf") => {
+    const exportRows = sortedMetrics.map((r) => ({ ...r, perStudent: r.perStudent.toFixed(1) }));
+    const filename = `comparison-by-${geoMode}`;
+    if (fmt === "csv") exportToCsv(exportRows as never, exportColumns as never, filename);
+    else if (fmt === "excel") exportToExcel(exportRows as never, exportColumns as never, filename);
+    else exportToPdf(exportRows as never, exportColumns as never, filename);
+  };
 
   function toggleSort(key: SortKey) {
-    if (sortKey === key) {
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    } else {
+    if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else {
       setSortKey(key);
       setSortDir(key === "bucket" ? "asc" : "desc");
     }
   }
-
   const sortIndicator = (key: SortKey) => (sortKey === key ? (sortDir === "asc" ? " ▲" : " ▼") : "");
-
-  if (loading) {
-    return <div className="flex items-center justify-center h-64"><div className="text-gray-500">Loading report...</div></div>;
-  }
-
   const numHeader = (key: SortKey, label: string) => (
     <th className="px-4 py-3 text-right font-semibold cursor-pointer select-none whitespace-nowrap" onClick={() => toggleSort(key)}>
       {label}{sortIndicator(key)}
     </th>
   );
+
+  if (loading && !data) {
+    return <div className="flex items-center justify-center h-64"><div className="text-gray-500">Loading report...</div></div>;
+  }
 
   return (
     <div>
@@ -469,25 +259,25 @@ export default function ComparisonPage() {
           </select>
         </div>
         <ResponsiveContainer width="100%" height={340}>
-          {compareMode === "time" ? (
-            <LineChart data={timeChart.rows}>
+          {chartData.mode === "time" ? (
+            <LineChart data={chartData.rows}>
               <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
               <XAxis dataKey="label" tick={{ fontSize: 11, fill: chart.axis }} stroke={chart.axis} angle={-35} textAnchor="end" height={50} />
               <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: chart.axis }} stroke={chart.axis} />
               <Tooltip contentStyle={tooltipStyle(chart)} />
               <Legend />
-              {timeChart.series.map((s, i) => (
+              {chartData.series.map((s, i) => (
                 <Line key={s} type="monotone" dataKey={s} stroke={chart.series(i)} strokeWidth={2} dot={{ r: 2 }} />
               ))}
             </LineChart>
           ) : (
-            <BarChart data={breakdownChart.rows}>
+            <BarChart data={chartData.rows}>
               <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
               <XAxis dataKey="bucket" tick={{ fontSize: 11, fill: chart.axis }} stroke={chart.axis} angle={-35} textAnchor="end" height={60} interval={0} />
               <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: chart.axis }} stroke={chart.axis} />
               <Tooltip contentStyle={tooltipStyle(chart)} />
               <Legend />
-              {breakdownChart.series.map((s, i) => (
+              {chartData.series.map((s, i) => (
                 <Bar
                   key={s}
                   dataKey={s}
@@ -497,7 +287,7 @@ export default function ComparisonPage() {
             </BarChart>
           )}
         </ResponsiveContainer>
-        {compareMode === "time" && timeChart.series.length === 8 && (
+        {chartData.mode === "time" && chartData.series.length === 8 && (
           <p className="text-xs text-gray-400 mt-2">Showing the top 8 {geoLabel.toLowerCase()}s by total completions.</p>
         )}
       </section>
@@ -505,7 +295,7 @@ export default function ComparisonPage() {
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-wrap gap-2">
           <p className="text-sm text-gray-500">Counts reflect the selected time range and filters; expiring counts look forward from today.</p>
-          <ExportMenu data={exportRows as never} columns={exportColumns} filename={`comparison-by-${geoMode}`} />
+          <ExportMenu onExport={handleExport} busy={false} />
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">

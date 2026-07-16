@@ -177,17 +177,40 @@ export async function buildProgramReport(opts: BuildProgramReportOptions) {
       ? await getEmailSetsByTitleAndTheatre(allTitles, horizonDate, companyIds)
       : new Map<string, Map<string, Set<string>>>();
 
-    // Count of compliant theatres for a given as-of date (APS semantics — a
-    // theatre is compliant when it meets every theatre-level requirement).
-    async function countCompliantTheatres(theatreReqs: ProgramDataRow[], asOf: Date): Promise<number> {
+    // Per-theatre email sets for every theatre-level requirement title across all
+    // specialisations, fetched once per as-of date. This replaces the old
+    // per-theatre-per-spec getEmailSetsByTitle loop (O(specs × theatres) queries)
+    // with two grouped queries (now + horizon). Each title is keyed independently
+    // by getEmailSetsByTitleAndTheatre, so batching all specs' titles together
+    // yields the same per-title sets a single-spec fetch would.
+    const allTheatreReqTitles = extractTitles(
+      [...specMap.values()].flatMap((reqs) =>
+        reqs.filter((r: ProgramDataRow) => r.level === "Theatre" && r.trainingTitle !== null)
+      )
+    );
+    const theatreByTitleAndTheatre = allTheatreReqTitles.length > 0
+      ? await getEmailSetsByTitleAndTheatre(allTheatreReqTitles, now, companyIds)
+      : new Map<string, Map<string, Set<string>>>();
+    const projectedTheatreByTitleAndTheatre = horizonDate && allTheatreReqTitles.length > 0
+      ? await getEmailSetsByTitleAndTheatre(allTheatreReqTitles, horizonDate, companyIds)
+      : new Map<string, Map<string, Set<string>>>();
+
+    // Count of compliant theatres for a given snapshot (APS semantics — a theatre
+    // is compliant when it meets every theatre-level requirement). Pure: reads the
+    // pre-fetched per-theatre email sets instead of querying per theatre.
+    // `unionAttainedByTheatre(req, map, [t])` reproduces the old
+    // `unionAttained(req, getEmailSetsByTitle(titles, asOf, { theatre: t }))`.
+    function countCompliantTheatres(
+      theatreReqs: ProgramDataRow[],
+      byTitleAndTheatre: Map<string, Map<string, Set<string>>>
+    ): number {
       if (theatreReqs.length === 0) return 0;
-      const titles = extractTitles(theatreReqs);
       let count = 0;
       for (const t of distinctTheatres) {
-        const emailSets = await getEmailSetsByTitle(titles, asOf, { theatre: t, companyIds });
         const allMet = theatreReqs.every((req: ProgramDataRow) => {
           if (!req.trainingTitle) return false;
-          return unionAttained(req, emailSets) >= req.quantityRequired;
+          const attained = unionAttainedByTheatre(req, byTitleAndTheatre, [t])[0]?.count ?? 0;
+          return attained >= req.quantityRequired;
         });
         if (allMet) count++;
       }
@@ -202,9 +225,9 @@ export async function buildProgramReport(opts: BuildProgramReportOptions) {
 
       if (globalReqs.length === 0) continue;
 
-      const compliantTheatreCount = await countCompliantTheatres(theatreReqs, now);
+      const compliantTheatreCount = countCompliantTheatres(theatreReqs, theatreByTitleAndTheatre);
       const projectedCompliantTheatreCount = horizonDate
-        ? await countCompliantTheatres(theatreReqs, horizonDate)
+        ? countCompliantTheatres(theatreReqs, projectedTheatreByTitleAndTheatre)
         : 0;
 
       const buildGlobalReqDisplay = (req: ProgramDataRow) => {

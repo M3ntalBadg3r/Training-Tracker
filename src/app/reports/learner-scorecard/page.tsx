@@ -1,14 +1,15 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import PageHeader from "@/components/layout/PageHeader";
 import KpiStrip from "@/components/ui/KpiStrip";
 import { useChartTheme, tooltipStyle } from "@/lib/chart-theme";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
+import { useDebounce } from "@/hooks/useDebounce";
 import { useDateFormat } from "@/components/date-format/DateFormatProvider";
-import { ArrowLeft, Download, Users, Award, AlertTriangle, Clock } from "lucide-react";
+import { ArrowLeft, Download, Users, Award, AlertTriangle, Clock, ChevronLeft, ChevronRight } from "lucide-react";
 import {
   BarChart,
   Bar,
@@ -18,33 +19,6 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-
-interface TrainingRecordRow {
-  fullName: string;
-  email: string;
-  theatre: string | null;
-  region: string;
-  country: string;
-  trainingTitle: string;
-  trainingType: string;
-  productType: string;
-  function: string;
-  completedDate: string;
-  expiryDate: string;
-  active: boolean;
-}
-
-interface StudentRow {
-  email: string;
-  fullName: string;
-  theatre: string | null;
-  country: string | null;
-  region: string | null;
-}
-
-interface GapRow {
-  email: string;
-}
 
 interface LearnerRow {
   email: string;
@@ -60,20 +34,22 @@ interface LearnerRow {
   expiring: number;
   lapsed: number;
   gaps: number;
-  lastDate: string; // ISO, or "" for learners with no completions
+  lastDate: string;
 }
 
 type SortKey =
-  | "fullName"
-  | "cert"
-  | "accred"
-  | "ilt"
-  | "olx"
-  | "total"
-  | "expiring"
-  | "lapsed"
-  | "gaps"
-  | "lastDate";
+  | "fullName" | "cert" | "accred" | "ilt" | "olx"
+  | "total" | "expiring" | "lapsed" | "gaps" | "lastDate";
+
+interface ScorecardResponse {
+  kpis: { learners: number; achievements: number; withGaps: number; withExpiring: number; zero: number };
+  leaderboard: { name: string; total: number }[];
+  rows: LearnerRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+  filterOptions: { theatres: string[]; regions: string[]; countries: string[] };
+}
 
 const WINDOW_OPTIONS: { value: number; label: string }[] = [
   { value: 1, label: "Expiring in 1 month" },
@@ -81,24 +57,20 @@ const WINDOW_OPTIONS: { value: number; label: string }[] = [
   { value: 6, label: "Expiring in 6 months" },
 ];
 
-function addMonths(d: Date, n: number): Date {
-  const x = new Date(d);
-  x.setMonth(x.getMonth() + n);
-  return x;
-}
+const PAGE_SIZE_OPTIONS = [25, 50, 100, 200];
 
-function ExportMenu({ data, columns, filename }: { data: Record<string, unknown>[]; columns: { key: string; header: string }[]; filename: string }) {
+function ExportMenu({ onExport, busy }: { onExport: (fmt: "csv" | "excel" | "pdf") => void; busy: boolean }) {
   const [show, setShow] = useState(false);
   return (
     <div className="relative">
-      <button onClick={() => setShow((p) => !p)} className="flex items-center gap-2 px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300">
-        <Download size={16} /> Export
+      <button onClick={() => setShow((p) => !p)} disabled={busy} className="flex items-center gap-2 px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300 disabled:opacity-50">
+        <Download size={16} /> {busy ? "Exporting…" : "Export"}
       </button>
-      {show && (
+      {show && !busy && (
         <div className="absolute right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[140px]">
-          <button onClick={() => { exportToCsv(data, columns as never, filename); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-t-lg">Export as CSV</button>
-          <button onClick={() => { exportToExcel(data, columns as never, filename); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100">Export as Excel</button>
-          <button onClick={() => { exportToPdf(data, columns as never, filename); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-b-lg">Export as PDF</button>
+          <button onClick={() => { onExport("csv"); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-t-lg">Export as CSV</button>
+          <button onClick={() => { onExport("excel"); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100">Export as Excel</button>
+          <button onClick={() => { onExport("pdf"); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-b-lg">Export as PDF</button>
         </div>
       )}
     </div>
@@ -110,22 +82,8 @@ export default function LearnerScorecardPage() {
   const companyScope = useCompanyScope();
   const { formatDate } = useDateFormat();
 
-  // Loading is derived (loaded.key !== requestKey), not set synchronously in the
-  // effect, so a company-scope change re-shows the spinner without a
-  // set-state-in-effect violation. State is only written in the async callbacks.
-  const [loaded, setLoaded] = useState<{
-    key: string;
-    records: TrainingRecordRow[];
-    students: StudentRow[];
-    gaps: GapRow[];
-  }>({ key: "__init__", records: [], students: [], gaps: [] });
-  const requestKey = companyScope.loading ? "__disabled__" : `sel:${companyScope.selected}`;
-  const loading = loaded.key !== requestKey;
-  const records = loaded.records;
-  const students = loaded.students;
-  const gaps = loaded.gaps;
-
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebounce(search, 300);
   const [filterTheatre, setFilterTheatre] = useState("");
   const [filterRegion, setFilterRegion] = useState("");
   const [filterCountry, setFilterCountry] = useState("");
@@ -133,176 +91,77 @@ export default function LearnerScorecardPage() {
   const [includeExpired, setIncludeExpired] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>("total");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
 
-  const now = useMemo(() => new Date(), []);
+  const [data, setData] = useState<ScorecardResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
+
+  const buildParams = useCallback(
+    (opts: { all?: boolean }) => {
+      const params = new URLSearchParams();
+      if (debouncedSearch) params.set("q", debouncedSearch);
+      if (filterTheatre) params.set("theatre", filterTheatre);
+      if (filterRegion) params.set("region", filterRegion);
+      if (filterCountry) params.set("country", filterCountry);
+      params.set("windowMonths", String(windowMonths));
+      if (includeExpired) params.set("includeExpired", "true");
+      params.set("sort", sortKey);
+      params.set("sortDir", sortDir);
+      if (opts.all) params.set("all", "true");
+      else {
+        params.set("page", String(page));
+        params.set("pageSize", String(pageSize));
+      }
+      return params;
+    },
+    [debouncedSearch, filterTheatre, filterRegion, filterCountry, windowMonths, includeExpired, sortKey, sortDir, page, pageSize]
+  );
+
+  // Reset to page 1 whenever a filter/toggle/sort/scope changes.
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, filterTheatre, filterRegion, filterCountry, windowMonths, includeExpired, sortKey, sortDir, companyScope.selected]);
 
   useEffect(() => {
     if (companyScope.loading) return;
+    const url = withCompany(`/api/reports/learner-scorecard?${buildParams({}).toString()}`, companyScope.selected);
     let cancelled = false;
-    Promise.all([
-      fetch(withCompany("/api/reports/training-records", companyScope.selected)).then((r) => r.json()),
-      fetch(withCompany("/api/students", companyScope.selected)).then((r) => r.json()),
-      fetch(withCompany("/api/reports/trained-not-certified", companyScope.selected)).then((r) => r.json()),
-    ])
-      .then(([recs, studs, gapRows]) => {
-        if (!cancelled) {
-          setLoaded({
-            key: requestKey,
-            records: Array.isArray(recs) ? recs : [],
-            students: Array.isArray(studs) ? studs : [],
-            gaps: Array.isArray(gapRows) ? gapRows : [],
-          });
-        }
+    setLoading(true);
+    fetch(url)
+      .then((r) => r.json())
+      .then((d: ScorecardResponse) => {
+        if (!cancelled) setData(d);
       })
-      .catch(() => {
-        if (!cancelled) setLoaded((prev) => ({ ...prev, key: requestKey }));
+      .finally(() => {
+        if (!cancelled) setLoading(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [requestKey, companyScope.loading, companyScope.selected]);
+  }, [buildParams, companyScope.loading, companyScope.selected]);
 
-  const windowCutoff = useMemo(() => addMonths(now, windowMonths), [now, windowMonths]);
+  const kpis = data?.kpis ?? { learners: 0, achievements: 0, withGaps: 0, withExpiring: 0, zero: 0 };
+  const leaderboard = data?.leaderboard ?? [];
+  const rows = data?.rows ?? [];
+  const total = data?.total ?? 0;
+  const theatres = data?.filterOptions.theatres ?? [];
+  const regions = data?.filterOptions.regions ?? [];
+  const countries = data?.filterOptions.countries ?? [];
 
-  // Per-learner aggregation. Seed from the full roster so learners with zero
-  // completions still appear (valuable for the management view), then fold in
-  // training records and certification-gap counts.
-  const learners: LearnerRow[] = useMemo(() => {
-    const map = new Map<string, LearnerRow>();
-    const ensure = (email: string, seed: { fullName: string; theatre: string; region: string; country: string }): LearnerRow => {
-      let row = map.get(email);
-      if (!row) {
-        row = {
-          email,
-          fullName: seed.fullName,
-          theatre: seed.theatre,
-          region: seed.region,
-          country: seed.country,
-          cert: 0, accred: 0, ilt: 0, olx: 0, total: 0,
-          expiring: 0, lapsed: 0, gaps: 0, lastDate: "",
-        };
-        map.set(email, row);
-      }
-      return row;
-    };
-
-    for (const s of students) {
-      ensure(s.email, {
-        fullName: s.fullName,
-        theatre: s.theatre ?? "",
-        region: s.region ?? "",
-        country: s.country ?? "",
-      });
-    }
-
-    for (const r of records) {
-      const row = ensure(r.email, {
-        fullName: r.fullName,
-        theatre: r.theatre ?? "",
-        region: r.region ?? "",
-        country: r.country ?? "",
-      });
-
-      // Counts honour the active/expired toggle: active-only by default.
-      if (includeExpired || r.active) {
-        if (r.trainingType === "Certification") row.cert += 1;
-        else if (r.trainingType === "Accreditation") row.accred += 1;
-        else if (r.trainingType === "Instructor-Led Training") row.ilt += 1;
-        else if (r.trainingType === "OLX") row.olx += 1;
-      }
-
-      // Expired = expired achievements (independent of the toggle).
-      if (!r.active) row.lapsed += 1;
-
-      // Expiring Soon = active certs/accreditations expiring within the window.
-      if (r.active && (r.trainingType === "Certification" || r.trainingType === "Accreditation") && r.expiryDate) {
-        const exp = new Date(r.expiryDate);
-        if (exp >= now && exp <= windowCutoff) row.expiring += 1;
-      }
-
-      // Most recent completion across all of the learner's records.
-      if (r.completedDate && r.completedDate > row.lastDate) row.lastDate = r.completedDate;
-    }
-
-    // Certification gaps: one trained-not-certified row per (training, learner).
-    for (const g of gaps) {
-      const row = map.get(g.email);
-      if (row) row.gaps += 1;
-    }
-
-    for (const row of map.values()) {
-      row.total = row.cert + row.accred + row.ilt + row.olx;
-    }
-    return Array.from(map.values());
-  }, [students, records, gaps, includeExpired, now, windowCutoff]);
-
-  const theatres = useMemo(() => [...new Set(learners.map((l) => l.theatre))].filter(Boolean).sort(), [learners]);
-  const regions = useMemo(() => [...new Set(learners.map((l) => l.region))].filter(Boolean).sort(), [learners]);
-  const countries = useMemo(() => [...new Set(learners.map((l) => l.country))].filter(Boolean).sort(), [learners]);
-
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return learners.filter((l) => {
-      if (filterTheatre && l.theatre !== filterTheatre) return false;
-      if (filterRegion && l.region !== filterRegion) return false;
-      if (filterCountry && l.country !== filterCountry) return false;
-      if (q && !l.fullName.toLowerCase().includes(q) && !l.email.toLowerCase().includes(q)) return false;
-      return true;
-    });
-  }, [learners, search, filterTheatre, filterRegion, filterCountry]);
-
-  const sorted = useMemo(() => {
-    const arr = [...filtered];
-    arr.sort((a, b) => {
-      if (sortKey === "fullName") {
-        return sortDir === "asc" ? a.fullName.localeCompare(b.fullName) : b.fullName.localeCompare(a.fullName);
-      }
-      if (sortKey === "lastDate") {
-        // Empty (no completions) sorts last regardless of direction.
-        if (!a.lastDate && !b.lastDate) return 0;
-        if (!a.lastDate) return 1;
-        if (!b.lastDate) return -1;
-        return sortDir === "asc" ? a.lastDate.localeCompare(b.lastDate) : b.lastDate.localeCompare(a.lastDate);
-      }
-      const av = a[sortKey] as number;
-      const bv = b[sortKey] as number;
-      if (av !== bv) return sortDir === "asc" ? av - bv : bv - av;
-      return a.fullName.localeCompare(b.fullName);
-    });
-    return arr;
-  }, [filtered, sortKey, sortDir]);
-
-  const kpis = useMemo(() => {
-    let achievements = 0, withGaps = 0, withExpiring = 0, zero = 0;
-    for (const l of filtered) {
-      achievements += l.total;
-      if (l.gaps > 0) withGaps += 1;
-      if (l.expiring > 0) withExpiring += 1;
-      if (l.total === 0) zero += 1;
-    }
-    return { learners: filtered.length, achievements, withGaps, withExpiring, zero };
-  }, [filtered]);
-
-  // Leaderboard: top achievers by total achievements (recognition view).
-  const leaderboard = useMemo(() => {
-    return [...filtered]
-      .filter((l) => l.total > 0)
-      .sort((a, b) => b.total - a.total || a.fullName.localeCompare(b.fullName))
-      .slice(0, 15)
-      .map((l) => ({ name: l.fullName, total: l.total }));
-  }, [filtered]);
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const rangeStart = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const rangeEnd = Math.min(total, page * pageSize);
 
   function toggleSort(key: SortKey) {
-    if (sortKey === key) {
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    } else {
+    if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else {
       setSortKey(key);
       setSortDir(key === "fullName" ? "asc" : "desc");
     }
   }
-
   const sortIndicator = (key: SortKey) => (sortKey === key ? (sortDir === "asc" ? " ▲" : " ▼") : "");
-
   const numHeader = (key: SortKey, label: string) => (
     <th className="px-4 py-3 text-right font-semibold cursor-pointer select-none whitespace-nowrap" onClick={() => toggleSort(key)}>
       {label}{sortIndicator(key)}
@@ -325,9 +184,23 @@ export default function LearnerScorecardPage() {
     { key: "gaps", header: "Cert Gaps" },
     { key: "lastDate", header: "Last Achievement" },
   ];
-  const exportRows = sorted.map((l) => ({ ...l, lastDate: l.lastDate ? formatDate(l.lastDate) : "" }));
 
-  if (loading) {
+  const handleExport = async (fmt: "csv" | "excel" | "pdf") => {
+    setExporting(true);
+    try {
+      const url = withCompany(`/api/reports/learner-scorecard?${buildParams({ all: true }).toString()}`, companyScope.selected);
+      const res = await fetch(url);
+      const d: ScorecardResponse = await res.json();
+      const exportRows = d.rows.map((l) => ({ ...l, lastDate: l.lastDate ? formatDate(l.lastDate) : "" }));
+      if (fmt === "csv") exportToCsv(exportRows as never, exportColumns as never, "learner-scorecard");
+      else if (fmt === "excel") exportToExcel(exportRows as never, exportColumns as never, "learner-scorecard");
+      else exportToPdf(exportRows as never, exportColumns as never, "learner-scorecard");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  if (loading && !data) {
     return <div className="flex items-center justify-center h-64"><div className="text-gray-500">Loading report...</div></div>;
   }
 
@@ -402,7 +275,7 @@ export default function LearnerScorecardPage() {
           <p className="text-sm text-gray-500">
             One row per learner. Counts are {includeExpired ? "all completions" : "active only"}; expiring-soon and gap counts always look forward from today.
           </p>
-          <ExportMenu data={exportRows as never} columns={exportColumns} filename="learner-scorecard" />
+          <ExportMenu onExport={handleExport} busy={exporting} />
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -423,7 +296,7 @@ export default function LearnerScorecardPage() {
               </tr>
             </thead>
             <tbody>
-              {sorted.map((l) => (
+              {rows.map((l) => (
                 <tr key={l.email} className="border-b hover:bg-gray-50">
                   <td className="px-4 py-3">
                     <Link href={`/students/${encodeURIComponent(l.email)}`} className="font-medium text-blue-600 hover:underline">{l.fullName}</Link>
@@ -442,11 +315,41 @@ export default function LearnerScorecardPage() {
                   <td className="px-4 py-3 text-right whitespace-nowrap">{l.lastDate ? formatDate(l.lastDate) : "—"}</td>
                 </tr>
               ))}
-              {sorted.length === 0 && (
+              {rows.length === 0 && (
                 <tr><td colSpan={12} className="px-4 py-8 text-center text-gray-500">No learners for the selected filters.</td></tr>
               )}
             </tbody>
           </table>
+        </div>
+
+        <div className="px-6 py-4 flex items-center justify-between flex-wrap gap-3 border-t border-gray-200">
+          <div className="flex items-center gap-2 text-sm text-gray-600">
+            <span>{total === 0 ? "No learners" : `Showing ${rangeStart}–${rangeEnd} of ${total}`}</span>
+            <select
+              value={pageSize}
+              onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
+              className="border border-gray-300 rounded-lg px-2 py-1 text-sm"
+            >
+              {PAGE_SIZE_OPTIONS.map((n) => <option key={n} value={n}>{n} / page</option>)}
+            </select>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page <= 1}
+              className="flex items-center gap-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg disabled:opacity-40 hover:bg-gray-50"
+            >
+              <ChevronLeft size={14} /> Prev
+            </button>
+            <span className="text-sm text-gray-600">Page {page} of {totalPages}</span>
+            <button
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page >= totalPages}
+              className="flex items-center gap-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg disabled:opacity-40 hover:bg-gray-50"
+            >
+              Next <ChevronRight size={14} />
+            </button>
+          </div>
         </div>
       </div>
     </div>

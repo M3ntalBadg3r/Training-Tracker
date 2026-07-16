@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { requireAuth, handleAuthError } from "@/lib/auth";
 import { getAuthorizedCompanyIds, resolveCompanyFilter } from "@/lib/company-scope";
+import { cachedReport, scopeKey } from "@/lib/report-cache";
 
 /**
  * Per-fullTitle catalogue health metrics:
@@ -25,6 +26,15 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ rows: [], totalStudents: 0 });
   }
 
+  const payload = await cachedReport(
+    `catalogue-health|${scopeKey(companyFilter)}`,
+    () => computeCatalogueHealth(companyFilter),
+  );
+
+  return NextResponse.json(payload, { headers: { "Cache-Control": "private, max-age=30" } });
+}
+
+async function computeCatalogueHealth(companyFilter: number[] | null) {
   const now = new Date();
   const twelveMonthsAgo = new Date(now);
   twelveMonthsAgo.setFullYear(twelveMonthsAgo.getFullYear() - 1);
@@ -132,5 +142,5 @@ export async function GET(request: NextRequest) {
 
   rows.sort((a, b) => b.totalCompletions - a.totalCompletions || a.fullTitle.localeCompare(b.fullTitle));
 
-  return NextResponse.json({ rows, totalStudents });
+  return { rows, totalStudents };
 }
