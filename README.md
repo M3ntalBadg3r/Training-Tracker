@@ -487,7 +487,7 @@ Horizon bar showing records expiring within 1 / 3 / 6 / 12 months, plus a stacke
 
 ### Currently Expired
 
-Every certification & training whose latest completion has *already* lapsed — the inverse of Expiring Soon. Records are bucketed by how long ago they expired (≤ 1 month, 1–3, 3–6, 6–12, > 12 months) with a stacked bar by training type (click a band to filter the table) and an "Expired by Theatre" chart. Group by theatre/region/country, search by name/email, and export to CSV/Excel/PDF. Retired (legacy) certs are shown by default; tick **Exclude retired (legacy) certs** to hide them. Also available as a scheduled export.
+Every certification & training whose latest completion has *already* lapsed — the inverse of Expiring Soon. Records are bucketed by how long ago they expired (≤ 1 month, 1–3, 3–6, 6–12, > 12 months) with a stacked bar by training type (click a band to filter the table) and an "Expired by Theatre" chart. Group by theatre/region/country, search by name/email, and export to CSV/Excel/PDF. Retired (legacy) certs are shown by default; tick **Exclude retired (legacy) certs** to hide them. The report is computed on the server and the detail table is **paginated** — page through the results with the controls beneath the table, while the charts, KPI cards and exports always reflect the full filtered set. Also available as a scheduled export.
 
 ### Achievement Over Time
 

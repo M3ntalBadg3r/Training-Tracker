@@ -1,19 +1,18 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useCallback, useEffect, useState } from "react";
+import * as React from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import PageHeader from "@/components/layout/PageHeader";
 import KpiStrip from "@/components/ui/KpiStrip";
-import GroupedRows from "@/components/data-table/GroupedRows";
 import { useChartTheme, tooltipStyle } from "@/lib/chart-theme";
-import { groupRows, GroupByMode, resolveBucket } from "@/lib/group-by";
-import { useTableSort, SortAccessor } from "@/hooks/useTableSort";
+import { resolveBucket, GROUP_BY_LABEL, GroupByMode } from "@/lib/group-by";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
-import { useFetchJson } from "@/hooks/useFetchJson";
+import { useDebounce } from "@/hooks/useDebounce";
 import { useDateFormat } from "@/components/date-format/DateFormatProvider";
-import { Search, Download, ArrowLeft, CalendarX, AlertCircle, AlertTriangle, History } from "lucide-react";
+import { Search, Download, ArrowLeft, CalendarX, AlertCircle, AlertTriangle, History, ChevronLeft, ChevronRight } from "lucide-react";
 import {
   BarChart,
   Bar,
@@ -25,7 +24,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
-interface TrainingRecordRow {
+interface ExpiredRow {
   fullName: string;
   email: string;
   theatre: string;
@@ -41,7 +40,18 @@ interface TrainingRecordRow {
   isLegacy: boolean;
 }
 
-const TYPES = ["Certification", "Accreditation", "Instructor-Led Training", "OLX"] as const;
+type TypeCounts = { name: string; Certification: number; Accreditation: number; "Instructor-Led Training": number; OLX: number };
+
+interface ExpiredResponse {
+  charts: { bucketSeries: (TypeCounts & { bucketKey: string })[]; theatreSeries: TypeCounts[] };
+  kpis: { total: number; m1: number; m3: number; longOverdue: number };
+  groups: { key: string; total: number }[];
+  rows: ExpiredRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+  filterOptions: { types: string[]; theatres: string[] };
+}
 
 function typeBadgeClass(t: string): string {
   if (t === "Certification") return "bg-blue-100 text-blue-800";
@@ -50,45 +60,39 @@ function typeBadgeClass(t: string): string {
   return "bg-amber-100 text-amber-800";
 }
 
-function ExportMenu({ data, columns, filename }: { data: Record<string, unknown>[]; columns: { key: string; header: string }[]; filename: string }) {
+const PAGE_SIZE_OPTIONS = [25, 50, 100, 200];
+
+const exportColumns = [
+  { key: "fullName", header: "Full Name" },
+  { key: "email", header: "Email" },
+  { key: "theatre", header: "Theatre" },
+  { key: "region", header: "Region" },
+  { key: "country", header: "Country" },
+  { key: "trainingTitle", header: "Training" },
+  { key: "trainingType", header: "Training Type" },
+  { key: "productType", header: "Product Type" },
+  { key: "function", header: "Function" },
+  { key: "completedDate", header: "Completed Date" },
+  { key: "expiryDate", header: "Expiry Date" },
+  { key: "retired", header: "Retired" },
+];
+
+function ExportMenu({ onExport, busy }: { onExport: (fmt: "csv" | "excel" | "pdf") => void; busy: boolean }) {
   const [show, setShow] = useState(false);
   return (
     <div className="relative">
-      <button onClick={() => setShow((p) => !p)} className="flex items-center gap-2 px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300">
-        <Download size={16} /> Export
+      <button onClick={() => setShow((p) => !p)} disabled={busy} className="flex items-center gap-2 px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300 disabled:opacity-50">
+        <Download size={16} /> {busy ? "Exporting…" : "Export"}
       </button>
-      {show && (
+      {show && !busy && (
         <div className="absolute right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[140px]">
-          <button onClick={() => { exportToCsv(data, columns as never, filename); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-t-lg">Export as CSV</button>
-          <button onClick={() => { exportToExcel(data, columns as never, filename); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100">Export as Excel</button>
-          <button onClick={() => { exportToPdf(data, columns as never, filename); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-b-lg">Export as PDF</button>
+          <button onClick={() => { onExport("csv"); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-t-lg">Export as CSV</button>
+          <button onClick={() => { onExport("excel"); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100">Export as Excel</button>
+          <button onClick={() => { onExport("pdf"); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-b-lg">Export as PDF</button>
         </div>
       )}
     </div>
   );
-}
-
-// Buckets describe how long ago a record lapsed (oldest band lumps everything > 12 months).
-const BUCKETS: { key: string; label: string }[] = [
-  { key: "0-1", label: "≤ 1 month" },
-  { key: "1-3", label: "1–3 months" },
-  { key: "3-6", label: "3–6 months" },
-  { key: "6-12", label: "6–12 months" },
-  { key: "12+", label: "> 12 months" },
-];
-
-function monthsBetween(earlier: Date, later: Date): number {
-  return (later.getFullYear() - earlier.getFullYear()) * 12 + (later.getMonth() - earlier.getMonth());
-}
-
-function bucketLapse(expiry: Date, now: Date): string | null {
-  if (expiry >= now) return null;
-  const m = monthsBetween(expiry, now);
-  if (m <= 1) return "0-1";
-  if (m <= 3) return "1-3";
-  if (m <= 6) return "3-6";
-  if (m <= 12) return "6-12";
-  return "12+";
 }
 
 export default function ExpiredPage() {
@@ -96,127 +100,190 @@ export default function ExpiredPage() {
   const chart = useChartTheme();
   const { formatDate } = useDateFormat();
   const companyScope = useCompanyScope();
-  const { data: recordsData, loading } = useFetchJson<TrainingRecordRow[]>(
-    withCompany("/api/reports/training-records", companyScope.selected),
-    { enabled: !companyScope.loading }
-  );
-  const trainingRecords = useMemo(() => recordsData ?? [], [recordsData]);
 
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebounce(search, 300);
   const [filterType, setFilterType] = useState("");
   const [filterTheatre, setFilterTheatre] = useState("");
   const [filterBucket, setFilterBucket] = useState<string | null>(null);
   const [excludeRetired, setExcludeRetired] = useState(false);
   const [groupBy, setGroupBy] = useState<GroupByMode | null>("theatre");
+  const [sortColumn, setSortColumn] = useState("fullName");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
 
-  const now = useMemo(() => new Date(), []);
+  const [data, setData] = useState<ExpiredResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
 
-  const types = useMemo(() => [...new Set(trainingRecords.map((r) => r.trainingType))].filter(Boolean).sort(), [trainingRecords]);
-  const theatres = useMemo(() => [...new Set(trainingRecords.map((r) => r.theatre))].filter(Boolean).sort(), [trainingRecords]);
-
-  const filtered = useMemo(() => {
-    const q = search.toLowerCase();
-    return trainingRecords.filter((r) => {
-      const expiry = new Date(r.expiryDate);
-      if (expiry >= now) return false; // only records that have already lapsed
-      if (excludeRetired && r.isLegacy) return false;
-      if (search && !r.fullName.toLowerCase().includes(q) && !r.email.toLowerCase().includes(q)) return false;
-      if (filterType && r.trainingType !== filterType) return false;
-      if (filterTheatre && r.theatre !== filterTheatre) return false;
-      if (filterBucket) {
-        const b = bucketLapse(expiry, now);
-        if (b !== filterBucket) return false;
+  // Build the query string shared by the page fetch and the export fetch.
+  const buildParams = useCallback(
+    (opts: { all?: boolean }) => {
+      const params = new URLSearchParams();
+      if (debouncedSearch) params.set("q", debouncedSearch);
+      if (filterType) params.set("type", filterType);
+      if (filterTheatre) params.set("theatre", filterTheatre);
+      if (filterBucket) params.set("bucket", filterBucket);
+      if (excludeRetired) params.set("excludeRetired", "true");
+      if (groupBy) params.set("groupBy", groupBy);
+      params.set("sort", sortColumn);
+      params.set("sortDir", sortDir);
+      if (opts.all) params.set("all", "true");
+      else {
+        params.set("page", String(page));
+        params.set("pageSize", String(pageSize));
       }
-      return true;
-    });
-  }, [trainingRecords, search, filterType, filterTheatre, filterBucket, excludeRetired, now]);
-
-  const bucketSeries = useMemo(() => {
-    const counts: Record<string, { name: string; Certification: number; Accreditation: number; "Instructor-Led Training": number; OLX: number }> = {};
-    for (const b of BUCKETS) {
-      counts[b.key] = { name: b.label, Certification: 0, Accreditation: 0, "Instructor-Led Training": 0, OLX: 0 };
-    }
-    for (const r of filtered) {
-      const b = bucketLapse(new Date(r.expiryDate), now);
-      if (!b) continue;
-      const key = r.trainingType as (typeof TYPES)[number];
-      if (TYPES.includes(key)) counts[b][key]++;
-    }
-    return BUCKETS.map((b) => ({ ...counts[b.key], bucketKey: b.key }));
-  }, [filtered, now]);
-
-  const theatreSeries = useMemo(() => {
-    const byTheatre = new Map<string, { name: string; Certification: number; Accreditation: number; "Instructor-Led Training": number; OLX: number }>();
-    for (const r of filtered) {
-      const t = r.theatre || "Unknown";
-      if (!byTheatre.has(t)) byTheatre.set(t, { name: t, Certification: 0, Accreditation: 0, "Instructor-Led Training": 0, OLX: 0 });
-      const key = r.trainingType as (typeof TYPES)[number];
-      if (TYPES.includes(key)) byTheatre.get(t)![key]++;
-    }
-    return [...byTheatre.values()].sort((a, b) => a.name.localeCompare(b.name));
-  }, [filtered]);
-
-  const kpis = useMemo(
-    () => ({
-      total: filtered.length,
-      m1: filtered.filter((r) => bucketLapse(new Date(r.expiryDate), now) === "0-1").length,
-      m3: filtered.filter((r) => {
-        const b = bucketLapse(new Date(r.expiryDate), now);
-        return b === "0-1" || b === "1-3";
-      }).length,
-      longOverdue: filtered.filter((r) => bucketLapse(new Date(r.expiryDate), now) === "12+").length,
-    }),
-    [filtered, now]
+      return params;
+    },
+    [debouncedSearch, filterType, filterTheatre, filterBucket, excludeRetired, groupBy, sortColumn, sortDir, page, pageSize]
   );
 
-  // Column sorting (applied before grouping so rows sort within each group).
-  const sortAccessors: Record<string, SortAccessor<TrainingRecordRow>> = {
-    fullName: (r) => r.fullName,
-    email: (r) => r.email,
-    theatre: (r) => r.theatre,
-    region: (r) => r.region,
-    country: (r) => r.country,
-    trainingTitle: (r) => r.trainingTitle,
-    trainingType: (r) => r.trainingType,
-    productType: (r) => r.productType,
-    function: (r) => r.function,
-    completedDate: (r) => r.completedDate,
-    expiryDate: (r) => r.expiryDate,
+  // Reset to page 1 whenever a filter/sort/scope changes (not on page/pageSize).
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, filterType, filterTheatre, filterBucket, excludeRetired, groupBy, sortColumn, sortDir, companyScope.selected]);
+
+  useEffect(() => {
+    if (companyScope.loading) return;
+    const url = withCompany(`/api/reports/expired?${buildParams({}).toString()}`, companyScope.selected);
+    let cancelled = false;
+    setLoading(true);
+    fetch(url)
+      .then((r) => r.json())
+      .then((d: ExpiredResponse) => {
+        if (!cancelled) setData(d);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [buildParams, companyScope.loading, companyScope.selected]);
+
+  const charts = data?.charts ?? { bucketSeries: [], theatreSeries: [] };
+  const kpis = data?.kpis ?? { total: 0, m1: 0, m3: 0, longOverdue: 0 };
+  const rows = data?.rows ?? [];
+  const groups = data?.groups ?? [];
+  const total = data?.total ?? 0;
+  const types = data?.filterOptions.types ?? [];
+  const theatres = data?.filterOptions.theatres ?? [];
+
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const rangeStart = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const rangeEnd = Math.min(total, page * pageSize);
+
+  const toggleSort = (key: string) => {
+    if (key === sortColumn) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else {
+      setSortColumn(key);
+      setSortDir("asc");
+    }
   };
-  const { sorted, toggleSort, sortIndicator } = useTableSort(filtered, sortAccessors, {
-    defaultKey: "fullName",
-    tiebreakKey: "fullName",
-  });
+  const sortIndicator = (key: string) => (sortColumn === key ? (sortDir === "asc" ? " ▲" : " ▼") : "");
 
-  const grouped = useMemo(() => groupRows(sorted, groupBy ?? "theatre"), [sorted, groupBy]);
+  const handleExport = async (fmt: "csv" | "excel" | "pdf") => {
+    setExporting(true);
+    try {
+      const url = withCompany(`/api/reports/expired?${buildParams({ all: true }).toString()}`, companyScope.selected);
+      const res = await fetch(url);
+      const d: ExpiredResponse = await res.json();
+      const exportRows = d.rows.map((r) => ({
+        ...r,
+        completedDate: formatDate(r.completedDate),
+        expiryDate: formatDate(r.expiryDate),
+        retired: r.isLegacy ? "Yes" : "No",
+      }));
+      if (fmt === "csv") exportToCsv(exportRows as never, exportColumns as never, "currently-expired");
+      else if (fmt === "excel") exportToExcel(exportRows as never, exportColumns as never, "currently-expired");
+      else exportToPdf(exportRows as never, exportColumns as never, "currently-expired");
+    } finally {
+      setExporting(false);
+    }
+  };
 
-  const exportColumns = [
-    { key: "fullName", header: "Full Name" },
-    { key: "email", header: "Email" },
-    { key: "theatre", header: "Theatre" },
-    { key: "region", header: "Region" },
-    { key: "country", header: "Country" },
-    { key: "trainingTitle", header: "Training" },
-    { key: "trainingType", header: "Training Type" },
-    { key: "productType", header: "Product Type" },
-    { key: "function", header: "Function" },
-    { key: "completedDate", header: "Completed Date" },
-    { key: "expiryDate", header: "Expiry Date" },
-    { key: "retired", header: "Retired" },
-  ];
-  const exportRows = filtered.map((r) => ({
-    ...r,
-    completedDate: formatDate(r.completedDate),
-    expiryDate: formatDate(r.expiryDate),
-    retired: r.isLegacy ? "Yes" : "No",
-  }));
-
-  if (loading) {
+  if (loading && !data) {
     return <div className="flex items-center justify-center h-64"><div className="text-gray-500">Loading report...</div></div>;
   }
 
-  // Avoid unused import warning when grouping by something other than theatre
-  void resolveBucket;
+  const renderRow = (row: ExpiredRow, idx: number) => (
+    <tr key={`${row.email}-${row.trainingTitle}-${idx}`} className="border-b hover:bg-gray-50">
+      <td className="px-4 py-3">{row.fullName}</td>
+      <td className="px-4 py-3">{row.email}</td>
+      <td className="px-4 py-3">{row.theatre || "-"}</td>
+      <td className="px-4 py-3">{row.region || "-"}</td>
+      <td className="px-4 py-3">{row.country || "-"}</td>
+      <td className="px-4 py-3">
+        {row.trainingTitle}
+        {row.isLegacy && (
+          <span className="ml-2 inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-gray-200 text-gray-600">Retired</span>
+        )}
+      </td>
+      <td className="px-4 py-3">
+        <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${typeBadgeClass(row.trainingType)}`}>
+          {row.trainingType}
+        </span>
+      </td>
+      <td className="px-4 py-3">{row.productType}</td>
+      <td className="px-4 py-3">{row.function}</td>
+      <td className="px-4 py-3">{formatDate(row.completedDate)}</td>
+      <td className="px-4 py-3 text-red-700 font-medium">{formatDate(row.expiryDate)}</td>
+      <td className="px-4 py-3">
+        <button onClick={() => router.push(`/students/${encodeURIComponent(row.email)}`)} className="px-3 py-1 text-xs font-medium text-blue-600 bg-blue-50 rounded-md hover:bg-blue-100 transition-colors">View</button>
+      </td>
+    </tr>
+  );
+
+  // Build the table body: flat rows, or (when grouping) group headers + server
+  // subtotals inserted at group boundaries within the current page.
+  const renderBody = () => {
+    if (rows.length === 0) {
+      return (
+        <tbody>
+          <tr>
+            <td colSpan={12} className="px-4 py-8 text-center text-gray-500">No expired records match the current filters.</td>
+          </tr>
+        </tbody>
+      );
+    }
+    if (!groupBy) {
+      return <tbody>{rows.map((row, idx) => renderRow(row, idx))}</tbody>;
+    }
+    const totals = new Map(groups.map((g) => [g.key, g.total]));
+    const groupLabel = GROUP_BY_LABEL[groupBy];
+    const items: React.ReactNode[] = [];
+    let prevKey: string | null = null;
+    const subtotal = (key: string) => {
+      const n = totals.get(key) ?? 0;
+      items.push(
+        <tr key={`s-${key}`} className="bg-gray-50 border-b font-medium text-xs text-gray-600">
+          <td colSpan={12} className="px-4 py-2">Subtotal — {n} expired record{n !== 1 ? "s" : ""}</td>
+        </tr>
+      );
+    };
+    rows.forEach((row, idx) => {
+      const key = resolveBucket(row, groupBy);
+      if (key !== prevKey) {
+        if (prevKey !== null) subtotal(prevKey);
+        const n = totals.get(key) ?? 0;
+        items.push(
+          <tr key={`h-${key}`} className="bg-gray-100 border-b">
+            <td colSpan={12} className="px-4 py-2">
+              <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                <span>{groupLabel}: {key}</span>
+                <span className="ml-auto text-xs font-normal text-gray-500">{n} record{n !== 1 ? "s" : ""}</span>
+              </div>
+            </td>
+          </tr>
+        );
+        prevKey = key;
+      }
+      items.push(renderRow(row, idx));
+    });
+    if (prevKey !== null) subtotal(prevKey);
+    return <tbody>{items}</tbody>;
+  };
 
   return (
     <div>
@@ -245,7 +312,7 @@ export default function ExpiredPage() {
             )}
           </div>
           <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={bucketSeries}>
+            <BarChart data={charts.bucketSeries}>
               <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
               <XAxis dataKey="name" tick={{ fontSize: 12, fill: chart.axis }} stroke={chart.axis} />
               <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: chart.axis }} stroke={chart.axis} />
@@ -262,7 +329,7 @@ export default function ExpiredPage() {
         <div className="bg-white rounded-lg border border-gray-200 p-5">
           <h3 className="text-base font-semibold text-gray-900 mb-4">Expired by Theatre</h3>
           <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={theatreSeries}>
+            <BarChart data={charts.theatreSeries}>
               <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
               <XAxis dataKey="name" tick={{ fontSize: 11, fill: chart.axis }} stroke={chart.axis} angle={-35} textAnchor="end" height={50} />
               <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: chart.axis }} stroke={chart.axis} />
@@ -280,7 +347,7 @@ export default function ExpiredPage() {
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-wrap gap-2">
           <p className="text-sm text-gray-500">Certifications &amp; trainings whose latest completion has already expired</p>
-          <span className="text-sm font-medium text-gray-500">{filtered.length} result{filtered.length !== 1 ? "s" : ""}</span>
+          <span className="text-sm font-medium text-gray-500">{total} result{total !== 1 ? "s" : ""}</span>
         </div>
         <div className="px-6 py-4">
           <div className="flex flex-col gap-3 mb-4">
@@ -289,7 +356,7 @@ export default function ExpiredPage() {
                 <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                 <input type="text" placeholder="Search by name or email..." value={search} onChange={(e) => setSearch(e.target.value)} className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg" />
               </div>
-              <ExportMenu data={exportRows as never} columns={exportColumns} filename="currently-expired" />
+              <ExportMenu onExport={handleExport} busy={exporting} />
             </div>
             <div className="flex flex-wrap items-center gap-3">
               <select value={filterType} onChange={(e) => setFilterType(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
@@ -330,45 +397,38 @@ export default function ExpiredPage() {
                   <th className="px-4 py-3 text-left font-semibold"></th>
                 </tr>
               </thead>
-              <GroupedRows
-                groups={grouped}
-                groupBy={groupBy}
-                colSpanTotal={12}
-                emptyMessage="No expired records match the current filters."
-                renderRow={(row, idx) => (
-                  <tr key={`${row.email}-${row.trainingTitle}-${idx}`} className="border-b hover:bg-gray-50">
-                    <td className="px-4 py-3">{row.fullName}</td>
-                    <td className="px-4 py-3">{row.email}</td>
-                    <td className="px-4 py-3">{row.theatre || "-"}</td>
-                    <td className="px-4 py-3">{row.region || "-"}</td>
-                    <td className="px-4 py-3">{row.country || "-"}</td>
-                    <td className="px-4 py-3">
-                      {row.trainingTitle}
-                      {row.isLegacy && (
-                        <span className="ml-2 inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-gray-200 text-gray-600">Retired</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${typeBadgeClass(row.trainingType)}`}>
-                        {row.trainingType}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">{row.productType}</td>
-                    <td className="px-4 py-3">{row.function}</td>
-                    <td className="px-4 py-3">{formatDate(row.completedDate)}</td>
-                    <td className="px-4 py-3 text-red-700 font-medium">{formatDate(row.expiryDate)}</td>
-                    <td className="px-4 py-3">
-                      <button onClick={() => router.push(`/students/${encodeURIComponent(row.email)}`)} className="px-3 py-1 text-xs font-medium text-blue-600 bg-blue-50 rounded-md hover:bg-blue-100 transition-colors">View</button>
-                    </td>
-                  </tr>
-                )}
-                renderSubtotal={(g) => (
-                  <td colSpan={12} className="px-4 py-2">
-                    Subtotal — {g.rows.length} expired record{g.rows.length !== 1 ? "s" : ""}
-                  </td>
-                )}
-              />
+              {renderBody()}
             </table>
+          </div>
+
+          <div className="flex items-center justify-between flex-wrap gap-3 mt-4">
+            <div className="flex items-center gap-2 text-sm text-gray-600">
+              <span>{total === 0 ? "No records" : `Showing ${rangeStart}–${rangeEnd} of ${total}`}</span>
+              <select
+                value={pageSize}
+                onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
+                className="border border-gray-300 rounded-lg px-2 py-1 text-sm"
+              >
+                {PAGE_SIZE_OPTIONS.map((n) => <option key={n} value={n}>{n} / page</option>)}
+              </select>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page <= 1}
+                className="flex items-center gap-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg disabled:opacity-40 hover:bg-gray-50"
+              >
+                <ChevronLeft size={14} /> Prev
+              </button>
+              <span className="text-sm text-gray-600">Page {page} of {totalPages}</span>
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page >= totalPages}
+                className="flex items-center gap-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg disabled:opacity-40 hover:bg-gray-50"
+              >
+                Next <ChevronRight size={14} />
+              </button>
+            </div>
           </div>
         </div>
       </div>
