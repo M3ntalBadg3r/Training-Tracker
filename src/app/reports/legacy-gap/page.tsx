@@ -14,6 +14,7 @@ import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
 import { useFetchJson } from "@/hooks/useFetchJson";
 import { useDateFormat } from "@/components/date-format/DateFormatProvider";
+import GeoScopeFilter, { GeoScope, EMPTY_GEO_SCOPE } from "@/components/reports/GeoScopeFilter";
 import { Search, Download, ArrowLeft, History, AlertCircle, AlertTriangle, Ban } from "lucide-react";
 import {
   BarChart,
@@ -112,6 +113,7 @@ export default function LegacyGapPage() {
   const [filterWindow, setFilterWindow] = useState("all"); // all | expired | 1 | 3 | 6 | 12
   const [filterType, setFilterType] = useState("");
   const [filterProduct, setFilterProduct] = useState("");
+  const [geo, setGeo] = useState<GeoScope>(EMPTY_GEO_SCOPE);
   const [filterHorizon, setFilterHorizon] = useState<string | null>(null);
   const [groupBy, setGroupBy] = useState<GroupByMode | null>("theatre");
 
@@ -136,6 +138,9 @@ export default function LegacyGapPage() {
       if (search && !r.fullName.toLowerCase().includes(q) && !r.email.toLowerCase().includes(q) && !r.legacyFullTitle.toLowerCase().includes(q)) return false;
       if (filterType && r.legacyType !== filterType) return false;
       if (filterProduct && r.productType !== filterProduct) return false;
+      if (geo.theatre && r.theatre !== geo.theatre) return false;
+      if (geo.region && r.region !== geo.region) return false;
+      if (geo.country && r.country !== geo.country) return false;
 
       const expiry = new Date(r.legacyExpiryDate);
       if (filterWindow === "expired") {
@@ -149,7 +154,7 @@ export default function LegacyGapPage() {
       if (filterHorizon && bucketHorizon(expiry, now) !== filterHorizon) return false;
       return true;
     });
-  }, [records, search, filterType, filterProduct, filterWindow, filterHorizon, includeNoReplacement, requireActive, now]);
+  }, [records, search, filterType, filterProduct, geo, filterWindow, filterHorizon, includeNoReplacement, requireActive, now]);
 
   const horizonSeries = useMemo(() => {
     const counts: Record<string, { name: string; Certification: number; Accreditation: number; horizonKey: string }> = {};
@@ -313,6 +318,7 @@ export default function LegacyGapPage() {
                 <option value="">All Products</option>
                 {products.map((p) => <option key={p} value={p}>{p}</option>)}
               </select>
+              <GeoScopeFilter value={geo} onChange={setGeo} selectClassName="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white" />
               <select value={groupBy ?? ""} onChange={(e) => setGroupBy((e.target.value as GroupByMode) || null)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
                 <option value="">No Grouping</option>
                 <option value="theatre">Group by Theatre</option>

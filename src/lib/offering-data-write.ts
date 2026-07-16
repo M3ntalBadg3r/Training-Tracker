@@ -6,7 +6,7 @@
  * supporting training (Certification / Accreditation / Instructor-Led Training /
  * OLX) that a partner must hold to deliver it, with a minimum required count and
  * optional alternatives (OR logic). Unlike ProgramData there is no level,
- * purpose or tier — geography (Onshore/Offshore) is applied at view time.
+ * purpose or tier — geography (Onshore/Nearshore/Offshore) is applied at view time.
  */
 import prisma from "@/lib/prisma";
 

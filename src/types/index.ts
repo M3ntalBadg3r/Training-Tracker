@@ -4,6 +4,8 @@ export interface StudentRow {
   theatre: string;
   country: string;
   region?: string | null;
+  companyId?: number;
+  companyName?: string | null;
 }
 
 export interface StudentRecord extends StudentRow {

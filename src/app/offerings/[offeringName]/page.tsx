@@ -8,7 +8,7 @@ import Modal from "@/components/ui/Modal";
 import { ExportMenu } from "@/components/programs/ProgramCompliance";
 import { useCompanyScope } from "@/components/company/CompanyScopeProvider";
 import { trainingTypeLabel } from "@/lib/utils";
-import { ExternalLink, Users, Ship, Anchor } from "lucide-react";
+import { ExternalLink, Users, Ship, Anchor, Globe } from "lucide-react";
 
 interface AltOut {
   trainingType: string;
@@ -23,6 +23,7 @@ interface ReqOut {
   quantityRequired: number;
   alternatives: AltOut[];
   onshore: number | null;
+  nearshore: number | null;
   offshore: number | null;
   met: boolean | null;
 }
@@ -36,7 +37,9 @@ interface GeoOut {
   value: string;
   theatres: string[];
   onshoreCountries: string[];
+  nearshoreCountries: string[];
   offshoreCountries: string[];
+  hasNearshore: boolean;
   hasOffshore: boolean;
   scopeLabel: string;
 }
@@ -106,10 +109,16 @@ export default function OfferingDashboardPage() {
     setValue("");
   };
 
-  const viewStudents = async (req: ReqOut, side: "onshore" | "offshore") => {
+  const sideLabel: Record<"onshore" | "nearshore" | "offshore", string> = {
+    onshore: "Onshore",
+    nearshore: "Nearshore",
+    offshore: "Offshore",
+  };
+
+  const viewStudents = async (req: ReqOut, side: "onshore" | "nearshore" | "offshore") => {
     if (!value) return;
     const titles = [req.trainingTitle, ...req.alternatives.map((a) => a.trainingTitle)].filter(Boolean).join(",");
-    setStudentsTitle(`${req.trainingFullTitle} — ${side === "onshore" ? "Onshore" : "Offshore"}`);
+    setStudentsTitle(`${req.trainingFullTitle} — ${sideLabel[side]}`);
     setStudents(null);
     setStudentsLoading(true);
     try {
@@ -133,6 +142,7 @@ export default function OfferingDashboardPage() {
     { key: "training", header: "Training" },
     { key: "minRequired", header: "Min Required" },
     { key: "onshore", header: "Onshore" },
+    { key: "nearshore", header: "Nearshore" },
     { key: "offshore", header: "Offshore" },
     { key: "met", header: "Met" },
   ];
@@ -143,6 +153,7 @@ export default function OfferingDashboardPage() {
       training: r.trainingFullTitle,
       minRequired: r.quantityRequired,
       onshore: r.onshore ?? 0,
+      nearshore: r.nearshore ?? "—",
       offshore: r.offshore ?? "—",
       met: r.met === null ? "" : r.met ? "Yes" : "No",
     }))
@@ -190,7 +201,7 @@ export default function OfferingDashboardPage() {
         </div>
         {hasScope && data?.geo && (
           <p className="text-xs text-gray-500 pb-2">
-            Onshore: {data.geo.onshoreCountries.length} country(ies) · Offshore: {data.geo.hasOffshore ? `${data.geo.offshoreCountries.length} country(ies) in ${data.geo.theatres.join(", ")}` : "theatre unknown"}
+            Onshore: {data.geo.onshoreCountries.length} country(ies) · Nearshore: {data.geo.hasNearshore ? `${data.geo.nearshoreCountries.length} country(ies) in ${data.geo.theatres.join(", ")}` : "theatre unknown"} · Offshore: {data.geo.offshoreCountries.length} country(ies) worldwide
           </p>
         )}
       </div>
@@ -201,7 +212,7 @@ export default function OfferingDashboardPage() {
         </div>
       ) : !hasScope ? (
         <div className="bg-white rounded-lg border border-dashed border-gray-200 p-10 text-center text-gray-500">
-          Select a country or region to view Onshore &amp; Offshore capability.
+          Select a country or region to view Onshore, Nearshore &amp; Offshore capability.
         </div>
       ) : (data?.specialisations.length ?? 0) === 0 ? (
         <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-500">
@@ -228,7 +239,8 @@ export default function OfferingDashboardPage() {
                       <th className="px-4 py-2 font-medium">Type</th>
                       <th className="px-4 py-2 font-medium">Training</th>
                       <th className="px-4 py-2 font-medium"><span className="inline-flex items-center gap-1"><Anchor size={12} /> Onshore</span></th>
-                      <th className="px-4 py-2 font-medium"><span className="inline-flex items-center gap-1"><Ship size={12} /> Offshore</span></th>
+                      <th className="px-4 py-2 font-medium"><span className="inline-flex items-center gap-1"><Ship size={12} /> Nearshore</span></th>
+                      <th className="px-4 py-2 font-medium"><span className="inline-flex items-center gap-1"><Globe size={12} /> Offshore</span></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -249,6 +261,20 @@ export default function OfferingDashboardPage() {
                             <button onClick={() => viewStudents(r, "onshore")} className="ml-2 inline-flex items-center gap-0.5 text-xs text-blue-600 hover:text-blue-800" title="View students">
                               <Users size={12} /> View
                             </button>
+                          )}
+                        </td>
+                        <td className="px-4 py-2 align-top text-gray-600">
+                          {r.nearshore === null ? (
+                            <span className="text-gray-400">—</span>
+                          ) : (
+                            <>
+                              {r.nearshore}
+                              {r.nearshore > 0 && (
+                                <button onClick={() => viewStudents(r, "nearshore")} className="ml-2 inline-flex items-center gap-0.5 text-xs text-blue-600 hover:text-blue-800" title="View students">
+                                  <Users size={12} /> View
+                                </button>
+                              )}
+                            </>
                           )}
                         </td>
                         <td className="px-4 py-2 align-top text-gray-600">

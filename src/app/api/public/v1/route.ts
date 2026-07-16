@@ -56,7 +56,7 @@ export async function GET(request: NextRequest) {
         method: "GET",
         path: "/api/public/v1/offerings",
         description:
-          "Offering definitions (specialisations + supporting trainings). Add ?country= or ?region= for Onshore/Offshore compliance; ?name= for one offering.",
+          "Offering definitions (specialisations + supporting trainings). Add ?country= or ?region= for Onshore/Nearshore/Offshore compliance; ?name= for one offering.",
       },
       { method: "GET", path: "/api/public/v1/programs", description: "Partner program list (levels, per-theatre minimums, tiered flag)" },
       {

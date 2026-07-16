@@ -7,6 +7,7 @@ import DataTable from "@/components/data-table/DataTable";
 import Badge from "@/components/ui/Badge";
 import Modal from "@/components/ui/Modal";
 import { useRegionData } from "@/hooks/useRegionData";
+import { useCompanyScope } from "@/components/company/CompanyScopeProvider";
 import {
   ColumnDef,
   CountryOption,
@@ -142,7 +143,9 @@ export default function StudentRecordPage({
     fullName: "",
     email: "",
     country: "",
+    companyId: 0,
   });
+  const { companies: scopeCompanies } = useCompanyScope();
   // Region-data list for the edit dropdown — shared/cached, fetched lazily once
   // editing starts. `countriesLoaded` gates the dropdown until the list is ready.
   const { rows: countries, loading: countriesLoading } = useRegionData(editing);
@@ -187,6 +190,7 @@ export default function StudentRecordPage({
           fullName: data.fullName,
           email: data.email,
           country: data.country,
+          companyId: data.companyId ?? 0,
         });
         setLoading(false);
       })
@@ -237,6 +241,20 @@ export default function StudentRecordPage({
     [countryOptions, editForm.country]
   );
 
+  // Company dropdown options: the caller's in-scope companies, plus the
+  // student's current company (in case it isn't in that list) so the select
+  // can always show the current value.
+  const companyOptions = useMemo<{ id: number; name: string }[]>(() => {
+    const list = scopeCompanies.map((c) => ({ id: c.id, name: c.name }));
+    if (
+      student?.companyId != null &&
+      !list.some((c) => c.id === student.companyId)
+    ) {
+      list.unshift({ id: student.companyId, name: student.companyName ?? "Current company" });
+    }
+    return list;
+  }, [scopeCompanies, student?.companyId, student?.companyName]);
+
   const fullTitleOptions = useMemo(() => {
     const seen = new Set<string>();
     const options: { fullTitle: string; trainingType: string }[] = [];
@@ -276,6 +294,7 @@ export default function StudentRecordPage({
             newEmail:
               editForm.email !== student.email ? editForm.email : undefined,
             country: editForm.country,
+            companyId: editForm.companyId || undefined,
           }),
         }
       );
@@ -337,6 +356,7 @@ export default function StudentRecordPage({
         fullName: data.fullName,
         email: data.email,
         country: data.country,
+        companyId: data.companyId ?? 0,
       });
       setDeletedTrainingIds([]);
       setPendingAdds([]);
@@ -364,6 +384,7 @@ export default function StudentRecordPage({
         fullName: student.fullName,
         email: student.email,
         country: student.country,
+        companyId: student.companyId ?? 0,
       });
     }
     setDeletedTrainingIds([]);
@@ -680,6 +701,24 @@ export default function StudentRecordPage({
                     className="border border-gray-300 rounded-lg px-3 py-2 text-lg font-bold w-full"
                   />
                 </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-600 mb-1">
+                    Company
+                  </label>
+                  <select
+                    value={editForm.companyId || ""}
+                    onChange={(e) =>
+                      setEditForm((f) => ({ ...f, companyId: Number(e.target.value) }))
+                    }
+                    className="border border-gray-300 rounded-lg px-3 py-2 w-full bg-white"
+                  >
+                    {companyOptions.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-sm font-medium text-gray-600 mb-1">
@@ -761,6 +800,12 @@ export default function StudentRecordPage({
                   <span>{student.region || "No Region"}</span>
                   <span className="text-gray-300">|</span>
                   <span>{student.country}</span>
+                  {student.companyName && (
+                    <>
+                      <span className="text-gray-300">|</span>
+                      <span className="font-medium text-gray-700">{student.companyName}</span>
+                    </>
+                  )}
                 </div>
               </>
             )}

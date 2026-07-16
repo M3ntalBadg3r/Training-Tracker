@@ -14,6 +14,7 @@ import { useTableSort, SortAccessor } from "@/hooks/useTableSort";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
 import { useFetchJson } from "@/hooks/useFetchJson";
+import GeoScopeFilter, { GeoScope, EMPTY_GEO_SCOPE } from "@/components/reports/GeoScopeFilter";
 import { useDateFormat } from "@/components/date-format/DateFormatProvider";
 import { Search, Download, ArrowLeft, Award, ShieldCheck, GraduationCap, CircleCheck } from "lucide-react";
 import {
@@ -98,14 +99,13 @@ export default function ByProductTypePage() {
   const [search, setSearch] = useState("");
   const [filterProduct, setFilterProduct] = useState("");
   const [filterType, setFilterType] = useState("");
-  const [filterTheatre, setFilterTheatre] = useState("");
+  const [geo, setGeo] = useState<GeoScope>(EMPTY_GEO_SCOPE);
   const [dateRange, setDateRange] = useState<DateRangeValue>({ from: null, to: null });
   const [groupBy, setGroupBy] = useState<GroupByMode | null>(null);
   const [countPeople, setCountPeople] = useState(false);
 
   const products = useMemo(() => [...new Set(trainingRecords.map((r) => r.productType))].filter(Boolean).sort(), [trainingRecords]);
   const types = useMemo(() => [...new Set(trainingRecords.map((r) => r.trainingType))].filter(Boolean).sort(), [trainingRecords]);
-  const theatres = useMemo(() => [...new Set(trainingRecords.map((r) => r.theatre))].filter(Boolean).sort(), [trainingRecords]);
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
@@ -114,10 +114,12 @@ export default function ByProductTypePage() {
       if (search && !r.fullName.toLowerCase().includes(q) && !r.email.toLowerCase().includes(q)) return false;
       if (filterProduct && r.productType !== filterProduct) return false;
       if (filterType && r.trainingType !== filterType) return false;
-      if (filterTheatre && r.theatre !== filterTheatre) return false;
+      if (geo.theatre && r.theatre !== geo.theatre) return false;
+      if (geo.region && r.region !== geo.region) return false;
+      if (geo.country && r.country !== geo.country) return false;
       return true;
     });
-  }, [trainingRecords, search, filterProduct, filterType, filterTheatre, dateRange]);
+  }, [trainingRecords, search, filterProduct, filterType, geo, dateRange]);
 
   // KPIs. When `countPeople` is on, per-type figures count distinct *active*
   // holders (emails) rather than raw records, so a learner with several certs in
@@ -355,10 +357,7 @@ export default function ByProductTypePage() {
                 <option value="">All Types</option>
                 {types.map((t) => <option key={t} value={t}>{t}</option>)}
               </select>
-              <select value={filterTheatre} onChange={(e) => setFilterTheatre(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
-                <option value="">All Theatres</option>
-                {theatres.map((t) => <option key={t} value={t}>{t}</option>)}
-              </select>
+              <GeoScopeFilter value={geo} onChange={setGeo} selectClassName="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white" />
               <select value={groupBy ?? ""} onChange={(e) => setGroupBy((e.target.value as GroupByMode) || null)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
                 <option value="">No Grouping</option>
                 <option value="theatre">Group by Theatre</option>
