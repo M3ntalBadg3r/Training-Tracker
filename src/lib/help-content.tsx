@@ -570,6 +570,7 @@ const helpSections: Record<string, HelpSection> = {
           <li><strong>Last Achievement</strong> — most recent completion date across all of the learner&apos;s records.</li>
           <li>The whole roster is included, so learners with no completions appear with all-zero counts. OLX sub-items are excluded (the parent OLX counts once it&apos;s complete).</li>
           <li>Filter by theatre/region/country and search by name or email; every column is sortable and the table exports to CSV/Excel/PDF.</li>
+          <li>The detail table is <strong>paginated</strong> — use the controls beneath it to page through learners and change the page size; the KPI cards, leaderboard and exports always cover the full filtered set.</li>
         </ul>
       </>
     ),
