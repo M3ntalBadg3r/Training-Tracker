@@ -337,6 +337,16 @@ When a newer release is available, **SuperAdmins** see a dismissible blue banner
 
 Click the **Moon** icon in the sidebar to toggle night (dark) mode. Click the **Sun** icon to switch back to light mode. Your preference is saved in the browser and persists across sessions.
 
+### Mobile & Small Screens
+
+The interface is responsive. On phones and other narrow screens the sidebar is
+hidden and replaced by a **☰ menu button** in the top bar — tap it to slide the
+full navigation in over a dimmed backdrop, and tap a link, the ✕, or the backdrop
+to close it. On tablets and desktops the sidebar stays docked as before (with its
+collapse toggle). Wide report and admin tables scroll horizontally so no columns
+or row controls are cut off, and pop-up dialogs fit the screen and scroll
+internally when tall.
+
 ### Theatre Filter
 
 Use the **Theatre** dropdown in the top-right corner to filter all metrics and charts by theatre. Options include **Global** (all theatres) plus any theatres found in your student data (e.g., EMEA, NAM, LATAM, JAPAC). Previously selected theatres are cached for instant switching.

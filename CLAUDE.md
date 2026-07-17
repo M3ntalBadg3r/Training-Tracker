@@ -46,7 +46,7 @@ src/
     setup-mfa/    # Forced MFA enrolment page (chromeless; reached when JWT carries `pendingMfaEnrollment` claim)
     layout.tsx    # Root layout with AuthProvider + DateFormatProvider + CompanyScopeProvider + AppShell
   components/
-    layout/       # Sidebar, PageHeader, AppShell
+    layout/       # Sidebar, PageHeader, AppShell. Responsive shell: the Sidebar docks as a rail at `md+` (`hidden md:flex`, its localStorage collapse toggle unchanged) and also accepts `mobile`/`onClose` props to render inside a mobile off-canvas drawer (always expanded, close button instead of the collapse chevron). AppShell renders the docked Sidebar for desktop plus a `md:hidden` slide-in drawer + backdrop toggled by a ☰ hamburger in the top bar; the drawer closes on route change via the "adjust state while rendering" prev-pathname pattern (no setState-in-effect). Main padding is `p-4 sm:p-6`. PageHeader wraps (`flex-wrap`) so a long title + rightContent don't collide.
     ui/           # Modal, Badge, HelpModal, KpiStrip, DateRangePicker, DatePicker (single-date, format-aware), HexColorPickerField (react-colorful saturation/hue popover + hex text input, used by /admin/product-types)
     auth/         # AuthProvider (context + useAuth hook)
     company/      # CompanyScopeProvider (selected company in header) + CompanySwitcher

@@ -234,7 +234,7 @@ export default function TrainingTakenPage({
           <p className="text-sm text-gray-600 mb-3">
             A student is counted as having completed this OLX once they&apos;ve completed every sub-item below.
           </p>
-          <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+          <div className="bg-white rounded-lg border border-gray-200 overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-200">

@@ -36,7 +36,7 @@ export default function HelpModal({
       onClose={onClose}
       className="fixed z-50 rounded-lg p-0 shadow-xl backdrop:bg-black/50 m-auto inset-0"
     >
-      <div className="w-full max-w-2xl max-h-[80vh] flex flex-col">
+      <div className="w-[90vw] max-w-2xl max-h-[80vh] flex flex-col">
         <div className="flex items-center justify-between p-6 pb-3 border-b border-gray-200">
           <h2 className="text-lg font-semibold">{title}</h2>
           <button

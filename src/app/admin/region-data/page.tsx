@@ -596,7 +596,7 @@ export default function RegionDataPage() {
 
       {/* Region Data Table */}
       <section className="mb-8">
-        <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+        <div className="bg-white rounded-lg border border-gray-200 overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-200">

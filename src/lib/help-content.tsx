@@ -78,6 +78,16 @@ const helpSections: Record<string, HelpSection> = {
           preference is saved and persists across sessions.
         </p>
 
+        <h3>Mobile &amp; Small Screens</h3>
+        <p>
+          On phones and other narrow screens the sidebar is hidden and replaced by a
+          <strong> &#9776; menu button</strong> in the top bar &mdash; tap it to slide
+          the navigation in over a dimmed backdrop, and tap a link, the &times;, or the
+          backdrop to close it. On tablets and desktops the sidebar stays docked. Wide
+          tables scroll sideways so nothing is cut off, and pop-up dialogs fit the
+          screen and scroll internally when tall.
+        </p>
+
         <h3>Theatre Filter</h3>
         <p>
           Use the <strong>Theatre</strong> dropdown in the top-right corner to filter

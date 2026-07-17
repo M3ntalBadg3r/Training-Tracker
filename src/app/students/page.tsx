@@ -310,7 +310,7 @@ function StudentsPageInner() {
               ask a SuperAdmin to create it on the Region Data page.
             </p>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Theatre</label>
               <div className="w-full px-3 py-2 border border-gray-200 bg-gray-50 rounded-lg text-sm text-gray-700 min-h-[38px]">

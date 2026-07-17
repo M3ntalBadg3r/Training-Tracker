@@ -168,7 +168,7 @@ export default function DataTable<T extends Record<string, any>>({
   return (
     <div className="space-y-4">
       {/* Search bar */}
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <div className="relative flex-1 max-w-md">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
@@ -298,7 +298,7 @@ export default function DataTable<T extends Record<string, any>>({
       </div>
 
       {/* Pagination */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2 text-sm text-gray-600">
           <span>Show</span>
           <select

@@ -48,7 +48,7 @@ export default function Modal({
     <dialog
       ref={dialogRef}
       onClose={onClose}
-      className={`fixed z-50 rounded-lg p-0 shadow-xl backdrop:bg-black/50 m-auto inset-0 w-[90vw] ${SIZE_CLASSES[size]}`}
+      className={`fixed z-50 rounded-lg p-0 shadow-xl backdrop:bg-black/50 m-auto inset-0 w-[90vw] max-h-[90vh] overflow-y-auto ${SIZE_CLASSES[size]}`}
     >
       <div className="w-full p-6">
         <div className="flex items-center justify-between mb-4">

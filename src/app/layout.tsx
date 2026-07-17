@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import AuthProvider from "@/components/auth/AuthProvider";
 import ThemeProvider from "@/components/theme/ThemeProvider";
@@ -9,6 +9,11 @@ import DateFormatProvider from "@/components/date-format/DateFormatProvider";
 export const metadata: Metadata = {
   title: "Training Tracker",
   description: "Student Certification & Training Tracker",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
 };
 
 export default function RootLayout({
