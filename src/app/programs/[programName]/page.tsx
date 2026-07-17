@@ -513,6 +513,7 @@ export default function ProgramDetailPage() {
                 <tr>
                   <th className="px-3 py-2 text-left font-medium">Full Name</th>
                   <th className="px-3 py-2 text-left font-medium">Email</th>
+                  <th className="px-3 py-2 text-left font-medium">Training</th>
                   <th className="px-3 py-2 text-left font-medium">Country</th>
                   <th className="px-3 py-2 text-left font-medium">Theatre</th>
                   <th className="px-3 py-2 text-left font-medium">Completed</th>
@@ -525,6 +526,7 @@ export default function ProgramDetailPage() {
                   <tr key={s.email} className="border-t border-gray-100">
                     <td className="px-3 py-2">{s.fullName}</td>
                     <td className="px-3 py-2">{s.email}</td>
+                    <td className="px-3 py-2">{s.training ?? "—"}</td>
                     <td className="px-3 py-2">{s.country}</td>
                     <td className="px-3 py-2">{s.theatre}</td>
                     <td className="px-3 py-2">{s.completedDate}</td>
