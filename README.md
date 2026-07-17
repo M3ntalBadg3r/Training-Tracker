@@ -486,15 +486,15 @@ Navigate to **Reports** in the sidebar. Each report follows the same shape: a fo
 
 ### By Product Type
 
-Stacked bar of Certifications / Accreditations / ILTs per product, plus an active-vs-expired donut. Drill in by clicking a bar. Tick **Count people, not records (active holders)** to switch the chart and KPI cards from raw record counts to the number of distinct people who currently hold an active cert/training — so a learner with several certs in one product type is counted once per type rather than inflating the totals.
+Stacked bar of Certifications / Accreditations / ILTs per product, plus an active-vs-expired donut. Drill in by clicking a bar. Tick **Count people, not records (active holders)** to switch the chart and KPI cards from raw record counts to the number of distinct people who currently hold an active cert/training — so a learner with several certs in one product type is counted once per type rather than inflating the totals. The report is computed on the server and the detail table is **paginated** — page through the results with the controls beneath the table, while the charts, KPI cards and exports always reflect the full filtered set.
 
 ### By Function
 
-Same shape as By Product Type, with the function dimension (Sales, Pre-Sales, Deployments) instead — including the same **Count people, not records (active holders)** toggle.
+Same shape as By Product Type, with the function dimension (Sales, Pre-Sales, Deployments) instead — including the same **Count people, not records (active holders)** toggle. Like By Product Type, it is computed on the server with a **paginated** detail table, while charts, KPI cards and exports reflect the full filtered set.
 
 ### Expiring Soon
 
-Horizon bar showing records expiring within 1 / 3 / 6 / 12 months, plus a stacked theatre × month bar showing where expiry pressure clusters. Filter window is selectable up to 12 months.
+Horizon bar showing records expiring within 1 / 3 / 6 / 12 months, plus a stacked theatre × month bar showing where expiry pressure clusters. Filter window is selectable up to 12 months. The report is computed on the server and the detail table is **paginated** — page through the results with the controls beneath the table, while the charts, KPI cards and exports always reflect the full filtered set.
 
 ### Currently Expired
 
@@ -502,15 +502,15 @@ Every certification & training whose latest completion has *already* lapsed — 
 
 ### Achievement Over Time
 
-Area chart of completions with a dashed prior-period comparison line, plus a top-10 leaderboard of most-completed trainings. Pick a preset time range (12, 6, 3, or 1 month) or a custom date range; the chart automatically buckets by day, week, or month depending on the window length. Click a bucket to filter the table to that day/week/month. Type and theatre filters update the chart as well as the table.
+Area chart of completions with a dashed prior-period comparison line, plus a top-10 leaderboard of most-completed trainings. Pick a preset time range (12, 6, 3, or 1 month) or a custom date range; the chart automatically buckets by day, week, or month depending on the window length. Click a bucket to filter the table to that day/week/month. Type and theatre filters update the chart as well as the table. The report is computed on the server and the detail table is **paginated** — page through the results with the controls beneath the table, while the chart, KPI cards and exports always reflect the full filtered set.
 
 ### Trained But Not Certified
 
-Identifies students who have completed an **Instructor-Led Training** or an **OLX** (full sub-item set) but have **not** obtained the associated **Certification** (mapping configured in **Admin > Training Data**). Includes a gap-by-product chart and a top-buckets bar showing which theatres / regions / countries have the most gaps.
+Identifies students who have completed an **Instructor-Led Training** or an **OLX** (full sub-item set) but have **not** obtained the associated **Certification** (mapping configured in **Admin > Training Data**). Includes a gap-by-product chart and a top-buckets bar showing which theatres / regions / countries have the most gaps. The report is computed on the server and the detail table is **paginated** — page through the results with the controls beneath the table, while the charts, KPI cards and exports always reflect the full filtered set.
 
 ### Legacy Replacement Gap
 
-Lists learners who hold a **legacy** Certification or Accreditation but have **not** taken its **replacement** (both configured in **Admin > Training Data** — tick **Mark as Legacy** and pick one or more **Replaced by** certs/accreditations). Replacements are alternatives: holding any one clears the learner. The expiry-horizon chart and **Already Expired / ≤ 1 / 3 / 6 / 12 months** window filter key on the learner's **legacy** training expiry, so you can prioritise who needs to migrate first. Two toggles tailor the view: **Include legacy with no replacement** (show holders of a retired cert that has no successor) and **Replacement must be active** (when off, a previously-held but now-expired replacement also counts as satisfied). Filter by type / product, group by theatre / region / country, and export to CSV / Excel / PDF. Also available as a scheduled export.
+Lists learners who hold a **legacy** Certification or Accreditation but have **not** taken its **replacement** (both configured in **Admin > Training Data** — tick **Mark as Legacy** and pick one or more **Replaced by** certs/accreditations). Replacements are alternatives: holding any one clears the learner. The expiry-horizon chart and **Already Expired / ≤ 1 / 3 / 6 / 12 months** window filter key on the learner's **legacy** training expiry, so you can prioritise who needs to migrate first. Two toggles tailor the view: **Include legacy with no replacement** (show holders of a retired cert that has no successor) and **Replacement must be active** (when off, a previously-held but now-expired replacement also counts as satisfied). Filter by type / product, group by theatre / region / country, and export to CSV / Excel / PDF. The report is computed on the server and the detail table is **paginated** — page through the results with the controls beneath the table, while the charts, KPI cards and exports always reflect the full filtered set. Also available as a scheduled export.
 
 ### Learner Achievement Scorecard
 

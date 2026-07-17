@@ -2,17 +2,17 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, handleAuthError } from "@/lib/auth";
 import { getAuthorizedCompanyIds, resolveCompanyFilter } from "@/lib/company-scope";
 import { cachedReport, scopeKey } from "@/lib/report-cache";
-import { computeTrainedNotCertified } from "@/lib/trained-not-certified-report";
+import { computeByProductType } from "@/lib/by-product-type-report";
 import type { GroupByMode } from "@/lib/group-by";
 
 /**
- * Trained But Not Certified report. Server-side aggregation + pagination so the
- * browser downloads a small summary (charts + KPIs + group subtotals) plus one
- * page of detail rows instead of the whole gap dataset.
+ * By Product Type report. Server-side aggregation + pagination so the browser
+ * downloads a small summary (charts + KPIs + group subtotals) plus one page of
+ * detail rows instead of the whole training-records dataset.
  *
- * Query params: companyId, q (search), theatre, region, country, product, ilt,
- * cert, active (yes|no), groupBy (theatre|region|country), sort, sortDir, page,
- * pageSize, all (export).
+ * Query params: companyId, q (search), product, type, theatre, region, country,
+ * dateFrom, dateTo (ISO), countPeople, groupBy (theatre|region|country), sort,
+ * sortDir, page, pageSize, all (export).
  */
 export async function GET(request: NextRequest) {
   let auth;
@@ -26,26 +26,27 @@ export async function GET(request: NextRequest) {
   const companyFilter = resolveCompanyFilter(allowed, request.nextUrl.searchParams.get("companyId"));
   if (companyFilter !== null && companyFilter.length === 0) {
     return NextResponse.json({
-      charts: { productSeries: [], bucketSeries: [] },
-      kpis: { total: 0, activeIlt: 0, distinctStudents: 0, distinctIlts: 0 },
+      charts: { productSeries: [] },
+      kpis: { total: 0, cert: 0, accred: 0, ilt: 0, olx: 0, active: 0, expired: 0 },
       groups: [],
       rows: [],
       total: 0,
       page: 1,
       pageSize: 25,
-      filterOptions: { theatres: [], regions: [], countries: [], productTypes: [], iltTitles: [], certTitles: [] },
+      filterOptions: { products: [], types: [] },
     });
   }
 
   const p = request.nextUrl.searchParams;
   const search = p.get("q") || "";
+  const product = p.get("product") || "";
+  const type = p.get("type") || "";
   const theatre = p.get("theatre") || "";
   const region = p.get("region") || "";
   const country = p.get("country") || "";
-  const product = p.get("product") || "";
-  const ilt = p.get("ilt") || "";
-  const cert = p.get("cert") || "";
-  const active = p.get("active") || "";
+  const dateFrom = p.get("dateFrom") || "";
+  const dateTo = p.get("dateTo") || "";
+  const countPeople = p.get("countPeople") === "true";
   const rawGroupBy = p.get("groupBy") || "";
   const groupBy: GroupByMode | null =
     rawGroupBy === "theatre" || rawGroupBy === "region" || rawGroupBy === "country" ? rawGroupBy : null;
@@ -57,16 +58,17 @@ export async function GET(request: NextRequest) {
   const pageSize = Math.min(200, Math.max(1, pageSizeRaw));
 
   const key = [
-    "trained-not-certified",
+    "by-product-type",
     scopeKey(companyFilter),
     encodeURIComponent(search),
+    encodeURIComponent(product),
+    type,
     theatre,
     region,
     country,
-    product,
-    encodeURIComponent(ilt),
-    encodeURIComponent(cert),
-    active,
+    dateFrom,
+    dateTo,
+    countPeople ? "1" : "0",
     groupBy ?? "",
     sortColumn,
     sortDir,
@@ -74,16 +76,17 @@ export async function GET(request: NextRequest) {
   ].join("|");
 
   const result = await cachedReport(key, () =>
-    computeTrainedNotCertified({
+    computeByProductType({
       companyIds: companyFilter,
       search,
+      product,
+      type,
       theatre,
       region,
       country,
-      product,
-      ilt,
-      cert,
-      active,
+      dateFrom: dateFrom || null,
+      dateTo: dateTo || null,
+      countPeople,
       groupBy,
       sortColumn,
       sortDir,

@@ -2,16 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, handleAuthError } from "@/lib/auth";
 import { getAuthorizedCompanyIds, resolveCompanyFilter } from "@/lib/company-scope";
 import { cachedReport, scopeKey } from "@/lib/report-cache";
-import { computeTrainedNotCertified } from "@/lib/trained-not-certified-report";
+import { computeExpiringSoon } from "@/lib/expiring-soon-report";
 import type { GroupByMode } from "@/lib/group-by";
 
 /**
- * Trained But Not Certified report. Server-side aggregation + pagination so the
- * browser downloads a small summary (charts + KPIs + group subtotals) plus one
- * page of detail rows instead of the whole gap dataset.
+ * Expiring Soon report. Server-side aggregation + pagination so the browser
+ * downloads a small summary (charts + KPIs + group subtotals) plus one page of
+ * detail rows instead of the whole training-records dataset.
  *
- * Query params: companyId, q (search), theatre, region, country, product, ilt,
- * cert, active (yes|no), groupBy (theatre|region|country), sort, sortDir, page,
+ * Query params: companyId, q (search), window (1|3|6|12), type, theatre, region,
+ * country, horizon, groupBy (theatre|region|country), sort, sortDir, page,
  * pageSize, all (export).
  */
 export async function GET(request: NextRequest) {
@@ -26,26 +26,25 @@ export async function GET(request: NextRequest) {
   const companyFilter = resolveCompanyFilter(allowed, request.nextUrl.searchParams.get("companyId"));
   if (companyFilter !== null && companyFilter.length === 0) {
     return NextResponse.json({
-      charts: { productSeries: [], bucketSeries: [] },
-      kpis: { total: 0, activeIlt: 0, distinctStudents: 0, distinctIlts: 0 },
+      charts: { horizonSeries: [], heatmap: { theatres: [], data: [] } },
+      kpis: { total: 0, m1: 0, m3: 0, m6: 0 },
       groups: [],
       rows: [],
       total: 0,
       page: 1,
       pageSize: 25,
-      filterOptions: { theatres: [], regions: [], countries: [], productTypes: [], iltTitles: [], certTitles: [] },
+      filterOptions: { types: [] },
     });
   }
 
   const p = request.nextUrl.searchParams;
   const search = p.get("q") || "";
+  const window = p.get("window") || "12";
+  const type = p.get("type") || "";
   const theatre = p.get("theatre") || "";
   const region = p.get("region") || "";
   const country = p.get("country") || "";
-  const product = p.get("product") || "";
-  const ilt = p.get("ilt") || "";
-  const cert = p.get("cert") || "";
-  const active = p.get("active") || "";
+  const horizon = p.get("horizon") || "";
   const rawGroupBy = p.get("groupBy") || "";
   const groupBy: GroupByMode | null =
     rawGroupBy === "theatre" || rawGroupBy === "region" || rawGroupBy === "country" ? rawGroupBy : null;
@@ -57,16 +56,15 @@ export async function GET(request: NextRequest) {
   const pageSize = Math.min(200, Math.max(1, pageSizeRaw));
 
   const key = [
-    "trained-not-certified",
+    "expiring-soon",
     scopeKey(companyFilter),
     encodeURIComponent(search),
+    window,
+    type,
     theatre,
     region,
     country,
-    product,
-    encodeURIComponent(ilt),
-    encodeURIComponent(cert),
-    active,
+    horizon,
     groupBy ?? "",
     sortColumn,
     sortDir,
@@ -74,16 +72,15 @@ export async function GET(request: NextRequest) {
   ].join("|");
 
   const result = await cachedReport(key, () =>
-    computeTrainedNotCertified({
+    computeExpiringSoon({
       companyIds: companyFilter,
       search,
+      window,
+      type,
       theatre,
       region,
       country,
-      product,
-      ilt,
-      cert,
-      active,
+      horizon: horizon || null,
       groupBy,
       sortColumn,
       sortDir,

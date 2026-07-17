@@ -1,20 +1,20 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useCallback, useEffect, useState } from "react";
+import * as React from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import PageHeader from "@/components/layout/PageHeader";
 import KpiStrip from "@/components/ui/KpiStrip";
-import GroupedRows from "@/components/data-table/GroupedRows";
 import { useChartTheme, tooltipStyle } from "@/lib/chart-theme";
-import { groupRows, GroupByMode, resolveBucket } from "@/lib/group-by";
-import { useTableSort, SortAccessor } from "@/hooks/useTableSort";
+import { resolveBucket, GROUP_BY_LABEL, GroupByMode } from "@/lib/group-by";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
-import { useFetchJson } from "@/hooks/useFetchJson";
+import { useDebounce } from "@/hooks/useDebounce";
 import { useDateFormat } from "@/components/date-format/DateFormatProvider";
 import GeoScopeFilter, { GeoScope, EMPTY_GEO_SCOPE } from "@/components/reports/GeoScopeFilter";
 import { Search, Download, ArrowLeft, Clock, AlertTriangle, AlertCircle, CalendarClock } from "lucide-react";
+import Pagination from "@/components/data-table/Pagination";
 import {
   BarChart,
   Bar,
@@ -26,7 +26,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
-interface TrainingRecordRow {
+interface ExpiringRow {
   fullName: string;
   email: string;
   theatre: string;
@@ -41,7 +41,25 @@ interface TrainingRecordRow {
   active: boolean;
 }
 
+type TypeCounts = { name: string; Certification: number; Accreditation: number; "Instructor-Led Training": number; OLX: number };
+
+interface ExpiringResponse {
+  charts: {
+    horizonSeries: (TypeCounts & { horizonKey: string })[];
+    heatmap: { theatres: string[]; data: Record<string, string | number>[] };
+  };
+  kpis: { total: number; m1: number; m3: number; m6: number };
+  groups: { key: string; total: number }[];
+  rows: ExpiringRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+  filterOptions: { types: string[] };
+}
+
 const TYPES = ["Certification", "Accreditation", "Instructor-Led Training", "OLX"] as const;
+
+const PAGE_SIZE_OPTIONS = [25, 50, 100, 200];
 
 function typeBadgeClass(t: string): string {
   if (t === "Certification") return "bg-blue-100 text-blue-800";
@@ -50,43 +68,37 @@ function typeBadgeClass(t: string): string {
   return "bg-amber-100 text-amber-800";
 }
 
-function ExportMenu({ data, columns, filename }: { data: Record<string, unknown>[]; columns: { key: string; header: string }[]; filename: string }) {
+const exportColumns = [
+  { key: "fullName", header: "Full Name" },
+  { key: "email", header: "Email" },
+  { key: "theatre", header: "Theatre" },
+  { key: "region", header: "Region" },
+  { key: "country", header: "Country" },
+  { key: "trainingTitle", header: "Training" },
+  { key: "trainingType", header: "Training Type" },
+  { key: "productType", header: "Product Type" },
+  { key: "function", header: "Function" },
+  { key: "completedDate", header: "Completed Date" },
+  { key: "expiryDate", header: "Expiry Date" },
+  { key: "active", header: "Active" },
+];
+
+function ExportMenu({ onExport, busy }: { onExport: (fmt: "csv" | "excel" | "pdf") => void; busy: boolean }) {
   const [show, setShow] = useState(false);
   return (
     <div className="relative">
-      <button onClick={() => setShow((p) => !p)} className="flex items-center gap-2 px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300">
-        <Download size={16} /> Export
+      <button onClick={() => setShow((p) => !p)} disabled={busy} className="flex items-center gap-2 px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300 disabled:opacity-50">
+        <Download size={16} /> {busy ? "Exporting…" : "Export"}
       </button>
-      {show && (
+      {show && !busy && (
         <div className="absolute right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[140px]">
-          <button onClick={() => { exportToCsv(data, columns as never, filename); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-t-lg">Export as CSV</button>
-          <button onClick={() => { exportToExcel(data, columns as never, filename); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100">Export as Excel</button>
-          <button onClick={() => { exportToPdf(data, columns as never, filename); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-b-lg">Export as PDF</button>
+          <button onClick={() => { onExport("csv"); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-t-lg">Export as CSV</button>
+          <button onClick={() => { onExport("excel"); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100">Export as Excel</button>
+          <button onClick={() => { onExport("pdf"); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-b-lg">Export as PDF</button>
         </div>
       )}
     </div>
   );
-}
-
-const HORIZONS: { key: string; label: string; months: number }[] = [
-  { key: "0-1", label: "≤ 1 month", months: 1 },
-  { key: "1-3", label: "1–3 months", months: 3 },
-  { key: "3-6", label: "3–6 months", months: 6 },
-  { key: "6-12", label: "6–12 months", months: 12 },
-];
-
-function monthsBetween(now: Date, future: Date): number {
-  return (future.getFullYear() - now.getFullYear()) * 12 + (future.getMonth() - now.getMonth());
-}
-
-function bucketHorizon(expiry: Date, now: Date): string | null {
-  if (expiry <= now) return null;
-  const m = monthsBetween(now, expiry);
-  if (m <= 1) return "0-1";
-  if (m <= 3) return "1-3";
-  if (m <= 6) return "3-6";
-  if (m <= 12) return "6-12";
-  return null;
 }
 
 export default function ExpiringSoonPage() {
@@ -94,155 +106,186 @@ export default function ExpiringSoonPage() {
   const chart = useChartTheme();
   const { formatDate } = useDateFormat();
   const companyScope = useCompanyScope();
-  const { data: recordsData, loading } = useFetchJson<TrainingRecordRow[]>(
-    withCompany("/api/reports/training-records", companyScope.selected),
-    { enabled: !companyScope.loading }
-  );
-  const trainingRecords = useMemo(() => recordsData ?? [], [recordsData]);
 
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebounce(search, 300);
   const [filterWindow, setFilterWindow] = useState("12");
   const [filterType, setFilterType] = useState("");
   const [geo, setGeo] = useState<GeoScope>(EMPTY_GEO_SCOPE);
   const [filterHorizon, setFilterHorizon] = useState<string | null>(null);
   const [groupBy, setGroupBy] = useState<GroupByMode | null>("theatre");
+  const [sortColumn, setSortColumn] = useState("fullName");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
 
-  const now = useMemo(() => new Date(), []);
+  const [data, setData] = useState<ExpiringResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
 
-  const types = useMemo(() => [...new Set(trainingRecords.map((r) => r.trainingType))].filter(Boolean).sort(), [trainingRecords]);
-
-  const filtered = useMemo(() => {
-    const q = search.toLowerCase();
-    const months = parseInt(filterWindow);
-    const cutoff = new Date(now);
-    cutoff.setMonth(cutoff.getMonth() + months);
-    return trainingRecords.filter((r) => {
-      const expiry = new Date(r.expiryDate);
-      if (expiry <= now || expiry > cutoff) return false;
-      if (search && !r.fullName.toLowerCase().includes(q) && !r.email.toLowerCase().includes(q)) return false;
-      if (filterType && r.trainingType !== filterType) return false;
-      if (geo.theatre && r.theatre !== geo.theatre) return false;
-      if (geo.region && r.region !== geo.region) return false;
-      if (geo.country && r.country !== geo.country) return false;
-      if (filterHorizon) {
-        const b = bucketHorizon(expiry, now);
-        if (b !== filterHorizon) return false;
+  const buildParams = useCallback(
+    (opts: { all?: boolean }) => {
+      const params = new URLSearchParams();
+      if (debouncedSearch) params.set("q", debouncedSearch);
+      params.set("window", filterWindow);
+      if (filterType) params.set("type", filterType);
+      if (geo.theatre) params.set("theatre", geo.theatre);
+      if (geo.region) params.set("region", geo.region);
+      if (geo.country) params.set("country", geo.country);
+      if (filterHorizon) params.set("horizon", filterHorizon);
+      if (groupBy) params.set("groupBy", groupBy);
+      params.set("sort", sortColumn);
+      params.set("sortDir", sortDir);
+      if (opts.all) params.set("all", "true");
+      else {
+        params.set("page", String(page));
+        params.set("pageSize", String(pageSize));
       }
-      return true;
-    });
-  }, [trainingRecords, search, filterWindow, filterType, geo, filterHorizon, now]);
-
-  const horizonSeries = useMemo(() => {
-    const counts: Record<string, { name: string; Certification: number; Accreditation: number; "Instructor-Led Training": number; OLX: number }> = {};
-    for (const h of HORIZONS) {
-      counts[h.key] = { name: h.label, Certification: 0, Accreditation: 0, "Instructor-Led Training": 0, OLX: 0 };
-    }
-    for (const r of filtered) {
-      const expiry = new Date(r.expiryDate);
-      const b = bucketHorizon(expiry, now);
-      if (!b) continue;
-      const key = r.trainingType as (typeof TYPES)[number];
-      if (TYPES.includes(key)) counts[b][key]++;
-    }
-    return HORIZONS.map((h) => ({ ...counts[h.key], horizonKey: h.key }));
-  }, [filtered, now]);
-
-  // Theatre × month heatmap as a stacked bar (months on X axis, one bar per theatre series)
-  const heatmapMonths = useMemo(() => {
-    const months: { key: string; label: string }[] = [];
-    const start = new Date(now.getFullYear(), now.getMonth(), 1);
-    for (let i = 0; i < 12; i++) {
-      const d = new Date(start);
-      d.setMonth(start.getMonth() + i);
-      months.push({
-        key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
-        label: d.toLocaleDateString("en-GB", { month: "short", year: "2-digit" }),
-      });
-    }
-    return months;
-  }, [now]);
-
-  const heatmapTheatres = useMemo(() => [...new Set(filtered.map((r) => r.theatre))].filter(Boolean).sort(), [filtered]);
-
-  const heatmapData = useMemo(() => {
-    const rows = heatmapMonths.map((m) => ({ month: m.label } as Record<string, string | number>));
-    for (const t of heatmapTheatres) rows.forEach((r) => (r[t] = 0));
-    for (const r of filtered) {
-      const expiry = new Date(r.expiryDate);
-      const key = `${expiry.getFullYear()}-${String(expiry.getMonth() + 1).padStart(2, "0")}`;
-      const idx = heatmapMonths.findIndex((m) => m.key === key);
-      if (idx === -1) continue;
-      const target = rows[idx];
-      target[r.theatre] = ((target[r.theatre] as number) || 0) + 1;
-    }
-    return rows;
-  }, [filtered, heatmapMonths, heatmapTheatres]);
-
-  const kpis = useMemo(
-    () => ({
-      total: filtered.length,
-      m1: filtered.filter((r) => bucketHorizon(new Date(r.expiryDate), now) === "0-1").length,
-      m3: filtered.filter((r) => {
-        const b = bucketHorizon(new Date(r.expiryDate), now);
-        return b === "0-1" || b === "1-3";
-      }).length,
-      m6: filtered.filter((r) => {
-        const b = bucketHorizon(new Date(r.expiryDate), now);
-        return b === "0-1" || b === "1-3" || b === "3-6";
-      }).length,
-    }),
-    [filtered, now]
+      return params;
+    },
+    [debouncedSearch, filterWindow, filterType, geo, filterHorizon, groupBy, sortColumn, sortDir, page, pageSize]
   );
 
-  // Column sorting (applied before grouping so rows sort within each group).
-  const sortAccessors: Record<string, SortAccessor<TrainingRecordRow>> = {
-    fullName: (r) => r.fullName,
-    email: (r) => r.email,
-    theatre: (r) => r.theatre,
-    region: (r) => r.region,
-    country: (r) => r.country,
-    trainingTitle: (r) => r.trainingTitle,
-    trainingType: (r) => r.trainingType,
-    productType: (r) => r.productType,
-    function: (r) => r.function,
-    completedDate: (r) => r.completedDate,
-    expiryDate: (r) => r.expiryDate,
-    active: (r) => r.active,
+  // Reset to page 1 whenever a filter/sort/scope changes (not on page/pageSize).
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, filterWindow, filterType, geo, filterHorizon, groupBy, sortColumn, sortDir, companyScope.selected]);
+
+  useEffect(() => {
+    if (companyScope.loading) return;
+    const url = withCompany(`/api/reports/expiring-soon?${buildParams({}).toString()}`, companyScope.selected);
+    let cancelled = false;
+    setLoading(true);
+    fetch(url)
+      .then((r) => r.json())
+      .then((d: ExpiringResponse) => {
+        if (!cancelled) setData(d);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [buildParams, companyScope.loading, companyScope.selected]);
+
+  const charts = data?.charts ?? { horizonSeries: [], heatmap: { theatres: [], data: [] } };
+  const kpis = data?.kpis ?? { total: 0, m1: 0, m3: 0, m6: 0 };
+  const rows = data?.rows ?? [];
+  const groups = data?.groups ?? [];
+  const total = data?.total ?? 0;
+  const types = data?.filterOptions.types ?? [];
+
+  const toggleSort = (key: string) => {
+    if (key === sortColumn) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else {
+      setSortColumn(key);
+      setSortDir("asc");
+    }
   };
-  const { sorted, toggleSort, sortIndicator } = useTableSort(filtered, sortAccessors, {
-    defaultKey: "fullName",
-    tiebreakKey: "fullName",
-  });
+  const sortIndicator = (key: string) => (sortColumn === key ? (sortDir === "asc" ? " ▲" : " ▼") : "");
 
-  const grouped = useMemo(() => groupRows(sorted, groupBy ?? "theatre"), [sorted, groupBy]);
+  const handleExport = async (fmt: "csv" | "excel" | "pdf") => {
+    setExporting(true);
+    try {
+      const url = withCompany(`/api/reports/expiring-soon?${buildParams({ all: true }).toString()}`, companyScope.selected);
+      const res = await fetch(url);
+      const d: ExpiringResponse = await res.json();
+      const exportRows = d.rows.map((r) => ({
+        ...r,
+        completedDate: formatDate(r.completedDate),
+        expiryDate: formatDate(r.expiryDate),
+        active: r.active ? "Yes" : "No",
+      }));
+      if (fmt === "csv") exportToCsv(exportRows as never, exportColumns as never, "expiring-soon");
+      else if (fmt === "excel") exportToExcel(exportRows as never, exportColumns as never, "expiring-soon");
+      else exportToPdf(exportRows as never, exportColumns as never, "expiring-soon");
+    } finally {
+      setExporting(false);
+    }
+  };
 
-  const exportColumns = [
-    { key: "fullName", header: "Full Name" },
-    { key: "email", header: "Email" },
-    { key: "theatre", header: "Theatre" },
-    { key: "region", header: "Region" },
-    { key: "country", header: "Country" },
-    { key: "trainingTitle", header: "Training" },
-    { key: "trainingType", header: "Training Type" },
-    { key: "productType", header: "Product Type" },
-    { key: "function", header: "Function" },
-    { key: "completedDate", header: "Completed Date" },
-    { key: "expiryDate", header: "Expiry Date" },
-    { key: "active", header: "Active" },
-  ];
-  const exportRows = filtered.map((r) => ({
-    ...r,
-    completedDate: formatDate(r.completedDate),
-    expiryDate: formatDate(r.expiryDate),
-    active: r.active ? "Yes" : "No",
-  }));
-
-  if (loading) {
+  if (loading && !data) {
     return <div className="flex items-center justify-center h-64"><div className="text-gray-500">Loading report...</div></div>;
   }
 
-  // Avoid unused import warning when grouping by something other than theatre
-  void resolveBucket;
+  const renderRow = (row: ExpiringRow, idx: number) => (
+    <tr key={`${row.email}-${row.trainingTitle}-${idx}`} className="border-b hover:bg-gray-50">
+      <td className="px-4 py-3">{row.fullName}</td>
+      <td className="px-4 py-3">{row.email}</td>
+      <td className="px-4 py-3">{row.theatre || "-"}</td>
+      <td className="px-4 py-3">{row.region || "-"}</td>
+      <td className="px-4 py-3">{row.country || "-"}</td>
+      <td className="px-4 py-3">{row.trainingTitle}</td>
+      <td className="px-4 py-3">
+        <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${typeBadgeClass(row.trainingType)}`}>
+          {row.trainingType}
+        </span>
+      </td>
+      <td className="px-4 py-3">{row.productType}</td>
+      <td className="px-4 py-3">{row.function}</td>
+      <td className="px-4 py-3">{formatDate(row.completedDate)}</td>
+      <td className="px-4 py-3">{formatDate(row.expiryDate)}</td>
+      <td className="px-4 py-3">
+        <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${row.active ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>
+          {row.active ? "Yes" : "No"}
+        </span>
+      </td>
+      <td className="px-4 py-3">
+        <button onClick={() => router.push(`/students/${encodeURIComponent(row.email)}`)} className="px-3 py-1 text-xs font-medium text-blue-600 bg-blue-50 rounded-md hover:bg-blue-100 transition-colors">View</button>
+      </td>
+    </tr>
+  );
+
+  // Build the table body: flat rows, or (when grouping) group headers + server
+  // subtotals inserted at group boundaries within the current page.
+  const renderBody = () => {
+    if (rows.length === 0) {
+      return (
+        <tbody>
+          <tr>
+            <td colSpan={13} className="px-4 py-8 text-center text-gray-500">No records expiring within the selected window.</td>
+          </tr>
+        </tbody>
+      );
+    }
+    if (!groupBy) {
+      return <tbody>{rows.map((row, idx) => renderRow(row, idx))}</tbody>;
+    }
+    const totals = new Map(groups.map((g) => [g.key, g.total]));
+    const groupLabel = GROUP_BY_LABEL[groupBy];
+    const items: React.ReactNode[] = [];
+    let prevKey: string | null = null;
+    const subtotal = (key: string) => {
+      const n = totals.get(key) ?? 0;
+      items.push(
+        <tr key={`s-${key}`} className="bg-gray-50 border-b font-medium text-xs text-gray-600">
+          <td colSpan={13} className="px-4 py-2">Subtotal — {n} expiring record{n !== 1 ? "s" : ""}</td>
+        </tr>
+      );
+    };
+    rows.forEach((row, idx) => {
+      const key = resolveBucket(row, groupBy);
+      if (key !== prevKey) {
+        if (prevKey !== null) subtotal(prevKey);
+        const n = totals.get(key) ?? 0;
+        items.push(
+          <tr key={`h-${key}`} className="bg-gray-100 border-b">
+            <td colSpan={13} className="px-4 py-2">
+              <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                <span>{groupLabel}: {key}</span>
+                <span className="ml-auto text-xs font-normal text-gray-500">{n} record{n !== 1 ? "s" : ""}</span>
+              </div>
+            </td>
+          </tr>
+        );
+        prevKey = key;
+      }
+      items.push(renderRow(row, idx));
+    });
+    if (prevKey !== null) subtotal(prevKey);
+    return <tbody>{items}</tbody>;
+  };
 
   return (
     <div>
@@ -271,16 +314,15 @@ export default function ExpiringSoonPage() {
             )}
           </div>
           <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={horizonSeries}>
+            <BarChart data={charts.horizonSeries}>
               <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
               <XAxis dataKey="name" tick={{ fontSize: 12, fill: chart.axis }} stroke={chart.axis} />
               <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: chart.axis }} stroke={chart.axis} />
               <Tooltip contentStyle={tooltipStyle(chart)} />
               <Legend />
-              <Bar dataKey="Certification" stackId="a" fill={chart.typeColor("Certification")} cursor="pointer" onClick={((d: unknown) => { const k = (d as { horizonKey?: string }).horizonKey; if (k) setFilterHorizon(k); }) as never} />
-              <Bar dataKey="Accreditation" stackId="a" fill={chart.typeColor("Accreditation")} cursor="pointer" onClick={((d: unknown) => { const k = (d as { horizonKey?: string }).horizonKey; if (k) setFilterHorizon(k); }) as never} />
-              <Bar dataKey="Instructor-Led Training" stackId="a" fill={chart.typeColor("Instructor-Led Training")} cursor="pointer" onClick={((d: unknown) => { const k = (d as { horizonKey?: string }).horizonKey; if (k) setFilterHorizon(k); }) as never} />
-              <Bar dataKey="OLX" stackId="a" fill={chart.typeColor("OLX")} cursor="pointer" onClick={((d: unknown) => { const k = (d as { horizonKey?: string }).horizonKey; if (k) setFilterHorizon(k); }) as never} />
+              {TYPES.map((t) => (
+                <Bar key={t} dataKey={t} stackId="a" fill={chart.typeColor(t)} cursor="pointer" onClick={((d: unknown) => { const k = (d as { horizonKey?: string }).horizonKey; if (k) setFilterHorizon(k); }) as never} />
+              ))}
             </BarChart>
           </ResponsiveContainer>
           <p className="text-xs text-gray-400 mt-2">Click a band to filter the table to that horizon</p>
@@ -288,13 +330,13 @@ export default function ExpiringSoonPage() {
         <div className="bg-white rounded-lg border border-gray-200 p-5">
           <h3 className="text-base font-semibold text-gray-900 mb-4">Expiries by Theatre × Month</h3>
           <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={heatmapData}>
+            <BarChart data={charts.heatmap.data}>
               <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
               <XAxis dataKey="month" tick={{ fontSize: 11, fill: chart.axis }} stroke={chart.axis} angle={-35} textAnchor="end" height={50} />
               <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: chart.axis }} stroke={chart.axis} />
               <Tooltip contentStyle={tooltipStyle(chart)} />
               <Legend />
-              {heatmapTheatres.map((t, i) => (
+              {charts.heatmap.theatres.map((t, i) => (
                 <Bar key={t} dataKey={t} stackId="a" fill={chart.series(i)} />
               ))}
             </BarChart>
@@ -305,7 +347,7 @@ export default function ExpiringSoonPage() {
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-wrap gap-2">
           <p className="text-sm text-gray-500">Training records expiring within the next {filterWindow} months</p>
-          <span className="text-sm font-medium text-gray-500">{filtered.length} result{filtered.length !== 1 ? "s" : ""}</span>
+          <span className="text-sm font-medium text-gray-500">{total} result{total !== 1 ? "s" : ""}</span>
         </div>
         <div className="px-6 py-4">
           <div className="flex flex-col gap-3 mb-4">
@@ -314,7 +356,7 @@ export default function ExpiringSoonPage() {
                 <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                 <input type="text" placeholder="Search by name or email..." value={search} onChange={(e) => setSearch(e.target.value)} className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg" />
               </div>
-              <ExportMenu data={exportRows as never} columns={exportColumns} filename="expiring-soon" />
+              <ExportMenu onExport={handleExport} busy={exporting} />
             </div>
             <div className="flex flex-wrap gap-3">
               <select value={filterWindow} onChange={(e) => setFilterWindow(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
@@ -355,45 +397,19 @@ export default function ExpiringSoonPage() {
                   <th className="px-4 py-3 text-left font-semibold"></th>
                 </tr>
               </thead>
-              <GroupedRows
-                groups={grouped}
-                groupBy={groupBy}
-                colSpanTotal={13}
-                emptyMessage="No records expiring within the selected window."
-                renderRow={(row, idx) => (
-                  <tr key={`${row.email}-${row.trainingTitle}-${idx}`} className="border-b hover:bg-gray-50">
-                    <td className="px-4 py-3">{row.fullName}</td>
-                    <td className="px-4 py-3">{row.email}</td>
-                    <td className="px-4 py-3">{row.theatre || "-"}</td>
-                    <td className="px-4 py-3">{row.region || "-"}</td>
-                    <td className="px-4 py-3">{row.country || "-"}</td>
-                    <td className="px-4 py-3">{row.trainingTitle}</td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${typeBadgeClass(row.trainingType)}`}>
-                        {row.trainingType}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">{row.productType}</td>
-                    <td className="px-4 py-3">{row.function}</td>
-                    <td className="px-4 py-3">{formatDate(row.completedDate)}</td>
-                    <td className="px-4 py-3">{formatDate(row.expiryDate)}</td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${row.active ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>
-                        {row.active ? "Yes" : "No"}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <button onClick={() => router.push(`/students/${encodeURIComponent(row.email)}`)} className="px-3 py-1 text-xs font-medium text-blue-600 bg-blue-50 rounded-md hover:bg-blue-100 transition-colors">View</button>
-                    </td>
-                  </tr>
-                )}
-                renderSubtotal={(g) => (
-                  <td colSpan={13} className="px-4 py-2">
-                    Subtotal — {g.rows.length} expiring record{g.rows.length !== 1 ? "s" : ""}
-                  </td>
-                )}
-              />
+              {renderBody()}
             </table>
+          </div>
+
+          <div className="mt-4">
+            <Pagination
+              page={page}
+              pageSize={pageSize}
+              total={total}
+              pageSizeOptions={PAGE_SIZE_OPTIONS}
+              onPageChange={setPage}
+              onPageSizeChange={(n) => { setPageSize(n); setPage(1); }}
+            />
           </div>
         </div>
       </div>
