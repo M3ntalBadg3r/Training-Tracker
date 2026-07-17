@@ -97,6 +97,24 @@ export default function ProgramDetailPage() {
   const [studentLoading, setStudentLoading] = useState(false);
   const [studentTitle, setStudentTitle] = useState("");
 
+  // Group the roster by the specific training each person holds, so the modal
+  // shows one table per training (primary + each alternative/variant) rather
+  // than a single table implying everyone holds the requirement's primary.
+  const studentGroups = useMemo(() => {
+    // NB: `Map` is shadowed by the lucide-react icon import, so use a plain object.
+    const groups: Record<string, StudentEntry[]> = {};
+    for (const s of studentList) {
+      const key = s.training ?? "—";
+      (groups[key] ??= []).push(s);
+    }
+    // Put the requirement's primary training first, then the rest A–Z.
+    return Object.entries(groups).sort((a, b) => {
+      if (a[0] === studentTitle) return -1;
+      if (b[0] === studentTitle) return 1;
+      return a[0].localeCompare(b[0]);
+    });
+  }, [studentList, studentTitle]);
+
   // Export menu (single — one report is shown at a time)
   const [showExport, setShowExport] = useState(false);
 
@@ -511,50 +529,57 @@ export default function ProgramDetailPage() {
       )}
 
       {/* Student Modal */}
-      <Modal open={showStudents} onClose={() => setShowStudents(false)} title={`Students — ${studentTitle}`} size="4xl">
+      <Modal open={showStudents} onClose={() => setShowStudents(false)} title="Students" size="4xl">
         {studentLoading ? (
           <LoadingSpinner />
         ) : studentList.length === 0 ? (
           <p className="text-sm text-gray-500">No students found.</p>
         ) : (
-          <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 sticky top-0">
-                <tr>
-                  <th className="px-3 py-2 text-left font-medium">Full Name</th>
-                  <th className="px-3 py-2 text-left font-medium">Email</th>
-                  <th className="px-3 py-2 text-left font-medium">Training</th>
-                  <th className="px-3 py-2 text-left font-medium">Country</th>
-                  <th className="px-3 py-2 text-left font-medium">Theatre</th>
-                  <th className="px-3 py-2 text-left font-medium">Completed</th>
-                  <th className="px-3 py-2 text-left font-medium">Expires</th>
-                  <th className="px-3 py-2 text-center font-medium"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {studentList.map((s) => (
-                  <tr key={s.email} className="border-t border-gray-100">
-                    <td className="px-3 py-2">{s.fullName}</td>
-                    <td className="px-3 py-2">{s.email}</td>
-                    <td className="px-3 py-2">{s.training ?? "—"}</td>
-                    <td className="px-3 py-2">{s.country}</td>
-                    <td className="px-3 py-2">{s.theatre}</td>
-                    <td className="px-3 py-2">{s.completedDate}</td>
-                    <td className={`px-3 py-2 ${isExpiringSoon(s.expiryDate) ? "text-red-600 font-medium" : ""}`}>
-                      {s.expiryDate}
-                    </td>
-                    <td className="px-3 py-2 text-center">
-                      <a
-                        href={`/students/${encodeURIComponent(s.email)}`}
-                        className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline"
-                      >
-                        <ExternalLink size={12} /> View
-                      </a>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="max-h-[400px] overflow-y-auto space-y-6">
+            {studentGroups.map(([training, students]) => (
+              <div key={training}>
+                <h3 className="text-sm font-semibold text-gray-800 mb-2">
+                  {training} <span className="font-normal text-gray-500">({students.length})</span>
+                </h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-3 py-2 text-left font-medium">Full Name</th>
+                        <th className="px-3 py-2 text-left font-medium">Email</th>
+                        <th className="px-3 py-2 text-left font-medium">Country</th>
+                        <th className="px-3 py-2 text-left font-medium">Theatre</th>
+                        <th className="px-3 py-2 text-left font-medium">Completed</th>
+                        <th className="px-3 py-2 text-left font-medium">Expires</th>
+                        <th className="px-3 py-2 text-center font-medium"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {students.map((s) => (
+                        <tr key={s.email} className="border-t border-gray-100">
+                          <td className="px-3 py-2">{s.fullName}</td>
+                          <td className="px-3 py-2">{s.email}</td>
+                          <td className="px-3 py-2">{s.country}</td>
+                          <td className="px-3 py-2">{s.theatre}</td>
+                          <td className="px-3 py-2">{s.completedDate}</td>
+                          <td className={`px-3 py-2 ${isExpiringSoon(s.expiryDate) ? "text-red-600 font-medium" : ""}`}>
+                            {s.expiryDate}
+                          </td>
+                          <td className="px-3 py-2 text-center">
+                            <a
+                              href={`/students/${encodeURIComponent(s.email)}`}
+                              className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline"
+                            >
+                              <ExternalLink size={12} /> View
+                            </a>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </Modal>
