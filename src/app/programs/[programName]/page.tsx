@@ -36,6 +36,16 @@ interface ProgramMeta {
 
 type ScopeLevel = "global" | "theatre" | "region" | "country";
 
+/** True when an ISO (YYYY-MM-DD) expiry date falls within the next 3 months. */
+function isExpiringSoon(iso: string | undefined): boolean {
+  if (!iso) return false;
+  const expiry = new Date(iso);
+  if (Number.isNaN(expiry.getTime())) return false;
+  const threshold = new Date();
+  threshold.setMonth(threshold.getMonth() + 3);
+  return expiry <= threshold;
+}
+
 export default function ProgramDetailPage() {
   const params = useParams<{ programName: string }>();
   const programName = useMemo(() => {
@@ -530,7 +540,9 @@ export default function ProgramDetailPage() {
                     <td className="px-3 py-2">{s.country}</td>
                     <td className="px-3 py-2">{s.theatre}</td>
                     <td className="px-3 py-2">{s.completedDate}</td>
-                    <td className="px-3 py-2">{s.expiryDate}</td>
+                    <td className={`px-3 py-2 ${isExpiringSoon(s.expiryDate) ? "text-red-600 font-medium" : ""}`}>
+                      {s.expiryDate}
+                    </td>
                     <td className="px-3 py-2 text-center">
                       <a
                         href={`/students/${encodeURIComponent(s.email)}`}
