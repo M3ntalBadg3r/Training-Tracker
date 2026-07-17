@@ -1,21 +1,21 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState, Suspense } from "react";
+import * as React from "react";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import PageHeader from "@/components/layout/PageHeader";
 import KpiStrip from "@/components/ui/KpiStrip";
-import DateRangePicker, { DateRangeValue, filterByRange } from "@/components/ui/DateRangePicker";
-import GroupedRows from "@/components/data-table/GroupedRows";
+import DateRangePicker, { DateRangeValue } from "@/components/ui/DateRangePicker";
 import { useChartTheme, tooltipStyle } from "@/lib/chart-theme";
-import { groupRows, GroupByMode } from "@/lib/group-by";
-import { useTableSort, SortAccessor } from "@/hooks/useTableSort";
+import { resolveBucket, GROUP_BY_LABEL, GroupByMode } from "@/lib/group-by";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
-import { useFetchJson } from "@/hooks/useFetchJson";
+import { useDebounce } from "@/hooks/useDebounce";
 import { useDateFormat } from "@/components/date-format/DateFormatProvider";
-import GeoScopeFilter, { GeoScope, EMPTY_GEO_SCOPE } from "@/components/reports/GeoScopeFilter";
+import GeoScopeFilter, { GeoScope } from "@/components/reports/GeoScopeFilter";
 import { Search, Download, ArrowLeft, Award, ShieldCheck, GraduationCap, CircleCheck } from "lucide-react";
+import Pagination from "@/components/data-table/Pagination";
 import {
   BarChart,
   Bar,
@@ -45,7 +45,22 @@ interface TrainingRecordRow {
   active: boolean;
 }
 
+type FunctionCell = { name: string; Certification: number; Accreditation: number; "Instructor-Led Training": number; OLX: number };
+
+interface ByFunctionResponse {
+  charts: { functionSeries: FunctionCell[] };
+  kpis: { total: number; cert: number; accred: number; ilt: number; olx: number; active: number; expired: number };
+  groups: { key: string; total: number; active: number }[];
+  rows: TrainingRecordRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+  filterOptions: { functions: string[]; types: string[] };
+}
+
 const TYPES = ["Certification", "Accreditation", "Instructor-Led Training", "OLX"] as const;
+
+const PAGE_SIZE_OPTIONS = [25, 50, 100, 200];
 
 function typeBadgeClass(t: string): string {
   if (t === "Certification") return "bg-blue-100 text-blue-800";
@@ -54,136 +69,156 @@ function typeBadgeClass(t: string): string {
   return "bg-amber-100 text-amber-800";
 }
 
-function ExportMenu({ data, columns, filename }: { data: Record<string, unknown>[]; columns: { key: string; header: string }[]; filename: string }) {
+const exportColumns = [
+  { key: "fullName", header: "Full Name" },
+  { key: "email", header: "Email" },
+  { key: "theatre", header: "Theatre" },
+  { key: "region", header: "Region" },
+  { key: "country", header: "Country" },
+  { key: "trainingTitle", header: "Training" },
+  { key: "trainingType", header: "Training Type" },
+  { key: "productType", header: "Product Type" },
+  { key: "function", header: "Function" },
+  { key: "completedDate", header: "Completed Date" },
+  { key: "expiryDate", header: "Expiry Date" },
+  { key: "active", header: "Active" },
+];
+
+function ExportMenu({ onExport, busy }: { onExport: (fmt: "csv" | "excel" | "pdf") => void; busy: boolean }) {
   const [show, setShow] = useState(false);
   return (
     <div className="relative">
-      <button onClick={() => setShow((p) => !p)} className="flex items-center gap-2 px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300">
-        <Download size={16} /> Export
+      <button onClick={() => setShow((p) => !p)} disabled={busy} className="flex items-center gap-2 px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300 disabled:opacity-50">
+        <Download size={16} /> {busy ? "Exporting…" : "Export"}
       </button>
-      {show && (
+      {show && !busy && (
         <div className="absolute right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[140px]">
-          <button onClick={() => { exportToCsv(data, columns as never, filename); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-t-lg">Export as CSV</button>
-          <button onClick={() => { exportToExcel(data, columns as never, filename); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100">Export as Excel</button>
-          <button onClick={() => { exportToPdf(data, columns as never, filename); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-b-lg">Export as PDF</button>
+          <button onClick={() => { onExport("csv"); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-t-lg">Export as CSV</button>
+          <button onClick={() => { onExport("excel"); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100">Export as Excel</button>
+          <button onClick={() => { onExport("pdf"); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-b-lg">Export as PDF</button>
         </div>
       )}
     </div>
   );
 }
 
-export default function ByFunctionPage() {
+function parseGroupBy(v: string | null, fallback: GroupByMode | null): GroupByMode | null {
+  if (v === "none") return null;
+  if (v === "theatre" || v === "region" || v === "country") return v;
+  return fallback;
+}
+
+function ByFunctionPageInner() {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const chart = useChartTheme();
   const companyScope = useCompanyScope();
   const { formatDate } = useDateFormat();
-  const { data: recordsData, loading } = useFetchJson<TrainingRecordRow[]>(
-    withCompany("/api/reports/training-records", companyScope.selected),
-    { enabled: !companyScope.loading }
+
+  // Seed from the URL so Back from a record restores filters + page (mirrored
+  // back by the effect below).
+  const [search, setSearch] = useState(() => searchParams.get("q") ?? "");
+  const debouncedSearch = useDebounce(search, 300);
+  const [filterFunction, setFilterFunction] = useState(() => searchParams.get("function") ?? "");
+  const [filterType, setFilterType] = useState(() => searchParams.get("type") ?? "");
+  const [geo, setGeo] = useState<GeoScope>(() => ({
+    theatre: searchParams.get("theatre") ?? "",
+    region: searchParams.get("region") ?? "",
+    country: searchParams.get("country") ?? "",
+  }));
+  const [dateRange, setDateRange] = useState<DateRangeValue>(() => ({
+    from: searchParams.get("dateFrom") ? new Date(searchParams.get("dateFrom")!) : null,
+    to: searchParams.get("dateTo") ? new Date(searchParams.get("dateTo")!) : null,
+  }));
+  const [groupBy, setGroupBy] = useState<GroupByMode | null>(() => parseGroupBy(searchParams.get("groupBy"), null));
+  const [countPeople, setCountPeople] = useState(() => searchParams.get("countPeople") === "true");
+  const [sortColumn, setSortColumn] = useState(() => searchParams.get("sort") ?? "fullName");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">(() => (searchParams.get("sortDir") === "desc" ? "desc" : "asc"));
+  const [page, setPage] = useState(() => Math.max(1, parseInt(searchParams.get("page") ?? "1", 10) || 1));
+  const [pageSize, setPageSize] = useState(() => parseInt(searchParams.get("pageSize") ?? "25", 10) || 25);
+
+  const [data, setData] = useState<ByFunctionResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
+
+  const dateFrom = dateRange.from ? dateRange.from.toISOString() : "";
+  const dateTo = dateRange.to ? dateRange.to.toISOString() : "";
+
+  const buildParams = useCallback(
+    (opts: { all?: boolean }) => {
+      const params = new URLSearchParams();
+      if (debouncedSearch) params.set("q", debouncedSearch);
+      if (filterFunction) params.set("function", filterFunction);
+      if (filterType) params.set("type", filterType);
+      if (geo.theatre) params.set("theatre", geo.theatre);
+      if (geo.region) params.set("region", geo.region);
+      if (geo.country) params.set("country", geo.country);
+      if (dateFrom) params.set("dateFrom", dateFrom);
+      if (dateTo) params.set("dateTo", dateTo);
+      if (countPeople) params.set("countPeople", "true");
+      if (groupBy) params.set("groupBy", groupBy);
+      params.set("sort", sortColumn);
+      params.set("sortDir", sortDir);
+      if (opts.all) params.set("all", "true");
+      else {
+        params.set("page", String(page));
+        params.set("pageSize", String(pageSize));
+      }
+      return params;
+    },
+    [debouncedSearch, filterFunction, filterType, geo, dateFrom, dateTo, countPeople, groupBy, sortColumn, sortDir, page, pageSize]
   );
-  const trainingRecords = useMemo(() => recordsData ?? [], [recordsData]);
 
-  const [search, setSearch] = useState("");
-  const [filterFunction, setFilterFunction] = useState("");
-  const [filterType, setFilterType] = useState("");
-  const [geo, setGeo] = useState<GeoScope>(EMPTY_GEO_SCOPE);
-  const [dateRange, setDateRange] = useState<DateRangeValue>({ from: null, to: null });
-  const [groupBy, setGroupBy] = useState<GroupByMode | null>(null);
-  const [countPeople, setCountPeople] = useState(false);
-
-  const functions = useMemo(() => [...new Set(trainingRecords.map((r) => r.function))].filter(Boolean).sort(), [trainingRecords]);
-  const types = useMemo(() => [...new Set(trainingRecords.map((r) => r.trainingType))].filter(Boolean).sort(), [trainingRecords]);
-
-  const filtered = useMemo(() => {
-    const q = search.toLowerCase();
-    const dateFiltered = filterByRange(trainingRecords, "completedDate", dateRange);
-    return dateFiltered.filter((r) => {
-      if (search && !r.fullName.toLowerCase().includes(q) && !r.email.toLowerCase().includes(q)) return false;
-      if (filterFunction && r.function !== filterFunction) return false;
-      if (filterType && r.trainingType !== filterType) return false;
-      if (geo.theatre && r.theatre !== geo.theatre) return false;
-      if (geo.region && r.region !== geo.region) return false;
-      if (geo.country && r.country !== geo.country) return false;
-      return true;
-    });
-  }, [trainingRecords, search, filterFunction, filterType, geo, dateRange]);
-
-  // KPIs. When `countPeople` is on, per-type figures count distinct *active*
-  // holders (emails) rather than raw records. active/expired stay record-based
-  // (they power the status donut).
-  const kpis = useMemo(() => {
-    const activeCount = filtered.filter((r) => r.active).length;
-    if (countPeople) {
-      const people = (type?: string) => {
-        const s = new Set<string>();
-        for (const r of filtered) {
-          if (!r.active) continue;
-          if (type && r.trainingType !== type) continue;
-          s.add(r.email);
-        }
-        return s.size;
-      };
-      return {
-        total: people(),
-        cert: people("Certification"),
-        accred: people("Accreditation"),
-        ilt: people("Instructor-Led Training"),
-        olx: people("OLX"),
-        active: activeCount,
-        expired: filtered.length - activeCount,
-      };
+  // Reset to page 1 on filter/sort/scope change — but not on initial mount, so a
+  // URL-seeded page survives back-navigation.
+  const didMountRef = useRef(false);
+  useEffect(() => {
+    if (!didMountRef.current) {
+      didMountRef.current = true;
+      return;
     }
-    return {
-      total: filtered.length,
-      cert: filtered.filter((r) => r.trainingType === "Certification").length,
-      accred: filtered.filter((r) => r.trainingType === "Accreditation").length,
-      ilt: filtered.filter((r) => r.trainingType === "Instructor-Led Training").length,
-      olx: filtered.filter((r) => r.trainingType === "OLX").length,
-      active: activeCount,
-      expired: filtered.length - activeCount,
+    setPage(1);
+  }, [debouncedSearch, filterFunction, filterType, geo, dateFrom, dateTo, countPeople, groupBy, sortColumn, sortDir, companyScope.selected]);
+
+  // Mirror view state to the URL (raw search wins over debounced) so Back
+  // restores filters + page.
+  useEffect(() => {
+    const params = buildParams({});
+    if (search) params.set("q", search);
+    else params.delete("q");
+    const qs = params.toString();
+    const next = qs ? `${pathname}?${qs}` : pathname;
+    if (qs !== searchParams.toString()) {
+      router.replace(next, { scroll: false });
+    }
+  }, [buildParams, search, pathname, router, searchParams]);
+
+  useEffect(() => {
+    if (companyScope.loading) return;
+    const url = withCompany(`/api/reports/by-function?${buildParams({}).toString()}`, companyScope.selected);
+    let cancelled = false;
+    setLoading(true);
+    fetch(url)
+      .then((r) => r.json())
+      .then((d: ByFunctionResponse) => {
+        if (!cancelled) setData(d);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
     };
-  }, [filtered, countPeople]);
+  }, [buildParams, companyScope.loading, companyScope.selected]);
 
-  // Stacked bar by function. When `countPeople` is on, each cell counts distinct
-  // active-holder emails (Set) instead of raw records.
-  const functionSeries = useMemo(() => {
-    type Cell = { name: string; Certification: number; Accreditation: number; "Instructor-Led Training": number; OLX: number };
-    if (countPeople) {
-      const sets = new Map<string, { name: string; Certification: Set<string>; Accreditation: Set<string>; "Instructor-Led Training": Set<string>; OLX: Set<string> }>();
-      for (const r of filtered) {
-        if (!r.function || !r.active) continue;
-        const key = r.trainingType as (typeof TYPES)[number];
-        if (!TYPES.includes(key)) continue;
-        let row = sets.get(r.function);
-        if (!row) {
-          row = { name: r.function, Certification: new Set(), Accreditation: new Set(), "Instructor-Led Training": new Set(), OLX: new Set() };
-          sets.set(r.function, row);
-        }
-        row[key].add(r.email);
-      }
-      return Array.from(sets.values())
-        .map((row): Cell => ({
-          name: row.name,
-          Certification: row.Certification.size,
-          Accreditation: row.Accreditation.size,
-          "Instructor-Led Training": row["Instructor-Led Training"].size,
-          OLX: row.OLX.size,
-        }))
-        .sort((a, b) => a.name.localeCompare(b.name));
-    }
-    const m = new Map<string, Cell>();
-    for (const r of filtered) {
-      if (!r.function) continue;
-      let row = m.get(r.function);
-      if (!row) {
-        row = { name: r.function, Certification: 0, Accreditation: 0, "Instructor-Led Training": 0, OLX: 0 };
-        m.set(r.function, row);
-      }
-      const key = r.trainingType as (typeof TYPES)[number];
-      if (TYPES.includes(key)) row[key]++;
-    }
-    return Array.from(m.values()).sort((a, b) => a.name.localeCompare(b.name));
-  }, [filtered, countPeople]);
+  const functionSeries = data?.charts.functionSeries ?? [];
+  const kpis = data?.kpis ?? { total: 0, cert: 0, accred: 0, ilt: 0, olx: 0, active: 0, expired: 0 };
+  const rows = data?.rows ?? [];
+  const groups = data?.groups ?? [];
+  const total = data?.total ?? 0;
+  const functions = data?.filterOptions.functions ?? [];
+  const types = data?.filterOptions.types ?? [];
 
   const statusSeries = useMemo(
     () => [
@@ -193,52 +228,116 @@ export default function ByFunctionPage() {
     [kpis.active, kpis.expired, chart.isDark]
   );
 
-  // Column sorting (applied before grouping so rows sort within each group).
-  const sortAccessors: Record<string, SortAccessor<TrainingRecordRow>> = {
-    fullName: (r) => r.fullName,
-    email: (r) => r.email,
-    theatre: (r) => r.theatre,
-    region: (r) => r.region,
-    country: (r) => r.country,
-    trainingTitle: (r) => r.trainingTitle,
-    trainingType: (r) => r.trainingType,
-    productType: (r) => r.productType,
-    function: (r) => r.function,
-    completedDate: (r) => r.completedDate,
-    expiryDate: (r) => r.expiryDate,
-    active: (r) => r.active,
+  const toggleSort = (key: string) => {
+    if (key === sortColumn) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else {
+      setSortColumn(key);
+      setSortDir("asc");
+    }
   };
-  const { sorted, toggleSort, sortIndicator } = useTableSort(filtered, sortAccessors, {
-    defaultKey: "fullName",
-    tiebreakKey: "fullName",
-  });
+  const sortIndicator = (key: string) => (sortColumn === key ? (sortDir === "asc" ? " ▲" : " ▼") : "");
 
-  const grouped = useMemo(() => groupRows(sorted, groupBy ?? "theatre"), [sorted, groupBy]);
+  const handleExport = async (fmt: "csv" | "excel" | "pdf") => {
+    setExporting(true);
+    try {
+      const url = withCompany(`/api/reports/by-function?${buildParams({ all: true }).toString()}`, companyScope.selected);
+      const res = await fetch(url);
+      const d: ByFunctionResponse = await res.json();
+      const exportRows = d.rows.map((r) => ({
+        ...r,
+        completedDate: formatDate(r.completedDate),
+        expiryDate: formatDate(r.expiryDate),
+        active: r.active ? "Yes" : "No",
+      }));
+      if (fmt === "csv") exportToCsv(exportRows as never, exportColumns as never, "by-function");
+      else if (fmt === "excel") exportToExcel(exportRows as never, exportColumns as never, "by-function");
+      else exportToPdf(exportRows as never, exportColumns as never, "by-function");
+    } finally {
+      setExporting(false);
+    }
+  };
 
-  const exportColumns = [
-    { key: "fullName", header: "Full Name" },
-    { key: "email", header: "Email" },
-    { key: "theatre", header: "Theatre" },
-    { key: "region", header: "Region" },
-    { key: "country", header: "Country" },
-    { key: "trainingTitle", header: "Training" },
-    { key: "trainingType", header: "Training Type" },
-    { key: "productType", header: "Product Type" },
-    { key: "function", header: "Function" },
-    { key: "completedDate", header: "Completed Date" },
-    { key: "expiryDate", header: "Expiry Date" },
-    { key: "active", header: "Active" },
-  ];
-  const exportRows = filtered.map((r) => ({
-    ...r,
-    completedDate: formatDate(r.completedDate),
-    expiryDate: formatDate(r.expiryDate),
-    active: r.active ? "Yes" : "No",
-  }));
-
-  if (loading) {
+  if (loading && !data) {
     return <div className="flex items-center justify-center h-64"><div className="text-gray-500">Loading report...</div></div>;
   }
+
+  const renderRow = (row: TrainingRecordRow, idx: number) => (
+    <tr key={`${row.email}-${row.trainingTitle}-${idx}`} className="border-b hover:bg-gray-50">
+      <td className="px-4 py-3">{row.fullName}</td>
+      <td className="px-4 py-3">{row.email}</td>
+      <td className="px-4 py-3">{row.theatre || "-"}</td>
+      <td className="px-4 py-3">{row.region || "-"}</td>
+      <td className="px-4 py-3">{row.country || "-"}</td>
+      <td className="px-4 py-3">{row.trainingTitle}</td>
+      <td className="px-4 py-3">
+        <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${typeBadgeClass(row.trainingType)}`}>
+          {row.trainingType}
+        </span>
+      </td>
+      <td className="px-4 py-3">{row.productType}</td>
+      <td className="px-4 py-3">{row.function}</td>
+      <td className="px-4 py-3">{formatDate(row.completedDate)}</td>
+      <td className="px-4 py-3">{formatDate(row.expiryDate)}</td>
+      <td className="px-4 py-3">
+        <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${row.active ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>
+          {row.active ? "Yes" : "No"}
+        </span>
+      </td>
+      <td className="px-4 py-3">
+        <button onClick={() => router.push(`/students/${encodeURIComponent(row.email)}`)} className="px-3 py-1 text-xs font-medium text-blue-600 bg-blue-50 rounded-md hover:bg-blue-100 transition-colors">View</button>
+      </td>
+    </tr>
+  );
+
+  const renderBody = () => {
+    if (rows.length === 0) {
+      return (
+        <tbody>
+          <tr>
+            <td colSpan={13} className="px-4 py-8 text-center text-gray-500">No results match the current filters.</td>
+          </tr>
+        </tbody>
+      );
+    }
+    if (!groupBy) {
+      return <tbody>{rows.map((row, idx) => renderRow(row, idx))}</tbody>;
+    }
+    const totals = new Map(groups.map((g) => [g.key, g]));
+    const groupLabel = GROUP_BY_LABEL[groupBy];
+    const items: React.ReactNode[] = [];
+    let prevKey: string | null = null;
+    const subtotal = (key: string) => {
+      const g = totals.get(key);
+      const n = g?.total ?? 0;
+      const act = g?.active ?? 0;
+      items.push(
+        <tr key={`s-${key}`} className="bg-gray-50 border-b font-medium text-xs text-gray-600">
+          <td colSpan={13} className="px-4 py-2">Subtotal — {n} record{n !== 1 ? "s" : ""} · {act} active · {n - act} expired</td>
+        </tr>
+      );
+    };
+    rows.forEach((row, idx) => {
+      const key = resolveBucket(row, groupBy);
+      if (key !== prevKey) {
+        if (prevKey !== null) subtotal(prevKey);
+        const n = totals.get(key)?.total ?? 0;
+        items.push(
+          <tr key={`h-${key}`} className="bg-gray-100 border-b">
+            <td colSpan={13} className="px-4 py-2">
+              <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                <span>{groupLabel}: {key}</span>
+                <span className="ml-auto text-xs font-normal text-gray-500">{n} record{n !== 1 ? "s" : ""}</span>
+              </div>
+            </td>
+          </tr>
+        );
+        prevKey = key;
+      }
+      items.push(renderRow(row, idx));
+    });
+    if (prevKey !== null) subtotal(prevKey);
+    return <tbody>{items}</tbody>;
+  };
 
   return (
     <div>
@@ -280,10 +379,9 @@ export default function ByFunctionPage() {
               <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: chart.axis }} stroke={chart.axis} />
               <Tooltip contentStyle={tooltipStyle(chart)} />
               <Legend />
-              <Bar dataKey="Certification" stackId="a" fill={chart.typeColor("Certification")} cursor="pointer" onClick={((d: unknown) => { const n = (d as { name?: string }).name; if (n) setFilterFunction(n); }) as never} />
-              <Bar dataKey="Accreditation" stackId="a" fill={chart.typeColor("Accreditation")} cursor="pointer" onClick={((d: unknown) => { const n = (d as { name?: string }).name; if (n) setFilterFunction(n); }) as never} />
-              <Bar dataKey="Instructor-Led Training" stackId="a" fill={chart.typeColor("Instructor-Led Training")} cursor="pointer" onClick={((d: unknown) => { const n = (d as { name?: string }).name; if (n) setFilterFunction(n); }) as never} />
-              <Bar dataKey="OLX" stackId="a" fill={chart.typeColor("OLX")} cursor="pointer" onClick={((d: unknown) => { const n = (d as { name?: string }).name; if (n) setFilterFunction(n); }) as never} />
+              {TYPES.map((t) => (
+                <Bar key={t} dataKey={t} stackId="a" fill={chart.typeColor(t)} cursor="pointer" onClick={((d: unknown) => { const n = (d as { name?: string }).name; if (n) setFilterFunction(n); }) as never} />
+              ))}
             </BarChart>
           </ResponsiveContainer>
           <p className="text-xs text-gray-400 mt-2">Click a bar to filter the table by that function</p>
@@ -305,7 +403,7 @@ export default function ByFunctionPage() {
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-wrap gap-2">
           <p className="text-sm text-gray-500">All training records broken down by function (Sales, Pre-Sales, Deployments)</p>
-          <span className="text-sm font-medium text-gray-500">{filtered.length} result{filtered.length !== 1 ? "s" : ""}</span>
+          <span className="text-sm font-medium text-gray-500">{total} result{total !== 1 ? "s" : ""}</span>
         </div>
         <div className="px-6 py-4">
           <div className="flex flex-col gap-3 mb-4">
@@ -315,7 +413,7 @@ export default function ByFunctionPage() {
                 <input type="text" placeholder="Search by name or email..." value={search} onChange={(e) => setSearch(e.target.value)} className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg" />
               </div>
               <DateRangePicker value={dateRange} onChange={setDateRange} placeholder="Completed date range" />
-              <ExportMenu data={exportRows as never} columns={exportColumns} filename="by-function" />
+              <ExportMenu onExport={handleExport} busy={exporting} />
             </div>
             <div className="flex flex-wrap gap-3">
               <select value={filterFunction} onChange={(e) => setFilterFunction(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
@@ -354,54 +452,30 @@ export default function ByFunctionPage() {
                   <th className="px-4 py-3 text-left font-semibold"></th>
                 </tr>
               </thead>
-              <GroupedRows
-                groups={grouped}
-                groupBy={groupBy}
-                colSpanTotal={13}
-                emptyMessage="No results match the current filters."
-                renderRow={(row, idx) => (
-                  <tr key={`${row.email}-${row.trainingTitle}-${idx}`} className="border-b hover:bg-gray-50">
-                    <td className="px-4 py-3">{row.fullName}</td>
-                    <td className="px-4 py-3">{row.email}</td>
-                    <td className="px-4 py-3">{row.theatre || "-"}</td>
-                    <td className="px-4 py-3">{row.region || "-"}</td>
-                    <td className="px-4 py-3">{row.country || "-"}</td>
-                    <td className="px-4 py-3">{row.trainingTitle}</td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${typeBadgeClass(row.trainingType)}`}>
-                        {row.trainingType}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">{row.productType}</td>
-                    <td className="px-4 py-3">{row.function}</td>
-                    <td className="px-4 py-3">{formatDate(row.completedDate)}</td>
-                    <td className="px-4 py-3">{formatDate(row.expiryDate)}</td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${row.active ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>
-                        {row.active ? "Yes" : "No"}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <button onClick={() => router.push(`/students/${encodeURIComponent(row.email)}`)} className="px-3 py-1 text-xs font-medium text-blue-600 bg-blue-50 rounded-md hover:bg-blue-100 transition-colors">View</button>
-                    </td>
-                  </tr>
-                )}
-                renderSubtotal={(g) => {
-                  const active = g.rows.filter((r) => r.active).length;
-                  return (
-                    <td colSpan={13} className="px-4 py-2">
-                      Subtotal — {g.rows.length} record{g.rows.length !== 1 ? "s" : ""} · {active} active · {g.rows.length - active} expired
-                    </td>
-                  );
-                }}
-              />
+              {renderBody()}
             </table>
           </div>
-          {filtered.length > 0 && filtered.length !== trainingRecords.length && (
-            <div className="mt-3 text-sm text-gray-500">Showing {filtered.length} of {trainingRecords.length} records</div>
-          )}
+
+          <div className="mt-4">
+            <Pagination
+              page={page}
+              pageSize={pageSize}
+              total={total}
+              pageSizeOptions={PAGE_SIZE_OPTIONS}
+              onPageChange={setPage}
+              onPageSizeChange={(n) => { setPageSize(n); setPage(1); }}
+            />
+          </div>
         </div>
       </div>
     </div>
+  );
+}
+
+export default function ByFunctionPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center h-64"><div className="text-gray-500">Loading report...</div></div>}>
+      <ByFunctionPageInner />
+    </Suspense>
   );
 }

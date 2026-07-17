@@ -1,21 +1,21 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useRef, useState, Suspense } from "react";
+import * as React from "react";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import PageHeader from "@/components/layout/PageHeader";
 import KpiStrip from "@/components/ui/KpiStrip";
-import GroupedRows from "@/components/data-table/GroupedRows";
 import { useChartTheme, tooltipStyle } from "@/lib/chart-theme";
 import { useProductTypeColors } from "@/hooks/useProductTypeColors";
-import { groupRows, GroupByMode } from "@/lib/group-by";
-import { useTableSort, SortAccessor } from "@/hooks/useTableSort";
+import { resolveBucket, GROUP_BY_LABEL, GroupByMode } from "@/lib/group-by";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
-import { useFetchJson } from "@/hooks/useFetchJson";
+import { useDebounce } from "@/hooks/useDebounce";
 import { useDateFormat } from "@/components/date-format/DateFormatProvider";
-import GeoScopeFilter, { GeoScope, EMPTY_GEO_SCOPE } from "@/components/reports/GeoScopeFilter";
+import GeoScopeFilter, { GeoScope } from "@/components/reports/GeoScopeFilter";
 import { Search, Download, ArrowLeft, History, AlertCircle, AlertTriangle, Ban } from "lucide-react";
+import Pagination from "@/components/data-table/Pagination";
 import {
   BarChart,
   Bar,
@@ -46,188 +46,302 @@ interface LegacyGapRow {
   legacyActive: boolean;
 }
 
+interface LegacyGapResponse {
+  charts: {
+    horizonSeries: { name: string; Certification: number; Accreditation: number; horizonKey: string }[];
+    productSeries: { name: string; gaps: number }[];
+  };
+  kpis: { total: number; expired: number; soon: number; noReplacement: number };
+  groups: { key: string; total: number }[];
+  rows: LegacyGapRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+  filterOptions: { products: string[] };
+}
+
 const TYPE_LABELS: Record<string, string> = {
   Certification: "Certification",
   Accreditation: "Accreditation",
 };
+
+const PAGE_SIZE_OPTIONS = [25, 50, 100, 200];
 
 function typeBadgeClass(t: string): string {
   if (t === "Certification") return "bg-blue-100 text-blue-800";
   return "bg-emerald-100 text-emerald-800";
 }
 
-function ExportMenu({ data, columns, filename }: { data: Record<string, unknown>[]; columns: { key: string; header: string }[]; filename: string }) {
+const exportColumns = [
+  { key: "fullName", header: "Full Name" },
+  { key: "email", header: "Email" },
+  { key: "theatre", header: "Theatre" },
+  { key: "region", header: "Region" },
+  { key: "country", header: "Country" },
+  { key: "legacyFullTitle", header: "Legacy Training" },
+  { key: "legacyType", header: "Type" },
+  { key: "productType", header: "Product" },
+  { key: "replacementFullTitle", header: "Replacement" },
+  { key: "legacyCompletedDate", header: "Completed" },
+  { key: "legacyExpiryDate", header: "Expires" },
+  { key: "legacyActive", header: "Active" },
+];
+
+function ExportMenu({ onExport, busy }: { onExport: (fmt: "csv" | "excel" | "pdf") => void; busy: boolean }) {
   const [show, setShow] = useState(false);
   return (
     <div className="relative">
-      <button onClick={() => setShow((p) => !p)} className="flex items-center gap-2 px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300">
-        <Download size={16} /> Export
+      <button onClick={() => setShow((p) => !p)} disabled={busy} className="flex items-center gap-2 px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300 disabled:opacity-50">
+        <Download size={16} /> {busy ? "Exporting…" : "Export"}
       </button>
-      {show && (
+      {show && !busy && (
         <div className="absolute right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[140px]">
-          <button onClick={() => { exportToCsv(data, columns as never, filename); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-t-lg">Export as CSV</button>
-          <button onClick={() => { exportToExcel(data, columns as never, filename); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100">Export as Excel</button>
-          <button onClick={() => { exportToPdf(data, columns as never, filename); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-b-lg">Export as PDF</button>
+          <button onClick={() => { onExport("csv"); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-t-lg">Export as CSV</button>
+          <button onClick={() => { onExport("excel"); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100">Export as Excel</button>
+          <button onClick={() => { onExport("pdf"); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-b-lg">Export as PDF</button>
         </div>
       )}
     </div>
   );
 }
 
-const HORIZONS: { key: string; label: string }[] = [
-  { key: "expired", label: "Expired" },
-  { key: "0-1", label: "≤ 1 month" },
-  { key: "1-3", label: "1–3 months" },
-  { key: "3-6", label: "3–6 months" },
-  { key: "6-12", label: "6–12 months" },
-  { key: "12+", label: "12+ months" },
-];
-
-function monthsBetween(now: Date, future: Date): number {
-  return (future.getFullYear() - now.getFullYear()) * 12 + (future.getMonth() - now.getMonth());
+function parseGroupBy(v: string | null, fallback: GroupByMode | null): GroupByMode | null {
+  if (v === "none") return null;
+  if (v === "theatre" || v === "region" || v === "country") return v;
+  return fallback;
 }
 
-function bucketHorizon(expiry: Date, now: Date): string {
-  if (expiry <= now) return "expired";
-  const m = monthsBetween(now, expiry);
-  if (m <= 1) return "0-1";
-  if (m <= 3) return "1-3";
-  if (m <= 6) return "3-6";
-  if (m <= 12) return "6-12";
-  return "12+";
-}
-
-export default function LegacyGapPage() {
+function LegacyGapPageInner() {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const chart = useChartTheme();
   const productColors = useProductTypeColors();
   const { formatDate } = useDateFormat();
   const companyScope = useCompanyScope();
-  const { data: recordsData, loading } = useFetchJson<LegacyGapRow[]>(
-    withCompany("/api/reports/legacy-gap", companyScope.selected),
-    { enabled: !companyScope.loading }
-  );
-  const records = useMemo(() => recordsData ?? [], [recordsData]);
 
-  const [search, setSearch] = useState("");
-  const [filterWindow, setFilterWindow] = useState("all"); // all | expired | 1 | 3 | 6 | 12
-  const [filterType, setFilterType] = useState("");
-  const [filterProduct, setFilterProduct] = useState("");
-  const [geo, setGeo] = useState<GeoScope>(EMPTY_GEO_SCOPE);
-  const [filterHorizon, setFilterHorizon] = useState<string | null>(null);
-  const [groupBy, setGroupBy] = useState<GroupByMode | null>("theatre");
-
-  // Two toggles from the report requirements:
-  // - includeNoReplacement: show legacy trainings that have no replacement set.
-  // - requireActive: a gap requires the absence of an ACTIVE replacement; when
-  //   off ("any completion ever"), a held-but-expired replacement also clears.
-  const [includeNoReplacement, setIncludeNoReplacement] = useState(true);
-  const [requireActive, setRequireActive] = useState(true);
-
-  const now = useMemo(() => new Date(), []);
-
-  const products = useMemo(() => [...new Set(records.map((r) => r.productType))].filter(Boolean).sort(), [records]);
-
-  const filtered = useMemo(() => {
-    const q = search.toLowerCase();
-    return records.filter((r) => {
-      if (!includeNoReplacement && !r.replacementDefined) return false;
-      // Under the "any completion ever" rule a held-but-expired replacement
-      // counts as satisfied, so drop those rows.
-      if (!requireActive && r.replacementState === "expired-only") return false;
-      if (search && !r.fullName.toLowerCase().includes(q) && !r.email.toLowerCase().includes(q) && !r.legacyFullTitle.toLowerCase().includes(q)) return false;
-      if (filterType && r.legacyType !== filterType) return false;
-      if (filterProduct && r.productType !== filterProduct) return false;
-      if (geo.theatre && r.theatre !== geo.theatre) return false;
-      if (geo.region && r.region !== geo.region) return false;
-      if (geo.country && r.country !== geo.country) return false;
-
-      const expiry = new Date(r.legacyExpiryDate);
-      if (filterWindow === "expired") {
-        if (expiry > now) return false;
-      } else if (filterWindow !== "all") {
-        const months = parseInt(filterWindow);
-        const cutoff = new Date(now);
-        cutoff.setMonth(cutoff.getMonth() + months);
-        if (expiry <= now || expiry > cutoff) return false;
-      }
-      if (filterHorizon && bucketHorizon(expiry, now) !== filterHorizon) return false;
-      return true;
-    });
-  }, [records, search, filterType, filterProduct, geo, filterWindow, filterHorizon, includeNoReplacement, requireActive, now]);
-
-  const horizonSeries = useMemo(() => {
-    const counts: Record<string, { name: string; Certification: number; Accreditation: number; horizonKey: string }> = {};
-    for (const h of HORIZONS) counts[h.key] = { name: h.label, Certification: 0, Accreditation: 0, horizonKey: h.key };
-    for (const r of filtered) {
-      const b = bucketHorizon(new Date(r.legacyExpiryDate), now);
-      if (r.legacyType === "Accreditation") counts[b].Accreditation++;
-      else counts[b].Certification++;
-    }
-    return HORIZONS.map((h) => counts[h.key]);
-  }, [filtered, now]);
-
-  const productSeries = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const r of filtered) map.set(r.productType, (map.get(r.productType) ?? 0) + 1);
-    return [...map.entries()].map(([name, value]) => ({ name, gaps: value })).sort((a, b) => b.gaps - a.gaps).slice(0, 12);
-  }, [filtered]);
-
-  const kpis = useMemo(() => ({
-    total: filtered.length,
-    expired: filtered.filter((r) => !r.legacyActive).length,
-    soon: filtered.filter((r) => { const b = bucketHorizon(new Date(r.legacyExpiryDate), now); return b === "0-1" || b === "1-3"; }).length,
-    noReplacement: filtered.filter((r) => !r.replacementDefined).length,
-  }), [filtered, now]);
-
-  // Column sorting (applied before grouping so rows sort within each group).
-  const sortAccessors: Record<string, SortAccessor<LegacyGapRow>> = {
-    fullName: (r) => r.fullName,
-    email: (r) => r.email,
-    theatre: (r) => r.theatre,
-    region: (r) => r.region,
-    country: (r) => r.country,
-    legacyFullTitle: (r) => r.legacyFullTitle,
-    legacyType: (r) => r.legacyType,
-    productType: (r) => r.productType,
-    replacementFullTitle: (r) => (r.replacementDefined ? r.replacementFullTitle : ""),
-    legacyCompletedDate: (r) => r.legacyCompletedDate,
-    legacyExpiryDate: (r) => r.legacyExpiryDate,
-    legacyActive: (r) => r.legacyActive,
-  };
-  const { sorted, toggleSort, sortIndicator } = useTableSort(filtered, sortAccessors, {
-    defaultKey: "fullName",
-    tiebreakKey: "fullName",
-  });
-
-  const grouped = useMemo(() => groupRows(sorted, groupBy ?? "theatre"), [sorted, groupBy]);
-
-  const exportColumns = [
-    { key: "fullName", header: "Full Name" },
-    { key: "email", header: "Email" },
-    { key: "theatre", header: "Theatre" },
-    { key: "region", header: "Region" },
-    { key: "country", header: "Country" },
-    { key: "legacyFullTitle", header: "Legacy Training" },
-    { key: "legacyType", header: "Type" },
-    { key: "productType", header: "Product" },
-    { key: "replacementFullTitle", header: "Replacement" },
-    { key: "legacyCompletedDate", header: "Completed" },
-    { key: "legacyExpiryDate", header: "Expires" },
-    { key: "legacyActive", header: "Active" },
-  ];
-  const exportRows = filtered.map((r) => ({
-    ...r,
-    legacyType: TYPE_LABELS[r.legacyType] ?? r.legacyType,
-    replacementFullTitle: r.replacementDefined ? r.replacementFullTitle : "No replacement",
-    legacyCompletedDate: formatDate(r.legacyCompletedDate),
-    legacyExpiryDate: formatDate(r.legacyExpiryDate),
-    legacyActive: r.legacyActive ? "Yes" : "No",
+  // Seed from the URL so Back from a record restores filters + page (mirrored
+  // back by the effect below).
+  const [search, setSearch] = useState(() => searchParams.get("q") ?? "");
+  const debouncedSearch = useDebounce(search, 300);
+  const [filterWindow, setFilterWindow] = useState(() => searchParams.get("window") ?? "all"); // all | expired | 1 | 3 | 6 | 12
+  const [filterType, setFilterType] = useState(() => searchParams.get("type") ?? "");
+  const [filterProduct, setFilterProduct] = useState(() => searchParams.get("product") ?? "");
+  const [geo, setGeo] = useState<GeoScope>(() => ({
+    theatre: searchParams.get("theatre") ?? "",
+    region: searchParams.get("region") ?? "",
+    country: searchParams.get("country") ?? "",
   }));
+  const [filterHorizon, setFilterHorizon] = useState<string | null>(() => searchParams.get("horizon"));
+  const [groupBy, setGroupBy] = useState<GroupByMode | null>(() => parseGroupBy(searchParams.get("groupBy"), "theatre"));
+  const [includeNoReplacement, setIncludeNoReplacement] = useState(() => searchParams.get("includeNoReplacement") !== "false");
+  const [requireActive, setRequireActive] = useState(() => searchParams.get("requireActive") !== "false");
+  const [sortColumn, setSortColumn] = useState(() => searchParams.get("sort") ?? "fullName");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">(() => (searchParams.get("sortDir") === "desc" ? "desc" : "asc"));
+  const [page, setPage] = useState(() => Math.max(1, parseInt(searchParams.get("page") ?? "1", 10) || 1));
+  const [pageSize, setPageSize] = useState(() => parseInt(searchParams.get("pageSize") ?? "25", 10) || 25);
 
-  if (loading) {
+  const [data, setData] = useState<LegacyGapResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
+
+  const buildParams = useCallback(
+    (opts: { all?: boolean }) => {
+      const params = new URLSearchParams();
+      if (debouncedSearch) params.set("q", debouncedSearch);
+      params.set("window", filterWindow);
+      if (filterType) params.set("type", filterType);
+      if (filterProduct) params.set("product", filterProduct);
+      if (geo.theatre) params.set("theatre", geo.theatre);
+      if (geo.region) params.set("region", geo.region);
+      if (geo.country) params.set("country", geo.country);
+      if (filterHorizon) params.set("horizon", filterHorizon);
+      params.set("includeNoReplacement", String(includeNoReplacement));
+      params.set("requireActive", String(requireActive));
+      if (groupBy) params.set("groupBy", groupBy);
+      params.set("sort", sortColumn);
+      params.set("sortDir", sortDir);
+      if (opts.all) params.set("all", "true");
+      else {
+        params.set("page", String(page));
+        params.set("pageSize", String(pageSize));
+      }
+      return params;
+    },
+    [debouncedSearch, filterWindow, filterType, filterProduct, geo, filterHorizon, includeNoReplacement, requireActive, groupBy, sortColumn, sortDir, page, pageSize]
+  );
+
+  // Reset to page 1 on filter/sort/scope change — but not on initial mount, so a
+  // URL-seeded page survives back-navigation.
+  const didMountRef = useRef(false);
+  useEffect(() => {
+    if (!didMountRef.current) {
+      didMountRef.current = true;
+      return;
+    }
+    setPage(1);
+  }, [debouncedSearch, filterWindow, filterType, filterProduct, geo, filterHorizon, includeNoReplacement, requireActive, groupBy, sortColumn, sortDir, companyScope.selected]);
+
+  // Mirror view state to the URL so Back restores filters + page. groupBy is
+  // written explicitly (with a "none" sentinel) because its default is "theatre".
+  useEffect(() => {
+    const params = buildParams({});
+    if (search) params.set("q", search);
+    else params.delete("q");
+    params.set("groupBy", groupBy ?? "none");
+    const qs = params.toString();
+    const next = qs ? `${pathname}?${qs}` : pathname;
+    if (qs !== searchParams.toString()) {
+      router.replace(next, { scroll: false });
+    }
+  }, [buildParams, search, groupBy, pathname, router, searchParams]);
+
+  useEffect(() => {
+    if (companyScope.loading) return;
+    const url = withCompany(`/api/reports/legacy-gap?${buildParams({}).toString()}`, companyScope.selected);
+    let cancelled = false;
+    setLoading(true);
+    fetch(url)
+      .then((r) => r.json())
+      .then((d: LegacyGapResponse) => {
+        if (!cancelled) setData(d);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [buildParams, companyScope.loading, companyScope.selected]);
+
+  const charts = data?.charts ?? { horizonSeries: [], productSeries: [] };
+  const kpis = data?.kpis ?? { total: 0, expired: 0, soon: 0, noReplacement: 0 };
+  const rows = data?.rows ?? [];
+  const groups = data?.groups ?? [];
+  const total = data?.total ?? 0;
+  const products = data?.filterOptions.products ?? [];
+
+  const toggleSort = (key: string) => {
+    if (key === sortColumn) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else {
+      setSortColumn(key);
+      setSortDir("asc");
+    }
+  };
+  const sortIndicator = (key: string) => (sortColumn === key ? (sortDir === "asc" ? " ▲" : " ▼") : "");
+
+  const handleExport = async (fmt: "csv" | "excel" | "pdf") => {
+    setExporting(true);
+    try {
+      const url = withCompany(`/api/reports/legacy-gap?${buildParams({ all: true }).toString()}`, companyScope.selected);
+      const res = await fetch(url);
+      const d: LegacyGapResponse = await res.json();
+      const exportRows = d.rows.map((r) => ({
+        ...r,
+        legacyType: TYPE_LABELS[r.legacyType] ?? r.legacyType,
+        replacementFullTitle: r.replacementDefined ? r.replacementFullTitle : "No replacement",
+        legacyCompletedDate: formatDate(r.legacyCompletedDate),
+        legacyExpiryDate: formatDate(r.legacyExpiryDate),
+        legacyActive: r.legacyActive ? "Yes" : "No",
+      }));
+      if (fmt === "csv") exportToCsv(exportRows as never, exportColumns as never, "legacy-replacement-gap");
+      else if (fmt === "excel") exportToExcel(exportRows as never, exportColumns as never, "legacy-replacement-gap");
+      else exportToPdf(exportRows as never, exportColumns as never, "legacy-replacement-gap");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  if (loading && !data) {
     return <div className="flex items-center justify-center h-64"><div className="text-gray-500">Loading report...</div></div>;
   }
+
+  const renderRow = (row: LegacyGapRow, idx: number) => (
+    <tr key={`${row.email}-${row.legacyTrainingTitle}-${idx}`} className="border-b hover:bg-gray-50">
+      <td className="px-4 py-3">{row.fullName}</td>
+      <td className="px-4 py-3">{row.email}</td>
+      <td className="px-4 py-3">{row.theatre || "-"}</td>
+      <td className="px-4 py-3">{row.region || "-"}</td>
+      <td className="px-4 py-3">{row.country || "-"}</td>
+      <td className="px-4 py-3">{row.legacyFullTitle}</td>
+      <td className="px-4 py-3">
+        <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${typeBadgeClass(row.legacyType)}`}>
+          {TYPE_LABELS[row.legacyType] ?? row.legacyType}
+        </span>
+      </td>
+      <td className="px-4 py-3">{row.productType}</td>
+      <td className="px-4 py-3">
+        {row.replacementDefined ? (
+          <span>
+            {row.replacementFullTitle}
+            {row.replacementState === "expired-only" && (
+              <span className="ml-1 text-xs text-amber-600">(held, expired)</span>
+            )}
+          </span>
+        ) : (
+          <span className="text-gray-400">No replacement</span>
+        )}
+      </td>
+      <td className="px-4 py-3">{formatDate(row.legacyCompletedDate)}</td>
+      <td className="px-4 py-3">{formatDate(row.legacyExpiryDate)}</td>
+      <td className="px-4 py-3">
+        <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${row.legacyActive ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>
+          {row.legacyActive ? "Active" : "Expired"}
+        </span>
+      </td>
+      <td className="px-4 py-3">
+        <button onClick={() => router.push(`/students/${encodeURIComponent(row.email)}`)} className="px-3 py-1 text-xs font-medium text-blue-600 bg-blue-50 rounded-md hover:bg-blue-100 transition-colors">View</button>
+      </td>
+    </tr>
+  );
+
+  const renderBody = () => {
+    if (rows.length === 0) {
+      return (
+        <tbody>
+          <tr>
+            <td colSpan={13} className="px-4 py-8 text-center text-gray-500">No legacy-replacement gaps found for the selected filters.</td>
+          </tr>
+        </tbody>
+      );
+    }
+    if (!groupBy) {
+      return <tbody>{rows.map((row, idx) => renderRow(row, idx))}</tbody>;
+    }
+    const totals = new Map(groups.map((g) => [g.key, g.total]));
+    const groupLabel = GROUP_BY_LABEL[groupBy];
+    const items: React.ReactNode[] = [];
+    let prevKey: string | null = null;
+    const subtotal = (key: string) => {
+      const n = totals.get(key) ?? 0;
+      items.push(
+        <tr key={`s-${key}`} className="bg-gray-50 border-b font-medium text-xs text-gray-600">
+          <td colSpan={13} className="px-4 py-2">Subtotal — {n} gap{n !== 1 ? "s" : ""}</td>
+        </tr>
+      );
+    };
+    rows.forEach((row, idx) => {
+      const key = resolveBucket(row, groupBy);
+      if (key !== prevKey) {
+        if (prevKey !== null) subtotal(prevKey);
+        const n = totals.get(key) ?? 0;
+        items.push(
+          <tr key={`h-${key}`} className="bg-gray-100 border-b">
+            <td colSpan={13} className="px-4 py-2">
+              <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                <span>{groupLabel}: {key}</span>
+                <span className="ml-auto text-xs font-normal text-gray-500">{n} record{n !== 1 ? "s" : ""}</span>
+              </div>
+            </td>
+          </tr>
+        );
+        prevKey = key;
+      }
+      items.push(renderRow(row, idx));
+    });
+    if (prevKey !== null) subtotal(prevKey);
+    return <tbody>{items}</tbody>;
+  };
 
   return (
     <div>
@@ -256,7 +370,7 @@ export default function LegacyGapPage() {
             )}
           </div>
           <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={horizonSeries}>
+            <BarChart data={charts.horizonSeries}>
               <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
               <XAxis dataKey="name" tick={{ fontSize: 12, fill: chart.axis }} stroke={chart.axis} />
               <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: chart.axis }} stroke={chart.axis} />
@@ -271,13 +385,13 @@ export default function LegacyGapPage() {
         <div className="bg-white rounded-lg border border-gray-200 p-5">
           <h3 className="text-base font-semibold text-gray-900 mb-4">Gaps by Product</h3>
           <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={productSeries} layout="vertical" margin={{ left: 20 }}>
+            <BarChart data={charts.productSeries} layout="vertical" margin={{ left: 20 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
               <XAxis type="number" allowDecimals={false} tick={{ fontSize: 12, fill: chart.axis }} stroke={chart.axis} />
               <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 11, fill: chart.axis }} stroke={chart.axis} />
               <Tooltip contentStyle={tooltipStyle(chart)} />
               <Bar dataKey="gaps">
-                {productSeries.map((p) => (
+                {charts.productSeries.map((p) => (
                   <Cell key={p.name} fill={chart.productColor(p.name, productColors)} />
                 ))}
               </Bar>
@@ -289,7 +403,7 @@ export default function LegacyGapPage() {
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-wrap gap-2">
           <p className="text-sm text-gray-500">Learners holding a legacy certification/accreditation without an active replacement</p>
-          <span className="text-sm font-medium text-gray-500">{filtered.length} result{filtered.length !== 1 ? "s" : ""}</span>
+          <span className="text-sm font-medium text-gray-500">{total} result{total !== 1 ? "s" : ""}</span>
         </div>
         <div className="px-6 py-4">
           <div className="flex flex-col gap-3 mb-4">
@@ -298,7 +412,7 @@ export default function LegacyGapPage() {
                 <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                 <input type="text" placeholder="Search by name, email, or training..." value={search} onChange={(e) => setSearch(e.target.value)} className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg" />
               </div>
-              <ExportMenu data={exportRows as never} columns={exportColumns} filename="legacy-replacement-gap" />
+              <ExportMenu onExport={handleExport} busy={exporting} />
             </div>
             <div className="flex flex-wrap gap-3">
               <select value={filterWindow} onChange={(e) => setFilterWindow(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
@@ -356,59 +470,30 @@ export default function LegacyGapPage() {
                   <th className="px-4 py-3 text-left font-semibold"></th>
                 </tr>
               </thead>
-              <GroupedRows
-                groups={grouped}
-                groupBy={groupBy}
-                colSpanTotal={13}
-                emptyMessage="No legacy-replacement gaps found for the selected filters."
-                renderRow={(row, idx) => (
-                  <tr key={`${row.email}-${row.legacyTrainingTitle}-${idx}`} className="border-b hover:bg-gray-50">
-                    <td className="px-4 py-3">{row.fullName}</td>
-                    <td className="px-4 py-3">{row.email}</td>
-                    <td className="px-4 py-3">{row.theatre || "-"}</td>
-                    <td className="px-4 py-3">{row.region || "-"}</td>
-                    <td className="px-4 py-3">{row.country || "-"}</td>
-                    <td className="px-4 py-3">{row.legacyFullTitle}</td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${typeBadgeClass(row.legacyType)}`}>
-                        {TYPE_LABELS[row.legacyType] ?? row.legacyType}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">{row.productType}</td>
-                    <td className="px-4 py-3">
-                      {row.replacementDefined ? (
-                        <span>
-                          {row.replacementFullTitle}
-                          {row.replacementState === "expired-only" && (
-                            <span className="ml-1 text-xs text-amber-600">(held, expired)</span>
-                          )}
-                        </span>
-                      ) : (
-                        <span className="text-gray-400">No replacement</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">{formatDate(row.legacyCompletedDate)}</td>
-                    <td className="px-4 py-3">{formatDate(row.legacyExpiryDate)}</td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${row.legacyActive ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>
-                        {row.legacyActive ? "Active" : "Expired"}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <button onClick={() => router.push(`/students/${encodeURIComponent(row.email)}`)} className="px-3 py-1 text-xs font-medium text-blue-600 bg-blue-50 rounded-md hover:bg-blue-100 transition-colors">View</button>
-                    </td>
-                  </tr>
-                )}
-                renderSubtotal={(g) => (
-                  <td colSpan={13} className="px-4 py-2">
-                    Subtotal — {g.rows.length} gap{g.rows.length !== 1 ? "s" : ""}
-                  </td>
-                )}
-              />
+              {renderBody()}
             </table>
+          </div>
+
+          <div className="mt-4">
+            <Pagination
+              page={page}
+              pageSize={pageSize}
+              total={total}
+              pageSizeOptions={PAGE_SIZE_OPTIONS}
+              onPageChange={setPage}
+              onPageSizeChange={(n) => { setPageSize(n); setPage(1); }}
+            />
           </div>
         </div>
       </div>
     </div>
+  );
+}
+
+export default function LegacyGapPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center h-64"><div className="text-gray-500">Loading report...</div></div>}>
+      <LegacyGapPageInner />
+    </Suspense>
   );
 }

@@ -64,6 +64,9 @@ export interface StudentEntry {
   theatre: string;
   completedDate: string;
   expiryDate: string;
+  /** The specific training (fullTitle) this person holds — may be the primary
+   *  requirement or one of its alternatives / a sibling variant. */
+  training?: string;
 }
 
 // --- Tiered-program shapes (returned as `tiers` from the compliance API) ---

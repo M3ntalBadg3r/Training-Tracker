@@ -233,6 +233,7 @@ export default function OfferingDashboardPage() {
               {spec.requirements.length === 0 ? (
                 <p className="px-4 py-4 text-sm text-gray-400 italic">No supporting trainings defined.</p>
               ) : (
+                <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="text-left text-xs text-gray-500 border-b border-gray-100">
@@ -295,6 +296,7 @@ export default function OfferingDashboardPage() {
                     ))}
                   </tbody>
                 </table>
+                </div>
               )}
             </div>
           ))}

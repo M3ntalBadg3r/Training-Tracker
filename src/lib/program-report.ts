@@ -6,6 +6,7 @@ import {
   getEmailSetsByTitle,
   getEmailSetsByTitleAndTheatre,
   listTheatres,
+  resolveSiblingTitles,
   unionAttained,
   unionAttainedByTheatre,
   evaluateTierLadder,
@@ -666,9 +667,15 @@ export async function getProgramStudents(opts: GetProgramStudentsOptions) {
     studentFilter.companyId = { in: companyIds };
   }
 
+  // Expand each requested title to its fullTitle+type sibling group so the roster
+  // matches the attained count (which unions sibling variants via
+  // getEmailSetsByTitle). Without this, holders of a sibling variant of the
+  // primary or an alternative are counted but missing from the View list.
+  const { fetchTitles } = await resolveSiblingTitles(trainingTitles);
+
   const records = await prisma.trainingTaken.findMany({
     where: {
-      trainingTitle: { in: trainingTitles },
+      trainingTitle: { in: fetchTitles },
       expiryDate: { gt: now },
       ...(Object.keys(studentFilter).length > 0 ? { student: studentFilter } : {}),
     },

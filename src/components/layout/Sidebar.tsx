@@ -12,6 +12,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronDown,
+  X,
   Globe,
   BookOpen,
   FileBarChart,
@@ -107,14 +108,16 @@ function subscribeSidebar(callback: () => void): () => void {
   };
 }
 
-export default function Sidebar() {
+export default function Sidebar({ mobile = false, onClose }: { mobile?: boolean; onClose?: () => void } = {}) {
   const pathname = usePathname();
   const { user, isAdmin, logout } = useAuth();
   const isSuperAdmin = user?.role === "SuperAdmin";
   const { theme, toggleTheme } = useTheme();
   // Collapse state lives in localStorage; read via useSyncExternalStore so there
   // is no setState-in-effect on mount (server snapshot defaults to collapsed).
-  const collapsed = useSyncExternalStore(subscribeSidebar, getCollapsedSnapshot, getCollapsedServerSnapshot);
+  // In the mobile drawer the sidebar is always expanded (full labels).
+  const storedCollapsed = useSyncExternalStore(subscribeSidebar, getCollapsedSnapshot, getCollapsedServerSnapshot);
+  const collapsed = mobile ? false : storedCollapsed;
   const [adminOpen, setAdminOpen] = useState(false);
   const [programsOpen, setProgramsOpen] = useState(false);
   const [offeringsOpen, setOfferingsOpen] = useState(false);
@@ -184,7 +187,7 @@ export default function Sidebar() {
 
   return (
     <aside
-      className={`sidebar-nav flex flex-col bg-slate-900 text-white transition-all duration-300 ${
+      className={`sidebar-nav ${mobile ? "flex" : "hidden md:flex"} flex-col bg-slate-900 text-white transition-all duration-300 ${
         collapsed ? "w-16" : "w-56"
       }`}
     >
@@ -194,13 +197,23 @@ export default function Sidebar() {
             Training Tracker
           </h1>
         )}
-        <button
-          onClick={toggle}
-          className="p-1 rounded hover:bg-slate-700 transition-colors"
-          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-        >
-          {collapsed ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}
-        </button>
+        {mobile ? (
+          <button
+            onClick={onClose}
+            className="p-1 rounded hover:bg-slate-700 transition-colors"
+            title="Close menu"
+          >
+            <X size={20} />
+          </button>
+        ) : (
+          <button
+            onClick={toggle}
+            className="p-1 rounded hover:bg-slate-700 transition-colors"
+            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          >
+            {collapsed ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}
+          </button>
+        )}
       </div>
       <nav className="flex-1 min-h-0 overflow-y-auto py-4">
         {navItems.map((item) => {

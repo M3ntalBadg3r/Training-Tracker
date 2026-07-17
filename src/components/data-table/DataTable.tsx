@@ -3,7 +3,8 @@
 import { useState, useMemo, useEffect } from "react";
 import { useDebounce } from "@/hooks/useDebounce";
 import { ColumnDef } from "@/types";
-import { ChevronUp, ChevronDown, Search, ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronUp, ChevronDown, Search } from "lucide-react";
+import Pagination from "@/components/data-table/Pagination";
 
 export interface DataTableState {
   searchTerm: string;
@@ -11,6 +12,9 @@ export interface DataTableState {
   columnFilters: Record<string, string>;
   sortColumn: string | null;
   sortDirection: "asc" | "desc";
+  /** 1-based current page. Emitted so parents can persist it (e.g. to the URL). */
+  page: number;
+  pageSize: number;
 }
 
 interface DataTableProps<T> {
@@ -25,6 +29,8 @@ interface DataTableProps<T> {
   initialColumnFilters?: Record<string, string>;
   initialSortColumn?: string;
   initialSortDirection?: "asc" | "desc";
+  initialPage?: number;
+  initialPageSize?: number;
   onStateChange?: (state: DataTableState, visibleRows: T[]) => void;
   rowAction?: {
     label: string;
@@ -53,6 +59,8 @@ export default function DataTable<T extends Record<string, any>>({
   initialColumnFilters,
   initialSortColumn,
   initialSortDirection,
+  initialPage,
+  initialPageSize,
   onStateChange,
   rowAction,
   rowDelete,
@@ -67,8 +75,8 @@ export default function DataTable<T extends Record<string, any>>({
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">(
     initialSortDirection ?? defaultSortDirection
   );
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(defaultPageSize);
+  const [currentPage, setCurrentPage] = useState(initialPage ?? 1);
+  const [pageSize, setPageSize] = useState(initialPageSize ?? defaultPageSize);
 
   const debouncedSearch = useDebounce(searchTerm);
 
@@ -129,10 +137,10 @@ export default function DataTable<T extends Record<string, any>>({
   useEffect(() => {
     if (!onStateChange) return;
     onStateChange(
-      { searchTerm: debouncedSearch, searchColumn, columnFilters, sortColumn, sortDirection },
+      { searchTerm: debouncedSearch, searchColumn, columnFilters, sortColumn, sortDirection, page: currentPage, pageSize },
       filteredData
     );
-  }, [filteredData, debouncedSearch, searchColumn, columnFilters, sortColumn, sortDirection, onStateChange]);
+  }, [filteredData, debouncedSearch, searchColumn, columnFilters, sortColumn, sortDirection, currentPage, pageSize, onStateChange]);
 
   const totalPages = Math.max(1, Math.ceil(filteredData.length / pageSize));
   const safePage = Math.min(currentPage, totalPages);
@@ -168,7 +176,7 @@ export default function DataTable<T extends Record<string, any>>({
   return (
     <div className="space-y-4">
       {/* Search bar */}
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <div className="relative flex-1 max-w-md">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
@@ -298,72 +306,17 @@ export default function DataTable<T extends Record<string, any>>({
       </div>
 
       {/* Pagination */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2 text-sm text-gray-600">
-          <span>Show</span>
-          <select
-            value={pageSize}
-            onChange={(e) => {
-              setPageSize(Number(e.target.value));
-              setCurrentPage(1);
-            }}
-            className="border border-gray-300 rounded px-2 py-1 text-sm"
-          >
-            {pageSizeOptions.map((size) => (
-              <option key={size} value={size}>
-                {size}
-              </option>
-            ))}
-          </select>
-          <span>records</span>
-          <span className="ml-4">
-            Showing {filteredData.length === 0 ? 0 : (safePage - 1) * pageSize + 1} to{" "}
-            {Math.min(safePage * pageSize, filteredData.length)} of{" "}
-            {filteredData.length} records
-          </span>
-        </div>
-        <div className="flex items-center gap-1">
-          <button
-            onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-            disabled={safePage <= 1}
-            className="p-2 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <ChevronLeft size={16} />
-          </button>
-          {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-            let page: number;
-            if (totalPages <= 5) {
-              page = i + 1;
-            } else if (safePage <= 3) {
-              page = i + 1;
-            } else if (safePage >= totalPages - 2) {
-              page = totalPages - 4 + i;
-            } else {
-              page = safePage - 2 + i;
-            }
-            return (
-              <button
-                key={page}
-                onClick={() => setCurrentPage(page)}
-                className={`px-3 py-1 rounded text-sm ${
-                  safePage === page
-                    ? "bg-blue-600 text-white"
-                    : "hover:bg-gray-100 text-gray-700"
-                }`}
-              >
-                {page}
-              </button>
-            );
-          })}
-          <button
-            onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-            disabled={safePage >= totalPages}
-            className="p-2 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <ChevronRight size={16} />
-          </button>
-        </div>
-      </div>
+      <Pagination
+        page={safePage}
+        pageSize={pageSize}
+        total={filteredData.length}
+        pageSizeOptions={pageSizeOptions}
+        onPageChange={setCurrentPage}
+        onPageSizeChange={(size) => {
+          setPageSize(size);
+          setCurrentPage(1);
+        }}
+      />
     </div>
   );
 }

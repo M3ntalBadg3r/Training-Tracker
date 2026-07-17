@@ -78,6 +78,16 @@ const helpSections: Record<string, HelpSection> = {
           preference is saved and persists across sessions.
         </p>
 
+        <h3>Mobile &amp; Small Screens</h3>
+        <p>
+          On phones and other narrow screens the sidebar is hidden and replaced by a
+          <strong> &#9776; menu button</strong> in the top bar &mdash; tap it to slide
+          the navigation in over a dimmed backdrop, and tap a link, the &times;, or the
+          backdrop to close it. On tablets and desktops the sidebar stays docked. Wide
+          tables scroll sideways so nothing is cut off, and pop-up dialogs fit the
+          screen and scroll internally when tall.
+        </p>
+
         <h3>Theatre Filter</h3>
         <p>
           Use the <strong>Theatre</strong> dropdown in the top-right corner to filter
@@ -486,6 +496,8 @@ const helpSections: Record<string, HelpSection> = {
           <li><strong>Group by</strong> &mdash; toggle theatre / region / country grouping. The hierarchy rolls up: country → region → theatre, with a fallback to theatre when region is missing or &quot;unknown&quot;.</li>
           <li><strong>Sortable columns</strong> — click any column header to sort the table; click again to reverse the direction (an ▲/▼ arrow marks the active column). Tables default to Full Name A–Z (or the report&rsquo;s natural primary column). When grouping is on, rows sort within each group.</li>
           <li><strong>Date-range picker</strong> — limit results to a date window (where applicable). Includes presets for Last 30/90 days, Last 12 months, YTD, and All time.</li>
+          <li><strong>Paginated tables</strong> — the detail-heavy reports (By Product Type, By Function, Expiring Soon, Achievement Over Time, Trained But Not Certified, Legacy Replacement Gap, Currently Expired, Learner Achievement Scorecard) are computed on the server and page through their rows one page at a time — use the <strong>Show N records</strong> selector and the numbered page buttons beneath the table. Charts, KPI cards and exports always cover the full filtered set, not just the visible page.</li>
+          <li><strong>Back restores your view</strong> — your filters, search, grouping, sort, page number and page size are kept in the page address, so clicking into a record and pressing your browser&rsquo;s Back button returns you to the report exactly as you left it. This also applies to the Students and Training lists. The address can also be bookmarked or shared to reopen the same filtered view.</li>
           <li><strong>Dark mode</strong> — chart axes, gridlines, and tooltips adapt automatically.</li>
         </ul>
 

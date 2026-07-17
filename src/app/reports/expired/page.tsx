@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState, Suspense } from "react";
 import * as React from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import PageHeader from "@/components/layout/PageHeader";
 import KpiStrip from "@/components/ui/KpiStrip";
@@ -12,8 +12,9 @@ import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
 import { useDebounce } from "@/hooks/useDebounce";
 import { useDateFormat } from "@/components/date-format/DateFormatProvider";
-import GeoScopeFilter, { GeoScope, EMPTY_GEO_SCOPE } from "@/components/reports/GeoScopeFilter";
-import { Search, Download, ArrowLeft, CalendarX, AlertCircle, AlertTriangle, History, ChevronLeft, ChevronRight } from "lucide-react";
+import GeoScopeFilter, { GeoScope } from "@/components/reports/GeoScopeFilter";
+import { Search, Download, ArrowLeft, CalendarX, AlertCircle, AlertTriangle, History } from "lucide-react";
+import Pagination from "@/components/data-table/Pagination";
 import {
   BarChart,
   Bar,
@@ -96,23 +97,37 @@ function ExportMenu({ onExport, busy }: { onExport: (fmt: "csv" | "excel" | "pdf
   );
 }
 
-export default function ExpiredPage() {
+function parseGroupBy(v: string | null, fallback: GroupByMode | null): GroupByMode | null {
+  if (v === "none") return null;
+  if (v === "theatre" || v === "region" || v === "country") return v;
+  return fallback;
+}
+
+function ExpiredPageInner() {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const chart = useChartTheme();
   const { formatDate } = useDateFormat();
   const companyScope = useCompanyScope();
 
-  const [search, setSearch] = useState("");
+  // Seed from the URL so Back from a record restores filters + page (mirrored
+  // back by the effect below).
+  const [search, setSearch] = useState(() => searchParams.get("q") ?? "");
   const debouncedSearch = useDebounce(search, 300);
-  const [filterType, setFilterType] = useState("");
-  const [geo, setGeo] = useState<GeoScope>(EMPTY_GEO_SCOPE);
-  const [filterBucket, setFilterBucket] = useState<string | null>(null);
-  const [excludeRetired, setExcludeRetired] = useState(false);
-  const [groupBy, setGroupBy] = useState<GroupByMode | null>("theatre");
-  const [sortColumn, setSortColumn] = useState("fullName");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
+  const [filterType, setFilterType] = useState(() => searchParams.get("type") ?? "");
+  const [geo, setGeo] = useState<GeoScope>(() => ({
+    theatre: searchParams.get("theatre") ?? "",
+    region: searchParams.get("region") ?? "",
+    country: searchParams.get("country") ?? "",
+  }));
+  const [filterBucket, setFilterBucket] = useState<string | null>(() => searchParams.get("bucket"));
+  const [excludeRetired, setExcludeRetired] = useState(() => searchParams.get("excludeRetired") === "true");
+  const [groupBy, setGroupBy] = useState<GroupByMode | null>(() => parseGroupBy(searchParams.get("groupBy"), "theatre"));
+  const [sortColumn, setSortColumn] = useState(() => searchParams.get("sort") ?? "fullName");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">(() => (searchParams.get("sortDir") === "desc" ? "desc" : "asc"));
+  const [page, setPage] = useState(() => Math.max(1, parseInt(searchParams.get("page") ?? "1", 10) || 1));
+  const [pageSize, setPageSize] = useState(() => parseInt(searchParams.get("pageSize") ?? "25", 10) || 25);
 
   const [data, setData] = useState<ExpiredResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -142,10 +157,30 @@ export default function ExpiredPage() {
     [debouncedSearch, filterType, geo, filterBucket, excludeRetired, groupBy, sortColumn, sortDir, page, pageSize]
   );
 
-  // Reset to page 1 whenever a filter/sort/scope changes (not on page/pageSize).
+  // Reset to page 1 when a filter/sort/scope changes — but not on initial mount,
+  // so a URL-seeded page survives back-navigation.
+  const didMountRef = useRef(false);
   useEffect(() => {
+    if (!didMountRef.current) {
+      didMountRef.current = true;
+      return;
+    }
     setPage(1);
   }, [debouncedSearch, filterType, geo, filterBucket, excludeRetired, groupBy, sortColumn, sortDir, companyScope.selected]);
+
+  // Mirror view state to the URL so Back restores filters + page. groupBy is
+  // written explicitly (with a "none" sentinel) because its default is "theatre".
+  useEffect(() => {
+    const params = buildParams({});
+    if (search) params.set("q", search);
+    else params.delete("q");
+    params.set("groupBy", groupBy ?? "none");
+    const qs = params.toString();
+    const next = qs ? `${pathname}?${qs}` : pathname;
+    if (qs !== searchParams.toString()) {
+      router.replace(next, { scroll: false });
+    }
+  }, [buildParams, search, groupBy, pathname, router, searchParams]);
 
   useEffect(() => {
     if (companyScope.loading) return;
@@ -171,10 +206,6 @@ export default function ExpiredPage() {
   const groups = data?.groups ?? [];
   const total = data?.total ?? 0;
   const types = data?.filterOptions.types ?? [];
-
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
-  const rangeStart = total === 0 ? 0 : (page - 1) * pageSize + 1;
-  const rangeEnd = Math.min(total, page * pageSize);
 
   const toggleSort = (key: string) => {
     if (key === sortColumn) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -400,37 +431,26 @@ export default function ExpiredPage() {
             </table>
           </div>
 
-          <div className="flex items-center justify-between flex-wrap gap-3 mt-4">
-            <div className="flex items-center gap-2 text-sm text-gray-600">
-              <span>{total === 0 ? "No records" : `Showing ${rangeStart}–${rangeEnd} of ${total}`}</span>
-              <select
-                value={pageSize}
-                onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
-                className="border border-gray-300 rounded-lg px-2 py-1 text-sm"
-              >
-                {PAGE_SIZE_OPTIONS.map((n) => <option key={n} value={n}>{n} / page</option>)}
-              </select>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={page <= 1}
-                className="flex items-center gap-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg disabled:opacity-40 hover:bg-gray-50"
-              >
-                <ChevronLeft size={14} /> Prev
-              </button>
-              <span className="text-sm text-gray-600">Page {page} of {totalPages}</span>
-              <button
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                disabled={page >= totalPages}
-                className="flex items-center gap-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg disabled:opacity-40 hover:bg-gray-50"
-              >
-                Next <ChevronRight size={14} />
-              </button>
-            </div>
+          <div className="mt-4">
+            <Pagination
+              page={page}
+              pageSize={pageSize}
+              total={total}
+              pageSizeOptions={PAGE_SIZE_OPTIONS}
+              onPageChange={setPage}
+              onPageSizeChange={(n) => { setPageSize(n); setPage(1); }}
+            />
           </div>
         </div>
       </div>
     </div>
+  );
+}
+
+export default function ExpiredPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center h-64"><div className="text-gray-500">Loading report...</div></div>}>
+      <ExpiredPageInner />
+    </Suspense>
   );
 }

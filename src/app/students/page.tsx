@@ -37,6 +37,11 @@ function StudentsPageInner() {
     });
     return out;
   }, [searchParams]);
+  // Page/size are also mirrored so the page survives back-navigation. `size` is
+  // the DataTable default (50) unless present in the URL.
+  const initialPage = Math.max(1, parseInt(searchParams.get("page") ?? "1", 10) || 1);
+  const sizeParam = searchParams.get("size");
+  const initialPageSize = sizeParam ? parseInt(sizeParam, 10) || undefined : undefined;
 
   const handleTableStateChange = useCallback(
     (state: DataTableState) => {
@@ -45,6 +50,8 @@ function StudentsPageInner() {
       params.delete("qCol");
       params.delete("sort");
       params.delete("sortDir");
+      params.delete("page");
+      params.delete("size");
       for (const key of Array.from(params.keys())) {
         if (key.startsWith("f_")) params.delete(key);
       }
@@ -58,6 +65,8 @@ function StudentsPageInner() {
       for (const [key, value] of Object.entries(state.columnFilters)) {
         if (value) params.set(`f_${key}`, value);
       }
+      if (state.page > 1) params.set("page", String(state.page));
+      if (state.pageSize !== 50) params.set("size", String(state.pageSize));
       const qs = params.toString();
       if (qs !== searchParams.toString()) {
         router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
@@ -225,6 +234,8 @@ function StudentsPageInner() {
         initialColumnFilters={initialColumnFilters}
         initialSortColumn={initialSortColumn}
         initialSortDirection={initialSortDirection}
+        initialPage={initialPage}
+        initialPageSize={initialPageSize}
         onStateChange={handleTableStateChange}
         rowAction={{
           label: "View",
@@ -310,7 +321,7 @@ function StudentsPageInner() {
               ask a SuperAdmin to create it on the Region Data page.
             </p>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Theatre</label>
               <div className="w-full px-3 py-2 border border-gray-200 bg-gray-50 rounded-lg text-sm text-gray-700 min-h-[38px]">

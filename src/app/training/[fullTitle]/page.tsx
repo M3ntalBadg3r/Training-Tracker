@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState, useMemo, use } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useCallback, useEffect, useState, useMemo, use } from "react";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Download } from "lucide-react";
 import PageHeader from "@/components/layout/PageHeader";
-import DataTable from "@/components/data-table/DataTable";
+import DataTable, { type DataTableState } from "@/components/data-table/DataTable";
 import Badge from "@/components/ui/Badge";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import { ColumnDef, TrainingTakenRow } from "@/types";
@@ -41,8 +41,60 @@ export default function TrainingTakenPage({
   const urlCompanyId = searchParams.get("companyId");
   const hasLocationFilters = !!(theatre || region || country);
   const router = useRouter();
+  const pathname = usePathname();
   const { selected, loading: scopeLoading } = useCompanyScope();
   const { formatDate } = useDateFormat();
+
+  // Mirror the table's search/sort/filter/page state to the URL (alongside the
+  // context params this page was opened with) so navigating into a student and
+  // pressing Back restores the exact view.
+  const initialSearchTerm = searchParams.get("q") ?? "";
+  const initialSearchColumn = searchParams.get("qCol") ?? "all";
+  const initialSortColumn = searchParams.get("sort") ?? undefined;
+  const initialSortDirRaw = searchParams.get("sortDir");
+  const initialSortDirection: "asc" | "desc" | undefined =
+    initialSortDirRaw === "asc" || initialSortDirRaw === "desc" ? initialSortDirRaw : undefined;
+  const initialColumnFilters = useMemo<Record<string, string>>(() => {
+    const out: Record<string, string> = {};
+    searchParams.forEach((value, key) => {
+      if (key.startsWith("f_") && value) out[key.slice(2)] = value;
+    });
+    return out;
+  }, [searchParams]);
+  const initialPage = Math.max(1, parseInt(searchParams.get("page") ?? "1", 10) || 1);
+  const sizeParam = searchParams.get("size");
+  const initialPageSize = sizeParam ? parseInt(sizeParam, 10) || undefined : undefined;
+
+  const handleTableStateChange = useCallback(
+    (state: DataTableState) => {
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete("q");
+      params.delete("qCol");
+      params.delete("sort");
+      params.delete("sortDir");
+      params.delete("page");
+      params.delete("size");
+      for (const key of Array.from(params.keys())) {
+        if (key.startsWith("f_")) params.delete(key);
+      }
+      if (state.searchTerm) params.set("q", state.searchTerm);
+      if (state.searchColumn && state.searchColumn !== "all") params.set("qCol", state.searchColumn);
+      if (state.sortColumn) {
+        params.set("sort", state.sortColumn);
+        params.set("sortDir", state.sortDirection);
+      }
+      for (const [key, value] of Object.entries(state.columnFilters)) {
+        if (value) params.set(`f_${key}`, value);
+      }
+      if (state.page > 1) params.set("page", String(state.page));
+      if (state.pageSize !== 50) params.set("size", String(state.pageSize));
+      const qs = params.toString();
+      if (qs !== searchParams.toString()) {
+        router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+      }
+    },
+    [searchParams, pathname, router]
+  );
 
   const [students, setStudents] = useState<TrainingTakenRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -220,6 +272,14 @@ export default function TrainingTakenPage({
         data={students}
         columns={columns}
         defaultSortColumn="fullName"
+        initialSearchTerm={initialSearchTerm}
+        initialSearchColumn={initialSearchColumn}
+        initialColumnFilters={initialColumnFilters}
+        initialSortColumn={initialSortColumn}
+        initialSortDirection={initialSortDirection}
+        initialPage={initialPage}
+        initialPageSize={initialPageSize}
+        onStateChange={handleTableStateChange}
         rowAction={{
           label: "View",
           onClick: (row) => router.push(`/students/${encodeURIComponent(row.email)}`),
@@ -234,7 +294,7 @@ export default function TrainingTakenPage({
           <p className="text-sm text-gray-600 mb-3">
             A student is counted as having completed this OLX once they&apos;ve completed every sub-item below.
           </p>
-          <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+          <div className="bg-white rounded-lg border border-gray-200 overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-200">

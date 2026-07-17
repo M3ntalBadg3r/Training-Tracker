@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState, Suspense } from "react";
 import Link from "next/link";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import PageHeader from "@/components/layout/PageHeader";
 import KpiStrip from "@/components/ui/KpiStrip";
 import { useChartTheme, tooltipStyle } from "@/lib/chart-theme";
@@ -9,7 +10,8 @@ import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
 import { useDebounce } from "@/hooks/useDebounce";
 import { useDateFormat } from "@/components/date-format/DateFormatProvider";
-import { ArrowLeft, Download, Users, Award, AlertTriangle, Clock, ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowLeft, Download, Users, Award, AlertTriangle, Clock } from "lucide-react";
+import Pagination from "@/components/data-table/Pagination";
 import {
   BarChart,
   Bar,
@@ -77,22 +79,27 @@ function ExportMenu({ onExport, busy }: { onExport: (fmt: "csv" | "excel" | "pdf
   );
 }
 
-export default function LearnerScorecardPage() {
+function LearnerScorecardPageInner() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const chart = useChartTheme();
   const companyScope = useCompanyScope();
   const { formatDate } = useDateFormat();
 
-  const [search, setSearch] = useState("");
+  // Seed from the URL so Back from a learner restores filters + page (mirrored
+  // back by the effect below).
+  const [search, setSearch] = useState(() => searchParams.get("q") ?? "");
   const debouncedSearch = useDebounce(search, 300);
-  const [filterTheatre, setFilterTheatre] = useState("");
-  const [filterRegion, setFilterRegion] = useState("");
-  const [filterCountry, setFilterCountry] = useState("");
-  const [windowMonths, setWindowMonths] = useState(6);
-  const [includeExpired, setIncludeExpired] = useState(false);
-  const [sortKey, setSortKey] = useState<SortKey>("total");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
+  const [filterTheatre, setFilterTheatre] = useState(() => searchParams.get("theatre") ?? "");
+  const [filterRegion, setFilterRegion] = useState(() => searchParams.get("region") ?? "");
+  const [filterCountry, setFilterCountry] = useState(() => searchParams.get("country") ?? "");
+  const [windowMonths, setWindowMonths] = useState(() => parseInt(searchParams.get("windowMonths") ?? "6", 10) || 6);
+  const [includeExpired, setIncludeExpired] = useState(() => searchParams.get("includeExpired") === "true");
+  const [sortKey, setSortKey] = useState<SortKey>(() => (searchParams.get("sort") as SortKey) || "total");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">(() => (searchParams.get("sortDir") === "asc" ? "asc" : "desc"));
+  const [page, setPage] = useState(() => Math.max(1, parseInt(searchParams.get("page") ?? "1", 10) || 1));
+  const [pageSize, setPageSize] = useState(() => parseInt(searchParams.get("pageSize") ?? "25", 10) || 25);
 
   const [data, setData] = useState<ScorecardResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -119,10 +126,29 @@ export default function LearnerScorecardPage() {
     [debouncedSearch, filterTheatre, filterRegion, filterCountry, windowMonths, includeExpired, sortKey, sortDir, page, pageSize]
   );
 
-  // Reset to page 1 whenever a filter/toggle/sort/scope changes.
+  // Reset to page 1 when a filter/toggle/sort/scope changes — but not on initial
+  // mount, so a URL-seeded page survives back-navigation.
+  const didMountRef = useRef(false);
   useEffect(() => {
+    if (!didMountRef.current) {
+      didMountRef.current = true;
+      return;
+    }
     setPage(1);
   }, [debouncedSearch, filterTheatre, filterRegion, filterCountry, windowMonths, includeExpired, sortKey, sortDir, companyScope.selected]);
+
+  // Mirror view state to the URL (raw search wins over debounced) so Back
+  // restores filters + page.
+  useEffect(() => {
+    const params = buildParams({});
+    if (search) params.set("q", search);
+    else params.delete("q");
+    const qs = params.toString();
+    const next = qs ? `${pathname}?${qs}` : pathname;
+    if (qs !== searchParams.toString()) {
+      router.replace(next, { scroll: false });
+    }
+  }, [buildParams, search, pathname, router, searchParams]);
 
   useEffect(() => {
     if (companyScope.loading) return;
@@ -150,9 +176,6 @@ export default function LearnerScorecardPage() {
   const regions = data?.filterOptions.regions ?? [];
   const countries = data?.filterOptions.countries ?? [];
 
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
-  const rangeStart = total === 0 ? 0 : (page - 1) * pageSize + 1;
-  const rangeEnd = Math.min(total, page * pageSize);
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -322,36 +345,26 @@ export default function LearnerScorecardPage() {
           </table>
         </div>
 
-        <div className="px-6 py-4 flex items-center justify-between flex-wrap gap-3 border-t border-gray-200">
-          <div className="flex items-center gap-2 text-sm text-gray-600">
-            <span>{total === 0 ? "No learners" : `Showing ${rangeStart}–${rangeEnd} of ${total}`}</span>
-            <select
-              value={pageSize}
-              onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
-              className="border border-gray-300 rounded-lg px-2 py-1 text-sm"
-            >
-              {PAGE_SIZE_OPTIONS.map((n) => <option key={n} value={n}>{n} / page</option>)}
-            </select>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={page <= 1}
-              className="flex items-center gap-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg disabled:opacity-40 hover:bg-gray-50"
-            >
-              <ChevronLeft size={14} /> Prev
-            </button>
-            <span className="text-sm text-gray-600">Page {page} of {totalPages}</span>
-            <button
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              disabled={page >= totalPages}
-              className="flex items-center gap-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg disabled:opacity-40 hover:bg-gray-50"
-            >
-              Next <ChevronRight size={14} />
-            </button>
-          </div>
+        <div className="px-6 py-4 border-t border-gray-200">
+          <Pagination
+            page={page}
+            pageSize={pageSize}
+            total={total}
+            pageSizeOptions={PAGE_SIZE_OPTIONS}
+            onPageChange={setPage}
+            onPageSizeChange={(n) => { setPageSize(n); setPage(1); }}
+            itemLabel="learners"
+          />
         </div>
       </div>
     </div>
+  );
+}
+
+export default function LearnerScorecardPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center h-64"><div className="text-gray-500">Loading report...</div></div>}>
+      <LearnerScorecardPageInner />
+    </Suspense>
   );
 }

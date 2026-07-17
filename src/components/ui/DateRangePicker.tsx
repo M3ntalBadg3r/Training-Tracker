@@ -120,8 +120,8 @@ export default function DateRangePicker({ value, onChange, placeholder = "Date r
         )}
       </button>
       {open && (
-        <div className={`absolute z-40 mt-1 ${align === "start" ? "left-0" : "right-0"} bg-white border border-gray-200 rounded-lg shadow-lg p-3 flex gap-3`}>
-          <div className="flex flex-col gap-1 border-r border-gray-200 pr-3 min-w-[140px]">
+        <div className={`absolute z-40 mt-1 ${align === "start" ? "left-0" : "right-0"} max-w-[95vw] overflow-x-auto bg-white border border-gray-200 rounded-lg shadow-lg p-3 flex flex-col sm:flex-row gap-3`}>
+          <div className="flex flex-col gap-1 border-b sm:border-b-0 sm:border-r border-gray-200 pb-3 sm:pb-0 pr-0 sm:pr-3 min-w-[140px]">
             {PRESETS.map((p) => (
               <button
                 key={p.label}

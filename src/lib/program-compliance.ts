@@ -64,7 +64,7 @@ export function extractTitles(rows: ProgramRequirement[]): string[] {
  * callers can merge sibling email sets under the requested key. Single-variant
  * names resolve to `[self]`, making this a no-op for them.
  */
-async function resolveSiblingTitles(trainingTitles: string[]): Promise<{
+export async function resolveSiblingTitles(trainingTitles: string[]): Promise<{
   fetchTitles: string[];
   groupMembers: Map<string, string[]>;
 }> {

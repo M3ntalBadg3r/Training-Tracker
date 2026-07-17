@@ -1,22 +1,22 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useRef, useState, Suspense } from "react";
+import * as React from "react";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import PageHeader from "@/components/layout/PageHeader";
 import KpiStrip from "@/components/ui/KpiStrip";
-import GroupedRows from "@/components/data-table/GroupedRows";
 import DateRangePicker, { DateRangeValue } from "@/components/ui/DateRangePicker";
 import { useChartTheme, tooltipStyle } from "@/lib/chart-theme";
 import { useProductTypeColors } from "@/hooks/useProductTypeColors";
-import { groupRows, GroupByMode } from "@/lib/group-by";
-import { useTableSort, SortAccessor } from "@/hooks/useTableSort";
+import { resolveBucket, GROUP_BY_LABEL, GroupByMode } from "@/lib/group-by";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
-import { useFetchJson } from "@/hooks/useFetchJson";
+import { useDebounce } from "@/hooks/useDebounce";
 import { useDateFormat } from "@/components/date-format/DateFormatProvider";
-import GeoScopeFilter, { GeoScope, EMPTY_GEO_SCOPE } from "@/components/reports/GeoScopeFilter";
+import GeoScopeFilter, { GeoScope } from "@/components/reports/GeoScopeFilter";
 import { Search, Download, ArrowLeft, Award, ShieldCheck, GraduationCap, TrendingUp } from "lucide-react";
+import Pagination from "@/components/data-table/Pagination";
 import {
   Area,
   XAxis,
@@ -44,17 +44,33 @@ interface TrainingRecordRow {
   active: boolean;
 }
 
-const TYPES = ["Certification", "Accreditation", "Instructor-Led Training", "OLX"] as const;
-
+type Granularity = "day" | "week" | "month";
 type RangePreset = "12m" | "6m" | "3m" | "1m" | "custom";
 
-const RANGE_PRESETS: { value: RangePreset; label: string; months: number | null }[] = [
-  { value: "12m", label: "Last 12 months", months: 12 },
-  { value: "6m", label: "Last 6 months", months: 6 },
-  { value: "3m", label: "Last 3 months", months: 3 },
-  { value: "1m", label: "Last 1 month", months: 1 },
-  { value: "custom", label: "Custom range", months: null },
+interface AchievementResponse {
+  charts: {
+    chartData: { bucketKey: string; label: string; "This period": number; "Prior period": number }[];
+    topTitles: { title: string; count: number; productType: string }[];
+    granularity: Granularity;
+  };
+  kpis: { total: number; cert: number; accred: number; ilt: number; olx: number; thisPeriodTotal: number; priorPeriodTotal: number; change: number };
+  groups: { key: string; total: number }[];
+  rows: TrainingRecordRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+  filterOptions: { types: string[]; functions: string[]; products: string[] };
+}
+
+const RANGE_PRESETS: { value: RangePreset; label: string }[] = [
+  { value: "12m", label: "Last 12 months" },
+  { value: "6m", label: "Last 6 months" },
+  { value: "3m", label: "Last 3 months" },
+  { value: "1m", label: "Last 1 month" },
+  { value: "custom", label: "Custom range" },
 ];
+
+const PAGE_SIZE_OPTIONS = [25, 50, 100, 200];
 
 function typeBadgeClass(t: string): string {
   if (t === "Certification") return "bg-blue-100 text-blue-800";
@@ -63,333 +79,283 @@ function typeBadgeClass(t: string): string {
   return "bg-amber-100 text-amber-800";
 }
 
-function ExportMenu({ data, columns, filename }: { data: Record<string, unknown>[]; columns: { key: string; header: string }[]; filename: string }) {
+const exportColumns = [
+  { key: "fullName", header: "Full Name" },
+  { key: "email", header: "Email" },
+  { key: "theatre", header: "Theatre" },
+  { key: "region", header: "Region" },
+  { key: "country", header: "Country" },
+  { key: "trainingTitle", header: "Training" },
+  { key: "trainingType", header: "Training Type" },
+  { key: "productType", header: "Product Type" },
+  { key: "function", header: "Function" },
+  { key: "completedDate", header: "Completed Date" },
+  { key: "expiryDate", header: "Expiry Date" },
+  { key: "active", header: "Active" },
+];
+
+function ExportMenu({ onExport, busy }: { onExport: (fmt: "csv" | "excel" | "pdf") => void; busy: boolean }) {
   const [show, setShow] = useState(false);
   return (
     <div className="relative">
-      <button onClick={() => setShow((p) => !p)} className="flex items-center gap-2 px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300">
-        <Download size={16} /> Export
+      <button onClick={() => setShow((p) => !p)} disabled={busy} className="flex items-center gap-2 px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300 disabled:opacity-50">
+        <Download size={16} /> {busy ? "Exporting…" : "Export"}
       </button>
-      {show && (
+      {show && !busy && (
         <div className="absolute right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[140px]">
-          <button onClick={() => { exportToCsv(data, columns as never, filename); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-t-lg">Export as CSV</button>
-          <button onClick={() => { exportToExcel(data, columns as never, filename); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100">Export as Excel</button>
-          <button onClick={() => { exportToPdf(data, columns as never, filename); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-b-lg">Export as PDF</button>
+          <button onClick={() => { onExport("csv"); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-t-lg">Export as CSV</button>
+          <button onClick={() => { onExport("excel"); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100">Export as Excel</button>
+          <button onClick={() => { onExport("pdf"); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-b-lg">Export as PDF</button>
         </div>
       )}
     </div>
   );
 }
 
-function startOfDay(d: Date): Date {
-  const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
-  return x;
+function parseGroupBy(v: string | null, fallback: GroupByMode | null): GroupByMode | null {
+  if (v === "none") return null;
+  if (v === "theatre" || v === "region" || v === "country") return v;
+  return fallback;
 }
 
-function endOfDay(d: Date): Date {
-  const x = new Date(d);
-  x.setHours(23, 59, 59, 999);
-  return x;
+function parseRange(v: string | null): RangePreset {
+  if (v === "12m" || v === "6m" || v === "3m" || v === "1m" || v === "custom") return v;
+  return "12m";
 }
 
-function addMonths(d: Date, n: number): Date {
-  const x = new Date(d);
-  x.setMonth(x.getMonth() + n);
-  return x;
-}
-
-function addDays(d: Date, n: number): Date {
-  const x = new Date(d);
-  x.setDate(x.getDate() + n);
-  return x;
-}
-
-function monthKey(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-}
-
-function dayKey(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-function weekStart(d: Date): Date {
-  const x = startOfDay(d);
-  const day = x.getDay();
-  const diff = (day + 6) % 7; // Monday-start week
-  x.setDate(x.getDate() - diff);
-  return x;
-}
-
-function weekKey(d: Date): string {
-  return dayKey(weekStart(d));
-}
-
-type Granularity = "day" | "week" | "month";
-
-export default function AchievementOverTimePage() {
+function AchievementOverTimePageInner() {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const chart = useChartTheme();
   const productColors = useProductTypeColors();
   const { formatDate } = useDateFormat();
   const companyScope = useCompanyScope();
-  const { data: recordsData, loading } = useFetchJson<TrainingRecordRow[]>(
-    withCompany("/api/reports/training-records", companyScope.selected),
-    { enabled: !companyScope.loading }
+
+  // Seed from the URL so Back from a record restores filters + page (mirrored
+  // back by the effect below).
+  const [search, setSearch] = useState(() => searchParams.get("q") ?? "");
+  const debouncedSearch = useDebounce(search, 300);
+  const [filterType, setFilterType] = useState(() => searchParams.get("type") ?? "");
+  const [geo, setGeo] = useState<GeoScope>(() => ({
+    theatre: searchParams.get("theatre") ?? "",
+    region: searchParams.get("region") ?? "",
+    country: searchParams.get("country") ?? "",
+  }));
+  const [filterFunction, setFilterFunction] = useState(() => searchParams.get("function") ?? "");
+  const [filterProduct, setFilterProduct] = useState(() => searchParams.get("product") ?? "");
+  const [filterBucket, setFilterBucket] = useState<string | null>(() => searchParams.get("bucket"));
+  const [groupBy, setGroupBy] = useState<GroupByMode | null>(() => parseGroupBy(searchParams.get("groupBy"), null));
+  const [rangePreset, setRangePreset] = useState<RangePreset>(() => parseRange(searchParams.get("range")));
+  const [customRange, setCustomRange] = useState<DateRangeValue>(() => ({
+    from: searchParams.get("customFrom") ? new Date(searchParams.get("customFrom")!) : null,
+    to: searchParams.get("customTo") ? new Date(searchParams.get("customTo")!) : null,
+  }));
+  const [sortColumn, setSortColumn] = useState(() => searchParams.get("sort") ?? "fullName");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">(() => (searchParams.get("sortDir") === "desc" ? "desc" : "asc"));
+  const [page, setPage] = useState(() => Math.max(1, parseInt(searchParams.get("page") ?? "1", 10) || 1));
+  const [pageSize, setPageSize] = useState(() => parseInt(searchParams.get("pageSize") ?? "25", 10) || 25);
+
+  const [data, setData] = useState<AchievementResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
+
+  const customFrom = customRange.from ? customRange.from.toISOString() : "";
+  const customTo = customRange.to ? customRange.to.toISOString() : "";
+
+  const buildParams = useCallback(
+    (opts: { all?: boolean }) => {
+      const params = new URLSearchParams();
+      if (debouncedSearch) params.set("q", debouncedSearch);
+      if (filterType) params.set("type", filterType);
+      if (geo.theatre) params.set("theatre", geo.theatre);
+      if (geo.region) params.set("region", geo.region);
+      if (geo.country) params.set("country", geo.country);
+      if (filterFunction) params.set("function", filterFunction);
+      if (filterProduct) params.set("product", filterProduct);
+      if (filterBucket) params.set("bucket", filterBucket);
+      params.set("range", rangePreset);
+      if (rangePreset === "custom") {
+        if (customFrom) params.set("customFrom", customFrom);
+        if (customTo) params.set("customTo", customTo);
+      }
+      if (groupBy) params.set("groupBy", groupBy);
+      params.set("sort", sortColumn);
+      params.set("sortDir", sortDir);
+      if (opts.all) params.set("all", "true");
+      else {
+        params.set("page", String(page));
+        params.set("pageSize", String(pageSize));
+      }
+      return params;
+    },
+    [debouncedSearch, filterType, geo, filterFunction, filterProduct, filterBucket, rangePreset, customFrom, customTo, groupBy, sortColumn, sortDir, page, pageSize]
   );
-  const trainingRecords = useMemo(() => recordsData ?? [], [recordsData]);
 
-  const [search, setSearch] = useState("");
-  const [filterType, setFilterType] = useState("");
-  const [geo, setGeo] = useState<GeoScope>(EMPTY_GEO_SCOPE);
-  const [filterFunction, setFilterFunction] = useState("");
-  const [filterProduct, setFilterProduct] = useState("");
-  const [filterBucket, setFilterBucket] = useState<string | null>(null);
-  const [groupBy, setGroupBy] = useState<GroupByMode | null>(null);
-
-  const [rangePreset, setRangePreset] = useState<RangePreset>("12m");
-  const [customRange, setCustomRange] = useState<DateRangeValue>({ from: null, to: null });
-
-  const now = useMemo(() => new Date(), []);
-
-  const types = useMemo(() => [...new Set(trainingRecords.map((r) => r.trainingType))].filter(Boolean).sort(), [trainingRecords]);
-  const functions = useMemo(() => [...new Set(trainingRecords.map((r) => r.function))].filter(Boolean).sort(), [trainingRecords]);
-  const products = useMemo(() => [...new Set(trainingRecords.map((r) => r.productType))].filter(Boolean).sort(), [trainingRecords]);
-
-  // Earliest completion date in the current dataset — used to tighten the
-  // chart axis when the window has no lower bound ("All time").
-  const earliestCompleted = useMemo(() => {
-    let min: number | null = null;
-    for (const r of trainingRecords) {
-      const t = new Date(r.completedDate).getTime();
-      if (Number.isFinite(t) && (min === null || t < min)) min = t;
+  // Reset to page 1 on filter/sort/scope change — but not on initial mount, so a
+  // URL-seeded page survives back-navigation.
+  const didMountRef = useRef(false);
+  useEffect(() => {
+    if (!didMountRef.current) {
+      didMountRef.current = true;
+      return;
     }
-    return min === null ? null : new Date(min);
-  }, [trainingRecords]);
+    setPage(1);
+  }, [debouncedSearch, filterType, geo, filterFunction, filterProduct, filterBucket, rangePreset, customFrom, customTo, groupBy, sortColumn, sortDir, companyScope.selected]);
 
-  // Resolve current window. Null from/to mean "no constraint", matching the
-  // DateRangePicker "All time" preset and filterByRange() semantics.
-  const { windowStart, windowEnd, isAllTime } = useMemo(() => {
-    if (rangePreset === "custom") {
-      const noFrom = !customRange.from;
-      const from = customRange.from ? startOfDay(customRange.from) : new Date(0);
-      const to = customRange.to ? endOfDay(customRange.to) : endOfDay(now);
-      return { windowStart: from, windowEnd: to, isAllTime: noFrom };
+  // Mirror view state to the URL (raw search wins over debounced) so Back
+  // restores filters + page.
+  useEffect(() => {
+    const params = buildParams({});
+    if (search) params.set("q", search);
+    else params.delete("q");
+    const qs = params.toString();
+    const next = qs ? `${pathname}?${qs}` : pathname;
+    if (qs !== searchParams.toString()) {
+      router.replace(next, { scroll: false });
     }
-    const months = RANGE_PRESETS.find((p) => p.value === rangePreset)?.months ?? 12;
-    const start = new Date(now.getFullYear(), now.getMonth() - (months - 1), 1);
-    return { windowStart: startOfDay(start), windowEnd: endOfDay(now), isAllTime: false };
-  }, [rangePreset, customRange, now]);
+  }, [buildParams, search, pathname, router, searchParams]);
 
-  // For axis rendering only, start the chart at the earliest record rather
-  // than 1970 when the window is "All time".
-  const axisStart = useMemo(() => {
-    if (isAllTime && earliestCompleted) return startOfDay(earliestCompleted);
-    return windowStart;
-  }, [isAllTime, earliestCompleted, windowStart]);
-
-  // Prior window — same length immediately before windowStart
-  const { priorStart, priorEnd } = useMemo(() => {
-    const lenMs = windowEnd.getTime() - windowStart.getTime();
-    const priorE = new Date(windowStart.getTime() - 1);
-    const priorS = new Date(priorE.getTime() - lenMs);
-    return { priorStart: priorS, priorEnd: priorE };
-  }, [windowStart, windowEnd]);
-
-  // Decide bucket granularity based on the visible axis span (uses axisStart
-  // so "All time" buckets at the real data span, not 1970→now).
-  const granularity: Granularity = useMemo(() => {
-    const days = Math.max(1, Math.round((windowEnd.getTime() - axisStart.getTime()) / 86400000));
-    if (days <= 35) return "day";
-    if (days <= 100) return "week";
-    return "month";
-  }, [axisStart, windowEnd]);
-
-  const bucketKey = useMemo(() => {
-    if (granularity === "day") return dayKey;
-    if (granularity === "week") return weekKey;
-    return monthKey;
-  }, [granularity]);
-
-  // Records filtered for the table (window + search + type + theatre + bucket click)
-  const filtered = useMemo(() => {
-    const q = search.toLowerCase();
-    return trainingRecords.filter((r) => {
-      const completed = new Date(r.completedDate);
-      if (completed < windowStart || completed > windowEnd) return false;
-      if (search && !r.fullName.toLowerCase().includes(q) && !r.email.toLowerCase().includes(q)) return false;
-      if (filterType && r.trainingType !== filterType) return false;
-      if (geo.theatre && r.theatre !== geo.theatre) return false;
-      if (geo.region && r.region !== geo.region) return false;
-      if (geo.country && r.country !== geo.country) return false;
-      if (filterFunction && r.function !== filterFunction) return false;
-      if (filterProduct && r.productType !== filterProduct) return false;
-      if (filterBucket && bucketKey(completed) !== filterBucket) return false;
-      return true;
-    });
-  }, [trainingRecords, search, filterType, geo, filterFunction, filterProduct, filterBucket, windowStart, windowEnd, bucketKey]);
-
-  // Records used to build the chart — same filters as the table EXCEPT bucket click
-  const chartRecords = useMemo(() => {
-    const q = search.toLowerCase();
-    return trainingRecords.filter((r) => {
-      if (search && !r.fullName.toLowerCase().includes(q) && !r.email.toLowerCase().includes(q)) return false;
-      if (filterType && r.trainingType !== filterType) return false;
-      if (geo.theatre && r.theatre !== geo.theatre) return false;
-      if (geo.region && r.region !== geo.region) return false;
-      if (geo.country && r.country !== geo.country) return false;
-      if (filterFunction && r.function !== filterFunction) return false;
-      if (filterProduct && r.productType !== filterProduct) return false;
-      return true;
-    });
-  }, [trainingRecords, search, filterType, geo, filterFunction, filterProduct]);
-
-  // Build bucket axis for the chart. Use axisStart (the earliest record when
-  // "All time" is selected) so we don't render decades of empty leading
-  // buckets back to 1970.
-  const buckets = useMemo(() => {
-    const out: { key: string; label: string; date: Date }[] = [];
-    if (granularity === "month") {
-      const start = new Date(axisStart.getFullYear(), axisStart.getMonth(), 1);
-      let d = start;
-      while (d <= windowEnd) {
-        out.push({
-          key: monthKey(d),
-          label: d.toLocaleDateString("en-GB", { month: "short", year: "2-digit" }),
-          date: new Date(d),
-        });
-        d = addMonths(d, 1);
-      }
-    } else if (granularity === "week") {
-      let d = weekStart(axisStart);
-      while (d <= windowEnd) {
-        out.push({
-          key: weekKey(d),
-          label: d.toLocaleDateString("en-GB", { day: "2-digit", month: "short" }),
-          date: new Date(d),
-        });
-        d = addDays(d, 7);
-      }
-    } else {
-      let d = startOfDay(axisStart);
-      while (d <= windowEnd) {
-        out.push({
-          key: dayKey(d),
-          label: d.toLocaleDateString("en-GB", { day: "2-digit", month: "short" }),
-          date: new Date(d),
-        });
-        d = addDays(d, 1);
-      }
-    }
-    return out;
-  }, [axisStart, windowEnd, granularity]);
-
-  const chartData = useMemo(() => {
-    const counts = new Map<string, number>();
-    const priorCounts = new Map<string, number>();
-    const shiftMs = windowStart.getTime() - priorStart.getTime();
-    for (const r of chartRecords) {
-      const completed = new Date(r.completedDate);
-      if (completed >= windowStart && completed <= windowEnd) {
-        const k = bucketKey(completed);
-        counts.set(k, (counts.get(k) ?? 0) + 1);
-      } else if (completed >= priorStart && completed <= priorEnd) {
-        // Align prior period onto the current axis by shifting forward by the window length
-        const aligned = new Date(completed.getTime() + shiftMs);
-        const ak = bucketKey(aligned);
-        priorCounts.set(ak, (priorCounts.get(ak) ?? 0) + 1);
-      }
-    }
-    return buckets.map((b) => ({
-      bucketKey: b.key,
-      label: b.label,
-      "This period": counts.get(b.key) ?? 0,
-      "Prior period": priorCounts.get(b.key) ?? 0,
-    }));
-  }, [chartRecords, buckets, bucketKey, windowStart, windowEnd, priorStart, priorEnd]);
-
-  const topTitles = useMemo(() => {
-    const counts = new Map<string, number>();
-    const productByTitle = new Map<string, string>();
-    for (const r of filtered) {
-      counts.set(r.trainingTitle, (counts.get(r.trainingTitle) ?? 0) + 1);
-      if (r.productType && !productByTitle.has(r.trainingTitle)) {
-        productByTitle.set(r.trainingTitle, r.productType);
-      }
-    }
-    return Array.from(counts.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 10)
-      .map(([title, count]) => ({ title, count, productType: productByTitle.get(title) ?? "" }));
-  }, [filtered]);
-
-  const kpis = useMemo(() => {
-    const thisPeriodTotal = chartData.reduce((s, m) => s + (m["This period"] as number), 0);
-    const priorPeriodTotal = chartData.reduce((s, m) => s + (m["Prior period"] as number), 0);
-    const change = priorPeriodTotal === 0 ? 0 : ((thisPeriodTotal - priorPeriodTotal) / priorPeriodTotal) * 100;
-    return {
-      total: filtered.length,
-      cert: filtered.filter((r) => r.trainingType === "Certification").length,
-      accred: filtered.filter((r) => r.trainingType === "Accreditation").length,
-      ilt: filtered.filter((r) => r.trainingType === "Instructor-Led Training").length,
-      olx: filtered.filter((r) => r.trainingType === "OLX").length,
-      thisPeriodTotal,
-      priorPeriodTotal,
-      change,
+  useEffect(() => {
+    if (companyScope.loading) return;
+    const url = withCompany(`/api/reports/last-12-months?${buildParams({}).toString()}`, companyScope.selected);
+    let cancelled = false;
+    setLoading(true);
+    fetch(url)
+      .then((r) => r.json())
+      .then((d: AchievementResponse) => {
+        if (!cancelled) setData(d);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
     };
-  }, [filtered, chartData]);
+  }, [buildParams, companyScope.loading, companyScope.selected]);
 
-  void TYPES;
-
-  // Column sorting (applied before grouping so rows sort within each group).
-  const sortAccessors: Record<string, SortAccessor<TrainingRecordRow>> = {
-    fullName: (r) => r.fullName,
-    email: (r) => r.email,
-    theatre: (r) => r.theatre,
-    region: (r) => r.region,
-    country: (r) => r.country,
-    trainingTitle: (r) => r.trainingTitle,
-    trainingType: (r) => r.trainingType,
-    productType: (r) => r.productType,
-    function: (r) => r.function,
-    completedDate: (r) => r.completedDate,
-    expiryDate: (r) => r.expiryDate,
-    active: (r) => r.active,
-  };
-  const { sorted, toggleSort, sortIndicator } = useTableSort(filtered, sortAccessors, {
-    defaultKey: "fullName",
-    tiebreakKey: "fullName",
-  });
-
-  const grouped = useMemo(() => groupRows(sorted, groupBy ?? "theatre"), [sorted, groupBy]);
+  const chartData = data?.charts.chartData ?? [];
+  const topTitles = data?.charts.topTitles ?? [];
+  const granularity = data?.charts.granularity ?? "month";
+  const kpis = data?.kpis ?? { total: 0, cert: 0, accred: 0, ilt: 0, olx: 0, thisPeriodTotal: 0, priorPeriodTotal: 0, change: 0 };
+  const rows = data?.rows ?? [];
+  const groups = data?.groups ?? [];
+  const total = data?.total ?? 0;
+  const types = data?.filterOptions.types ?? [];
+  const functions = data?.filterOptions.functions ?? [];
+  const products = data?.filterOptions.products ?? [];
 
   const granularityLabel = granularity === "day" ? "Daily" : granularity === "week" ? "Weekly" : "Monthly";
   const bucketLabel = granularity === "day" ? "day" : granularity === "week" ? "week" : "month";
 
-  const exportColumns = [
-    { key: "fullName", header: "Full Name" },
-    { key: "email", header: "Email" },
-    { key: "theatre", header: "Theatre" },
-    { key: "region", header: "Region" },
-    { key: "country", header: "Country" },
-    { key: "trainingTitle", header: "Training" },
-    { key: "trainingType", header: "Training Type" },
-    { key: "productType", header: "Product Type" },
-    { key: "function", header: "Function" },
-    { key: "completedDate", header: "Completed Date" },
-    { key: "expiryDate", header: "Expiry Date" },
-    { key: "active", header: "Active" },
-  ];
-  const exportRows = filtered.map((r) => ({
-    ...r,
-    completedDate: formatDate(r.completedDate),
-    expiryDate: formatDate(r.expiryDate),
-    active: r.active ? "Yes" : "No",
-  }));
+  const toggleSort = (key: string) => {
+    if (key === sortColumn) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else {
+      setSortColumn(key);
+      setSortDir("asc");
+    }
+  };
+  const sortIndicator = (key: string) => (sortColumn === key ? (sortDir === "asc" ? " ▲" : " ▼") : "");
 
-  if (loading) {
+  const handleExport = async (fmt: "csv" | "excel" | "pdf") => {
+    setExporting(true);
+    try {
+      const url = withCompany(`/api/reports/last-12-months?${buildParams({ all: true }).toString()}`, companyScope.selected);
+      const res = await fetch(url);
+      const d: AchievementResponse = await res.json();
+      const exportRows = d.rows.map((r) => ({
+        ...r,
+        completedDate: formatDate(r.completedDate),
+        expiryDate: formatDate(r.expiryDate),
+        active: r.active ? "Yes" : "No",
+      }));
+      if (fmt === "csv") exportToCsv(exportRows as never, exportColumns as never, "achievement-over-time");
+      else if (fmt === "excel") exportToExcel(exportRows as never, exportColumns as never, "achievement-over-time");
+      else exportToPdf(exportRows as never, exportColumns as never, "achievement-over-time");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  if (loading && !data) {
     return <div className="flex items-center justify-center h-64"><div className="text-gray-500">Loading report...</div></div>;
   }
+
+  const renderRow = (row: TrainingRecordRow, idx: number) => (
+    <tr key={`${row.email}-${row.trainingTitle}-${idx}`} className="border-b hover:bg-gray-50">
+      <td className="px-4 py-3">{row.fullName}</td>
+      <td className="px-4 py-3">{row.email}</td>
+      <td className="px-4 py-3">{row.theatre || "-"}</td>
+      <td className="px-4 py-3">{row.region || "-"}</td>
+      <td className="px-4 py-3">{row.country || "-"}</td>
+      <td className="px-4 py-3">{row.trainingTitle}</td>
+      <td className="px-4 py-3">
+        <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${typeBadgeClass(row.trainingType)}`}>
+          {row.trainingType}
+        </span>
+      </td>
+      <td className="px-4 py-3">{row.productType}</td>
+      <td className="px-4 py-3">{row.function}</td>
+      <td className="px-4 py-3">{formatDate(row.completedDate)}</td>
+      <td className="px-4 py-3">{formatDate(row.expiryDate)}</td>
+      <td className="px-4 py-3">
+        <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${row.active ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>
+          {row.active ? "Yes" : "No"}
+        </span>
+      </td>
+      <td className="px-4 py-3">
+        <button onClick={() => router.push(`/students/${encodeURIComponent(row.email)}`)} className="px-3 py-1 text-xs font-medium text-blue-600 bg-blue-50 rounded-md hover:bg-blue-100 transition-colors">View</button>
+      </td>
+    </tr>
+  );
+
+  const renderBody = () => {
+    if (rows.length === 0) {
+      return (
+        <tbody>
+          <tr>
+            <td colSpan={13} className="px-4 py-8 text-center text-gray-500">No records found in the selected range.</td>
+          </tr>
+        </tbody>
+      );
+    }
+    if (!groupBy) {
+      return <tbody>{rows.map((row, idx) => renderRow(row, idx))}</tbody>;
+    }
+    const totals = new Map(groups.map((g) => [g.key, g.total]));
+    const groupLabel = GROUP_BY_LABEL[groupBy];
+    const items: React.ReactNode[] = [];
+    let prevKey: string | null = null;
+    const subtotal = (key: string) => {
+      const n = totals.get(key) ?? 0;
+      items.push(
+        <tr key={`s-${key}`} className="bg-gray-50 border-b font-medium text-xs text-gray-600">
+          <td colSpan={13} className="px-4 py-2">Subtotal — {n} record{n !== 1 ? "s" : ""}</td>
+        </tr>
+      );
+    };
+    rows.forEach((row, idx) => {
+      const key = resolveBucket(row, groupBy);
+      if (key !== prevKey) {
+        if (prevKey !== null) subtotal(prevKey);
+        const n = totals.get(key) ?? 0;
+        items.push(
+          <tr key={`h-${key}`} className="bg-gray-100 border-b">
+            <td colSpan={13} className="px-4 py-2">
+              <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                <span>{groupLabel}: {key}</span>
+                <span className="ml-auto text-xs font-normal text-gray-500">{n} record{n !== 1 ? "s" : ""}</span>
+              </div>
+            </td>
+          </tr>
+        );
+        prevKey = key;
+      }
+      items.push(renderRow(row, idx));
+    });
+    if (prevKey !== null) subtotal(prevKey);
+    return <tbody>{items}</tbody>;
+  };
 
   return (
     <div>
@@ -516,7 +482,7 @@ export default function AchievementOverTimePage() {
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-wrap gap-2">
           <p className="text-sm text-gray-500">Training records completed in the selected range</p>
-          <span className="text-sm font-medium text-gray-500">{filtered.length} result{filtered.length !== 1 ? "s" : ""}</span>
+          <span className="text-sm font-medium text-gray-500">{total} result{total !== 1 ? "s" : ""}</span>
         </div>
         <div className="px-6 py-4">
           <div className="flex flex-col gap-3 mb-4">
@@ -525,7 +491,7 @@ export default function AchievementOverTimePage() {
                 <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                 <input type="text" placeholder="Search by name or email..." value={search} onChange={(e) => setSearch(e.target.value)} className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg" />
               </div>
-              <ExportMenu data={exportRows as never} columns={exportColumns} filename="achievement-over-time" />
+              <ExportMenu onExport={handleExport} busy={exporting} />
             </div>
             <div className="flex flex-wrap gap-3">
               <select value={filterType} onChange={(e) => setFilterType(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
@@ -568,48 +534,30 @@ export default function AchievementOverTimePage() {
                   <th className="px-4 py-3 text-left font-semibold"></th>
                 </tr>
               </thead>
-              <GroupedRows
-                groups={grouped}
-                groupBy={groupBy}
-                colSpanTotal={13}
-                emptyMessage="No records found in the selected range."
-                renderRow={(row, idx) => (
-                  <tr key={`${row.email}-${row.trainingTitle}-${idx}`} className="border-b hover:bg-gray-50">
-                    <td className="px-4 py-3">{row.fullName}</td>
-                    <td className="px-4 py-3">{row.email}</td>
-                    <td className="px-4 py-3">{row.theatre || "-"}</td>
-                    <td className="px-4 py-3">{row.region || "-"}</td>
-                    <td className="px-4 py-3">{row.country || "-"}</td>
-                    <td className="px-4 py-3">{row.trainingTitle}</td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${typeBadgeClass(row.trainingType)}`}>
-                        {row.trainingType}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">{row.productType}</td>
-                    <td className="px-4 py-3">{row.function}</td>
-                    <td className="px-4 py-3">{formatDate(row.completedDate)}</td>
-                    <td className="px-4 py-3">{formatDate(row.expiryDate)}</td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${row.active ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>
-                        {row.active ? "Yes" : "No"}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <button onClick={() => router.push(`/students/${encodeURIComponent(row.email)}`)} className="px-3 py-1 text-xs font-medium text-blue-600 bg-blue-50 rounded-md hover:bg-blue-100 transition-colors">View</button>
-                    </td>
-                  </tr>
-                )}
-                renderSubtotal={(g) => (
-                  <td colSpan={13} className="px-4 py-2">
-                    Subtotal — {g.rows.length} record{g.rows.length !== 1 ? "s" : ""}
-                  </td>
-                )}
-              />
+              {renderBody()}
             </table>
+          </div>
+
+          <div className="mt-4">
+            <Pagination
+              page={page}
+              pageSize={pageSize}
+              total={total}
+              pageSizeOptions={PAGE_SIZE_OPTIONS}
+              onPageChange={setPage}
+              onPageSizeChange={(n) => { setPageSize(n); setPage(1); }}
+            />
           </div>
         </div>
       </div>
     </div>
+  );
+}
+
+export default function AchievementOverTimePage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center h-64"><div className="text-gray-500">Loading report...</div></div>}>
+      <AchievementOverTimePageInner />
+    </Suspense>
   );
 }
