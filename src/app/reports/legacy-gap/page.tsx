@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState, Suspense } from "react";
 import * as React from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import PageHeader from "@/components/layout/PageHeader";
 import KpiStrip from "@/components/ui/KpiStrip";
@@ -13,7 +13,7 @@ import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
 import { useDebounce } from "@/hooks/useDebounce";
 import { useDateFormat } from "@/components/date-format/DateFormatProvider";
-import GeoScopeFilter, { GeoScope, EMPTY_GEO_SCOPE } from "@/components/reports/GeoScopeFilter";
+import GeoScopeFilter, { GeoScope } from "@/components/reports/GeoScopeFilter";
 import { Search, Download, ArrowLeft, History, AlertCircle, AlertTriangle, Ban } from "lucide-react";
 import Pagination from "@/components/data-table/Pagination";
 import {
@@ -105,27 +105,41 @@ function ExportMenu({ onExport, busy }: { onExport: (fmt: "csv" | "excel" | "pdf
   );
 }
 
-export default function LegacyGapPage() {
+function parseGroupBy(v: string | null, fallback: GroupByMode | null): GroupByMode | null {
+  if (v === "none") return null;
+  if (v === "theatre" || v === "region" || v === "country") return v;
+  return fallback;
+}
+
+function LegacyGapPageInner() {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const chart = useChartTheme();
   const productColors = useProductTypeColors();
   const { formatDate } = useDateFormat();
   const companyScope = useCompanyScope();
 
-  const [search, setSearch] = useState("");
+  // Seed from the URL so Back from a record restores filters + page (mirrored
+  // back by the effect below).
+  const [search, setSearch] = useState(() => searchParams.get("q") ?? "");
   const debouncedSearch = useDebounce(search, 300);
-  const [filterWindow, setFilterWindow] = useState("all"); // all | expired | 1 | 3 | 6 | 12
-  const [filterType, setFilterType] = useState("");
-  const [filterProduct, setFilterProduct] = useState("");
-  const [geo, setGeo] = useState<GeoScope>(EMPTY_GEO_SCOPE);
-  const [filterHorizon, setFilterHorizon] = useState<string | null>(null);
-  const [groupBy, setGroupBy] = useState<GroupByMode | null>("theatre");
-  const [includeNoReplacement, setIncludeNoReplacement] = useState(true);
-  const [requireActive, setRequireActive] = useState(true);
-  const [sortColumn, setSortColumn] = useState("fullName");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
+  const [filterWindow, setFilterWindow] = useState(() => searchParams.get("window") ?? "all"); // all | expired | 1 | 3 | 6 | 12
+  const [filterType, setFilterType] = useState(() => searchParams.get("type") ?? "");
+  const [filterProduct, setFilterProduct] = useState(() => searchParams.get("product") ?? "");
+  const [geo, setGeo] = useState<GeoScope>(() => ({
+    theatre: searchParams.get("theatre") ?? "",
+    region: searchParams.get("region") ?? "",
+    country: searchParams.get("country") ?? "",
+  }));
+  const [filterHorizon, setFilterHorizon] = useState<string | null>(() => searchParams.get("horizon"));
+  const [groupBy, setGroupBy] = useState<GroupByMode | null>(() => parseGroupBy(searchParams.get("groupBy"), "theatre"));
+  const [includeNoReplacement, setIncludeNoReplacement] = useState(() => searchParams.get("includeNoReplacement") !== "false");
+  const [requireActive, setRequireActive] = useState(() => searchParams.get("requireActive") !== "false");
+  const [sortColumn, setSortColumn] = useState(() => searchParams.get("sort") ?? "fullName");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">(() => (searchParams.get("sortDir") === "desc" ? "desc" : "asc"));
+  const [page, setPage] = useState(() => Math.max(1, parseInt(searchParams.get("page") ?? "1", 10) || 1));
+  const [pageSize, setPageSize] = useState(() => parseInt(searchParams.get("pageSize") ?? "25", 10) || 25);
 
   const [data, setData] = useState<LegacyGapResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -157,9 +171,30 @@ export default function LegacyGapPage() {
     [debouncedSearch, filterWindow, filterType, filterProduct, geo, filterHorizon, includeNoReplacement, requireActive, groupBy, sortColumn, sortDir, page, pageSize]
   );
 
+  // Reset to page 1 on filter/sort/scope change — but not on initial mount, so a
+  // URL-seeded page survives back-navigation.
+  const didMountRef = useRef(false);
   useEffect(() => {
+    if (!didMountRef.current) {
+      didMountRef.current = true;
+      return;
+    }
     setPage(1);
   }, [debouncedSearch, filterWindow, filterType, filterProduct, geo, filterHorizon, includeNoReplacement, requireActive, groupBy, sortColumn, sortDir, companyScope.selected]);
+
+  // Mirror view state to the URL so Back restores filters + page. groupBy is
+  // written explicitly (with a "none" sentinel) because its default is "theatre".
+  useEffect(() => {
+    const params = buildParams({});
+    if (search) params.set("q", search);
+    else params.delete("q");
+    params.set("groupBy", groupBy ?? "none");
+    const qs = params.toString();
+    const next = qs ? `${pathname}?${qs}` : pathname;
+    if (qs !== searchParams.toString()) {
+      router.replace(next, { scroll: false });
+    }
+  }, [buildParams, search, groupBy, pathname, router, searchParams]);
 
   useEffect(() => {
     if (companyScope.loading) return;
@@ -452,5 +487,13 @@ export default function LegacyGapPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function LegacyGapPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center h-64"><div className="text-gray-500">Loading report...</div></div>}>
+      <LegacyGapPageInner />
+    </Suspense>
   );
 }

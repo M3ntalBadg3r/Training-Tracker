@@ -497,6 +497,7 @@ const helpSections: Record<string, HelpSection> = {
           <li><strong>Sortable columns</strong> — click any column header to sort the table; click again to reverse the direction (an ▲/▼ arrow marks the active column). Tables default to Full Name A–Z (or the report&rsquo;s natural primary column). When grouping is on, rows sort within each group.</li>
           <li><strong>Date-range picker</strong> — limit results to a date window (where applicable). Includes presets for Last 30/90 days, Last 12 months, YTD, and All time.</li>
           <li><strong>Paginated tables</strong> — the detail-heavy reports (By Product Type, By Function, Expiring Soon, Achievement Over Time, Trained But Not Certified, Legacy Replacement Gap, Currently Expired, Learner Achievement Scorecard) are computed on the server and page through their rows one page at a time — use the <strong>Show N records</strong> selector and the numbered page buttons beneath the table. Charts, KPI cards and exports always cover the full filtered set, not just the visible page.</li>
+          <li><strong>Back restores your view</strong> — your filters, search, grouping, sort, page number and page size are kept in the page address, so clicking into a record and pressing your browser&rsquo;s Back button returns you to the report exactly as you left it. The address can also be bookmarked or shared to reopen the same filtered view.</li>
           <li><strong>Dark mode</strong> — chart axes, gridlines, and tooltips adapt automatically.</li>
         </ul>
 

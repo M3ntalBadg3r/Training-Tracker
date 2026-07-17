@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, Suspense } from "react";
 import * as React from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import PageHeader from "@/components/layout/PageHeader";
 import KpiStrip from "@/components/ui/KpiStrip";
@@ -13,7 +13,7 @@ import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
 import { useDebounce } from "@/hooks/useDebounce";
 import { useDateFormat } from "@/components/date-format/DateFormatProvider";
-import GeoScopeFilter, { GeoScope, EMPTY_GEO_SCOPE } from "@/components/reports/GeoScopeFilter";
+import GeoScopeFilter, { GeoScope } from "@/components/reports/GeoScopeFilter";
 import { Search, Download, ArrowLeft, Award, ShieldCheck, GraduationCap, CircleCheck } from "lucide-react";
 import Pagination from "@/components/data-table/Pagination";
 import {
@@ -102,24 +102,41 @@ function ExportMenu({ onExport, busy }: { onExport: (fmt: "csv" | "excel" | "pdf
   );
 }
 
-export default function ByFunctionPage() {
+function parseGroupBy(v: string | null, fallback: GroupByMode | null): GroupByMode | null {
+  if (v === "none") return null;
+  if (v === "theatre" || v === "region" || v === "country") return v;
+  return fallback;
+}
+
+function ByFunctionPageInner() {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const chart = useChartTheme();
   const companyScope = useCompanyScope();
   const { formatDate } = useDateFormat();
 
-  const [search, setSearch] = useState("");
+  // Seed from the URL so Back from a record restores filters + page (mirrored
+  // back by the effect below).
+  const [search, setSearch] = useState(() => searchParams.get("q") ?? "");
   const debouncedSearch = useDebounce(search, 300);
-  const [filterFunction, setFilterFunction] = useState("");
-  const [filterType, setFilterType] = useState("");
-  const [geo, setGeo] = useState<GeoScope>(EMPTY_GEO_SCOPE);
-  const [dateRange, setDateRange] = useState<DateRangeValue>({ from: null, to: null });
-  const [groupBy, setGroupBy] = useState<GroupByMode | null>(null);
-  const [countPeople, setCountPeople] = useState(false);
-  const [sortColumn, setSortColumn] = useState("fullName");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
+  const [filterFunction, setFilterFunction] = useState(() => searchParams.get("function") ?? "");
+  const [filterType, setFilterType] = useState(() => searchParams.get("type") ?? "");
+  const [geo, setGeo] = useState<GeoScope>(() => ({
+    theatre: searchParams.get("theatre") ?? "",
+    region: searchParams.get("region") ?? "",
+    country: searchParams.get("country") ?? "",
+  }));
+  const [dateRange, setDateRange] = useState<DateRangeValue>(() => ({
+    from: searchParams.get("dateFrom") ? new Date(searchParams.get("dateFrom")!) : null,
+    to: searchParams.get("dateTo") ? new Date(searchParams.get("dateTo")!) : null,
+  }));
+  const [groupBy, setGroupBy] = useState<GroupByMode | null>(() => parseGroupBy(searchParams.get("groupBy"), null));
+  const [countPeople, setCountPeople] = useState(() => searchParams.get("countPeople") === "true");
+  const [sortColumn, setSortColumn] = useState(() => searchParams.get("sort") ?? "fullName");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">(() => (searchParams.get("sortDir") === "desc" ? "desc" : "asc"));
+  const [page, setPage] = useState(() => Math.max(1, parseInt(searchParams.get("page") ?? "1", 10) || 1));
+  const [pageSize, setPageSize] = useState(() => parseInt(searchParams.get("pageSize") ?? "25", 10) || 25);
 
   const [data, setData] = useState<ByFunctionResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -153,9 +170,29 @@ export default function ByFunctionPage() {
     [debouncedSearch, filterFunction, filterType, geo, dateFrom, dateTo, countPeople, groupBy, sortColumn, sortDir, page, pageSize]
   );
 
+  // Reset to page 1 on filter/sort/scope change — but not on initial mount, so a
+  // URL-seeded page survives back-navigation.
+  const didMountRef = useRef(false);
   useEffect(() => {
+    if (!didMountRef.current) {
+      didMountRef.current = true;
+      return;
+    }
     setPage(1);
   }, [debouncedSearch, filterFunction, filterType, geo, dateFrom, dateTo, countPeople, groupBy, sortColumn, sortDir, companyScope.selected]);
+
+  // Mirror view state to the URL (raw search wins over debounced) so Back
+  // restores filters + page.
+  useEffect(() => {
+    const params = buildParams({});
+    if (search) params.set("q", search);
+    else params.delete("q");
+    const qs = params.toString();
+    const next = qs ? `${pathname}?${qs}` : pathname;
+    if (qs !== searchParams.toString()) {
+      router.replace(next, { scroll: false });
+    }
+  }, [buildParams, search, pathname, router, searchParams]);
 
   useEffect(() => {
     if (companyScope.loading) return;
@@ -432,5 +469,13 @@ export default function ByFunctionPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function ByFunctionPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center h-64"><div className="text-gray-500">Loading report...</div></div>}>
+      <ByFunctionPageInner />
+    </Suspense>
   );
 }
