@@ -12,6 +12,9 @@ export interface DataTableState {
   columnFilters: Record<string, string>;
   sortColumn: string | null;
   sortDirection: "asc" | "desc";
+  /** 1-based current page. Emitted so parents can persist it (e.g. to the URL). */
+  page: number;
+  pageSize: number;
 }
 
 interface DataTableProps<T> {
@@ -26,6 +29,8 @@ interface DataTableProps<T> {
   initialColumnFilters?: Record<string, string>;
   initialSortColumn?: string;
   initialSortDirection?: "asc" | "desc";
+  initialPage?: number;
+  initialPageSize?: number;
   onStateChange?: (state: DataTableState, visibleRows: T[]) => void;
   rowAction?: {
     label: string;
@@ -54,6 +59,8 @@ export default function DataTable<T extends Record<string, any>>({
   initialColumnFilters,
   initialSortColumn,
   initialSortDirection,
+  initialPage,
+  initialPageSize,
   onStateChange,
   rowAction,
   rowDelete,
@@ -68,8 +75,8 @@ export default function DataTable<T extends Record<string, any>>({
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">(
     initialSortDirection ?? defaultSortDirection
   );
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(defaultPageSize);
+  const [currentPage, setCurrentPage] = useState(initialPage ?? 1);
+  const [pageSize, setPageSize] = useState(initialPageSize ?? defaultPageSize);
 
   const debouncedSearch = useDebounce(searchTerm);
 
@@ -130,10 +137,10 @@ export default function DataTable<T extends Record<string, any>>({
   useEffect(() => {
     if (!onStateChange) return;
     onStateChange(
-      { searchTerm: debouncedSearch, searchColumn, columnFilters, sortColumn, sortDirection },
+      { searchTerm: debouncedSearch, searchColumn, columnFilters, sortColumn, sortDirection, page: currentPage, pageSize },
       filteredData
     );
-  }, [filteredData, debouncedSearch, searchColumn, columnFilters, sortColumn, sortDirection, onStateChange]);
+  }, [filteredData, debouncedSearch, searchColumn, columnFilters, sortColumn, sortDirection, currentPage, pageSize, onStateChange]);
 
   const totalPages = Math.max(1, Math.ceil(filteredData.length / pageSize));
   const safePage = Math.min(currentPage, totalPages);

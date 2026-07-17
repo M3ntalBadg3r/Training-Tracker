@@ -92,6 +92,10 @@ function TrainingPageInner() {
   }, [searchParams]);
   // initialColumnFilters is intentionally memoised on searchParams so that
   // identity changes only when the URL itself changes (not on every render).
+  // Page/size are also mirrored so the page survives back-navigation.
+  const initialPage = Math.max(1, parseInt(searchParams.get("page") ?? "1", 10) || 1);
+  const sizeParam = searchParams.get("size");
+  const initialPageSize = sizeParam ? parseInt(sizeParam, 10) || undefined : undefined;
 
   const updateFilter = useCallback(
     (patch: Record<string, string | null>) => {
@@ -138,6 +142,8 @@ function TrainingPageInner() {
       params.delete("qCol");
       params.delete("sort");
       params.delete("sortDir");
+      params.delete("page");
+      params.delete("size");
       for (const key of Array.from(params.keys())) {
         if (key.startsWith("f_")) params.delete(key);
       }
@@ -150,6 +156,8 @@ function TrainingPageInner() {
       for (const [key, value] of Object.entries(state.columnFilters)) {
         if (value) params.set(`f_${key}`, value);
       }
+      if (state.page > 1) params.set("page", String(state.page));
+      if (state.pageSize !== 50) params.set("size", String(state.pageSize));
       const qs = params.toString();
       const next = qs ? `${pathname}?${qs}` : pathname;
       // Avoid pushing identical URLs into history (router.replace would still
@@ -440,6 +448,8 @@ function TrainingPageInner() {
         initialColumnFilters={initialColumnFilters}
         initialSortColumn={initialSortColumn}
         initialSortDirection={initialSortDirection}
+        initialPage={initialPage}
+        initialPageSize={initialPageSize}
         onStateChange={handleTableStateChange}
         rowAction={{
           label: "View Students",
