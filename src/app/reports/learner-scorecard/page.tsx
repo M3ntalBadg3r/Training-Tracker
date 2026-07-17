@@ -9,7 +9,8 @@ import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
 import { useDebounce } from "@/hooks/useDebounce";
 import { useDateFormat } from "@/components/date-format/DateFormatProvider";
-import { ArrowLeft, Download, Users, Award, AlertTriangle, Clock, ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowLeft, Download, Users, Award, AlertTriangle, Clock } from "lucide-react";
+import Pagination from "@/components/data-table/Pagination";
 import {
   BarChart,
   Bar,
@@ -150,9 +151,6 @@ export default function LearnerScorecardPage() {
   const regions = data?.filterOptions.regions ?? [];
   const countries = data?.filterOptions.countries ?? [];
 
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
-  const rangeStart = total === 0 ? 0 : (page - 1) * pageSize + 1;
-  const rangeEnd = Math.min(total, page * pageSize);
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -322,34 +320,16 @@ export default function LearnerScorecardPage() {
           </table>
         </div>
 
-        <div className="px-6 py-4 flex items-center justify-between flex-wrap gap-3 border-t border-gray-200">
-          <div className="flex items-center gap-2 text-sm text-gray-600">
-            <span>{total === 0 ? "No learners" : `Showing ${rangeStart}–${rangeEnd} of ${total}`}</span>
-            <select
-              value={pageSize}
-              onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
-              className="border border-gray-300 rounded-lg px-2 py-1 text-sm"
-            >
-              {PAGE_SIZE_OPTIONS.map((n) => <option key={n} value={n}>{n} / page</option>)}
-            </select>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={page <= 1}
-              className="flex items-center gap-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg disabled:opacity-40 hover:bg-gray-50"
-            >
-              <ChevronLeft size={14} /> Prev
-            </button>
-            <span className="text-sm text-gray-600">Page {page} of {totalPages}</span>
-            <button
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              disabled={page >= totalPages}
-              className="flex items-center gap-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg disabled:opacity-40 hover:bg-gray-50"
-            >
-              Next <ChevronRight size={14} />
-            </button>
-          </div>
+        <div className="px-6 py-4 border-t border-gray-200">
+          <Pagination
+            page={page}
+            pageSize={pageSize}
+            total={total}
+            pageSizeOptions={PAGE_SIZE_OPTIONS}
+            onPageChange={setPage}
+            onPageSizeChange={(n) => { setPageSize(n); setPage(1); }}
+            itemLabel="learners"
+          />
         </div>
       </div>
     </div>
