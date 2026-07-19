@@ -281,6 +281,17 @@ export default function Sidebar({ mobile = false, onClose }: { mobile?: boolean;
                     <ShieldCheck size={16} className="shrink-0" />
                     <span>Overview</span>
                   </Link>
+                  <Link
+                    href="/programs/planning"
+                    className={`flex items-center gap-3 px-4 py-2 text-sm transition-colors ${
+                      pathname === "/programs/planning"
+                        ? "text-white bg-slate-700"
+                        : "text-slate-400 hover:text-white hover:bg-slate-800"
+                    }`}
+                  >
+                    <Sparkles size={16} className="shrink-0" />
+                    <span>Compliance Planning</span>
+                  </Link>
                   {programSubItems.map((item) => {
                     const isActive = pathname === item.href;
                     return (

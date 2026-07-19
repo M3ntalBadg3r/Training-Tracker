@@ -1023,6 +1023,23 @@ All sections support export to CSV, Excel, and PDF. Alternative trainings (OR lo
 
 A **Compliance as of** selector in the dashboard header lets you look ahead and see how upcoming certificate expiry will affect compliance. Pick **+3**, **+6**, or **+12 months** and every section recomputes compliance as it will stand on that future date — any certificate expiring within the window drops out of the counts (set it back to **Now** for today's snapshot).
 
+### Compliance Planning
+
+**Programs > Compliance Planning** (`/programs/planning`) is the **action layer** over the program dashboards: they show *where the gaps are*, this page shows *who to move, in what order, for the least effort*. It reuses exactly the same distinct-holder counting as the dashboards, so the two never disagree.
+
+Pick a **scope** (Global / Theatre / Region / Country) and one or more **programs**, then choose a target per program:
+
+- **Tiered program** → target a **tier** (the tool picks the cheapest specialisations to reach it) or specific specialisation(s).
+- **Flat program** → pick specialisation(s) or **all requirements**.
+
+Mixed selections are supported in one plan (e.g. a tier in one program plus all specialisations in another). The output has three parts:
+
+- **Aggregate roadmap** — a plain-language headline per target plus a per-specialisation, per-requirement breakdown (have / need, the gap, and how many candidates sit in each tier). For a tier target, the cheapest specialisations to reach it are flagged **Recommended**.
+- **"Who to move"** — one row per person listing every gap they close (expandable), ranked cheapest-first: **Easy win** (did the ILT/OLX that leads to the cert, needs only the exam), **Lapsed** (held the cert but it expired — needs a renewal), **Legacy upgrade** (holds a legacy cert whose replacement is the required one), then **Net-new** (needs the full path; reported as a count, not named people). Because a person can only be **spent once**, candidates are allocated across the whole plan — someone whose single exam closes the same cert in several places appears once.
+- **Renewals at risk** — holders whose qualifying training expires within a selectable window (1 / 3 / 6 / 12 months), because their expiry will re-open a gap the plan currently reports as closed.
+
+Requirements authored *above* the selected scope (e.g. a theatre-wide requirement when planning one country) are flagged **shared** — your scope can contribute to them but can't close them alone. The candidate list and the renewals list can each be exported to CSV, Excel, or PDF. This release is a **live view** (no saved plans yet).
+
 - Attained figures display as **current → projected** (e.g. `5 → 3`), with a **▼N expiring** note showing how many people lose a qualifying certificate within the window.
 - Requirements (and theatres) that are compliant today but will fall below their requirement by the chosen horizon are shaded **amber** with an **At Risk** status — an early warning to schedule renewals before compliance breaks. Green stays compliant through the horizon; red is already non-compliant today.
 - Section exports gain **Projected**, **Expiring**, and **Projected Compliant** columns reflecting the selected horizon, and the file name carries a `-plusNmo` suffix.

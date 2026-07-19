@@ -1862,6 +1862,92 @@ const helpSections: Record<string, HelpSection> = {
       </>
     ),
   },
+  "compliance-planning": {
+    title: "Compliance Planning",
+    content: (
+      <>
+        <p>
+          Compliance Planning is the <strong>action layer</strong> over the
+          program dashboards. The dashboards tell you <em>where the gaps are</em>;
+          this page tells you <em>who to move, in what order, for the least
+          effort</em> — floating the easy wins to the top.
+        </p>
+        <p>
+          Program requirements are <strong>counts, not per-person mandates</strong>
+          (&ldquo;3 people in the UK hold Cert A&rdquo;), so a plan computes the
+          shortfall per requirement and then nominates the cheapest specific people
+          to close it. It uses exactly the same distinct-holder counting as the
+          dashboards, so the two never disagree.
+        </p>
+
+        <h3>Choosing a target</h3>
+        <p>
+          Pick a <strong>Scope</strong> (Global / Theatre / Region / Country) and
+          one or more <strong>programs</strong>. For each program you choose what to
+          aim at:
+        </p>
+        <ul>
+          <li>
+            <strong>Tiered programs</strong> — target a <strong>tier</strong> (the
+            tool picks the cheapest specialisations to get you there), or specific
+            specialisation(s).
+          </li>
+          <li>
+            <strong>Flat programs</strong> — pick specialisation(s) or{" "}
+            <strong>all requirements</strong>.
+          </li>
+        </ul>
+        <p>
+          Mixed selections are supported (e.g. a tier in one program plus all
+          specialisations in another) in a single plan.
+        </p>
+
+        <h3>Candidate ranking</h3>
+        <p>For each gap, candidates are ranked cheapest-first:</p>
+        <ul>
+          <li>
+            <strong>Easy win</strong> — completed an ILT/OLX that leads to the
+            required cert but never earned it; needs only the exam.
+          </li>
+          <li>
+            <strong>Lapsed</strong> — held the cert but it expired; needs only a
+            renewal.
+          </li>
+          <li>
+            <strong>Legacy upgrade</strong> — holds a legacy cert whose replacement
+            is the required cert.
+          </li>
+          <li>
+            <strong>Net-new</strong> — needs the full ILT/OLX &rarr; cert path.
+            Reported as a remaining count rather than named people.
+          </li>
+        </ul>
+        <p>
+          Because a person can only be <strong>spent once</strong>, the plan
+          allocates candidates across the whole target. The{" "}
+          <strong>&ldquo;Who to move&rdquo;</strong> table lists one row per person
+          with every gap they close (expand a row for detail) — so someone whose
+          single exam closes the same cert in several places appears once.
+        </p>
+
+        <h3>Shared requirements &amp; renewals</h3>
+        <p>
+          A requirement authored <em>above</em> the selected scope (e.g. a
+          theatre-wide requirement when you&apos;re planning one country) is marked{" "}
+          <strong>shared</strong> — your scope can contribute to it but can&apos;t
+          close it alone. The <strong>Renewals at risk</strong> section lists
+          holders whose training expires within the selected window; their expiry
+          will re-open a gap the plan currently reports as closed.
+        </p>
+
+        <h3>Export</h3>
+        <p>
+          The candidate list and the renewals list can each be exported to CSV,
+          Excel, or PDF.
+        </p>
+      </>
+    ),
+  },
   "programs-detail": {
     title: "Program Compliance Dashboard",
     content: (
