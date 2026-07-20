@@ -1889,8 +1889,15 @@ const helpSections: Record<string, HelpSection> = {
           Program requirements are <strong>counts, not per-person mandates</strong>
           (&ldquo;3 people in the UK hold Cert A&rdquo;), so a plan computes the
           shortfall per requirement and then nominates the cheapest specific people
-          to close it. It uses exactly the same distinct-holder counting as the
-          dashboards, so the two never disagree.
+          to close it. It uses exactly the same distinct-holder counting — and the
+          same <strong>scope rules</strong> — as the dashboards, so the two never
+          disagree.
+        </p>
+        <p>
+          The headline metric is <strong>People to certify</strong>: how many
+          people still need to earn a certification to close the plan&apos;s gaps.
+          It&apos;s <em>deduplicated</em> — if one person&apos;s single exam
+          satisfies several requirements at once, they count once.
         </p>
 
         <h3>Choosing a target</h3>
@@ -1902,8 +1909,10 @@ const helpSections: Record<string, HelpSection> = {
         <ul>
           <li>
             <strong>Tiered programs</strong> — target a <strong>tier</strong> (the
-            tool picks the cheapest specialisations to get you there), or specific
-            specialisation(s).
+            tool picks the cheapest specialisations to get you there — reaching a
+            tier only needs as many specialisations as the tier requires, and any
+            <em>equally-cheap</em> alternatives are flagged &ldquo;Recommended&rdquo;
+            so you can choose), or specific specialisation(s).
           </li>
           <li>
             <strong>Flat programs</strong> — pick specialisation(s) or{" "}
@@ -1943,14 +1952,15 @@ const helpSections: Record<string, HelpSection> = {
           single exam closes the same cert in several places appears once.
         </p>
 
-        <h3>Shared requirements &amp; renewals</h3>
+        <h3>Scope &amp; renewals</h3>
         <p>
-          A requirement authored <em>above</em> the selected scope (e.g. a
-          theatre-wide requirement when you&apos;re planning one country) is marked{" "}
-          <strong>shared</strong> — your scope can contribute to it but can&apos;t
-          close it alone. The <strong>Renewals at risk</strong> section lists
-          holders whose training expires within the selected window; their expiry
-          will re-open a gap the plan currently reports as closed.
+          Each scope plans against <strong>only its own-level requirements</strong>,
+          exactly like the program dashboards: choosing a <em>country</em> shows
+          that country&apos;s Country-level requirements — not the theatre-wide
+          requirement above it. Select the <em>theatre</em> if you want to plan
+          against theatre-level requirements. The <strong>Renewals at risk</strong>{" "}
+          section lists holders whose training expires within the selected window;
+          their expiry will re-open a gap the plan currently reports as closed.
         </p>
 
         <h3>Export</h3>

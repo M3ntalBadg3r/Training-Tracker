@@ -22,10 +22,10 @@
  * Because a person can only be *spent once*, candidate assignment is a greedy
  * allocation across the whole target (not an independent per-requirement count):
  * committing a person to earn one cert credits every requirement instance that
- * needs *that same cert* over a population containing them (the §7 "one exam
- * closes Cert X in the UK, in EMEA, and in Program 2" dedup), but bars them from
- * a *different* cert's slot (the §4/§6 contention). See `allocateCandidates`,
- * which is pure and unit-testable.
+ * needs *that same cert* over a population containing them (the "one exam closes
+ * Cert X in Program A and in Program B" dedup), but bars them from a *different*
+ * cert's slot (contention). See `allocateCandidates`, which is pure and
+ * unit-testable.
  */
 
 import prisma from "@/lib/prisma";
@@ -71,11 +71,8 @@ export interface PlanRequirement {
   purpose: string;
   /** Country | Theatre | Global — the requirement's authored (native) level. */
   nativeLevel: string;
-  /** The population label this instance is counted over, e.g. "UK" / "EMEA" / "Global". */
+  /** The population label this instance is counted over, e.g. "UK" / "Global". */
   scopeLabel: string;
-  /** True when the requirement is authored *above* the selected scope (this scope
-   *  can contribute to it but can't fully close it alone). */
-  shared: boolean;
   cert: string;
   required: number;
   attained: number;
@@ -96,7 +93,8 @@ export interface PlanSpecialisation {
   cost: number;
   easyWins: number;
   requirements: PlanRequirement[];
-  /** For a tier target: chosen among the cheapest K remaining specialisations. */
+  /** For a tier target: recommended as one of the cheapest remaining
+   *  specialisations to reach the tier (includes equally-cheap ties). */
   chosen?: boolean;
 }
 
@@ -124,7 +122,6 @@ export interface PlanCandidateClose {
   tierName: string | null;
   cert: string;
   scopeLabel: string;
-  shared: boolean;
   tier: CandidateTier;
   /** ILT/OLX (easy-win) or legacy cert (legacy) full title that gets them there. */
   path: string | null;
@@ -182,7 +179,6 @@ interface ReqInstance {
   purpose: string;
   nativeLevel: string;
   scopeLabel: string;
-  shared: boolean;
   /** Identity of the qualifying cert-set: two instances sharing it share moves. */
   certKey: string;
   cert: string;
@@ -293,60 +289,41 @@ function unionEmails(map: Map<string, Set<string>>): Set<string> {
 
 // ─── Geography instancing ────────────────────────────────────────────────────
 
+/**
+ * The single requirement level + population a selected scope plans against.
+ *
+ * This mirrors the program dashboards (`lib/program-report.ts`): each scope
+ * shows only the requirements authored at its own level, counted over one
+ * population. Planning a country shows Country requirements over that country —
+ * NOT the theatre-wide requirement above it (select the theatre to see that).
+ * A region rolls its countries into one Country-level population, exactly like
+ * the dashboard's region view.
+ */
 interface GeoPlan {
-  /** Countries to instance Country-level requirements over. */
-  countries: string[];
-  /** Theatres to instance Theatre-level requirements over + whether shared. */
-  theatres: { theatre: string; shared: boolean }[];
-  /** Whether the single Global instance is shared (selected level is below global). */
-  globalShared: boolean;
+  /** Which requirement `level` this scope plans against. */
+  reqLevel: "Country" | "Theatre" | "Global";
+  /** The single population these requirements are counted over. */
+  scope: ComplianceScope;
   scopeLabel: string;
 }
 
 async function resolveGeoPlan(
   input: CompliancePlanInput,
-  regionData: { country: string; region: string; theatre: string | null }[],
 ): Promise<GeoPlan> {
-  const { level, country, region, theatre } = input;
-  const theatreOf = new Map(regionData.map((r) => [r.country, r.theatre ?? ""]));
+  const { level, country, region, theatre, companyIds } = input;
 
   if (level === "country" && country) {
-    const t = theatreOf.get(country) || "";
-    return {
-      countries: [country],
-      theatres: t ? [{ theatre: t, shared: true }] : [],
-      globalShared: true,
-      scopeLabel: country,
-    };
+    return { reqLevel: "Country", scope: { country, companyIds }, scopeLabel: country };
   }
   if (level === "region" && region) {
     const countries = await countriesInRegion(region);
-    const theatres = [...new Set(countries.map((c) => theatreOf.get(c) || "").filter(Boolean))];
-    return {
-      countries,
-      theatres: theatres.map((t) => ({ theatre: t, shared: true })),
-      globalShared: true,
-      scopeLabel: region,
-    };
+    return { reqLevel: "Country", scope: { countries, companyIds }, scopeLabel: region };
   }
   if (level === "theatre" && theatre) {
-    const countries = regionData.filter((r) => r.theatre === theatre).map((r) => r.country);
-    return {
-      countries,
-      theatres: [{ theatre, shared: false }],
-      globalShared: true,
-      scopeLabel: theatre,
-    };
+    return { reqLevel: "Theatre", scope: { theatre, companyIds }, scopeLabel: theatre };
   }
-  // Global (default): instance Country reqs per country, Theatre reqs per theatre.
-  const countries = regionData.map((r) => r.country);
-  const theatres = [...new Set(regionData.map((r) => r.theatre ?? "").filter(Boolean))];
-  return {
-    countries,
-    theatres: theatres.map((t) => ({ theatre: t, shared: false })),
-    globalShared: false,
-    scopeLabel: "Global",
-  };
+  // Global (default): Global-level requirements over the whole population.
+  return { reqLevel: "Global", scope: { companyIds }, scopeLabel: "Global" };
 }
 
 // ─── Program-data loading ────────────────────────────────────────────────────
@@ -398,32 +375,25 @@ function toRequirementRow(pd: ProgramDataWithRelations): RequirementRow | null {
 
 // ─── Instance building (gap + pools) ─────────────────────────────────────────
 
-/** Build every geography-scoped instance of a requirement row, resolving its gap
- *  and candidate pools. Pools are only computed for instances that have a gap. */
+/** Build the requirement's single scoped instance, resolving its gap and
+ *  candidate pools. Only requirements authored at the selected scope's level are
+ *  in play (mirroring the program dashboards) — others return no instance.
+ *  Pools are only computed when there's a gap. */
 async function buildInstances(
   program: string,
   row: RequirementRow,
   geo: GeoPlan,
-  input: CompliancePlanInput,
   idx: CatalogueIndex,
   now: Date,
   horizon: Date | null,
 ): Promise<ReqInstance[]> {
-  const companyIds = input.companyIds;
+  // Only this scope's own-level requirements are planned against.
+  if (row.level !== geo.reqLevel) return [];
   const certKey = [...row.titles].sort().join("|");
 
-  const targets: { scope: ComplianceScope; scopeLabel: string; shared: boolean }[] = [];
-  if (row.level === "Country") {
-    for (const c of geo.countries) {
-      targets.push({ scope: { country: c, companyIds }, scopeLabel: c, shared: false });
-    }
-  } else if (row.level === "Theatre") {
-    for (const t of geo.theatres) {
-      targets.push({ scope: { theatre: t.theatre, companyIds }, scopeLabel: t.theatre, shared: t.shared });
-    }
-  } else if (row.level === "Global") {
-    targets.push({ scope: { companyIds }, scopeLabel: "Global", shared: geo.globalShared });
-  }
+  const targets: { scope: ComplianceScope; scopeLabel: string }[] = [
+    { scope: geo.scope, scopeLabel: geo.scopeLabel },
+  ];
 
   const instances: ReqInstance[] = [];
   for (const t of targets) {
@@ -500,7 +470,6 @@ async function buildInstances(
       purpose: row.purpose,
       nativeLevel: row.level,
       scopeLabel: t.scopeLabel,
-      shared: t.shared,
       certKey,
       cert: row.cert,
       required: row.quantityRequired,
@@ -536,7 +505,7 @@ export interface AllocationResult {
  *
  * A "move" is a person earning one cert (identified by `certKey`). Committing a
  * person to a cert credits every instance needing that *same* cert whose pool
- * contains them (same-cert, multi-geography dedup) but bars them from a
+ * contains them (same-cert dedup across targets/programs) but bars them from a
  * *different* cert's slot (contention — one move can't grant two different certs).
  *
  * Greedy heuristics, flagged so a future pass can swap in bipartite matching /
@@ -579,16 +548,14 @@ export function allocateCandidates(instances: ReqInstance[]): AllocationResult {
       tierName: inst.tierName,
       cert: inst.cert,
       scopeLabel: inst.scopeLabel,
-      shared: inst.shared,
       tier: member.tier,
       path: member.path,
     });
   };
 
-  const ordered = [...open].sort((a, b) => {
-    if (a.shared !== b.shared) return a.shared ? 1 : -1; // fill closable-alone gaps first
-    return a.shortfall - b.shortfall;
-  });
+  // Process instances closest to done first (smallest shortfall), so scarce
+  // easy candidates aren't burned on the largest gaps.
+  const ordered = [...open].sort((a, b) => a.shortfall - b.shortfall);
 
   for (const inst of ordered) {
     let have = filled.get(inst.id) ?? 0;
@@ -648,16 +615,28 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
   const now = new Date();
   const horizon = input.renewalWindowMonths > 0 ? addMonths(now, input.renewalWindowMonths) : null;
 
-  const [idx, regionData] = await Promise.all([
-    buildCatalogueIndex(),
-    prisma.regionData.findMany({ orderBy: { country: "asc" }, select: { country: true, region: true, theatre: true } }),
-  ]);
-  const geo = await resolveGeoPlan(input, regionData);
+  const idx = await buildCatalogueIndex();
+  const geo = await resolveGeoPlan(input);
 
   const targets: PlanTargetResult[] = [];
-  const allInstances: ReqInstance[] = [];
-  // Per-target list of the instances that belong to it (for post-allocation rollup).
-  const targetInstanceIds: { target: PlanTargetResult; instanceIds: string[] }[] = [];
+
+  // Per-target preparation captured before allocation: how its instances group
+  // into specialisations, and — for a tier target — which specialisations are
+  // *counted* toward the plan (the cheapest `needed`) vs merely *recommended*
+  // (every equal-cost tie, so an equally-cheap alternative is surfaced too).
+  interface TargetPrep {
+    target: PlanTargetResult;
+    bySpec: Map<string, ReqInstance[]>;
+    tierDeployInsts: ReqInstance[];
+    /** Instance ids that count toward this target's people-to-certify total. */
+    countedIds: Set<string>;
+    /** Specialisation names to badge "Recommended" (tie set); empty for non-tier. */
+    recommendedSpecs: Set<string>;
+  }
+  const preps: TargetPrep[] = [];
+  // Only counted instances feed the allocator + totals, so a tier target costs
+  // just its cheapest path, not every specialisation in the program.
+  const countedInstances: ReqInstance[] = [];
 
   for (const target of input.targets) {
     const [programRow, programData, tierRows] = await Promise.all([
@@ -712,17 +691,29 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
       activeRows = rows; // "all"
     }
 
-    // Build instances for every active row.
+    // Build instances for every active row (one scoped instance per in-scope row).
     const rowInstances: ReqInstance[] = [];
     for (const row of activeRows) {
-      const built = await buildInstances(target.program, row, geo, input, idx, now, horizon);
+      const built = await buildInstances(target.program, row, geo, idx, now, horizon);
       // Tag tier-deployment instances with the tier name for display.
       if (chosenTier && row.tierId === chosenTier.id) {
         for (const b of built) b.tierName = chosenTier.name;
       }
       rowInstances.push(...built);
     }
-    allInstances.push(...rowInstances);
+
+    // Group instances into specialisation blocks + the tier's delivery certs.
+    const bySpec = new Map<string, ReqInstance[]>();
+    const tierDeployInsts: ReqInstance[] = [];
+    for (const inst of rowInstances) {
+      if (inst.tierName && !inst.specialisation) {
+        tierDeployInsts.push(inst);
+        continue;
+      }
+      const key = inst.specialisation ?? "—";
+      if (!bySpec.has(key)) bySpec.set(key, []);
+      bySpec.get(key)!.push(inst);
+    }
 
     const targetResult: PlanTargetResult = {
       program: target.program,
@@ -744,17 +735,59 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
       };
     }
     targets.push(targetResult);
-    targetInstanceIds.push({ target: targetResult, instanceIds: rowInstances.map((i) => i.id) });
+
+    // Decide which instances count toward reaching the target.
+    const countedIds = new Set<string>();
+    const recommendedSpecs = new Set<string>();
+    if (chosenTier && targetResult.tierPlan) {
+      // Per-specialisation cost (Σ shortfall) + achieved, before any allocation.
+      const specCost = new Map<string, number>();
+      const specAchieved = new Map<string, boolean>();
+      for (const [name, insts] of bySpec) {
+        specCost.set(name, insts.reduce((s, i) => s + i.shortfall, 0));
+        specAchieved.set(name, insts.every((i) => i.shortfall === 0));
+      }
+      const achievedCount = [...specAchieved.values()].filter(Boolean).length;
+      const needed = Math.max(0, chosenTier.specialisationsRequired - achievedCount);
+      targetResult.tierPlan.alreadyAchieved = achievedCount;
+      targetResult.tierPlan.needed = needed;
+      targetResult.tierPlan.deliveryCertShortfall = tierDeployInsts.reduce((s, i) => s + i.shortfall, 0);
+
+      // Reaching the tier needs only `needed` more specialisations — count the
+      // cheapest ones, and recommend every specialisation tied at that cost so
+      // an equally-cheap alternative isn't hidden.
+      const remaining = [...bySpec.keys()]
+        .filter((n) => !specAchieved.get(n))
+        .sort((a, b) => (specCost.get(a)! - specCost.get(b)!) || a.localeCompare(b));
+      if (needed > 0 && remaining.length > 0) {
+        const k = Math.min(needed, remaining.length);
+        const boundaryCost = specCost.get(remaining[k - 1])!;
+        for (let i = 0; i < remaining.length; i++) {
+          const name = remaining[i];
+          if (specCost.get(name)! <= boundaryCost) recommendedSpecs.add(name);
+          if (i < k) for (const inst of bySpec.get(name)!) countedIds.add(inst.id);
+        }
+      }
+      // Tier delivery certs always count toward the tier.
+      for (const inst of tierDeployInsts) countedIds.add(inst.id);
+    } else {
+      // Non-tier targets: every instance counts.
+      for (const inst of rowInstances) countedIds.add(inst.id);
+    }
+
+    for (const inst of rowInstances) if (countedIds.has(inst.id)) countedInstances.push(inst);
+    preps.push({ target: targetResult, bySpec, tierDeployInsts, countedIds, recommendedSpecs });
   }
 
-  // Greedy allocation across ALL instances of ALL targets at once (contention is
-  // global — a person spent in Program A can't also be spent in Program B).
-  const alloc = allocateCandidates(allInstances);
-  const instById = new Map(allInstances.map((i) => [i.id, i]));
+  // Greedy allocation across only the COUNTED instances of ALL targets at once
+  // (contention is global — a person spent in Program A can't also be spent in
+  // Program B). Non-counted instances (a tier's non-recommended specialisations)
+  // are shown for reference but don't inflate the plan's totals.
+  const alloc = allocateCandidates(countedInstances);
 
   // Student display info for every committed candidate + every renewal-at-risk holder.
   const candidateEmails = new Set<string>(alloc.closesByEmail.keys());
-  for (const inst of allInstances) for (const e of inst.expiringEmails) candidateEmails.add(e);
+  for (const inst of countedInstances) for (const e of inst.expiringEmails) candidateEmails.add(e);
   const students = candidateEmails.size > 0
     ? await prisma.student.findMany({
         where: { email: { in: [...candidateEmails] } },
@@ -764,20 +797,7 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
   const studentById = new Map(students.map((s) => [s.email, s]));
 
   // ── Roll instances back up into the per-target roadmap ──
-  for (const { target, instanceIds } of targetInstanceIds) {
-    const insts = instanceIds.map((id) => instById.get(id)!).filter(Boolean);
-    const bySpec = new Map<string, ReqInstance[]>();
-    const tierDeployInsts: ReqInstance[] = [];
-    for (const inst of insts) {
-      if (inst.tierName && !inst.specialisation) {
-        tierDeployInsts.push(inst);
-        continue;
-      }
-      const key = inst.specialisation ?? "—";
-      if (!bySpec.has(key)) bySpec.set(key, []);
-      bySpec.get(key)!.push(inst);
-    }
-
+  for (const { target, bySpec, tierDeployInsts, countedIds, recommendedSpecs } of preps) {
     const specs: PlanSpecialisation[] = [];
     for (const [name, specInsts] of bySpec) {
       const requirements = specInsts.map((inst) => toPlanRequirement(inst, alloc));
@@ -787,41 +807,28 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
         0,
       );
       const achieved = requirements.every((r) => r.shortfall === 0);
-      specs.push({ name, achieved, cost, easyWins, requirements });
+      const spec: PlanSpecialisation = { name, achieved, cost, easyWins, requirements };
+      if (target.tierPlan) spec.chosen = recommendedSpecs.has(name);
+      specs.push(spec);
     }
     specs.sort((a, b) => (a.cost - b.cost) || a.name.localeCompare(b.name));
 
-    // Tier fastest-path: pick the cheapest K not-yet-achieved specialisations.
-    if (target.tierPlan) {
-      const achievedCount = specs.filter((s) => s.achieved).length;
-      const needed = Math.max(0, target.tierPlan.specialisationsRequired - achievedCount);
-      target.tierPlan.alreadyAchieved = achievedCount;
-      target.tierPlan.needed = needed;
-      const remaining = specs.filter((s) => !s.achieved);
-      for (let i = 0; i < remaining.length; i++) {
-        remaining[i].chosen = i < needed;
-      }
-      target.tierPlan.deliveryCertShortfall = tierDeployInsts.reduce(
-        (s, inst) => s + inst.shortfall,
-        0,
-      );
-      // Surface tier deployment requirements as a synthetic specialisation block.
-      if (tierDeployInsts.length > 0) {
-        specs.push({
-          name: `${target.tierName} — delivery certs`,
-          achieved: tierDeployInsts.every((i) => (i.shortfall) === 0),
-          cost: tierDeployInsts.reduce((s, i) => s + i.shortfall, 0),
-          easyWins: tierDeployInsts.reduce((s, i) => s + i.pool.filter((p) => p.tier === "easy-win").length, 0),
-          requirements: tierDeployInsts.map((inst) => toPlanRequirement(inst, alloc)),
-          chosen: true,
-        });
-      }
+    // Surface tier deployment requirements as a synthetic specialisation block.
+    if (target.tierPlan && tierDeployInsts.length > 0) {
+      specs.push({
+        name: `${target.tierName} — delivery certs`,
+        achieved: tierDeployInsts.every((i) => i.shortfall === 0),
+        cost: tierDeployInsts.reduce((s, i) => s + i.shortfall, 0),
+        easyWins: tierDeployInsts.reduce((s, i) => s + i.pool.filter((p) => p.tier === "easy-win").length, 0),
+        requirements: tierDeployInsts.map((inst) => toPlanRequirement(inst, alloc)),
+        chosen: true,
+      });
     }
 
     target.specialisations = specs;
 
-    // Per-target totals: distinct committed people whose close touches this target,
-    // plus its net-new slots.
+    // Per-target totals: distinct committed people whose close touches this
+    // target, plus its counted net-new slots.
     const targetEmails = new Set<string>();
     let easyWins = 0;
     for (const [email, closes] of alloc.closesByEmail) {
@@ -830,7 +837,8 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
         if (alloc.committedTier.get(email) === "easy-win") easyWins++;
       }
     }
-    const netNew = insts.reduce((s, inst) => s + (alloc.netNewByInstance.get(inst.id) ?? 0), 0);
+    let netNew = 0;
+    for (const id of countedIds) netNew += alloc.netNewByInstance.get(id) ?? 0;
     target.easyWins = easyWins;
     target.netNew = netNew;
     target.peopleMoves = targetEmails.size + netNew;
@@ -862,7 +870,7 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
   const renewals: PlanRenewalRow[] = [];
   const renewalSeen = new Set<string>();
   const renewalEmails = new Set<string>();
-  for (const inst of allInstances) {
+  for (const inst of countedInstances) {
     for (const email of inst.expiringEmails) {
       const k = `${email} ${inst.cert} ${inst.scopeLabel}`;
       if (renewalSeen.has(k)) continue;
@@ -923,7 +931,6 @@ function toPlanRequirement(inst: ReqInstance, alloc: AllocationResult): PlanRequ
     purpose: inst.purpose,
     nativeLevel: inst.nativeLevel,
     scopeLabel: inst.scopeLabel,
-    shared: inst.shared,
     cert: inst.cert,
     required: inst.required,
     attained: inst.attained,
@@ -931,7 +938,9 @@ function toPlanRequirement(inst: ReqInstance, alloc: AllocationResult): PlanRequ
     easyWinPool: inst.pool.filter((p) => p.tier === "easy-win").length,
     lapsedPool: inst.pool.filter((p) => p.tier === "lapsed").length,
     legacyPool: inst.pool.filter((p) => p.tier === "legacy").length,
-    netNew: alloc.netNewByInstance.get(inst.id) ?? 0,
+    // Counted instances get their allocated net-new; non-counted (a tier's
+    // non-recommended specialisations) fall back to their raw shortfall.
+    netNew: alloc.netNewByInstance.get(inst.id) ?? inst.shortfall,
     expiringSoon: inst.expiringEmails.length,
   };
 }
@@ -939,20 +948,30 @@ function toPlanRequirement(inst: ReqInstance, alloc: AllocationResult): PlanRequ
 function buildHeadline(target: PlanTargetResult, scopeLabel: string): string {
   const where = scopeLabel === "Global" ? "globally" : `in ${scopeLabel}`;
   if (target.peopleMoves === 0) {
-    return `${target.program} is fully compliant ${where} — no moves needed.`;
+    return `${target.program} is fully compliant ${where} — nobody left to certify.`;
   }
+  const noun = target.peopleMoves === 1 ? "person" : "people";
   const easy = target.easyWins > 0 ? `, ${target.easyWins} of them easy wins` : "";
   if (target.tierPlan && target.tierName) {
     const { needed, deliveryCertShortfall } = target.tierPlan;
     const parts: string[] = [];
     if (needed > 0) {
-      const chosen = target.specialisations.filter((s) => s.chosen && !s.name.endsWith("delivery certs"));
-      const names = chosen.map((s) => `${s.name} (${s.cost} move${s.cost === 1 ? "" : "s"}${s.easyWins > 0 ? `, ${s.easyWins} easy` : ""})`);
-      parts.push(`achieve ${needed} more specialisation${needed === 1 ? "" : "s"}${names.length ? ` — cheapest are ${names.join(", ")}` : ""}`);
+      // Every equal-cost specialisation is recommended — any `needed` of them reach the tier.
+      const rec = target.specialisations.filter((s) => s.chosen && !s.name.endsWith("delivery certs"));
+      const names = rec.map((s) => `${s.name} (${s.cost} to certify${s.easyWins > 0 ? `, ${s.easyWins} easy` : ""})`);
+      let clause = `achieve ${needed} more specialisation${needed === 1 ? "" : "s"}`;
+      if (names.length > 0) {
+        const joined = names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} or ${names[names.length - 1]}`;
+        clause += ` — cheapest ${names.length === 1 ? "is" : "are"} ${joined}`;
+        if (names.length > needed) clause += ` (achieve any ${needed})`;
+      }
+      parts.push(clause);
     }
-    if (deliveryCertShortfall > 0) parts.push(`${deliveryCertShortfall} more delivery cert${deliveryCertShortfall === 1 ? "" : "s"}`);
+    if (deliveryCertShortfall > 0) {
+      parts.push(`${deliveryCertShortfall} more delivery-cert ${deliveryCertShortfall === 1 ? "person" : "people"}`);
+    }
     const body = parts.length > 0 ? parts.join(", plus ") : "close the remaining gaps";
-    return `To reach ${target.tierName} ${where}: ${body}. ~${target.peopleMoves} people-moves${easy}.`;
+    return `To reach ${target.tierName} ${where}: ${body}. ~${target.peopleMoves} ${noun} to certify${easy}.`;
   }
-  return `${target.program} ${where}: ~${target.peopleMoves} people-moves to close all gaps${easy}.`;
+  return `${target.program} ${where}: ~${target.peopleMoves} ${noun} to certify to close all gaps${easy}.`;
 }

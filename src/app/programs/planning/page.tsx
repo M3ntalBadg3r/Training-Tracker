@@ -31,7 +31,6 @@ interface PlanRequirement {
   tierName: string | null;
   nativeLevel: string;
   scopeLabel: string;
-  shared: boolean;
   cert: string;
   required: number;
   attained: number;
@@ -68,7 +67,6 @@ interface PlanCandidateClose {
   tierName: string | null;
   cert: string;
   scopeLabel: string;
-  shared: boolean;
   tier: CandidateTier;
   path: string | null;
 }
@@ -214,7 +212,7 @@ export default function CompliancePlanningPage() {
 
   const kpis = plan
     ? [
-        { label: "People-moves", value: plan.totals.peopleMoves, icon: Users, tone: "blue" as const },
+        { label: "People to certify", value: plan.totals.peopleMoves, icon: Users, tone: "blue" as const },
         { label: "Easy wins", value: plan.totals.easyWins, icon: Zap, tone: "green" as const, hint: "Just need the exam" },
         { label: "Net-new training", value: plan.totals.netNew, icon: ClipboardCheck, tone: "indigo" as const },
         { label: "Renewals at risk", value: plan.totals.renewalsAtRisk, icon: RefreshCw, tone: "amber" as const, hint: `Expire within ${renewalWindowMonths}mo` },
@@ -388,7 +386,7 @@ function TargetCard({ target }: { target: PlanTargetResult }) {
           <p className="text-sm text-gray-600 mt-1">{target.headline}</p>
         </div>
         <div className="flex items-center gap-3 text-sm">
-          <span className="font-medium text-blue-700">{target.peopleMoves} moves</span>
+          <span className="font-medium text-blue-700">{target.peopleMoves} to certify</span>
           {target.easyWins > 0 && <span className="text-green-700">{target.easyWins} easy</span>}
           {target.netNew > 0 && <span className="text-gray-500">{target.netNew} net-new</span>}
         </div>
@@ -422,7 +420,7 @@ function SpecBlock({ spec, tiered }: { spec: PlanSpecialisation; tiered: boolean
           {tiered && spec.chosen && !spec.achieved && <span className="text-xs px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-800">Recommended</span>}
         </span>
         <span className="text-xs text-gray-500">
-          {spec.cost > 0 ? `${spec.cost} move${spec.cost === 1 ? "" : "s"}` : "—"}{spec.easyWins > 0 ? ` · ${spec.easyWins} easy` : ""}
+          {spec.cost > 0 ? `${spec.cost} to certify` : "—"}{spec.easyWins > 0 ? ` · ${spec.easyWins} easy` : ""}
         </span>
       </button>
       {open && (
@@ -456,7 +454,6 @@ function ReqRow({ r }: { r: PlanRequirement }) {
       <td className="py-1.5 pr-3">{r.cert}</td>
       <td className="py-1.5 pr-3">
         {r.scopeLabel}
-        {r.shared && <span className="ml-1 text-xs px-1 py-0.5 rounded bg-gray-100 text-gray-500" title="Authored above the selected scope — this scope can't fully close it alone">shared</span>}
         {r.expiringSoon > 0 && <span className="ml-1 text-xs text-amber-600" title="Active holders expiring within the renewal window">▼{r.expiringSoon}</span>}
       </td>
       <td className={`py-1.5 pr-3 ${met ? "text-green-700" : "text-red-700"}`}>{r.attained} / {r.required}</td>
@@ -554,7 +551,7 @@ function CandidateTable({ candidates, scopeLabel }: { candidates: PlanCandidate[
                               <span className={`px-1.5 py-0.5 rounded-full ${TIER_BADGE[cl.tier]}`}>{TIER_LABEL[cl.tier]}</span>
                               <span className="font-medium">{cl.cert}</span>
                               <span className="text-gray-400">·</span>
-                              <span>{cl.program}{cl.specialisation ? ` › ${cl.specialisation}` : ""}{cl.tierName ? ` › ${cl.tierName}` : ""} ({cl.scopeLabel}{cl.shared ? ", shared" : ""})</span>
+                              <span>{cl.program}{cl.specialisation ? ` › ${cl.specialisation}` : ""}{cl.tierName ? ` › ${cl.tierName}` : ""} ({cl.scopeLabel})</span>
                               {cl.path && <span className="text-gray-400 flex items-center gap-0.5"><ExternalLink size={11} /> via {cl.path}</span>}
                             </li>
                           ))}
