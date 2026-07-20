@@ -35,14 +35,17 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       {/* Desktop rail — self-hides below md */}
       <Sidebar />
 
-      {/* Mobile off-canvas drawer */}
-      {mobileNavOpen && (
-        <div
-          className="fixed inset-0 z-40 bg-black/50 md:hidden"
-          onClick={() => setMobileNavOpen(false)}
-          aria-hidden="true"
-        />
-      )}
+      {/* Mobile off-canvas drawer backdrop — always mounted, faded via opacity.
+          Mounting/unmounting a full-viewport fixed overlay leaves a stuck dark
+          tint over the browser toolbar safe-areas on iOS Safari, so we keep it
+          in the DOM and toggle opacity + pointer-events instead. */}
+      <div
+        className={`fixed inset-0 z-40 bg-black/50 md:hidden transition-opacity duration-300 ${
+          mobileNavOpen ? "opacity-100" : "opacity-0 pointer-events-none"
+        }`}
+        onClick={() => setMobileNavOpen(false)}
+        aria-hidden="true"
+      />
       <div
         className={`fixed inset-y-0 left-0 z-50 md:hidden transition-transform duration-300 ${
           mobileNavOpen ? "translate-x-0" : "-translate-x-full"
