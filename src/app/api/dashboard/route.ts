@@ -151,10 +151,13 @@ export async function GET(request: NextRequest) {
   const theatre = rawTheatre && rawTheatre !== "Global" ? rawTheatre : null;
   const region = request.nextUrl.searchParams.get("region") || null;
   const country = request.nextUrl.searchParams.get("country") || null;
+  // Active-only by default: count just non-expired completions unless the
+  // caller opts in to include inactive (expired) ones too.
+  const includeInactive = request.nextUrl.searchParams.get("includeInactive") === "true";
 
   const body = await cachedReport(
-    `dashboard|${scopeKey(companyFilter)}|${theatre || "Global"}|${region || ""}|${country || ""}`,
-    () => computeDashboard(companyFilter, theatre, region, country),
+    `dashboard|${scopeKey(companyFilter)}|${theatre || "Global"}|${region || ""}|${country || ""}|${includeInactive ? "all" : "active"}`,
+    () => computeDashboard(companyFilter, theatre, region, country, includeInactive),
   );
 
   return NextResponse.json(body, { headers: { "Cache-Control": "private, max-age=30" } });
@@ -165,6 +168,7 @@ async function computeDashboard(
   theatre: string | null,
   region: string | null,
   country: string | null,
+  includeInactive: boolean,
 ) {
   const companyStudentWhere = companyFilter ? { companyId: { in: companyFilter } } : {};
 
@@ -222,7 +226,15 @@ async function computeDashboard(
       dedupeMap.set(key, tt);
     }
   }
-  const allTrainingTaken = Array.from(dedupeMap.values());
+  // Active-only by default: keep just non-expired completions (the dedupe
+  // already picked the most-recent row per email+fullTitle+type, so a row is
+  // "active" when that latest completion hasn't expired). `includeInactive`
+  // keeps expired rows too. Applied before the type counts and chart data so
+  // every card + chart honours the toggle.
+  const nowForActive = new Date();
+  const allTrainingTaken = Array.from(dedupeMap.values()).filter(
+    (tt) => includeInactive || tt.expiryDate > nowForActive,
+  );
 
   // Count by type
   let certCount = 0;

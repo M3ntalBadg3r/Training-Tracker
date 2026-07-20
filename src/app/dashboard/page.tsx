@@ -79,9 +79,11 @@ export default function DashboardPage() {
   const companyScope = useCompanyScope();
   const [data, setData] = useState<DashboardData | null>(null);
   const [geo, setGeo] = useState<GeoScope>(EMPTY_GEO_SCOPE);
+  // Active-only by default; tick to include inactive (expired) completions too.
+  const [includeInactive, setIncludeInactive] = useState(false);
   const [geoLoading, setGeoLoading] = useState(false);
   const cache = useRef<Record<string, DashboardData>>({});
-  const geoKey = `${geo.theatre}|${geo.region}|${geo.country}`;
+  const geoKey = `${geo.theatre}|${geo.region}|${geo.country}|${includeInactive ? "all" : "active"}`;
   // Full-page loading is derived (loadedKey !== requestKey) rather than set
   // synchronously in the effect, so a scope/geo change re-shows the spinner
   // without a set-state-in-effect violation. The key is only written in the
@@ -90,17 +92,18 @@ export default function DashboardPage() {
   const requestKey = `${companyScope.selected}::${geoKey}`;
   const loading = loadedKey !== requestKey;
 
-  const fetchDashboard = useCallback(async (scope: GeoScope) => {
+  const fetchDashboard = useCallback(async (scope: GeoScope, inactive: boolean) => {
     const params = new URLSearchParams();
     if (scope.theatre) params.set("theatre", scope.theatre);
     if (scope.region) params.set("region", scope.region);
     if (scope.country) params.set("country", scope.country);
+    if (inactive) params.set("includeInactive", "true");
     if (companyScope.selected !== "all") params.set("companyId", String(companyScope.selected));
     const qs = params.toString() ? `?${params.toString()}` : "";
     const res = await fetch(`/api/dashboard${qs}`);
     if (!res.ok) throw new Error("Failed to fetch");
     const d: DashboardData = await res.json();
-    cache.current[`${companyScope.selected}::${scope.theatre}|${scope.region}|${scope.country}`] = d;
+    cache.current[`${companyScope.selected}::${scope.theatre}|${scope.region}|${scope.country}|${inactive ? "all" : "active"}`] = d;
     return d;
   }, [companyScope.selected]);
 
@@ -108,7 +111,7 @@ export default function DashboardPage() {
   useEffect(() => {
     cache.current = {};
     let cancelled = false;
-    fetchDashboard(geo)
+    fetchDashboard(geo, includeInactive)
       .then((d) => {
         if (!cancelled) {
           setData(d);
@@ -121,12 +124,13 @@ export default function DashboardPage() {
     return () => {
       cancelled = true;
     };
-  }, [fetchDashboard, geo, requestKey]);
+  }, [fetchDashboard, geo, includeInactive, requestKey]);
 
-  const handleGeoChange = async (next: GeoScope) => {
-    setGeo(next);
+  const applyScopeChange = async (nextGeo: GeoScope, nextInactive: boolean) => {
+    setGeo(nextGeo);
+    setIncludeInactive(nextInactive);
 
-    const cacheKey = `${companyScope.selected}::${next.theatre}|${next.region}|${next.country}`;
+    const cacheKey = `${companyScope.selected}::${nextGeo.theatre}|${nextGeo.region}|${nextGeo.country}|${nextInactive ? "all" : "active"}`;
     if (cache.current[cacheKey]) {
       setData(cache.current[cacheKey]);
       return;
@@ -134,13 +138,16 @@ export default function DashboardPage() {
 
     setGeoLoading(true);
     try {
-      const d = await fetchDashboard(next);
+      const d = await fetchDashboard(nextGeo, nextInactive);
       setData(d);
     } catch {
       // Keep current data on error
     }
     setGeoLoading(false);
   };
+
+  const handleGeoChange = (next: GeoScope) => applyScopeChange(next, includeInactive);
+  const handleInactiveToggle = (next: boolean) => applyScopeChange(geo, next);
 
   if (loading) {
     return (
@@ -218,6 +225,15 @@ export default function DashboardPage() {
           <div className="flex flex-wrap items-center gap-2">
             <Globe size={16} className="text-gray-400" />
             <GeoScopeFilter value={geo} onChange={handleGeoChange} />
+            <label className="flex items-center gap-1.5 text-sm text-gray-700 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={includeInactive}
+                onChange={(e) => handleInactiveToggle(e.target.checked)}
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              Include expired (inactive)
+            </label>
             {geoLoading && (
               <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
             )}

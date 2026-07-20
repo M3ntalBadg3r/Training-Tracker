@@ -35,16 +35,15 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       {/* Desktop rail — self-hides below md */}
       <Sidebar />
 
-      {/* Mobile off-canvas drawer backdrop — always mounted, faded via opacity.
-          Mounting/unmounting a full-viewport fixed overlay leaves a stuck dark
-          tint over the browser toolbar safe-areas on iOS Safari, so we keep it
-          in the DOM and toggle opacity + pointer-events instead. It's also
-          sized to the dynamic viewport (top-0 + h-dvh rather than inset-0) so it
-          never paints behind the mobile browser's bottom toolbar — that
-          toolbar-occluded strip is what stayed dark at the bottom after close. */}
+      {/* Mobile off-canvas drawer backdrop — an invisible tap-outside-to-close
+          catcher. It deliberately has no background tint: an opaque/translucent
+          full-viewport fixed overlay left a stuck dark band over iOS Safari's
+          toolbar safe-areas after closing, so the menu no longer darkens the
+          page at all. Only mounted-but-inert (pointer-events-none) when closed
+          so it never blocks taps on the page underneath. */}
       <div
-        className={`fixed inset-x-0 top-0 h-dvh z-40 bg-black/50 md:hidden transition-opacity duration-300 ${
-          mobileNavOpen ? "opacity-100" : "opacity-0 pointer-events-none"
+        className={`fixed inset-x-0 top-0 h-dvh z-40 md:hidden ${
+          mobileNavOpen ? "" : "pointer-events-none"
         }`}
         onClick={() => setMobileNavOpen(false)}
         aria-hidden="true"

@@ -99,6 +99,16 @@ const helpSections: Record<string, HelpSection> = {
           selected scopes are cached for instant switching.
         </p>
 
+        <h3>Active / Inactive Filter</h3>
+        <p>
+          By default the Dashboard counts only <strong>active</strong>{" "}
+          (non-expired) training, so the metric cards and charts reflect
+          currently-valid certifications, accreditations, ILTs and OLX. Tick{" "}
+          <strong>Include expired (inactive)</strong> next to the geographic
+          filter to also count expired completions. The choice is cached
+          alongside the geographic scope for instant switching.
+        </p>
+
         <h3>Charts</h3>
         <p>
           Each chart is clickable &mdash; click any chart to navigate to the
