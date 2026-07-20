@@ -88,12 +88,25 @@ const helpSections: Record<string, HelpSection> = {
           screen and scroll internally when tall.
         </p>
 
-        <h3>Theatre Filter</h3>
+        <h3>Geographic Filter</h3>
         <p>
-          Use the <strong>Theatre</strong> dropdown in the top-right corner to filter
-          all metrics and charts by theatre. Options include <em>Global</em> (all
-          theatres) plus any theatres found in your student data (e.g., EMEA, NAM,
-          LATAM, JAPAC). Previously selected theatres are cached for instant switching.
+          Use the cascading <strong>Theatre</strong> &rarr; <strong>Region</strong>{" "}
+          &rarr; <strong>Country</strong> dropdowns in the top-right corner to filter
+          all metrics and charts by geography. Leave all three on{" "}
+          <em>All&nbsp;&hellip;</em> for a global view, or narrow down: picking a
+          theatre limits the region choices, and picking a region limits the country
+          choices (changing a higher level resets the ones below it). Previously
+          selected scopes are cached for instant switching.
+        </p>
+
+        <h3>Active / Inactive Filter</h3>
+        <p>
+          By default the Dashboard counts only <strong>active</strong>{" "}
+          (non-expired) training, so the metric cards and charts reflect
+          currently-valid certifications, accreditations, ILTs and OLX. Tick{" "}
+          <strong>Include expired (inactive)</strong> next to the geographic
+          filter to also count expired completions. The choice is cached
+          alongside the geographic scope for instant switching.
         </p>
 
         <h3>Charts</h3>
@@ -1858,6 +1871,102 @@ const helpSections: Record<string, HelpSection> = {
         <p>
           Use the <strong>Export</strong> button to download the current data as
           CSV, Excel, or PDF.
+        </p>
+      </>
+    ),
+  },
+  "compliance-planning": {
+    title: "Compliance Planning",
+    content: (
+      <>
+        <p>
+          Compliance Planning is the <strong>action layer</strong> over the
+          program dashboards. The dashboards tell you <em>where the gaps are</em>;
+          this page tells you <em>who to move, in what order, for the least
+          effort</em> — floating the easy wins to the top.
+        </p>
+        <p>
+          Program requirements are <strong>counts, not per-person mandates</strong>
+          (&ldquo;3 people in the UK hold Cert A&rdquo;), so a plan computes the
+          shortfall per requirement and then nominates the cheapest specific people
+          to close it. It uses exactly the same distinct-holder counting — and the
+          same <strong>scope rules</strong> — as the dashboards, so the two never
+          disagree.
+        </p>
+        <p>
+          The headline metric is <strong>People to certify</strong>: how many
+          people still need to earn a certification to close the plan&apos;s gaps.
+          It&apos;s <em>deduplicated</em> — if one person&apos;s single exam
+          satisfies several requirements at once, they count once.
+        </p>
+
+        <h3>Choosing a target</h3>
+        <p>
+          Pick a <strong>Scope</strong> (Global / Theatre / Region / Country) and
+          one or more <strong>programs</strong>. For each program you choose what to
+          aim at:
+        </p>
+        <ul>
+          <li>
+            <strong>Tiered programs</strong> — target a <strong>tier</strong> (the
+            tool picks the cheapest specialisations to get you there — reaching a
+            tier only needs as many specialisations as the tier requires, and any
+            <em>equally-cheap</em> alternatives are flagged &ldquo;Recommended&rdquo;
+            so you can choose), or specific specialisation(s).
+          </li>
+          <li>
+            <strong>Flat programs</strong> — pick specialisation(s) or{" "}
+            <strong>all requirements</strong>.
+          </li>
+        </ul>
+        <p>
+          Mixed selections are supported (e.g. a tier in one program plus all
+          specialisations in another) in a single plan.
+        </p>
+
+        <h3>Candidate ranking</h3>
+        <p>For each gap, candidates are ranked cheapest-first:</p>
+        <ul>
+          <li>
+            <strong>Easy win</strong> — completed an ILT/OLX that leads to the
+            required cert but never earned it; needs only the exam.
+          </li>
+          <li>
+            <strong>Lapsed</strong> — held the cert but it expired; needs only a
+            renewal.
+          </li>
+          <li>
+            <strong>Legacy upgrade</strong> — holds a legacy cert whose replacement
+            is the required cert.
+          </li>
+          <li>
+            <strong>Net-new</strong> — needs the full ILT/OLX &rarr; cert path.
+            Reported as a remaining count rather than named people.
+          </li>
+        </ul>
+        <p>
+          Because a person can only be <strong>spent once</strong>, the plan
+          allocates candidates across the whole target. The{" "}
+          <strong>&ldquo;Who to certify&rdquo;</strong> table lists one row per person
+          with every gap they close (expand a row for detail) — so someone whose
+          single exam closes the same cert in several places appears once.
+        </p>
+
+        <h3>Scope &amp; renewals</h3>
+        <p>
+          Each scope plans against <strong>only its own-level requirements</strong>,
+          exactly like the program dashboards: choosing a <em>country</em> shows
+          that country&apos;s Country-level requirements — not the theatre-wide
+          requirement above it. Select the <em>theatre</em> if you want to plan
+          against theatre-level requirements. The <strong>Renewals at risk</strong>{" "}
+          section lists holders whose training expires within the selected window;
+          their expiry will re-open a gap the plan currently reports as closed.
+        </p>
+
+        <h3>Export</h3>
+        <p>
+          The candidate list and the renewals list can each be exported to CSV,
+          Excel, or PDF.
         </p>
       </>
     ),

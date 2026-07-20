@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import PageHeader from "@/components/layout/PageHeader";
-import { ShieldCheck, ChevronRight } from "lucide-react";
+import { ShieldCheck, ChevronRight, Sparkles } from "lucide-react";
 
 interface ProgramInfo {
   name: string;
@@ -40,6 +40,20 @@ export default function ProgramsPage() {
   return (
     <div>
       <PageHeader title="Programs" helpSlug="programs" />
+
+      <Link
+        href="/programs/planning"
+        className="mb-6 flex items-center justify-between p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200 hover:border-blue-300 hover:shadow-sm transition-all"
+      >
+        <div className="flex items-center gap-3">
+          <Sparkles size={20} className="text-blue-600 shrink-0" />
+          <div>
+            <h3 className="font-semibold">Compliance Planning</h3>
+            <p className="text-sm text-gray-600">Turn program gaps into an actionable plan — who to move, easy wins first</p>
+          </div>
+        </div>
+        <ChevronRight size={20} className="text-gray-400 shrink-0" />
+      </Link>
 
       {loading ? (
         <div className="flex items-center justify-center py-20">

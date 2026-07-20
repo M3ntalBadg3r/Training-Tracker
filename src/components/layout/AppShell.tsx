@@ -29,22 +29,27 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="flex h-screen">
+    <div className="flex h-dvh">
       <IdleTimeoutManager />
 
       {/* Desktop rail — self-hides below md */}
       <Sidebar />
 
-      {/* Mobile off-canvas drawer */}
-      {mobileNavOpen && (
-        <div
-          className="fixed inset-0 z-40 bg-black/50 md:hidden"
-          onClick={() => setMobileNavOpen(false)}
-          aria-hidden="true"
-        />
-      )}
+      {/* Mobile off-canvas drawer backdrop — an invisible tap-outside-to-close
+          catcher. It deliberately has no background tint: an opaque/translucent
+          full-viewport fixed overlay left a stuck dark band over iOS Safari's
+          toolbar safe-areas after closing, so the menu no longer darkens the
+          page at all. Only mounted-but-inert (pointer-events-none) when closed
+          so it never blocks taps on the page underneath. */}
       <div
-        className={`fixed inset-y-0 left-0 z-50 md:hidden transition-transform duration-300 ${
+        className={`fixed inset-x-0 top-0 h-dvh z-40 md:hidden ${
+          mobileNavOpen ? "" : "pointer-events-none"
+        }`}
+        onClick={() => setMobileNavOpen(false)}
+        aria-hidden="true"
+      />
+      <div
+        className={`fixed top-0 left-0 h-dvh z-50 md:hidden transition-transform duration-300 ${
           mobileNavOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >

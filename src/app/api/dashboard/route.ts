@@ -3,6 +3,7 @@ import prisma from "@/lib/prisma";
 import { requireAuth, handleAuthError } from "@/lib/auth";
 import { getAuthorizedCompanyIds, resolveCompanyFilter } from "@/lib/company-scope";
 import { cachedReport, scopeKey } from "@/lib/report-cache";
+import { countriesInRegion } from "@/lib/program-compliance";
 
 type TrainingRecord = {
   email: string;
@@ -146,12 +147,17 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  const theatre = request.nextUrl.searchParams.get("theatre");
-  const filterByTheatre = Boolean(theatre && theatre !== "Global");
+  const rawTheatre = request.nextUrl.searchParams.get("theatre");
+  const theatre = rawTheatre && rawTheatre !== "Global" ? rawTheatre : null;
+  const region = request.nextUrl.searchParams.get("region") || null;
+  const country = request.nextUrl.searchParams.get("country") || null;
+  // Active-only by default: count just non-expired completions unless the
+  // caller opts in to include inactive (expired) ones too.
+  const includeInactive = request.nextUrl.searchParams.get("includeInactive") === "true";
 
   const body = await cachedReport(
-    `dashboard|${scopeKey(companyFilter)}|${theatre || "Global"}`,
-    () => computeDashboard(companyFilter, theatre, filterByTheatre),
+    `dashboard|${scopeKey(companyFilter)}|${theatre || "Global"}|${region || ""}|${country || ""}|${includeInactive ? "all" : "active"}`,
+    () => computeDashboard(companyFilter, theatre, region, country, includeInactive),
   );
 
   return NextResponse.json(body, { headers: { "Cache-Control": "private, max-age=30" } });
@@ -160,11 +166,15 @@ export async function GET(request: NextRequest) {
 async function computeDashboard(
   companyFilter: number[] | null,
   theatre: string | null,
-  filterByTheatre: boolean,
+  region: string | null,
+  country: string | null,
+  includeInactive: boolean,
 ) {
   const companyStudentWhere = companyFilter ? { companyId: { in: companyFilter } } : {};
 
-  // Fetch distinct theatres for the dropdown (scoped to allowed companies)
+  // Fetch distinct theatres for the dropdown (scoped to allowed companies).
+  // Retained for backward compatibility of the response shape; the client now
+  // sources geo-filter options from the shared region-data list.
   const distinctTheatres = await prisma.student.findMany({
     select: { theatre: true },
     distinct: ["theatre"],
@@ -173,11 +183,25 @@ async function computeDashboard(
   });
   const theatres = distinctTheatres.map((s: typeof distinctTheatres[number]) => s.theatre);
 
-  // Combine theatre + company filters for Prisma queries
-  const theatreFilter = filterByTheatre && theatre ? theatre : undefined;
-  const studentWhere = { ...companyStudentWhere, ...(theatreFilter ? { theatre: theatreFilter } : {}) };
-  const trainingWhere = (theatreFilter || companyFilter)
-    ? { student: { ...(theatreFilter ? { theatre: theatreFilter } : {}), ...(companyFilter ? { companyId: { in: companyFilter } } : {}) } }
+  // Cascading theatre → region → country geo filter. Country is a direct
+  // Student column; region is resolved to its member countries via the shared
+  // `countriesInRegion` helper (the same approach the program/offering reports
+  // use). The most specific level wins for the country clause (a specific
+  // country implies its region), and the theatre clause always ANDs on top.
+  const regionCountries = !country && region ? await countriesInRegion(region) : null;
+  const geoStudentWhere = {
+    ...(theatre ? { theatre } : {}),
+    ...(country
+      ? { country }
+      : regionCountries
+      ? { country: { in: regionCountries } }
+      : {}),
+  };
+  const hasGeoFilter = Boolean(theatre || region || country);
+
+  const studentWhere = { ...companyStudentWhere, ...geoStudentWhere };
+  const trainingWhere = (hasGeoFilter || companyFilter)
+    ? { student: { ...geoStudentWhere, ...(companyFilter ? { companyId: { in: companyFilter } } : {}) } }
     : {};
 
   // --- Top-level metrics ---
@@ -202,7 +226,15 @@ async function computeDashboard(
       dedupeMap.set(key, tt);
     }
   }
-  const allTrainingTaken = Array.from(dedupeMap.values());
+  // Active-only by default: keep just non-expired completions (the dedupe
+  // already picked the most-recent row per email+fullTitle+type, so a row is
+  // "active" when that latest completion hasn't expired). `includeInactive`
+  // keeps expired rows too. Applied before the type counts and chart data so
+  // every card + chart honours the toggle.
+  const nowForActive = new Date();
+  const allTrainingTaken = Array.from(dedupeMap.values()).filter(
+    (tt) => includeInactive || tt.expiryDate > nowForActive,
+  );
 
   // Count by type
   let certCount = 0;

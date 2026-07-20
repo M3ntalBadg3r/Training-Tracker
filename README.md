@@ -341,15 +341,19 @@ Click the **Moon** icon in the sidebar to toggle night (dark) mode. Click the **
 
 The interface is responsive. On phones and other narrow screens the sidebar is
 hidden and replaced by a **☰ menu button** in the top bar — tap it to slide the
-full navigation in over a dimmed backdrop, and tap a link, the ✕, or the backdrop
-to close it. On tablets and desktops the sidebar stays docked as before (with its
+full navigation in, and tap a link, the ✕, or anywhere outside the menu to close
+it. On tablets and desktops the sidebar stays docked as before (with its
 collapse toggle). Wide report and admin tables scroll horizontally so no columns
 or row controls are cut off, and pop-up dialogs fit the screen and scroll
 internally when tall.
 
-### Theatre Filter
+### Geographic Filter
 
-Use the **Theatre** dropdown in the top-right corner to filter all metrics and charts by theatre. Options include **Global** (all theatres) plus any theatres found in your student data (e.g., EMEA, NAM, LATAM, JAPAC). Previously selected theatres are cached for instant switching.
+Use the cascading **Theatre → Region → Country** dropdowns in the top-right corner to filter all metrics and charts by geography. Leave all three on **All …** for a global view, or narrow down: picking a theatre limits the region choices, and picking a region limits the country choices (changing a higher level resets the ones below it). Previously selected scopes are cached for instant switching.
+
+### Active / Inactive Filter
+
+By default the Dashboard counts only **active** (non-expired) training — so the metric cards and charts reflect currently-valid certifications, accreditations, ILTs and OLX. Tick **Include expired (inactive)** next to the geographic filter to also count expired completions. The choice is cached alongside the geographic scope for instant switching.
 
 ### Metric Cards
 
@@ -1022,6 +1026,25 @@ All sections support export to CSV, Excel, and PDF. Alternative trainings (OR lo
 ### Compliance as of — upcoming-expiry projection
 
 A **Compliance as of** selector in the dashboard header lets you look ahead and see how upcoming certificate expiry will affect compliance. Pick **+3**, **+6**, or **+12 months** and every section recomputes compliance as it will stand on that future date — any certificate expiring within the window drops out of the counts (set it back to **Now** for today's snapshot).
+
+### Compliance Planning
+
+**Programs > Compliance Planning** (`/programs/planning`) is the **action layer** over the program dashboards: they show *where the gaps are*, this page shows *who to move, in what order, for the least effort*. It reuses exactly the same distinct-holder counting — and the same scope rules — as the dashboards, so the two never disagree.
+
+The headline metric is **People to certify**: how many people still need to earn a certification to close the plan's gaps, deduplicated so one person whose single exam satisfies several requirements counts once.
+
+Pick a **scope** (Global / Theatre / Region / Country) and one or more **programs**, then choose a target per program:
+
+- **Tiered program** → target a **tier** (the tool picks the cheapest specialisations to reach it) or specific specialisation(s). Reaching a tier only needs as many specialisations as the tier requires, so its cost reflects just the cheapest path — and any **equally-cheap** alternatives are flagged **Recommended** so you can choose between them.
+- **Flat program** → pick specialisation(s) or **all requirements**.
+
+Mixed selections are supported in one plan (e.g. a tier in one program plus all specialisations in another). The output has three parts:
+
+- **Aggregate roadmap** — a plain-language headline per target plus a per-specialisation, per-requirement breakdown (have / need, the gap, and how many candidates sit in each tier). For a tier target, the cheapest specialisation(s) to reach it are flagged **Recommended**.
+- **"Who to certify"** — one row per person listing every gap they close (expandable), ranked cheapest-first: **Easy win** (did the ILT/OLX that leads to the cert, needs only the exam), **Lapsed** (held the cert but it expired — needs a renewal), **Legacy upgrade** (holds a legacy cert whose replacement is the required one), then **Net-new** (needs the full path; reported as a count, not named people). Because a person can only be **spent once**, candidates are allocated across the whole plan — someone whose single exam closes the same cert in several places appears once.
+- **Renewals at risk** — holders whose qualifying training expires within a selectable window (1 / 3 / 6 / 12 months), because their expiry will re-open a gap the plan currently reports as closed.
+
+Each scope plans against **only its own-level requirements**, exactly like the dashboards: planning one country shows that country's Country-level requirements, not the theatre-wide requirement above it (select the theatre to plan against theatre-level requirements). The candidate list and the renewals list can each be exported to CSV, Excel, or PDF. This release is a **live view** (no saved plans yet).
 
 - Attained figures display as **current → projected** (e.g. `5 → 3`), with a **▼N expiring** note showing how many people lose a qualifying certificate within the window.
 - Requirements (and theatres) that are compliant today but will fall below their requirement by the chosen horizon are shaded **amber** with an **At Risk** status — an early warning to schedule renewals before compliance breaks. Green stays compliant through the horizon; red is already non-compliant today.
