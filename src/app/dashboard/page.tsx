@@ -6,6 +6,7 @@ import PageHeader from "@/components/layout/PageHeader";
 import CredentialHealthBanner from "@/components/admin/CredentialHealthBanner";
 import UpdateAvailableBanner from "@/components/admin/UpdateAvailableBanner";
 import { useCompanyScope } from "@/components/company/CompanyScopeProvider";
+import GeoScopeFilter, { EMPTY_GEO_SCOPE, GeoScope } from "@/components/reports/GeoScopeFilter";
 import {
   Users,
   Award,
@@ -77,26 +78,29 @@ export default function DashboardPage() {
   const productColors = useProductTypeColors();
   const companyScope = useCompanyScope();
   const [data, setData] = useState<DashboardData | null>(null);
-  const [selectedTheatre, setSelectedTheatre] = useState("Global");
-  const [theatreLoading, setTheatreLoading] = useState(false);
+  const [geo, setGeo] = useState<GeoScope>(EMPTY_GEO_SCOPE);
+  const [geoLoading, setGeoLoading] = useState(false);
   const cache = useRef<Record<string, DashboardData>>({});
+  const geoKey = `${geo.theatre}|${geo.region}|${geo.country}`;
   // Full-page loading is derived (loadedKey !== requestKey) rather than set
-  // synchronously in the effect, so a scope/theatre change re-shows the spinner
+  // synchronously in the effect, so a scope/geo change re-shows the spinner
   // without a set-state-in-effect violation. The key is only written in the
   // effect's async callback.
   const [loadedKey, setLoadedKey] = useState<string | null>(null);
-  const requestKey = `${companyScope.selected}::${selectedTheatre}`;
+  const requestKey = `${companyScope.selected}::${geoKey}`;
   const loading = loadedKey !== requestKey;
 
-  const fetchDashboard = useCallback(async (theatre: string) => {
+  const fetchDashboard = useCallback(async (scope: GeoScope) => {
     const params = new URLSearchParams();
-    if (theatre !== "Global") params.set("theatre", theatre);
+    if (scope.theatre) params.set("theatre", scope.theatre);
+    if (scope.region) params.set("region", scope.region);
+    if (scope.country) params.set("country", scope.country);
     if (companyScope.selected !== "all") params.set("companyId", String(companyScope.selected));
     const qs = params.toString() ? `?${params.toString()}` : "";
     const res = await fetch(`/api/dashboard${qs}`);
     if (!res.ok) throw new Error("Failed to fetch");
     const d: DashboardData = await res.json();
-    cache.current[`${companyScope.selected}::${theatre}`] = d;
+    cache.current[`${companyScope.selected}::${scope.theatre}|${scope.region}|${scope.country}`] = d;
     return d;
   }, [companyScope.selected]);
 
@@ -104,7 +108,7 @@ export default function DashboardPage() {
   useEffect(() => {
     cache.current = {};
     let cancelled = false;
-    fetchDashboard(selectedTheatre)
+    fetchDashboard(geo)
       .then((d) => {
         if (!cancelled) {
           setData(d);
@@ -117,25 +121,25 @@ export default function DashboardPage() {
     return () => {
       cancelled = true;
     };
-  }, [fetchDashboard, selectedTheatre, requestKey]);
+  }, [fetchDashboard, geo, requestKey]);
 
-  const handleTheatreChange = async (theatre: string) => {
-    setSelectedTheatre(theatre);
+  const handleGeoChange = async (next: GeoScope) => {
+    setGeo(next);
 
-    const cacheKey = `${companyScope.selected}::${theatre}`;
+    const cacheKey = `${companyScope.selected}::${next.theatre}|${next.region}|${next.country}`;
     if (cache.current[cacheKey]) {
       setData(cache.current[cacheKey]);
       return;
     }
 
-    setTheatreLoading(true);
+    setGeoLoading(true);
     try {
-      const d = await fetchDashboard(theatre);
+      const d = await fetchDashboard(next);
       setData(d);
     } catch {
       // Keep current data on error
     }
-    setTheatreLoading(false);
+    setGeoLoading(false);
   };
 
   if (loading) {
@@ -211,21 +215,10 @@ export default function DashboardPage() {
         title="Dashboard"
         helpSlug="dashboard"
         rightContent={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Globe size={16} className="text-gray-400" />
-            <select
-              value={selectedTheatre}
-              onChange={(e) => handleTheatreChange(e.target.value)}
-              className="text-sm border border-gray-300 rounded-lg px-3 py-1.5 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            >
-              <option value="Global">Global</option>
-              {data.theatres.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </select>
-            {theatreLoading && (
+            <GeoScopeFilter value={geo} onChange={handleGeoChange} />
+            {geoLoading && (
               <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
             )}
           </div>

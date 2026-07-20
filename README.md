@@ -347,9 +347,9 @@ collapse toggle). Wide report and admin tables scroll horizontally so no columns
 or row controls are cut off, and pop-up dialogs fit the screen and scroll
 internally when tall.
 
-### Theatre Filter
+### Geographic Filter
 
-Use the **Theatre** dropdown in the top-right corner to filter all metrics and charts by theatre. Options include **Global** (all theatres) plus any theatres found in your student data (e.g., EMEA, NAM, LATAM, JAPAC). Previously selected theatres are cached for instant switching.
+Use the cascading **Theatre → Region → Country** dropdowns in the top-right corner to filter all metrics and charts by geography. Leave all three on **All …** for a global view, or narrow down: picking a theatre limits the region choices, and picking a region limits the country choices (changing a higher level resets the ones below it). Previously selected scopes are cached for instant switching.
 
 ### Metric Cards
 

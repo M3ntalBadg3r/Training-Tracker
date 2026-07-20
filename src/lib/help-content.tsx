@@ -88,12 +88,15 @@ const helpSections: Record<string, HelpSection> = {
           screen and scroll internally when tall.
         </p>
 
-        <h3>Theatre Filter</h3>
+        <h3>Geographic Filter</h3>
         <p>
-          Use the <strong>Theatre</strong> dropdown in the top-right corner to filter
-          all metrics and charts by theatre. Options include <em>Global</em> (all
-          theatres) plus any theatres found in your student data (e.g., EMEA, NAM,
-          LATAM, JAPAC). Previously selected theatres are cached for instant switching.
+          Use the cascading <strong>Theatre</strong> &rarr; <strong>Region</strong>{" "}
+          &rarr; <strong>Country</strong> dropdowns in the top-right corner to filter
+          all metrics and charts by geography. Leave all three on{" "}
+          <em>All&nbsp;&hellip;</em> for a global view, or narrow down: picking a
+          theatre limits the region choices, and picking a region limits the country
+          choices (changing a higher level resets the ones below it). Previously
+          selected scopes are cached for instant switching.
         </p>
 
         <h3>Charts</h3>
