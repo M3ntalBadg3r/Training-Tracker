@@ -508,8 +508,13 @@ function CandidateTable({ candidates, scopeLabel }: { candidates: PlanCandidate[
 
   return (
     <div className="bg-white rounded-lg border border-gray-200 p-4 mb-6">
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="text-base font-semibold text-gray-900">Who to move ({candidates.length})</h2>
+      <div className="flex items-start justify-between gap-3 mb-3">
+        <div>
+          <h2 className="text-base font-semibold text-gray-900">Who to certify ({candidates.length})</h2>
+          <p className="text-sm text-gray-500 mt-0.5">
+            These people are the cheapest to certify — most have already done the required training and just need to sit the exam.
+          </p>
+        </div>
         {candidates.length > 0 && (
           <ExportMenu show={showExport} setShow={setShowExport} data={exportData} columns={exportCols} filename={`compliance-plan-candidates-${scopeLabel}`} align="right" />
         )}

@@ -1947,7 +1947,7 @@ const helpSections: Record<string, HelpSection> = {
         <p>
           Because a person can only be <strong>spent once</strong>, the plan
           allocates candidates across the whole target. The{" "}
-          <strong>&ldquo;Who to move&rdquo;</strong> table lists one row per person
+          <strong>&ldquo;Who to certify&rdquo;</strong> table lists one row per person
           with every gap they close (expand a row for detail) — so someone whose
           single exam closes the same cert in several places appears once.
         </p>
