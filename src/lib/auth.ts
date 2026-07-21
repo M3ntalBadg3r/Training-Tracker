@@ -147,7 +147,12 @@ export function setAuthCookie(
   response.cookies.set(COOKIE_NAME, token, {
     httpOnly: true,
     secure,
-    sameSite: "strict",
+    // Lax (not Strict): the cookie must ride along on top-level GET navigations
+    // — including page reloads. iOS Safari withholds SameSite=Strict cookies on
+    // address-bar reloads / pull-to-refresh, which logged mobile users out on
+    // every refresh. Lax still blocks cross-site POSTs, so CSRF protection for
+    // the app's same-origin mutations is unaffected.
+    sameSite: "lax",
     path: "/",
     // Cookie lifetime tracks the sliding idle window; re-set on every slide.
     maxAge: Math.floor(maxAgeSeconds),
@@ -161,7 +166,8 @@ export function clearAuthCookie(
   response.cookies.set(COOKIE_NAME, "", {
     httpOnly: true,
     secure,
-    sameSite: "strict",
+    // Keep symmetric with setAuthCookie (Lax) so the clear matches the stored cookie.
+    sameSite: "lax",
     path: "/",
     maxAge: 0,
   });
