@@ -226,7 +226,9 @@ export async function proxy(request: NextRequest) {
       response.cookies.set(COOKIE_NAME, refreshedToken, {
         httpOnly: true,
         secure: isRequestSecure(request),
-        sameSite: "strict",
+        // Lax (not Strict) — matches setAuthCookie so the slid cookie survives
+        // top-level reloads on iOS Safari. See lib/auth.ts:setAuthCookie.
+        sameSite: "lax",
         path: "/",
         maxAge: Math.floor(idleMs / 1000),
       });
