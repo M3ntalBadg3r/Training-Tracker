@@ -65,19 +65,24 @@ export async function GET(
   }
 
   // --- Definition + optional compliance ---
-  const offering = await prisma.offering.findUnique({
-    where: { name },
-    include: {
-      specialisations: { include: { specialisation: { select: { id: true, name: true } } } },
-      offeringData: {
+  // Offerings are tenant data: only resolve one the caller can see. The client
+  // always scopes to a single company, so `companyFilter` is normally a single
+  // id; an out-of-scope request (noCompanies) can never match.
+  const offering = noCompanies
+    ? null
+    : await prisma.offering.findFirst({
+        where: { name, ...(companyFilter ? { companyId: { in: companyFilter } } : {}) },
         include: {
-          specialisation: { select: { id: true, name: true } },
-          trainingData: { select: { fullTitle: true } },
-          alternatives: { include: { trainingData: { select: { fullTitle: true } } } },
+          specialisations: { include: { specialisation: { select: { id: true, name: true } } } },
+          offeringData: {
+            include: {
+              specialisation: { select: { id: true, name: true } },
+              trainingData: { select: { fullTitle: true } },
+              alternatives: { include: { trainingData: { select: { fullTitle: true } } } },
+            },
+          },
         },
-      },
-    },
-  });
+      });
   if (!offering) {
     return NextResponse.json({ error: "Offering not found" }, { status: 404 });
   }

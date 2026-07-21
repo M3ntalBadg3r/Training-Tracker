@@ -568,8 +568,8 @@ async function restoreConfigArchive(zip: JSZip): Promise<NextResponse> {
   type ProgramDataRow = any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   type ProgramDataAlternativeRow = any;
-  type OfferingRow = { id: number; name: string; description: string | null; link: string | null; createdAt?: string };
-  type OfferingSpecialisationRow = { offeringName: string; specialisationId: number };
+  type OfferingRow = { id: number; companyId?: number; name: string; description: string | null; link: string | null; createdAt?: string };
+  type OfferingSpecialisationRow = { offeringId?: number; offeringName?: string; specialisationId: number };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   type OfferingDataRow = any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -768,52 +768,35 @@ async function restoreConfigArchive(zip: JSZip): Promise<NextResponse> {
       }
 
       // 6c. Re-insert Offerings (parent first) then their specialisation links,
-      //     requirements and alternatives, with explicit ids preserved so the
-      //     internal FKs match the archive. Specialisation + TrainingData already
-      //     exist by now (steps 4 + 6b).
+      //     requirements and alternatives. Config archives carry no companies, so
+      //     offerings are assigned to the target's oldest company (an archived
+      //     companyId is honoured only if that company happens to exist here);
+      //     the admin can reassign them afterward. Specialisation + TrainingData
+      //     already exist by now (steps 4 + 6b).
       if (archiveOfferings.length > 0) {
-        await tx.offering.createMany({
-          data: archiveOfferings.map((o) => ({
-            id: o.id,
-            name: o.name,
-            description: o.description ?? null,
-            link: o.link ?? null,
-            createdAt: o.createdAt ? new Date(o.createdAt) : new Date(),
-          })),
-        });
-      }
-      if (archiveOfferingSpecialisations.length > 0) {
-        await tx.offeringSpecialisation.createMany({
-          data: archiveOfferingSpecialisations.map((s) => ({
-            offeringName: s.offeringName,
-            specialisationId: s.specialisationId,
-          })),
-          skipDuplicates: true,
-        });
-      }
-      if (archiveOfferingData.length > 0) {
-        await tx.offeringData.createMany({
-          data: archiveOfferingData.map((o) => ({
-            id: o.id,
-            offeringName: o.offeringName,
-            specialisationId: o.specialisationId,
-            trainingType: o.trainingType ?? null,
-            trainingTitle: o.trainingTitle ?? null,
-            quantityRequired: o.quantityRequired,
-            createdAt: o.createdAt ? new Date(o.createdAt) : new Date(),
-            updatedAt: o.updatedAt ? new Date(o.updatedAt) : new Date(),
-          })),
-        });
-      }
-      if (archiveOfferingDataAlternatives.length > 0) {
-        await tx.offeringDataAlternative.createMany({
-          data: archiveOfferingDataAlternatives.map((a) => ({
-            id: a.id,
-            offeringDataId: a.offeringDataId,
-            trainingType: a.trainingType,
-            trainingTitle: a.trainingTitle,
-          })),
-        });
+        const companyRows = await tx.company.findMany({ select: { id: true } });
+        const existingCompanyIds = new Set(companyRows.map((c) => c.id));
+        const fallbackCompanyId = companyRows.length > 0 ? Math.min(...existingCompanyIds) : null;
+        const prepared = prepareOfferingInserts(
+          archiveOfferings,
+          archiveOfferingSpecialisations,
+          archiveOfferingData,
+          archiveOfferingDataAlternatives,
+          existingCompanyIds,
+          fallbackCompanyId
+        );
+        if (prepared.offeringRows.length > 0) {
+          await tx.offering.createMany({ data: prepared.offeringRows });
+        }
+        if (prepared.specRows.length > 0) {
+          await tx.offeringSpecialisation.createMany({ data: prepared.specRows, skipDuplicates: true });
+        }
+        if (prepared.dataRows.length > 0) {
+          await tx.offeringData.createMany({ data: prepared.dataRows });
+        }
+        if (prepared.altRows.length > 0) {
+          await tx.offeringDataAlternative.createMany({ data: prepared.altRows });
+        }
       }
 
       // 7. Reset autoincrement sequences for the tables we inserted with
@@ -947,6 +930,97 @@ export async function readReferenceArchive(zip: JSZip): Promise<ReferenceArchive
 }
 
 /**
+ * Prepare Offering + child rows for insertion from a backup archive, tolerating
+ * both new archives (each offering carries `companyId`; children reference
+ * `offeringId`) and old archives predating company-scoping (no `companyId`;
+ * children reference the then-globally-unique `offeringName`).
+ *
+ * `existingCompanyIds` is the set of company ids present on the RESTORE target;
+ * an archived `companyId` is honoured when it exists there (full restore
+ * re-inserts companies, so ids line up), otherwise the offering is reassigned to
+ * `fallbackCompanyId` (the target's oldest company — used for config restores,
+ * which carry no companies, and for old archives). Offerings that can't be
+ * assigned to any company (fallback null → no companies exist) are dropped,
+ * along with their children.
+ */
+function prepareOfferingInserts(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  offerings: any[],
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  specs: any[],
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  data: any[],
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  alternatives: any[],
+  existingCompanyIds: Set<number>,
+  fallbackCompanyId: number | null
+) {
+  const idByName = new Map<string, number>();
+  for (const o of offerings) idByName.set(o.name, o.id);
+  const resolveCompany = (cid: number | null | undefined): number | null =>
+    cid != null && existingCompanyIds.has(cid) ? cid : fallbackCompanyId;
+
+  const offeringRows = offerings
+    .map((o) => {
+      const companyId = resolveCompany(o.companyId);
+      if (companyId == null) return null;
+      return {
+        id: o.id,
+        companyId,
+        name: o.name,
+        description: o.description ?? null,
+        link: o.link ?? null,
+        createdAt: o.createdAt ? new Date(o.createdAt) : new Date(),
+      };
+    })
+    .filter((x): x is NonNullable<typeof x> => x !== null);
+
+  const validOfferingIds = new Set(offeringRows.map((o) => o.id));
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const resolveOfferingId = (r: any): number | null => {
+    const id = r.offeringId ?? (r.offeringName != null ? idByName.get(r.offeringName) : undefined);
+    return id != null && validOfferingIds.has(id) ? id : null;
+  };
+
+  const specRows = specs
+    .map((s) => {
+      const offeringId = resolveOfferingId(s);
+      return offeringId == null ? null : { offeringId, specialisationId: s.specialisationId };
+    })
+    .filter((x): x is NonNullable<typeof x> => x !== null);
+
+  const dataRows = data
+    .map((o) => {
+      const offeringId = resolveOfferingId(o);
+      return offeringId == null
+        ? null
+        : {
+            id: o.id,
+            offeringId,
+            specialisationId: o.specialisationId,
+            trainingType: o.trainingType ?? null,
+            trainingTitle: o.trainingTitle ?? null,
+            quantityRequired: o.quantityRequired,
+            createdAt: o.createdAt ? new Date(o.createdAt) : new Date(),
+            updatedAt: o.updatedAt ? new Date(o.updatedAt) : new Date(),
+          };
+    })
+    .filter((x): x is NonNullable<typeof x> => x !== null);
+
+  const validDataIds = new Set(dataRows.map((d) => d.id));
+  const altRows = alternatives
+    .filter((a) => validDataIds.has(a.offeringDataId))
+    .map((a) => ({
+      id: a.id,
+      offeringDataId: a.offeringDataId,
+      trainingType: a.trainingType,
+      trainingTitle: a.trainingTitle,
+    }));
+
+  return { offeringRows, specRows, dataRows, altRows };
+}
+
+/**
  * Rebuild the reference/config tables inside a full-restore transaction. Must be
  * called AFTER TrainingData has been (re)inserted, since program/offering
  * requirements and OLX relations FK to training_data. No-op when the archive
@@ -1035,48 +1109,32 @@ export async function restoreReferenceData(
     });
   }
   if (a.offerings.length > 0) {
-    await tx.offering.createMany({
-      data: a.offerings.map((o) => ({
-        id: o.id,
-        name: o.name,
-        description: o.description ?? null,
-        link: o.link ?? null,
-        createdAt: o.createdAt ? new Date(o.createdAt) : new Date(),
-      })),
-    });
-  }
-  if (a.offeringSpecialisations.length > 0) {
-    await tx.offeringSpecialisation.createMany({
-      data: a.offeringSpecialisations.map((s) => ({
-        offeringName: s.offeringName,
-        specialisationId: s.specialisationId,
-      })),
-      skipDuplicates: true,
-    });
-  }
-  if (a.offeringData.length > 0) {
-    await tx.offeringData.createMany({
-      data: a.offeringData.map((o) => ({
-        id: o.id,
-        offeringName: o.offeringName,
-        specialisationId: o.specialisationId,
-        trainingType: o.trainingType ?? null,
-        trainingTitle: o.trainingTitle ?? null,
-        quantityRequired: o.quantityRequired,
-        createdAt: o.createdAt ? new Date(o.createdAt) : new Date(),
-        updatedAt: o.updatedAt ? new Date(o.updatedAt) : new Date(),
-      })),
-    });
-  }
-  if (a.offeringDataAlternatives.length > 0) {
-    await tx.offeringDataAlternative.createMany({
-      data: a.offeringDataAlternatives.map((x) => ({
-        id: x.id,
-        offeringDataId: x.offeringDataId,
-        trainingType: x.trainingType,
-        trainingTitle: x.trainingTitle,
-      })),
-    });
+    // Full restore re-inserts companies from the archive, so archived
+    // companyIds line up; the oldest company is the fallback for any offering
+    // whose company is missing (e.g. an old archive without companyId).
+    const companyRows = await tx.company.findMany({ select: { id: true } });
+    const existingCompanyIds = new Set(companyRows.map((c) => c.id));
+    const fallbackCompanyId = companyRows.length > 0 ? Math.min(...existingCompanyIds) : null;
+    const prepared = prepareOfferingInserts(
+      a.offerings,
+      a.offeringSpecialisations,
+      a.offeringData,
+      a.offeringDataAlternatives,
+      existingCompanyIds,
+      fallbackCompanyId
+    );
+    if (prepared.offeringRows.length > 0) {
+      await tx.offering.createMany({ data: prepared.offeringRows });
+    }
+    if (prepared.specRows.length > 0) {
+      await tx.offeringSpecialisation.createMany({ data: prepared.specRows, skipDuplicates: true });
+    }
+    if (prepared.dataRows.length > 0) {
+      await tx.offeringData.createMany({ data: prepared.dataRows });
+    }
+    if (prepared.altRows.length > 0) {
+      await tx.offeringDataAlternative.createMany({ data: prepared.altRows });
+    }
   }
 
   // Reset autoincrement sequences for tables inserted with explicit ids.

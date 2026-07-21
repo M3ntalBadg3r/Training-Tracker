@@ -157,6 +157,9 @@ export interface OfferingDataAlternativeRow {
 }
 
 export interface OfferingSummaryRow {
+  id: number;
+  companyId: number;
+  companyName: string | null;
   name: string;
   description: string | null;
   link: string | null;
@@ -166,7 +169,9 @@ export interface OfferingSummaryRow {
 
 export interface OfferingDataRow {
   id: number;
+  offeringId: number;
   offeringName: string;
+  companyId: number | null;
   specialisationId: number;
   specialisationName: string | null;
   trainingType: string | null;

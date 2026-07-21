@@ -3,26 +3,32 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import PageHeader from "@/components/layout/PageHeader";
+import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
 import { Package, ChevronRight } from "lucide-react";
 
 interface OfferingInfo {
   name: string;
+  companyId: number;
   description: string | null;
   link: string | null;
   specialisationCount: number;
 }
 
 export default function OfferingsPage() {
+  const scope = useCompanyScope();
   const [offerings, setOfferings] = useState<OfferingInfo[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch("/api/offerings")
+    if (scope.loading) return;
+    let cancelled = false;
+    fetch(withCompany("/api/offerings", scope.selected))
       .then((r) => r.json())
-      .then((d) => setOfferings(d.offerings || []))
+      .then((d) => { if (!cancelled) setOfferings(d.offerings || []); })
       .catch(() => {})
-      .finally(() => setLoading(false));
-  }, []);
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [scope.loading, scope.selected]);
 
   return (
     <div>
@@ -41,8 +47,8 @@ export default function OfferingsPage() {
         <section className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {offerings.map((o) => (
             <Link
-              key={o.name}
-              href={`/offerings/${encodeURIComponent(o.name)}`}
+              key={`${o.companyId}:${o.name}`}
+              href={`/offerings/${encodeURIComponent(o.name)}?companyId=${o.companyId}`}
               className="flex items-center justify-between p-4 bg-white rounded-lg border border-gray-200 hover:border-blue-300 hover:shadow-sm transition-all"
             >
               <div className="flex items-center gap-3 min-w-0">

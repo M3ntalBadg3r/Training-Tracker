@@ -58,7 +58,7 @@ const adminSubItems: { href: string; label: string; icon: typeof Users; superAdm
   { href: "/admin/users", label: "Users", icon: Users, superAdminOnly: true },
   { href: "/admin/companies", label: "Companies", icon: Building2, superAdminOnly: true },
   { href: "/admin/program-data", label: "Program Data", icon: ClipboardList, superAdminOnly: true },
-  { href: "/admin/offerings", label: "Offerings", icon: Package, superAdminOnly: true },
+  { href: "/admin/offerings", label: "Offerings", icon: Package },
   { href: "/admin/training-data", label: "Training Data", icon: BookOpen, superAdminOnly: true },
   { href: "/admin/product-types", label: "Product Types", icon: Tag, superAdminOnly: true },
   { href: "/admin/specialisations", label: "Specialisations", icon: Award, superAdminOnly: true },
@@ -141,10 +141,10 @@ export default function Sidebar({ mobile = false, onClose }: { mobile?: boolean;
       .catch(() => {});
     fetch("/api/offerings")
       .then((r) => r.json())
-      .then((d: { offerings?: { name: string }[] }) => {
+      .then((d: { offerings?: { name: string; companyId: number }[] }) => {
         setOfferingSubItems(
           (d.offerings || []).map((o) => ({
-            href: `/offerings/${encodeURIComponent(o.name)}`,
+            href: `/offerings/${encodeURIComponent(o.name)}?companyId=${o.companyId}`,
             label: o.name,
           }))
         );

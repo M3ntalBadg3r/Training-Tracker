@@ -1,32 +1,40 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { requireAuth, handleAuthError } from "@/lib/auth";
+import { getAuthorizedCompanyIds, resolveCompanyFilter } from "@/lib/company-scope";
 
 /**
  * GET /api/offerings
- * Lists offerings for the index page + sidebar. No company scoping (the
- * definition is global reference data, like /api/programs).
+ * Lists offerings for the index page + sidebar, scoped to the companies the
+ * caller can access (optionally narrowed by ?companyId=). Offerings are tenant
+ * data, so a user only sees the offerings of companies they're granted.
  */
 export async function GET(request: NextRequest) {
+  let auth;
   try {
-    await requireAuth(request);
+    auth = await requireAuth(request);
   } catch (error) {
     return handleAuthError(error);
   }
 
-  const [offerings, specLinks] = await Promise.all([
-    prisma.offering.findMany({ orderBy: { name: "asc" } }),
-    prisma.offeringSpecialisation.findMany({ select: { offeringName: true } }),
-  ]);
+  const allowed = await getAuthorizedCompanyIds(auth.sub, auth.role);
+  const companyFilter = resolveCompanyFilter(allowed, request.nextUrl.searchParams.get("companyId"));
+  if (companyFilter !== null && companyFilter.length === 0) {
+    return NextResponse.json({ offerings: [] });
+  }
 
-  const specCount = new Map<string, number>();
-  for (const s of specLinks) specCount.set(s.offeringName, (specCount.get(s.offeringName) ?? 0) + 1);
+  const offerings = await prisma.offering.findMany({
+    where: companyFilter ? { companyId: { in: companyFilter } } : {},
+    include: { _count: { select: { specialisations: true } } },
+    orderBy: { name: "asc" },
+  });
 
   const result = offerings.map((o) => ({
     name: o.name,
+    companyId: o.companyId,
     description: o.description ?? null,
     link: o.link ?? null,
-    specialisationCount: specCount.get(o.name) ?? 0,
+    specialisationCount: o._count.specialisations,
   }));
 
   return NextResponse.json({ offerings: result });
