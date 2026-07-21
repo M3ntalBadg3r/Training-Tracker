@@ -973,7 +973,7 @@ curl -H "Authorization: Bearer tt_live_xxxxxxxx" \
 | `GET /api/public/v1/students` | Student roster (name, email, theatre, country, company) |
 | `GET /api/public/v1/training-records` | Per-completion training records (latest per learner & training) |
 | `GET /api/public/v1/reports/{reportType}` | Report aggregates — `trained-not-certified`, `legacy-gap`, `learner-scorecard`, `by-product`, `by-function`, `expiring-soon`, `currently-expired`, `last-12-months` |
-| `GET /api/public/v1/offerings` | Offering definitions (specialisations + supporting trainings). Add `?country=` or `?region=` for Onshore/Nearshore/Offshore compliance figures; `?name=` for one offering |
+| `GET /api/public/v1/offerings` | Offering definitions (specialisations + supporting trainings) for the key's companies. Add `?country=` or `?region=` for Onshore/Nearshore/Offshore compliance figures; `?name=` for one offering |
 | `GET /api/public/v1/programs` | Partner program list (configured levels, per-theatre-minimum flag, tiered flag) |
 | `GET /api/public/v1/programs/{programName}` | Per-program compliance. `?level=country\|region\|theatre\|global` with `?country=`/`?region=`/`?theatre=`; `?horizonMonths=3\|6\|12` for a forward-looking projection; `?trainingTitle=&students=true` for the holder roster |
 
@@ -1055,28 +1055,35 @@ Each scope plans against **only its own-level requirements**, exactly like the d
 ## Offerings
 
 **Offerings** track a partner's ability to deliver a **joint product offering** —
-for example, "Network Security Modernization" might require capability across
-several specialisations such as cloud security, browser security and next-gen
-firewall. Each offering bundles one or more **specialisations** (the same list as
+for example, an offering might require capability across several specialisations
+such as cloud security, browser security and next-gen firewall. Each offering
+bundles one or more **specialisations** (the same list as
 **Admin > Specialisations**), and each specialisation lists the supporting
 trainings (Certifications, Accreditations, ILTs, OLXs) needed to deliver it —
 with **alternatives** (any one counts) and a **minimum required** number.
 
+Offerings are **company-scoped**: each offering belongs to one company, so a
+company has its own set of offerings and only users (and API keys) with access to
+that company can see or manage them. Offering names are unique **per company**, so
+two companies can each have an offering with the same name.
+
 Offerings appear in their own **Offerings** section in the sidebar (one child
-link per offering, generated automatically) with a dashboard at
+link per offering you can see, generated automatically) with a dashboard at
 `/offerings/[name]`.
 
 ### Configuring offerings
 
-Under **Admin > Offerings** (SuperAdmin):
+Under **Admin > Offerings** (available to a company's Admins as well as
+SuperAdmins):
 
-- **New Offering** — enter a name, description, link and pick the specialisations
-  it covers.
+- **New Offering** — pick the **company** it belongs to, then enter a name,
+  description, link and the specialisations it covers.
 - On the offering's editor page, for each specialisation add the supporting
   trainings (type + training + a minimum count + optional alternatives).
 - **Import / Export** — round-trip the whole structure as CSV/Excel (with a
-  downloadable template and a dry-run validation preview). Import is a
-  per-offering overwrite.
+  downloadable template and a dry-run validation preview). Export includes a
+  **Company** column; import loads every row into a single company you pick and is
+  a per-offering overwrite scoped to that company.
 
 ### Viewing an offering — Onshore, Nearshore & Offshore
 
@@ -1090,11 +1097,12 @@ training:
 | **Nearshore** | The rest of that country/region's **theatre** — every other country in the theatre, with the onshore countries removed. The wider in-theatre capability available to support delivery. |
 | **Offshore** | Everyone **worldwide** holding the training, with the onshore countries removed (so it includes the nearshore people plus every other theatre). Nearshore and Offshore are informational — they don't change the Met status. |
 
-Figures are scoped to the company selected in the header. Click **View** on any
-count to list the people behind it, and use **Export** for the current view.
-Offerings are included in both full and config backups, and are queryable via the
-public API (`GET /api/public/v1/offerings`, with optional `?country=`/`?region=`
-for compliance figures).
+Figures are scoped to the offering's company. Click **View** on any count to list
+the people behind it, and use **Export** for the current view. Offerings are
+included in both full and config backups (a config restore, which carries no
+companies, lands offerings on the target's oldest company for you to reassign),
+and are queryable via the public API (`GET /api/public/v1/offerings`, scoped to
+the key's companies, with optional `?country=`/`?region=` for compliance figures).
 
 ---
 

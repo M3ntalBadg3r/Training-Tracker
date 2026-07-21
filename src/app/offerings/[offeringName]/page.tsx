@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useParams } from "next/navigation";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import PageHeader from "@/components/layout/PageHeader";
 import Modal from "@/components/ui/Modal";
@@ -62,15 +62,21 @@ interface StudentRow {
   training: string;
 }
 
-export default function OfferingDashboardPage() {
+function OfferingDashboardInner() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const offeringName = decodeURIComponent(String(params.offeringName));
   const scope = useCompanyScope();
 
+  // Offerings are company-scoped: the URL identifies which company owns the
+  // offering. Prefer it (a link from the "all" view carries it); otherwise use
+  // the header switcher, falling back to the first accessible company.
+  const urlCompanyId = searchParams.get("companyId");
   const companyId = useMemo(() => {
+    if (urlCompanyId) return Number(urlCompanyId);
     if (scope.selected !== "all") return scope.selected;
     return scope.companies[0]?.id ?? null;
-  }, [scope.selected, scope.companies]);
+  }, [urlCompanyId, scope.selected, scope.companies]);
   const companyQS = companyId != null ? `&companyId=${companyId}` : "";
 
   const [data, setData] = useState<OfferingResponse | null>(null);
@@ -335,5 +341,13 @@ export default function OfferingDashboardPage() {
         )}
       </Modal>
     </div>
+  );
+}
+
+export default function OfferingDashboardPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center py-20"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>}>
+      <OfferingDashboardInner />
+    </Suspense>
   );
 }

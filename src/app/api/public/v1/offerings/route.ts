@@ -26,8 +26,17 @@ export async function GET(request: NextRequest) {
   const value = region || country;
   const wantsCompliance = value !== "" && ctx.companyIds.length > 0;
 
+  // Offerings are tenant data — only list those owned by companies this key may
+  // read. A key with no company grant sees nothing.
+  if (ctx.companyIds.length === 0) {
+    return NextResponse.json({ offerings: [] });
+  }
+
   const offerings = await prisma.offering.findMany({
-    where: nameFilter ? { name: nameFilter } : undefined,
+    where: {
+      companyId: { in: ctx.companyIds },
+      ...(nameFilter ? { name: nameFilter } : {}),
+    },
     include: {
       specialisations: { include: { specialisation: { select: { id: true, name: true } } } },
       offeringData: {
@@ -89,6 +98,7 @@ export async function GET(request: NextRequest) {
     }
     return {
       name: o.name,
+      companyId: o.companyId,
       description: o.description ?? null,
       link: o.link ?? null,
       specialisations: [...specMap.values()].sort((a, b) => a.name.localeCompare(b.name)),

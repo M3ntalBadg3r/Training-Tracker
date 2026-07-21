@@ -670,17 +670,23 @@ const helpSections: Record<string, HelpSection> = {
           supporting trainings (Certifications, Accreditations, ILTs, OLXs) — with
           alternatives and a minimum required count — needed to deliver it.
         </p>
+        <p>
+          Offerings are <strong>company-scoped</strong>: each offering belongs to
+          one company, so only users (and API keys) with access to that company
+          can see or manage it. Offering names are unique <strong>per company</strong>,
+          so two companies can each have an offering with the same name.
+        </p>
         <ul>
           <li>Pick a <strong>Country</strong> or <strong>Region</strong> to see capability. Nothing is shown until you make a selection.</li>
           <li><strong>Onshore</strong> counts the distinct people who hold each training in the selected country (or the region&apos;s countries). A <strong>Met / Not met</strong> badge compares the Onshore count against the minimum required.</li>
           <li><strong>Nearshore</strong> counts the rest of that country/region&apos;s <strong>theatre</strong>, with the onshore countries removed — the wider in-theatre capability available to support delivery.</li>
           <li><strong>Offshore</strong> counts everyone <strong>worldwide</strong> who holds the training, with the onshore countries removed (so it includes the nearshore people plus every other theatre). Nearshore and Offshore are informational and don&apos;t change the Met status.</li>
-          <li>Figures are scoped to the company selected in the header. Use <strong>Export</strong> for the current view, and click <strong>View</strong> on any count to list the people behind it.</li>
+          <li>Figures are scoped to the offering&apos;s company. Use <strong>Export</strong> for the current view, and click <strong>View</strong> on any count to list the people behind it.</li>
         </ul>
         <p className="text-sm text-gray-500">
-          Offerings are configured under <strong>Admin &gt; Offerings</strong>
-          (create, edit, import/export). They are included in both full and
-          config backups.
+          Offerings are configured under <strong>Admin &gt; Offerings</strong> by a
+          company&apos;s Admins or a SuperAdmin (create, edit, import/export — each
+          scoped to a company). They are included in both full and config backups.
         </p>
       </>
     ),

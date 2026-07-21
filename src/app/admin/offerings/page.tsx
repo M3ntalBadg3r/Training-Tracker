@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import PageHeader from "@/components/layout/PageHeader";
@@ -19,11 +19,13 @@ import {
   Pencil,
 } from "lucide-react";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
+import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 
 interface ExportRow {
   offeringName: string;
+  companyName: string;
   description: string;
   link: string;
   specialisationName: string;
@@ -35,6 +37,7 @@ interface ExportRow {
 
 const exportColumns: { key: keyof ExportRow; header: string }[] = [
   { key: "offeringName", header: "Offering Name" },
+  { key: "companyName", header: "Company" },
   { key: "description", header: "Description" },
   { key: "link", header: "Link" },
   { key: "specialisationName", header: "Specialisation" },
@@ -72,20 +75,29 @@ function normaliseHeader(h: string): string {
   return h.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
+interface CompanyOpt {
+  id: number;
+  name: string;
+}
+
 export default function OfferingsAdminPage() {
   const router = useRouter();
+  const companyScope = useCompanyScope();
 
   const [offerings, setOfferings] = useState<OfferingSummaryRow[]>([]);
   const [allRows, setAllRows] = useState<OfferingDataRow[]>([]);
   const [specialisations, setSpecialisations] = useState<SpecialisationRow[]>([]);
+  const [companies, setCompanies] = useState<CompanyOpt[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   const [showExport, setShowExport] = useState(false);
+  const showCompanyColumn = companyScope.selected === "all";
 
   // New / Rename / Delete
   const [showNew, setShowNew] = useState(false);
   const [newName, setNewName] = useState("");
+  const [newCompanyId, setNewCompanyId] = useState<number | "">("");
   const [newDescription, setNewDescription] = useState("");
   const [newLink, setNewLink] = useState("");
   const [newSpecIds, setNewSpecIds] = useState<number[]>([]);
@@ -105,6 +117,7 @@ export default function OfferingsAdminPage() {
   }
   const [showImport, setShowImport] = useState(false);
   const [importStep, setImportStep] = useState<ImportStep>("upload");
+  const [importCompanyId, setImportCompanyId] = useState<number | "">("");
   const [importRows, setImportRows] = useState<Partial<ExportRow>[]>([]);
   const [importValidationErrors, setImportValidationErrors] = useState<{ row: number; message: string }[]>([]);
   const [importLoading, setImportLoading] = useState(false);
@@ -112,9 +125,9 @@ export default function OfferingsAdminPage() {
   const [importFileError, setImportFileError] = useState("");
   const [overwriteAck, setOverwriteAck] = useState(false);
 
-  const fetchOfferings = async () => {
+  const fetchOfferings = useCallback(async () => {
     try {
-      const res = await fetch("/api/admin/offerings");
+      const res = await fetch(withCompany("/api/admin/offerings", companyScope.selected));
       if (res.ok) setOfferings(await res.json());
       else setError("Failed to load offerings");
     } catch {
@@ -122,44 +135,56 @@ export default function OfferingsAdminPage() {
     } finally {
       setLoading(false);
     }
-  };
-  const fetchRows = async () => {
+  }, [companyScope.selected]);
+  const fetchRows = useCallback(async () => {
     try {
-      const res = await fetch("/api/admin/offering-data");
+      const res = await fetch(withCompany("/api/admin/offering-data", companyScope.selected));
       if (res.ok) setAllRows(await res.json());
     } catch { /* ignore */ }
-  };
+  }, [companyScope.selected]);
   const fetchSpecialisations = async () => {
     try {
       const res = await fetch("/api/admin/specialisations");
       if (res.ok) setSpecialisations(await res.json());
     } catch { /* ignore */ }
   };
+  const fetchCompanies = async () => {
+    try {
+      const res = await fetch("/api/companies");
+      if (res.ok) setCompanies((await res.json()).companies ?? []);
+    } catch { /* ignore */ }
+  };
 
   useEffect(() => {
+    fetchSpecialisations();
+    fetchCompanies();
+  }, []);
+
+  useEffect(() => {
+    if (companyScope.loading) return;
     fetchOfferings();
     fetchRows();
-    fetchSpecialisations();
-  }, []);
+  }, [companyScope.loading, fetchOfferings, fetchRows]);
 
   const handleNew = async () => {
     setNewError("");
     if (!newName.trim()) { setNewError("Offering name is required"); return; }
+    if (newCompanyId === "") { setNewError("Please pick a company"); return; }
     const res = await fetch("/api/admin/offerings", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: newName.trim(), description: newDescription.trim(), link: newLink.trim(), specialisationIds: newSpecIds }),
+      body: JSON.stringify({ name: newName.trim(), companyId: newCompanyId, description: newDescription.trim(), link: newLink.trim(), specialisationIds: newSpecIds }),
     });
     const result = await res.json();
     if (!res.ok) { setNewError(result.error || "Failed to create offering"); return; }
     setShowNew(false);
-    router.push(`/admin/offerings/${encodeURIComponent(newName.trim())}`);
+    router.push(`/admin/offerings/${encodeURIComponent(newName.trim())}?companyId=${newCompanyId}`);
   };
 
   const handleRename = async () => {
     setRenameError("");
     if (!renameTarget) return;
-    const res = await fetch(`/api/admin/offerings/${encodeURIComponent(renameTarget.name)}`, {
+    const res = await fetch(`/api/admin/offerings/${encodeURIComponent(renameTarget.name)}?companyId=${renameTarget.companyId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ newName: renameValue.trim() }),
@@ -174,7 +199,7 @@ export default function OfferingsAdminPage() {
   const handleDelete = async () => {
     setDeleteError("");
     if (!deleteTarget) return;
-    const res = await fetch(`/api/admin/offerings/${encodeURIComponent(deleteTarget.name)}`, { method: "DELETE" });
+    const res = await fetch(`/api/admin/offerings/${encodeURIComponent(deleteTarget.name)}?companyId=${deleteTarget.companyId}`, { method: "DELETE" });
     if (!res.ok) {
       const result = await res.json().catch(() => ({}));
       setDeleteError(result.error || "Failed to delete");
@@ -189,13 +214,14 @@ export default function OfferingsAdminPage() {
   const buildExportRows = (): ExportRow[] => {
     const rows: ExportRow[] = [];
     for (const o of offerings) {
-      const reqs = allRows.filter((r) => r.offeringName === o.name);
+      const reqs = allRows.filter((r) => r.offeringId === o.id);
       const specNames = [...new Set([...o.specialisations, ...reqs.map((r) => r.specialisationName ?? "")].filter(Boolean))].sort();
       for (const spec of specNames) {
         const specReqs = reqs.filter((r) => r.specialisationName === spec);
         if (specReqs.length === 0) {
           rows.push({
             offeringName: o.name,
+            companyName: o.companyName ?? "",
             description: o.description ?? "",
             link: o.link ?? "",
             specialisationName: spec,
@@ -208,6 +234,7 @@ export default function OfferingsAdminPage() {
           for (const r of specReqs) {
             rows.push({
               offeringName: o.name,
+              companyName: o.companyName ?? "",
               description: o.description ?? "",
               link: o.link ?? "",
               specialisationName: spec,
@@ -234,8 +261,8 @@ export default function OfferingsAdminPage() {
 
   const downloadTemplate = () => {
     const sample: ExportRow[] = [
-      { offeringName: "Network Security Modernization", description: "Joint delivery capability", link: "https://example.com", specialisationName: "Cloud Security", trainingType: "Certification", trainingFullTitle: "Cert A", quantityRequired: 2, alternatives: "Cert B" },
-      { offeringName: "Network Security Modernization", description: "Joint delivery capability", link: "https://example.com", specialisationName: "Network Security", trainingType: "Accreditation", trainingFullTitle: "Accred A", quantityRequired: 1, alternatives: "" },
+      { offeringName: "Offering A", companyName: "", description: "Joint delivery capability", link: "https://example.com", specialisationName: "Specialisation A", trainingType: "Certification", trainingFullTitle: "Cert A", quantityRequired: 2, alternatives: "Cert B" },
+      { offeringName: "Offering A", companyName: "", description: "Joint delivery capability", link: "https://example.com", specialisationName: "Specialisation B", trainingType: "Accreditation", trainingFullTitle: "Accred A", quantityRequired: 1, alternatives: "" },
     ];
     exportToCsv(sample, exportColumns, "offerings-template");
   };
@@ -277,6 +304,7 @@ export default function OfferingsAdminPage() {
 
   const handleFile = async (file: File) => {
     setImportFileError("");
+    if (importCompanyId === "") { setImportFileError("Please pick a company first"); return; }
     try {
       const rows = await parseFileToRows(file);
       if (rows.length === 0) { setImportFileError("No rows found in file"); return; }
@@ -285,7 +313,7 @@ export default function OfferingsAdminPage() {
       const res = await fetch("/api/admin/offerings/import?dryRun=true", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rows }),
+        body: JSON.stringify({ rows, companyId: importCompanyId }),
       });
       const result = await res.json();
       setImportValidationErrors(result.errors || []);
@@ -296,12 +324,13 @@ export default function OfferingsAdminPage() {
   };
 
   const doImport = async () => {
+    if (importCompanyId === "") return;
     setImportLoading(true);
     try {
       const res = await fetch("/api/admin/offerings/import", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rows: importRows }),
+        body: JSON.stringify({ rows: importRows, companyId: importCompanyId }),
       });
       const result = await res.json();
       setImportResult(result);
@@ -316,6 +345,7 @@ export default function OfferingsAdminPage() {
   const resetImport = () => {
     setShowImport(false);
     setImportStep("upload");
+    setImportCompanyId("");
     setImportRows([]);
     setImportValidationErrors([]);
     setImportResult(null);
@@ -350,7 +380,21 @@ export default function OfferingsAdminPage() {
                 </div>
               )}
             </div>
-            <button onClick={() => { setShowNew(true); setNewName(""); setNewDescription(""); setNewLink(""); setNewSpecIds([]); setNewError(""); }} className="flex items-center gap-1 px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+            <button onClick={() => {
+              setShowNew(true);
+              setNewName("");
+              setNewCompanyId(
+                companyScope.selected !== "all"
+                  ? companyScope.selected
+                  : companies.length === 1
+                  ? companies[0].id
+                  : ""
+              );
+              setNewDescription("");
+              setNewLink("");
+              setNewSpecIds([]);
+              setNewError("");
+            }} className="flex items-center gap-1 px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">
               <Plus size={16} /> New Offering
             </button>
           </div>
@@ -369,13 +413,16 @@ export default function OfferingsAdminPage() {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {offerings.map((o) => (
-            <div key={o.name} className="border border-gray-200 rounded-xl p-4 bg-white hover:shadow-md transition-shadow">
+            <div key={o.id} className="border border-gray-200 rounded-xl p-4 bg-white hover:shadow-md transition-shadow">
               <div className="flex items-start justify-between">
-                <Link href={`/admin/offerings/${encodeURIComponent(o.name)}`} className="flex-1 min-w-0">
+                <Link href={`/admin/offerings/${encodeURIComponent(o.name)}?companyId=${o.companyId}`} className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <Package size={18} className="text-blue-600 shrink-0" />
                     <h3 className="font-semibold text-gray-900 truncate">{o.name}</h3>
                   </div>
+                  {showCompanyColumn && o.companyName && (
+                    <span className="mt-1 inline-block px-2 py-0.5 text-xs bg-gray-100 text-gray-600 rounded">{o.companyName}</span>
+                  )}
                   {o.description && <p className="mt-1 text-sm text-gray-500 line-clamp-2">{o.description}</p>}
                   <p className="mt-2 text-xs text-gray-400">
                     {o.specialisations.length} specialisation{o.specialisations.length === 1 ? "" : "s"} · {o.requirementCount} requirement{o.requirementCount === 1 ? "" : "s"}
@@ -400,8 +447,21 @@ export default function OfferingsAdminPage() {
         <div className="space-y-4">
           {newError && <div className="p-2 bg-red-50 text-red-700 rounded text-sm">{newError}</div>}
           <div>
+            <label className="block text-sm font-medium mb-1">Company</label>
+            <select
+              value={newCompanyId === "" ? "" : String(newCompanyId)}
+              onChange={(e) => setNewCompanyId(e.target.value === "" ? "" : Number(e.target.value))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
+            >
+              <option value="">-- Select a company --</option>
+              {companies.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+          </div>
+          <div>
             <label className="block text-sm font-medium mb-1">Offering Name</label>
-            <input value={newName} onChange={(e) => setNewName(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm" placeholder="e.g., Network Security Modernization" />
+            <input value={newName} onChange={(e) => setNewName(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm" placeholder="e.g., Offering A" />
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">Description</label>
@@ -465,11 +525,24 @@ export default function OfferingsAdminPage() {
         {importStep === "upload" && (
           <div className="space-y-4">
             {importFileError && <div className="p-2 bg-red-50 text-red-700 rounded text-sm">{importFileError}</div>}
-            <p className="text-sm text-gray-600">Upload a CSV or Excel file. Existing requirements for any offering named in the file are replaced.</p>
+            <p className="text-sm text-gray-600">Upload a CSV or Excel file. Existing requirements for any offering named in the file are replaced. Offerings are imported into the selected company.</p>
+            <div>
+              <label className="block text-sm font-medium mb-1">Company</label>
+              <select
+                value={importCompanyId === "" ? "" : String(importCompanyId)}
+                onChange={(e) => setImportCompanyId(e.target.value === "" ? "" : Number(e.target.value))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
+              >
+                <option value="">-- Select a company --</option>
+                {companies.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
             <button onClick={downloadTemplate} className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800">
               <FileDown size={16} /> Download template
             </button>
-            <input type="file" accept=".csv,.xlsx,.xls" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }} className="block w-full text-sm" />
+            <input type="file" accept=".csv,.xlsx,.xls" disabled={importCompanyId === ""} onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }} className="block w-full text-sm disabled:opacity-50" />
           </div>
         )}
         {importStep === "preview" && (

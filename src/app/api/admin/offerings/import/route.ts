@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { requireSuperAdmin, handleAuthError } from "@/lib/auth";
+import { requireAuth, handleAuthError } from "@/lib/auth";
+import { canAccessCompany } from "@/lib/company-scope";
 
 interface RawRow {
   offeringName?: string;
@@ -63,8 +64,9 @@ interface ResolvedRow {
 type ValidateResult = { ok: true; value: ResolvedRow } | { ok: false; message: string };
 
 export async function POST(request: NextRequest) {
+  let auth;
   try {
-    await requireSuperAdmin(request);
+    auth = await requireAuth(request, "Admin");
   } catch (error) {
     return handleAuthError(error);
   }
@@ -72,6 +74,15 @@ export async function POST(request: NextRequest) {
   const dryRun = request.nextUrl.searchParams.get("dryRun") === "true";
   const body = await request.json();
   const rows: RawRow[] = body.rows ?? [];
+
+  // Names are unique per company, so an import targets a single company.
+  const companyId = body?.companyId == null ? NaN : Number(body.companyId);
+  if (Number.isNaN(companyId)) {
+    return NextResponse.json({ error: "A company is required" }, { status: 400 });
+  }
+  if (!(await canAccessCompany(auth.sub, auth.role, companyId))) {
+    return NextResponse.json({ error: "You do not have access to that company" }, { status: 403 });
+  }
 
   if (!Array.isArray(rows) || rows.length === 0) {
     return NextResponse.json({ error: "No rows provided" }, { status: 400 });
@@ -199,20 +210,25 @@ export async function POST(request: NextRequest) {
 
   await prisma.$transaction(
     async (tx) => {
-      // 1. Replace: wipe affected offerings' requirements + specialisation links
-      //    (alternatives cascade via FK).
-      await tx.offeringData.deleteMany({ where: { offeringName: { in: offeringNames } } });
-      await tx.offeringSpecialisation.deleteMany({ where: { offeringName: { in: offeringNames } } });
-
-      // 2. Register offerings (persist as admin cards; apply description/link).
+      // 1. Register offerings (persist as admin cards; apply description/link).
+      //    Names are scoped to this company via the (companyId, name) unique.
+      const offeringIdByName = new Map<string, number>();
       for (const name of offeringNames) {
         const meta = offeringMeta.get(name) ?? { description: null, link: null };
-        await tx.offering.upsert({
-          where: { name },
-          create: { name, description: meta.description, link: meta.link },
+        const offering = await tx.offering.upsert({
+          where: { companyId_name: { companyId, name } },
+          create: { companyId, name, description: meta.description, link: meta.link },
           update: { description: meta.description, link: meta.link },
         });
+        offeringIdByName.set(name, offering.id);
       }
+
+      // 2. Replace: wipe those offerings' requirements + specialisation links
+      //    (alternatives cascade via FK). Keyed on the resolved offering ids so
+      //    another company's identically-named offering is never touched.
+      const offeringIds = [...offeringIdByName.values()];
+      await tx.offeringData.deleteMany({ where: { offeringId: { in: offeringIds } } });
+      await tx.offeringSpecialisation.deleteMany({ where: { offeringId: { in: offeringIds } } });
 
       // 3. Resolve specialisations (create if missing).
       const specIdCache = new Map<string, number>();
@@ -227,25 +243,27 @@ export async function POST(request: NextRequest) {
       const linkSeen = new Set<string>();
       for (const r of resolved) {
         if (!r.specialisationName) continue;
+        const offeringId = offeringIdByName.get(r.offeringName);
         const specId = specIdCache.get(r.specialisationName.toLowerCase());
-        if (specId == null) continue;
-        const key = `${r.offeringName}::${specId}`;
+        if (offeringId == null || specId == null) continue;
+        const key = `${offeringId}::${specId}`;
         if (linkSeen.has(key)) continue;
         linkSeen.add(key);
         await tx.offeringSpecialisation.create({
-          data: { offeringName: r.offeringName, specialisationId: specId },
+          data: { offeringId, specialisationId: specId },
         });
       }
 
       // 5. Create the requirement rows.
       for (const r of resolved) {
         if (!r.requirement || !r.specialisationName) continue;
+        const offeringId = offeringIdByName.get(r.offeringName);
         const specId = specIdCache.get(r.specialisationName.toLowerCase());
-        if (specId == null) continue;
+        if (offeringId == null || specId == null) continue;
         const req = r.requirement;
         await tx.offeringData.create({
           data: {
-            offeringName: r.offeringName,
+            offeringId,
             specialisationId: specId,
             trainingType: req.trainingType,
             trainingTitle: req.trainingTitle,

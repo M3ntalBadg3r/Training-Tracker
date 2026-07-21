@@ -36,8 +36,8 @@ const EMPTY_FORM: FormState = {
 interface Props {
   open: boolean;
   onClose: () => void;
-  /** The offering this requirement belongs to — fixed, shown read-only. */
-  offeringName: string;
+  /** The offering this requirement belongs to — fixed; the id is what's written. */
+  offeringId: number;
   /** The specialisation this requirement supports — fixed, shown read-only. */
   specialisationId: number;
   specialisationName: string;
@@ -55,7 +55,7 @@ interface Props {
 export default function RequirementModal({
   open,
   onClose,
-  offeringName,
+  offeringId,
   specialisationId,
   specialisationName,
   initial,
@@ -124,7 +124,7 @@ export default function RequirementModal({
     setSaving(true);
     try {
       const payload = {
-        offeringName,
+        offeringId,
         specialisationId,
         trainingType: form.trainingType,
         trainingTitle: form.trainingTitle,
@@ -154,12 +154,6 @@ export default function RequirementModal({
     <Modal open={open} onClose={onClose} title={isEdit ? "Edit Requirement" : "Add Requirement"}>
       <div className="space-y-4">
         {formError && <div className="p-2 bg-red-50 text-red-700 rounded text-sm">{formError}</div>}
-        <div>
-          <label className="block text-sm font-medium mb-1">Offering</label>
-          <div className="px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-sm text-gray-700">
-            {offeringName}
-          </div>
-        </div>
         <div>
           <label className="block text-sm font-medium mb-1">Specialisation</label>
           <div className="px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-sm text-gray-700">

@@ -19,7 +19,9 @@ export const OFFERING_TRAINING_TYPES = [
 ] as const;
 
 export interface ValidatedOfferingRequirement {
-  offeringName: string;
+  offeringId: number;
+  /** The company that owns the offering — used by routes for canAccessCompany. */
+  companyId: number;
   specialisationId: number;
   trainingType: string;
   trainingTitle: string;
@@ -37,8 +39,8 @@ export async function validateOfferingRequirementBody(
 ): Promise<OfferingValidationResult> {
   const err = (error: string, status = 400): OfferingValidationResult => ({ ok: false, error, status });
 
-  const offeringName = typeof body.offeringName === "string" ? body.offeringName.trim() : "";
-  if (!offeringName) return err("Offering name is required");
+  const offeringId = body.offeringId == null ? NaN : Number(body.offeringId);
+  if (Number.isNaN(offeringId)) return err("An offering is required");
 
   const specialisationId = body.specialisationId == null ? NaN : Number(body.specialisationId);
   if (Number.isNaN(specialisationId)) return err("A specialisation is required");
@@ -56,7 +58,7 @@ export async function validateOfferingRequirementBody(
   // Existence checks.
   const spec = await prisma.specialisation.findUnique({ where: { id: specialisationId } });
   if (!spec) return err("Specialisation not found", 404);
-  const offering = await prisma.offering.findUnique({ where: { name: offeringName } });
+  const offering = await prisma.offering.findUnique({ where: { id: offeringId } });
   if (!offering) return err("Offering not found", 404);
   const training = await prisma.trainingData.findUnique({ where: { trainingTitle } });
   if (!training) return err("Training not found", 404);
@@ -81,18 +83,27 @@ export async function validateOfferingRequirementBody(
 
   return {
     ok: true,
-    value: { offeringName, specialisationId, trainingType, trainingTitle, quantityRequired, altData },
+    value: {
+      offeringId,
+      companyId: offering.companyId,
+      specialisationId,
+      trainingType,
+      trainingTitle,
+      quantityRequired,
+      altData,
+    },
   };
 }
 
 /** Shape of an OfferingData record with the relations needed for serialization. */
 export interface OfferingDataRecord {
   id: number;
-  offeringName: string;
+  offeringId: number;
   specialisationId: number;
   trainingType: string | null;
   trainingTitle: string | null;
   quantityRequired: number;
+  offering: { name: string; companyId: number } | null;
   specialisation: { name: string } | null;
   trainingData: { fullTitle: string } | null;
   alternatives: { trainingType: string; trainingTitle: string; trainingData: { fullTitle: string } | null }[];
@@ -100,6 +111,7 @@ export interface OfferingDataRecord {
 
 /** The include clause that produces an OfferingDataRecord. */
 export const offeringDataInclude = {
+  offering: { select: { name: true, companyId: true } },
   specialisation: { select: { name: true } },
   trainingData: { select: { fullTitle: true } },
   alternatives: { include: { trainingData: { select: { fullTitle: true } } } },
@@ -109,7 +121,9 @@ export const offeringDataInclude = {
 export function serializeOfferingDataRow(record: OfferingDataRecord) {
   return {
     id: record.id,
-    offeringName: record.offeringName,
+    offeringId: record.offeringId,
+    offeringName: record.offering?.name ?? "—",
+    companyId: record.offering?.companyId ?? null,
     specialisationId: record.specialisationId,
     specialisationName: record.specialisation?.name ?? null,
     trainingType: record.trainingType ?? null,

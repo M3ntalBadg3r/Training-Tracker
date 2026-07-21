@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { Suspense, useCallback, useEffect, useState } from "react";
+import { useParams, useSearchParams } from "next/navigation";
 import PageHeader from "@/components/layout/PageHeader";
 import Modal from "@/components/ui/Modal";
 import RequirementModal from "../RequirementModal";
@@ -10,15 +10,20 @@ import { trainingTypeLabel } from "@/lib/utils";
 import { Plus, Trash2, Pencil, Save, ExternalLink } from "lucide-react";
 
 interface OfferingDetail {
+  id: number;
+  companyId: number;
   name: string;
   description: string | null;
   link: string | null;
   specialisations: { id: number; name: string }[];
 }
 
-export default function OfferingDetailPage() {
+function OfferingDetailInner() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const offeringName = decodeURIComponent(String(params.offeringName));
+  const companyId = searchParams.get("companyId") ?? "";
+  const companyQS = companyId ? `?companyId=${encodeURIComponent(companyId)}` : "";
 
   const [offering, setOffering] = useState<OfferingDetail | null>(null);
   const [rows, setRows] = useState<OfferingDataRow[]>([]);
@@ -45,7 +50,7 @@ export default function OfferingDetailPage() {
 
   const fetchOffering = useCallback(async () => {
     try {
-      const res = await fetch(`/api/admin/offerings/${encodeURIComponent(offeringName)}`);
+      const res = await fetch(`/api/admin/offerings/${encodeURIComponent(offeringName)}${companyQS}`);
       if (res.ok) setOffering(await res.json());
       else setError("Failed to load offering");
     } catch {
@@ -53,17 +58,17 @@ export default function OfferingDetailPage() {
     } finally {
       setLoading(false);
     }
-  }, [offeringName]);
+  }, [offeringName, companyQS]);
 
-  const fetchRows = useCallback(async () => {
+  const fetchRows = useCallback(async (offeringId: number) => {
     try {
-      const res = await fetch("/api/admin/offering-data");
+      const res = await fetch(`/api/admin/offering-data${companyQS}`);
       if (res.ok) {
         const all: OfferingDataRow[] = await res.json();
-        setRows(all.filter((r) => r.offeringName === offeringName));
+        setRows(all.filter((r) => r.offeringId === offeringId));
       }
     } catch { /* ignore */ }
-  }, [offeringName]);
+  }, [companyQS]);
 
   const fetchSpecs = useCallback(async () => {
     try {
@@ -74,13 +79,17 @@ export default function OfferingDetailPage() {
 
   useEffect(() => {
     fetchOffering();
-    fetchRows();
     fetchSpecs();
-  }, [fetchOffering, fetchRows, fetchSpecs]);
+  }, [fetchOffering, fetchSpecs]);
+
+  // Load requirement rows once the offering (and thus its id) is known.
+  useEffect(() => {
+    if (offering?.id != null) fetchRows(offering.id);
+  }, [offering?.id, fetchRows]);
 
   const saveDetails = async () => {
     setEditError("");
-    const res = await fetch(`/api/admin/offerings/${encodeURIComponent(offeringName)}`, {
+    const res = await fetch(`/api/admin/offerings/${encodeURIComponent(offeringName)}${companyQS}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ description: editDesc, link: editLink }),
@@ -98,7 +107,7 @@ export default function OfferingDetailPage() {
     setAddSpecError("");
     if (!offering || !addSpecId) { setAddSpecError("Select a specialisation"); return; }
     const ids = [...offering.specialisations.map((s) => s.id), addSpecId];
-    const res = await fetch(`/api/admin/offerings/${encodeURIComponent(offeringName)}`, {
+    const res = await fetch(`/api/admin/offerings/${encodeURIComponent(offeringName)}${companyQS}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ specialisationIds: ids }),
@@ -117,7 +126,7 @@ export default function OfferingDetailPage() {
     setRemoveSpecError("");
     if (!offering || !removeSpec) return;
     const ids = offering.specialisations.map((s) => s.id).filter((id) => id !== removeSpec.id);
-    const res = await fetch(`/api/admin/offerings/${encodeURIComponent(offeringName)}`, {
+    const res = await fetch(`/api/admin/offerings/${encodeURIComponent(offeringName)}${companyQS}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ specialisationIds: ids }),
@@ -129,14 +138,14 @@ export default function OfferingDetailPage() {
     }
     setRemoveSpec(null);
     fetchOffering();
-    fetchRows();
+    fetchRows(offering.id);
   };
 
   const doDeleteReq = async () => {
-    if (!deleteReq) return;
+    if (!deleteReq || !offering) return;
     await fetch(`/api/admin/offering-data/${deleteReq.id}`, { method: "DELETE" });
     setDeleteReq(null);
-    fetchRows();
+    fetchRows(offering.id);
   };
 
   const availableSpecs = allSpecs.filter((s) => !(offering?.specialisations ?? []).some((os) => os.id === s.id));
@@ -291,13 +300,21 @@ export default function OfferingDetailPage() {
         <RequirementModal
           open={reqModal !== null}
           onClose={() => setReqModal(null)}
-          offeringName={offeringName}
+          offeringId={offering.id}
           specialisationId={reqModal.specId}
           specialisationName={reqModal.specName}
           initial={reqModal.initial}
-          onSaved={() => { fetchRows(); fetchOffering(); }}
+          onSaved={() => { fetchRows(offering.id); fetchOffering(); }}
         />
       )}
     </div>
+  );
+}
+
+export default function OfferingDetailPage() {
+  return (
+    <Suspense fallback={<div className="p-6 text-gray-500">Loading…</div>}>
+      <OfferingDetailInner />
+    </Suspense>
   );
 }
