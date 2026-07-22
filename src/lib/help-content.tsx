@@ -1955,7 +1955,11 @@ const helpSections: Record<string, HelpSection> = {
           allocates candidates across the whole target. The{" "}
           <strong>&ldquo;Who to certify&rdquo;</strong> table lists one row per person
           with every gap they close (expand a row for detail) — so someone whose
-          single exam closes the same cert in several places appears once.
+          single exam closes the same cert in several places appears once. Two
+          at-a-glance columns show <strong>which specialisation(s)</strong> that
+          person would help fulfil and the <strong>relevant training they already
+          hold</strong> (the ILT/OLX behind an easy win, or the legacy cert behind a
+          legacy upgrade) — so it&apos;s obvious why they&apos;re a cheap candidate.
         </p>
 
         <h3>Scope &amp; renewals</h3>

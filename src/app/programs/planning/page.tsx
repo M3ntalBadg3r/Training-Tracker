@@ -130,13 +130,28 @@ const TIER_BADGE: Record<CandidateTier, string> = {
 // Shared by the per-section ExportMenus and the page-level "Export report"
 // (ReportExportMenu) so the two surfaces can never drift.
 
+/** Distinct specialisations a candidate would help fulfil, across all their gaps. */
+function candidateSpecialisations(c: PlanCandidate): string {
+  return [...new Set(c.closes.map((cl) => cl.specialisation).filter((s): s is string => !!s))].join(", ");
+}
+/**
+ * The qualifying training a candidate already holds that gives them a head-start —
+ * the ILT/OLX behind an easy win (or the legacy cert behind a legacy upgrade).
+ */
+function candidateHelpfulTraining(c: PlanCandidate): string {
+  return [...new Set(c.closes.map((cl) => cl.path).filter((p): p is string => !!p))].join(", ");
+}
+
 function buildCandidateSection(candidates: PlanCandidate[]): ReportTableSection {
   return {
     title: "Who to certify",
     columns: [
       { key: "Name", header: "Name" }, { key: "Email", header: "Email" },
       { key: "Country", header: "Country" }, { key: "Theatre", header: "Theatre" },
-      { key: "Tier", header: "Tier" }, { key: "Gaps closed", header: "Gaps closed" },
+      { key: "Tier", header: "Best move" },
+      { key: "Specialisation", header: "Specialisation" },
+      { key: "Relevant training", header: "Relevant training held" },
+      { key: "Gaps closed", header: "Gaps closed" },
       { key: "Detail", header: "Detail" },
     ],
     rows: candidates.map((c) => ({
@@ -145,6 +160,8 @@ function buildCandidateSection(candidates: PlanCandidate[]): ReportTableSection 
       Country: c.country,
       Theatre: c.theatre,
       Tier: TIER_LABEL[c.topTier],
+      Specialisation: candidateSpecialisations(c),
+      "Relevant training": candidateHelpfulTraining(c),
       "Gaps closed": c.closesCount,
       Detail: c.closes
         .map((cl) => `${cl.cert} (${cl.scopeLabel})${cl.path ? ` via ${cl.path}` : ""} [${TIER_LABEL[cl.tier]}]`)
@@ -626,6 +643,8 @@ function CandidateTable({ candidates, scopeLabel }: { candidates: PlanCandidate[
     country: (c) => c.country,
     theatre: (c) => c.theatre,
     topTier: (c) => c.topTier,
+    specialisation: (c) => candidateSpecialisations(c),
+    training: (c) => candidateHelpfulTraining(c),
     closesCount: (c) => c.closesCount,
   }, { defaultKey: "topTier", tiebreakKey: "fullName", descFirstKeys: ["closesCount"] });
 
@@ -661,6 +680,8 @@ function CandidateTable({ candidates, scopeLabel }: { candidates: PlanCandidate[
                 <th className="py-2 pr-3 cursor-pointer" onClick={() => toggleSort("country")}>Country{sortIndicator("country")}</th>
                 <th className="py-2 pr-3 cursor-pointer" onClick={() => toggleSort("theatre")}>Theatre{sortIndicator("theatre")}</th>
                 <th className="py-2 pr-3 cursor-pointer" onClick={() => toggleSort("topTier")}>Best move{sortIndicator("topTier")}</th>
+                <th className="py-2 pr-3 cursor-pointer" onClick={() => toggleSort("specialisation")}>Specialisation{sortIndicator("specialisation")}</th>
+                <th className="py-2 pr-3 cursor-pointer" onClick={() => toggleSort("training")} title="ILT/OLX (or legacy cert) they already hold that gives them a head-start">Relevant training held{sortIndicator("training")}</th>
                 <th className="py-2 pr-3 cursor-pointer" onClick={() => toggleSort("closesCount")}>Gaps closed{sortIndicator("closesCount")}</th>
                 <th className="py-2"></th>
               </tr>
@@ -675,12 +696,14 @@ function CandidateTable({ candidates, scopeLabel }: { candidates: PlanCandidate[
                     <td className="py-2 pr-3">{c.country}</td>
                     <td className="py-2 pr-3">{c.theatre}</td>
                     <td className="py-2 pr-3"><span className={`px-1.5 py-0.5 rounded-full text-xs ${TIER_BADGE[c.topTier]}`}>{TIER_LABEL[c.topTier]}</span></td>
+                    <td className="py-2 pr-3">{candidateSpecialisations(c) || <span className="text-gray-400">—</span>}</td>
+                    <td className="py-2 pr-3">{candidateHelpfulTraining(c) || <span className="text-gray-400">—</span>}</td>
                     <td className="py-2 pr-3">{c.closesCount}</td>
                     <td className="py-2">{expanded.has(c.email) ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</td>
                   </tr>
                   {expanded.has(c.email) && (
                     <tr className="bg-gray-50/60">
-                      <td colSpan={6} className="py-2 px-4">
+                      <td colSpan={8} className="py-2 px-4">
                         <ul className="space-y-1 text-xs text-gray-700">
                           {c.closes.map((cl, i) => (
                             <li key={i} className="flex items-center gap-2">
