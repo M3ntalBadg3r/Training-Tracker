@@ -1955,7 +1955,11 @@ const helpSections: Record<string, HelpSection> = {
           allocates candidates across the whole target. The{" "}
           <strong>&ldquo;Who to certify&rdquo;</strong> table lists one row per person
           with every gap they close (expand a row for detail) — so someone whose
-          single exam closes the same cert in several places appears once.
+          single exam closes the same cert in several places appears once. Two
+          at-a-glance columns show <strong>which specialisation(s)</strong> that
+          person would help fulfil and the <strong>relevant training they already
+          hold</strong> (the ILT/OLX behind an easy win, or the legacy cert behind a
+          legacy upgrade) — so it&apos;s obvious why they&apos;re a cheap candidate.
         </p>
 
         <h3>Scope &amp; renewals</h3>
@@ -1971,8 +1975,14 @@ const helpSections: Record<string, HelpSection> = {
 
         <h3>Export</h3>
         <p>
-          The candidate list and the renewals list can each be exported to CSV,
-          Excel, or PDF.
+          Use <strong>Export report</strong> in the page header to download the{" "}
+          <em>whole plan</em> as one file — a summary of the KPI totals, the
+          aggregate roadmap (every requirement gap), the &ldquo;Who to
+          certify&rdquo; candidate list, and the renewals-at-risk list — in CSV,
+          Excel, or PDF. In Excel each section becomes its own sheet; the PDF
+          stacks each section as a headed table; CSV concatenates them with
+          section titles. The candidate list and the renewals list also keep their
+          own per-section export buttons for a quick single-table download.
         </p>
       </>
     ),
