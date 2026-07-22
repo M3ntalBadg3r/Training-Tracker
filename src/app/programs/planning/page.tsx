@@ -16,6 +16,8 @@ import {
 import PageHeader from "@/components/layout/PageHeader";
 import KpiStrip from "@/components/ui/KpiStrip";
 import { ExportMenu } from "@/components/programs/ProgramCompliance";
+import { ReportExportMenu } from "@/components/ui/ReportExportMenu";
+import type { ReportDocument, ReportSection, ReportTableSection } from "@/lib/report-export";
 import { useCompanyScope } from "@/components/company/CompanyScopeProvider";
 import { useRegionData } from "@/hooks/useRegionData";
 import { useTableSort } from "@/hooks/useTableSort";
@@ -124,6 +126,136 @@ const TIER_BADGE: Record<CandidateTier, string> = {
   "net-new": "bg-gray-100 text-gray-700",
 };
 
+// ── Reusable export section builders ───────────────────────────────────────
+// Shared by the per-section ExportMenus and the page-level "Export report"
+// (ReportExportMenu) so the two surfaces can never drift.
+
+function buildCandidateSection(candidates: PlanCandidate[]): ReportTableSection {
+  return {
+    title: "Who to certify",
+    columns: [
+      { key: "Name", header: "Name" }, { key: "Email", header: "Email" },
+      { key: "Country", header: "Country" }, { key: "Theatre", header: "Theatre" },
+      { key: "Tier", header: "Tier" }, { key: "Gaps closed", header: "Gaps closed" },
+      { key: "Detail", header: "Detail" },
+    ],
+    rows: candidates.map((c) => ({
+      Name: c.fullName,
+      Email: c.email,
+      Country: c.country,
+      Theatre: c.theatre,
+      Tier: TIER_LABEL[c.topTier],
+      "Gaps closed": c.closesCount,
+      Detail: c.closes
+        .map((cl) => `${cl.cert} (${cl.scopeLabel})${cl.path ? ` via ${cl.path}` : ""} [${TIER_LABEL[cl.tier]}]`)
+        .join("; "),
+    })),
+  };
+}
+
+function buildRenewalSection(renewals: PlanRenewalRow[], windowMonths: number): ReportTableSection {
+  return {
+    title: "Renewals at risk",
+    subtitle: `Expiring within ${windowMonths} month${windowMonths === 1 ? "" : "s"}`,
+    columns: [
+      { key: "Name", header: "Name" }, { key: "Email", header: "Email" },
+      { key: "Country", header: "Country" }, { key: "Theatre", header: "Theatre" },
+      { key: "Cert", header: "Cert" }, { key: "Scope", header: "Scope" },
+    ],
+    rows: renewals.map((r) => ({
+      Name: r.fullName, Email: r.email, Country: r.country,
+      Theatre: r.theatre, Cert: r.cert, Scope: r.scopeLabel,
+    })),
+  };
+}
+
+function buildSummarySection(plan: CompliancePlanResult): ReportTableSection {
+  return {
+    title: "Summary",
+    columns: [{ key: "Metric", header: "Metric" }, { key: "Value", header: "Value" }],
+    rows: [
+      { Metric: "People to certify", Value: plan.totals.peopleMoves },
+      { Metric: "Easy wins", Value: plan.totals.easyWins },
+      { Metric: "Lapsed (renew)", Value: plan.totals.lapsed },
+      { Metric: "Legacy upgrade", Value: plan.totals.legacy },
+      { Metric: "Net-new training", Value: plan.totals.netNew },
+      { Metric: "Renewals at risk", Value: plan.totals.renewalsAtRisk },
+    ],
+  };
+}
+
+function buildRoadmapSection(targets: PlanTargetResult[]): ReportTableSection {
+  const rows: Record<string, string | number>[] = [];
+  for (const t of targets) {
+    const target = t.tierName ?? (t.mode === "all" ? "All requirements" : "Specialisations");
+    for (const s of t.specialisations) {
+      for (const r of s.requirements) {
+        rows.push({
+          program: t.program,
+          target,
+          specialisation: s.name,
+          achieved: s.achieved ? "Yes" : "No",
+          cert: r.cert,
+          scope: r.scopeLabel,
+          attained: r.attained,
+          required: r.required,
+          gap: r.shortfall,
+          easy: r.easyWinPool,
+          lapsed: r.lapsedPool,
+          legacy: r.legacyPool,
+          netNew: r.netNew,
+          expiringSoon: r.expiringSoon,
+        });
+      }
+    }
+  }
+  return {
+    title: "Roadmap",
+    columns: [
+      { key: "program", header: "Program" },
+      { key: "target", header: "Target" },
+      { key: "specialisation", header: "Specialisation" },
+      { key: "achieved", header: "Achieved" },
+      { key: "cert", header: "Requirement" },
+      { key: "scope", header: "Scope" },
+      { key: "attained", header: "Attained" },
+      { key: "required", header: "Required" },
+      { key: "gap", header: "Gap" },
+      { key: "easy", header: "Easy wins" },
+      { key: "lapsed", header: "Lapsed" },
+      { key: "legacy", header: "Legacy" },
+      { key: "netNew", header: "Net-new" },
+      { key: "expiringSoon", header: "Expiring soon" },
+    ],
+    rows,
+  };
+}
+
+/** Assemble the whole Compliance Planning page into one exportable report. */
+function buildPlanDocument(plan: CompliancePlanResult, level: ScopeLevel): ReportDocument {
+  const sections: ReportSection[] = [
+    buildSummarySection(plan),
+    buildRoadmapSection(plan.targets),
+    buildCandidateSection(plan.candidates),
+  ];
+  if (plan.renewals.length > 0) {
+    sections.push(buildRenewalSection(plan.renewals, plan.renewalWindowMonths));
+  }
+  return {
+    title: "Compliance Planning",
+    meta: [
+      { label: "Scope", value: plan.scopeLabel },
+      { label: "Level", value: level },
+      {
+        label: "Renewal window",
+        value: plan.renewalWindowMonths === 0 ? "Off" : `${plan.renewalWindowMonths} month${plan.renewalWindowMonths === 1 ? "" : "s"}`,
+      },
+      { label: "Generated", value: new Date().toLocaleString() },
+    ],
+    sections,
+  };
+}
+
 export default function CompliancePlanningPage() {
   const companyScope = useCompanyScope();
   const { rows: regionRows } = useRegionData();
@@ -156,6 +288,7 @@ export default function CompliancePlanningPage() {
   // Targets: program name → selection (only selected programs are keys).
   const [targets, setTargets] = useState<Record<string, TargetSelection>>({});
   const [renewalWindowMonths, setRenewalWindowMonths] = useState(3);
+  const [showReportExport, setShowReportExport] = useState(false);
 
   const toggleProgram = (name: string, isTiered: boolean) => {
     setTargets((prev) => {
@@ -226,20 +359,31 @@ export default function CompliancePlanningPage() {
         helpSlug="compliance-planning"
         showBack
         rightContent={
-          <label className="flex items-center gap-2 text-sm text-gray-600">
-            Renewal window
-            <select
-              value={renewalWindowMonths}
-              onChange={(e) => setRenewalWindowMonths(parseInt(e.target.value, 10))}
-              className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white"
-            >
-              <option value={0}>Off</option>
-              <option value={1}>1 month</option>
-              <option value={3}>3 months</option>
-              <option value={6}>6 months</option>
-              <option value={12}>12 months</option>
-            </select>
-          </label>
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-2 text-sm text-gray-600">
+              Renewal window
+              <select
+                value={renewalWindowMonths}
+                onChange={(e) => setRenewalWindowMonths(parseInt(e.target.value, 10))}
+                className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white"
+              >
+                <option value={0}>Off</option>
+                <option value={1}>1 month</option>
+                <option value={3}>3 months</option>
+                <option value={6}>6 months</option>
+                <option value={12}>12 months</option>
+              </select>
+            </label>
+            {active && !loading && plan && (
+              <ReportExportMenu
+                show={showReportExport}
+                setShow={setShowReportExport}
+                document={() => buildPlanDocument(plan, level)}
+                filename={`compliance-plan-${plan.scopeLabel}`}
+                align="right"
+              />
+            )}
+          </div>
         }
       />
 
@@ -485,20 +629,7 @@ function CandidateTable({ candidates, scopeLabel }: { candidates: PlanCandidate[
     closesCount: (c) => c.closesCount,
   }, { defaultKey: "topTier", tiebreakKey: "fullName", descFirstKeys: ["closesCount"] });
 
-  const exportData = candidates.map((c) => ({
-    Name: c.fullName,
-    Email: c.email,
-    Country: c.country,
-    Theatre: c.theatre,
-    Tier: TIER_LABEL[c.topTier],
-    "Gaps closed": c.closesCount,
-    Detail: c.closes.map((cl) => `${cl.cert} (${cl.scopeLabel})${cl.path ? ` via ${cl.path}` : ""} [${TIER_LABEL[cl.tier]}]`).join("; "),
-  }));
-  const exportCols = [
-    { key: "Name", header: "Name" }, { key: "Email", header: "Email" },
-    { key: "Country", header: "Country" }, { key: "Theatre", header: "Theatre" },
-    { key: "Tier", header: "Tier" }, { key: "Gaps closed", header: "Gaps closed" }, { key: "Detail", header: "Detail" },
-  ];
+  const exportSection = buildCandidateSection(candidates);
 
   const toggle = (email: string) => setExpanded((prev) => {
     const next = new Set(prev);
@@ -516,7 +647,7 @@ function CandidateTable({ candidates, scopeLabel }: { candidates: PlanCandidate[
           </p>
         </div>
         {candidates.length > 0 && (
-          <ExportMenu show={showExport} setShow={setShowExport} data={exportData} columns={exportCols} filename={`compliance-plan-candidates-${scopeLabel}`} align="right" />
+          <ExportMenu show={showExport} setShow={setShowExport} data={exportSection.rows} columns={exportSection.columns} filename={`compliance-plan-candidates-${scopeLabel}`} align="right" />
         )}
       </div>
       {candidates.length === 0 ? (
@@ -577,18 +708,14 @@ function CandidateTable({ candidates, scopeLabel }: { candidates: PlanCandidate[
 // ── Renewal-at-risk overlay ──
 function RenewalTable({ renewals, windowMonths, scopeLabel }: { renewals: PlanRenewalRow[]; windowMonths: number; scopeLabel: string }) {
   const [showExport, setShowExport] = useState(false);
-  const exportData = renewals.map((r) => ({ Name: r.fullName, Email: r.email, Country: r.country, Theatre: r.theatre, Cert: r.cert, Scope: r.scopeLabel }));
-  const exportCols = [
-    { key: "Name", header: "Name" }, { key: "Email", header: "Email" }, { key: "Country", header: "Country" },
-    { key: "Theatre", header: "Theatre" }, { key: "Cert", header: "Cert" }, { key: "Scope", header: "Scope" },
-  ];
+  const exportSection = buildRenewalSection(renewals, windowMonths);
   return (
     <div className="bg-white rounded-lg border border-amber-200 p-4 mb-6">
       <div className="flex items-center justify-between mb-3">
         <h2 className="flex items-center gap-2 text-base font-semibold text-amber-800">
           <AlertTriangle size={18} /> Renewals at risk — expiring within {windowMonths} month{windowMonths === 1 ? "" : "s"} ({renewals.length})
         </h2>
-        <ExportMenu show={showExport} setShow={setShowExport} data={exportData} columns={exportCols} filename={`compliance-plan-renewals-${scopeLabel}`} align="right" />
+        <ExportMenu show={showExport} setShow={setShowExport} data={exportSection.rows} columns={exportSection.columns} filename={`compliance-plan-renewals-${scopeLabel}`} align="right" />
       </div>
       <p className="text-xs text-gray-500 mb-2">These holders currently count toward a gap the plan reports as closed — their expiry will re-open it.</p>
       <div className="overflow-x-auto">

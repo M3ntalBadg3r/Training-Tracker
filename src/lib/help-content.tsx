@@ -1971,8 +1971,14 @@ const helpSections: Record<string, HelpSection> = {
 
         <h3>Export</h3>
         <p>
-          The candidate list and the renewals list can each be exported to CSV,
-          Excel, or PDF.
+          Use <strong>Export report</strong> in the page header to download the{" "}
+          <em>whole plan</em> as one file — a summary of the KPI totals, the
+          aggregate roadmap (every requirement gap), the &ldquo;Who to
+          certify&rdquo; candidate list, and the renewals-at-risk list — in CSV,
+          Excel, or PDF. In Excel each section becomes its own sheet; the PDF
+          stacks each section as a headed table; CSV concatenates them with
+          section titles. The candidate list and the renewals list also keep their
+          own per-section export buttons for a quick single-table download.
         </p>
       </>
     ),
