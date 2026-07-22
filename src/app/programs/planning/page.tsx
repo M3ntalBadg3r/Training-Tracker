@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import {
   Sparkles,
@@ -11,7 +11,6 @@ import {
   ChevronDown,
   ChevronRight,
   AlertTriangle,
-  ExternalLink,
 } from "lucide-react";
 import PageHeader from "@/components/layout/PageHeader";
 import KpiStrip from "@/components/ui/KpiStrip";
@@ -633,6 +632,60 @@ function ReqRow({ r }: { r: PlanRequirement }) {
   );
 }
 
+// Plain-language explanation of a single gap a candidate would close, worded to
+// match their circumstance (easy win via training already taken, a lapsed renewal,
+// or a legacy upgrade). One person may close several gaps, so this renders per close.
+function CloseSentence({ cl }: { cl: PlanCandidateClose }) {
+  const goal = cl.specialisation ? (
+    <>the <strong>{cl.specialisation}</strong> specialisation</>
+  ) : cl.tierName ? (
+    <>the <strong>{cl.tierName}</strong> tier</>
+  ) : (
+    <>this requirement</>
+  );
+  const cert = <strong>{cl.cert}</strong>;
+
+  let sentence: ReactNode;
+  switch (cl.tier) {
+    case "easy-win":
+      sentence = (
+        <>
+          They have taken <strong>{cl.path ?? "the required training"}</strong>. Passing the {cert}{" "}
+          certification exam will contribute to {goal}.
+        </>
+      );
+      break;
+    case "lapsed":
+      sentence = (
+        <>
+          They previously held {cert}, but it has expired. Renewing it will contribute to {goal}.
+        </>
+      );
+      break;
+    case "legacy":
+      sentence = (
+        <>
+          They hold the legacy certification <strong>{cl.path ?? "a superseded certification"}</strong>.
+          Upgrading to {cert} will contribute to {goal}.
+        </>
+      );
+      break;
+    default:
+      sentence = (
+        <>Passing the {cert} certification exam will contribute to {goal}.</>
+      );
+  }
+
+  return (
+    <div className="flex flex-col">
+      <span>{sentence}</span>
+      <span className="text-[11px] text-gray-400">
+        {cl.program} · {cl.scopeLabel}
+      </span>
+    </div>
+  );
+}
+
 // ── Candidate-centric drill-down ──
 function CandidateTable({ candidates, scopeLabel }: { candidates: PlanCandidate[]; scopeLabel: string }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -704,14 +757,11 @@ function CandidateTable({ candidates, scopeLabel }: { candidates: PlanCandidate[
                   {expanded.has(c.email) && (
                     <tr className="bg-gray-50/60">
                       <td colSpan={8} className="py-2 px-4">
-                        <ul className="space-y-1 text-xs text-gray-700">
+                        <ul className="space-y-2 text-xs text-gray-700">
                           {c.closes.map((cl, i) => (
-                            <li key={i} className="flex items-center gap-2">
-                              <span className={`px-1.5 py-0.5 rounded-full ${TIER_BADGE[cl.tier]}`}>{TIER_LABEL[cl.tier]}</span>
-                              <span className="font-medium">{cl.cert}</span>
-                              <span className="text-gray-400">·</span>
-                              <span>{cl.program}{cl.specialisation ? ` › ${cl.specialisation}` : ""}{cl.tierName ? ` › ${cl.tierName}` : ""} ({cl.scopeLabel})</span>
-                              {cl.path && <span className="text-gray-400 flex items-center gap-0.5"><ExternalLink size={11} /> via {cl.path}</span>}
+                            <li key={i} className="flex items-start gap-2">
+                              <span className={`shrink-0 px-1.5 py-0.5 rounded-full ${TIER_BADGE[cl.tier]}`}>{TIER_LABEL[cl.tier]}</span>
+                              <CloseSentence cl={cl} />
                             </li>
                           ))}
                         </ul>
