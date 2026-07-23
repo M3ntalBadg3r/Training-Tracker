@@ -539,6 +539,11 @@ export function allocateCandidates(instances: ReqInstance[]): AllocationResult {
   const committedTier = new Map<string, Exclude<CandidateTier, "net-new">>();
   const filled = new Map<string, number>();
   const closesByEmail = new Map<string, PlanCandidateClose[]>();
+  // Guard so each person is credited to a given instance at most once. Without
+  // it, a cert shared by two instances (e.g. required by two specialisations)
+  // re-credits an already-committed person every time the outer loop reaches
+  // another same-cert instance — inflating `filled` and duplicating `closes`.
+  const credited = new Set<string>(); // `${email}::${instanceId}`
 
   const record = (email: string, inst: ReqInstance, member: PoolMember) => {
     if (!closesByEmail.has(email)) closesByEmail.set(email, []);
@@ -580,11 +585,16 @@ export function allocateCandidates(instances: ReqInstance[]): AllocationResult {
         committedTier.set(cand.email, cand.tier);
       }
 
-      // Credit this move to every open same-cert instance that can use them.
+      // Credit this move to every open same-cert instance that can use them,
+      // but never twice to the same instance (a later same-cert pass would
+      // otherwise re-credit an already-committed person).
       for (const other of byCertKey.get(inst.certKey)!) {
         if ((filled.get(other.id) ?? 0) >= other.shortfall) continue;
+        const ck = `${cand.email}::${other.id}`;
+        if (credited.has(ck)) continue;
         const m = other.pool.find((p) => p.email === cand.email);
         if (!m) continue;
+        credited.add(ck);
         filled.set(other.id, (filled.get(other.id) ?? 0) + 1);
         record(cand.email, other, m);
       }
