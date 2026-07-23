@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   Sparkles,
@@ -142,6 +142,46 @@ function candidateHelpfulTraining(c: PlanCandidate): string {
   return [...new Set(c.closes.map((cl) => cl.path).filter((p): p is string => !!p))].join(", ");
 }
 
+// Single source of truth for the plain-language explanation of one gap a candidate
+// would close, worded per tier. `closeSegments` returns the sentence as ordered
+// pieces so both the on-screen `CloseSentence` (which bolds names) and the export
+// (`closeSentenceText`, plain) render the exact same wording and can't drift.
+function closeSegments(cl: PlanCandidateClose): { text: string; bold?: boolean }[] {
+  const goal: { text: string; bold?: boolean }[] = cl.specialisation
+    ? [{ text: "the " }, { text: cl.specialisation, bold: true }, { text: " specialisation" }]
+    : cl.tierName
+      ? [{ text: "the " }, { text: cl.tierName, bold: true }, { text: " tier" }]
+      : [{ text: "this requirement" }];
+  const cert = { text: cl.cert, bold: true };
+  switch (cl.tier) {
+    case "easy-win":
+      return [
+        { text: "They have taken " }, { text: cl.path ?? "the required training", bold: true },
+        { text: ". Passing the " }, cert, { text: " certification exam will contribute to " },
+        ...goal, { text: "." },
+      ];
+    case "lapsed":
+      return [
+        { text: "They previously held " }, cert,
+        { text: ", but it has expired. Renewing it will contribute to " }, ...goal, { text: "." },
+      ];
+    case "legacy":
+      return [
+        { text: "They hold the legacy certification " }, { text: cl.path ?? "a superseded certification", bold: true },
+        { text: ". Upgrading to " }, cert, { text: " will contribute to " }, ...goal, { text: "." },
+      ];
+    default:
+      return [
+        { text: "Passing the " }, cert, { text: " certification exam will contribute to " }, ...goal, { text: "." },
+      ];
+  }
+}
+
+/** Plain-text form of a close explanation (for exports). */
+function closeSentenceText(cl: PlanCandidateClose): string {
+  return closeSegments(cl).map((s) => s.text).join("");
+}
+
 function buildCandidateSection(candidates: PlanCandidate[], title = "Who to certify"): ReportTableSection {
   return {
     title,
@@ -164,8 +204,8 @@ function buildCandidateSection(candidates: PlanCandidate[], title = "Who to cert
       "Relevant training": candidateHelpfulTraining(c),
       "Gaps closed": c.closesCount,
       Detail: c.closes
-        .map((cl) => `${cl.cert} (${cl.scopeLabel})${cl.path ? ` via ${cl.path}` : ""} [${TIER_LABEL[cl.tier]}]`)
-        .join("; "),
+        .map((cl) => `${closeSentenceText(cl)} (${cl.program} · ${cl.scopeLabel})`)
+        .join("\n"),
     })),
   };
 }
@@ -651,51 +691,16 @@ function ReqRow({ r }: { r: PlanRequirement }) {
 
 // Plain-language explanation of a single gap a candidate would close, worded to
 // match their circumstance (easy win via training already taken, a lapsed renewal,
-// or a legacy upgrade). One person may close several gaps, so this renders per close.
+// or a legacy upgrade). Renders the shared `closeSegments` wording (bolding names)
+// so it always matches the export's `closeSentenceText`.
 function CloseSentence({ cl }: { cl: PlanCandidateClose }) {
-  const goal = cl.specialisation ? (
-    <>the <strong>{cl.specialisation}</strong> specialisation</>
-  ) : cl.tierName ? (
-    <>the <strong>{cl.tierName}</strong> tier</>
-  ) : (
-    <>this requirement</>
-  );
-  const cert = <strong>{cl.cert}</strong>;
-
-  let sentence: ReactNode;
-  switch (cl.tier) {
-    case "easy-win":
-      sentence = (
-        <>
-          They have taken <strong>{cl.path ?? "the required training"}</strong>. Passing the {cert}{" "}
-          certification exam will contribute to {goal}.
-        </>
-      );
-      break;
-    case "lapsed":
-      sentence = (
-        <>
-          They previously held {cert}, but it has expired. Renewing it will contribute to {goal}.
-        </>
-      );
-      break;
-    case "legacy":
-      sentence = (
-        <>
-          They hold the legacy certification <strong>{cl.path ?? "a superseded certification"}</strong>.
-          Upgrading to {cert} will contribute to {goal}.
-        </>
-      );
-      break;
-    default:
-      sentence = (
-        <>Passing the {cert} certification exam will contribute to {goal}.</>
-      );
-  }
-
   return (
     <div className="flex flex-col">
-      <span>{sentence}</span>
+      <span>
+        {closeSegments(cl).map((s, i) =>
+          s.bold ? <strong key={i}>{s.text}</strong> : <Fragment key={i}>{s.text}</Fragment>,
+        )}
+      </span>
       <span className="text-[11px] text-gray-400">
         {cl.program} · {cl.scopeLabel}
       </span>
