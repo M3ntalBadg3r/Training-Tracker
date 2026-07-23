@@ -151,6 +151,13 @@ export interface CompliancePlanResult {
   renewalWindowMonths: number;
   targets: PlanTargetResult[];
   candidates: PlanCandidate[];
+  /**
+   * The full eligible pool — everyone in any counted requirement's candidate
+   * pool (all tiers), deduped by person, each with the gaps they *could*
+   * contribute to. A superset of `candidates`, which is only the cheapest
+   * subset the allocator nominates to close the gaps.
+   */
+  eligible: PlanCandidate[];
   renewals: PlanRenewalRow[];
   totals: {
     peopleMoves: number;
@@ -795,9 +802,13 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
   // are shown for reference but don't inflate the plan's totals.
   const alloc = allocateCandidates(countedInstances);
 
-  // Student display info for every committed candidate + every renewal-at-risk holder.
+  // Student display info for every committed candidate + every renewal-at-risk
+  // holder + every eligible pool member (so the full-pool list can be named).
   const candidateEmails = new Set<string>(alloc.closesByEmail.keys());
-  for (const inst of countedInstances) for (const e of inst.expiringEmails) candidateEmails.add(e);
+  for (const inst of countedInstances) {
+    for (const e of inst.expiringEmails) candidateEmails.add(e);
+    for (const m of inst.pool) candidateEmails.add(m.email);
+  }
   const students = candidateEmails.size > 0
     ? await prisma.student.findMany({
         where: { email: { in: [...candidateEmails] } },
@@ -876,6 +887,43 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
     (a, b) => tierOrder(a.topTier) - tierOrder(b.topTier) || b.closesCount - a.closesCount || a.fullName.localeCompare(b.fullName),
   );
 
+  // ── Full eligible pool (superset of the nominated candidates) ──
+  // Everyone in any counted requirement's pool, deduped by person, with every
+  // gap they could contribute to. Unlike `candidates`, this ignores allocation
+  // and contention — it's the "who else could we certify" list.
+  const eligibleByEmail = new Map<string, PlanCandidateClose[]>();
+  for (const inst of countedInstances) {
+    for (const m of inst.pool) {
+      if (!eligibleByEmail.has(m.email)) eligibleByEmail.set(m.email, []);
+      eligibleByEmail.get(m.email)!.push({
+        program: inst.program,
+        specialisation: inst.specialisation,
+        tierName: inst.tierName,
+        cert: inst.cert,
+        scopeLabel: inst.scopeLabel,
+        tier: m.tier,
+        path: m.path,
+      });
+    }
+  }
+  const eligible: PlanCandidate[] = [];
+  for (const [email, closes] of eligibleByEmail) {
+    const s = studentById.get(email);
+    const sortedCloses = [...closes].sort((a, b) => tierOrder(a.tier) - tierOrder(b.tier));
+    eligible.push({
+      email,
+      fullName: s?.fullName ?? email,
+      country: s?.country ?? "",
+      theatre: s?.theatre ?? "",
+      topTier: sortedCloses[0]?.tier ?? "easy-win",
+      closesCount: closes.length,
+      closes: sortedCloses,
+    });
+  }
+  eligible.sort(
+    (a, b) => tierOrder(a.topTier) - tierOrder(b.topTier) || b.closesCount - a.closesCount || a.fullName.localeCompare(b.fullName),
+  );
+
   // ── Renewal-at-risk rows (deduped by email+cert+scope) ──
   const renewals: PlanRenewalRow[] = [];
   const renewalSeen = new Set<string>();
@@ -915,6 +963,7 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
     renewalWindowMonths: input.renewalWindowMonths,
     targets,
     candidates,
+    eligible,
     renewals,
     totals: {
       peopleMoves: alloc.closesByEmail.size + netNew,

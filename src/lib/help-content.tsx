@@ -1966,6 +1966,14 @@ const helpSections: Record<string, HelpSection> = {
           specialisation.&rdquo; — worded to match their situation (training already
           taken, a lapsed renewal, or a legacy upgrade).
         </p>
+        <p>
+          Below &ldquo;Who to certify&rdquo;, an <strong>&ldquo;All eligible
+          candidates&rdquo;</strong> section lists the <strong>full pool</strong> —
+          everyone who already holds qualifying training and could be certified, not
+          just the cheapest subset the plan nominates. Use it to pick alternatives
+          (e.g. someone in a particular country) when the recommended person
+          isn&apos;t the one you want to move.
+        </p>
 
         <h3>Scope &amp; renewals</h3>
         <p>

@@ -93,6 +93,7 @@ interface CompliancePlanResult {
   renewalWindowMonths: number;
   targets: PlanTargetResult[];
   candidates: PlanCandidate[];
+  eligible: PlanCandidate[];
   renewals: PlanRenewalRow[];
   totals: { peopleMoves: number; easyWins: number; lapsed: number; legacy: number; netNew: number; renewalsAtRisk: number };
 }
@@ -141,9 +142,9 @@ function candidateHelpfulTraining(c: PlanCandidate): string {
   return [...new Set(c.closes.map((cl) => cl.path).filter((p): p is string => !!p))].join(", ");
 }
 
-function buildCandidateSection(candidates: PlanCandidate[]): ReportTableSection {
+function buildCandidateSection(candidates: PlanCandidate[], title = "Who to certify"): ReportTableSection {
   return {
-    title: "Who to certify",
+    title,
     columns: [
       { key: "Name", header: "Name" }, { key: "Email", header: "Email" },
       { key: "Country", header: "Country" }, { key: "Theatre", header: "Theatre" },
@@ -254,6 +255,9 @@ function buildPlanDocument(plan: CompliancePlanResult, level: ScopeLevel): Repor
     buildRoadmapSection(plan.targets),
     buildCandidateSection(plan.candidates),
   ];
+  if (plan.eligible.length > 0) {
+    sections.push(buildCandidateSection(plan.eligible, "All eligible candidates"));
+  }
   if (plan.renewals.length > 0) {
     sections.push(buildRenewalSection(plan.renewals, plan.renewalWindowMonths));
   }
@@ -516,6 +520,19 @@ export default function CompliancePlanningPage() {
           {/* Candidate-centric drill-down */}
           <CandidateTable candidates={plan.candidates} scopeLabel={plan.scopeLabel} />
 
+          {/* Full eligible pool (superset of the nominated candidates) */}
+          {plan.eligible.length > 0 && (
+            <CandidateTable
+              candidates={plan.eligible}
+              scopeLabel={plan.scopeLabel}
+              title="All eligible candidates"
+              subtitle="Everyone who already holds qualifying training and could be certified — the plan above recommends the cheapest subset to close the gaps."
+              filenameKind="eligible"
+              countLabel="Could close"
+              emptyText="No eligible candidates — remaining gaps need brand-new training."
+            />
+          )}
+
           {/* Renewal-at-risk */}
           {plan.renewals.length > 0 && <RenewalTable renewals={plan.renewals} windowMonths={renewalWindowMonths} scopeLabel={plan.scopeLabel} />}
         </>
@@ -687,7 +704,25 @@ function CloseSentence({ cl }: { cl: PlanCandidateClose }) {
 }
 
 // ── Candidate-centric drill-down ──
-function CandidateTable({ candidates, scopeLabel }: { candidates: PlanCandidate[]; scopeLabel: string }) {
+// Renders either the nominated "Who to certify" subset or the full "All eligible
+// candidates" pool — same columns, sorting, drill-down and export.
+function CandidateTable({
+  candidates,
+  scopeLabel,
+  title = "Who to certify",
+  subtitle = "These people are the cheapest to certify — most have already done the required training and just need to sit the exam.",
+  filenameKind = "candidates",
+  countLabel = "Gaps closed",
+  emptyText = "No named candidates — remaining gaps need brand-new training (net-new), or everything is already met.",
+}: {
+  candidates: PlanCandidate[];
+  scopeLabel: string;
+  title?: string;
+  subtitle?: string;
+  filenameKind?: string;
+  countLabel?: string;
+  emptyText?: string;
+}) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [showExport, setShowExport] = useState(false);
 
@@ -701,7 +736,7 @@ function CandidateTable({ candidates, scopeLabel }: { candidates: PlanCandidate[
     closesCount: (c) => c.closesCount,
   }, { defaultKey: "topTier", tiebreakKey: "fullName", descFirstKeys: ["closesCount"] });
 
-  const exportSection = buildCandidateSection(candidates);
+  const exportSection = buildCandidateSection(candidates, title);
 
   const toggle = (email: string) => setExpanded((prev) => {
     const next = new Set(prev);
@@ -713,17 +748,15 @@ function CandidateTable({ candidates, scopeLabel }: { candidates: PlanCandidate[
     <div className="bg-white rounded-lg border border-gray-200 p-4 mb-6">
       <div className="flex items-start justify-between gap-3 mb-3">
         <div>
-          <h2 className="text-base font-semibold text-gray-900">Who to certify ({candidates.length})</h2>
-          <p className="text-sm text-gray-500 mt-0.5">
-            These people are the cheapest to certify — most have already done the required training and just need to sit the exam.
-          </p>
+          <h2 className="text-base font-semibold text-gray-900">{title} ({candidates.length})</h2>
+          <p className="text-sm text-gray-500 mt-0.5">{subtitle}</p>
         </div>
         {candidates.length > 0 && (
-          <ExportMenu show={showExport} setShow={setShowExport} data={exportSection.rows} columns={exportSection.columns} filename={`compliance-plan-candidates-${scopeLabel}`} align="right" />
+          <ExportMenu show={showExport} setShow={setShowExport} data={exportSection.rows} columns={exportSection.columns} filename={`compliance-plan-${filenameKind}-${scopeLabel}`} align="right" />
         )}
       </div>
       {candidates.length === 0 ? (
-        <p className="text-sm text-gray-500">No named candidates — remaining gaps need brand-new training (net-new), or everything is already met.</p>
+        <p className="text-sm text-gray-500">{emptyText}</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -735,7 +768,7 @@ function CandidateTable({ candidates, scopeLabel }: { candidates: PlanCandidate[
                 <th className="py-2 pr-3 cursor-pointer" onClick={() => toggleSort("topTier")}>Best move{sortIndicator("topTier")}</th>
                 <th className="py-2 pr-3 cursor-pointer" onClick={() => toggleSort("specialisation")}>Specialisation{sortIndicator("specialisation")}</th>
                 <th className="py-2 pr-3 cursor-pointer" onClick={() => toggleSort("training")} title="ILT/OLX (or legacy cert) they already hold that gives them a head-start">Relevant training held{sortIndicator("training")}</th>
-                <th className="py-2 pr-3 cursor-pointer" onClick={() => toggleSort("closesCount")}>Gaps closed{sortIndicator("closesCount")}</th>
+                <th className="py-2 pr-3 cursor-pointer" onClick={() => toggleSort("closesCount")}>{countLabel}{sortIndicator("closesCount")}</th>
                 <th className="py-2"></th>
               </tr>
             </thead>
