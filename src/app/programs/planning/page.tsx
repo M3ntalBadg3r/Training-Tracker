@@ -11,7 +11,6 @@ import {
   ChevronDown,
   ChevronRight,
   AlertTriangle,
-  ExternalLink,
 } from "lucide-react";
 import PageHeader from "@/components/layout/PageHeader";
 import KpiStrip from "@/components/ui/KpiStrip";
@@ -94,6 +93,7 @@ interface CompliancePlanResult {
   renewalWindowMonths: number;
   targets: PlanTargetResult[];
   candidates: PlanCandidate[];
+  eligible: PlanCandidate[];
   renewals: PlanRenewalRow[];
   totals: { peopleMoves: number; easyWins: number; lapsed: number; legacy: number; netNew: number; renewalsAtRisk: number };
 }
@@ -142,9 +142,49 @@ function candidateHelpfulTraining(c: PlanCandidate): string {
   return [...new Set(c.closes.map((cl) => cl.path).filter((p): p is string => !!p))].join(", ");
 }
 
-function buildCandidateSection(candidates: PlanCandidate[]): ReportTableSection {
+// Single source of truth for the plain-language explanation of one gap a candidate
+// would close, worded per tier. `closeSegments` returns the sentence as ordered
+// pieces so both the on-screen `CloseSentence` (which bolds names) and the export
+// (`closeSentenceText`, plain) render the exact same wording and can't drift.
+function closeSegments(cl: PlanCandidateClose): { text: string; bold?: boolean }[] {
+  const goal: { text: string; bold?: boolean }[] = cl.specialisation
+    ? [{ text: "the " }, { text: cl.specialisation, bold: true }, { text: " specialisation" }]
+    : cl.tierName
+      ? [{ text: "the " }, { text: cl.tierName, bold: true }, { text: " tier" }]
+      : [{ text: "this requirement" }];
+  const cert = { text: cl.cert, bold: true };
+  switch (cl.tier) {
+    case "easy-win":
+      return [
+        { text: "They have taken " }, { text: cl.path ?? "the required training", bold: true },
+        { text: ". Passing the " }, cert, { text: " certification exam will contribute to " },
+        ...goal, { text: "." },
+      ];
+    case "lapsed":
+      return [
+        { text: "They previously held " }, cert,
+        { text: ", but it has expired. Renewing it will contribute to " }, ...goal, { text: "." },
+      ];
+    case "legacy":
+      return [
+        { text: "They hold the legacy certification " }, { text: cl.path ?? "a superseded certification", bold: true },
+        { text: ". Upgrading to " }, cert, { text: " will contribute to " }, ...goal, { text: "." },
+      ];
+    default:
+      return [
+        { text: "Passing the " }, cert, { text: " certification exam will contribute to " }, ...goal, { text: "." },
+      ];
+  }
+}
+
+/** Plain-text form of a close explanation (for exports). */
+function closeSentenceText(cl: PlanCandidateClose): string {
+  return closeSegments(cl).map((s) => s.text).join("");
+}
+
+function buildCandidateSection(candidates: PlanCandidate[], title = "Who to certify"): ReportTableSection {
   return {
-    title: "Who to certify",
+    title,
     columns: [
       { key: "Name", header: "Name" }, { key: "Email", header: "Email" },
       { key: "Country", header: "Country" }, { key: "Theatre", header: "Theatre" },
@@ -164,8 +204,8 @@ function buildCandidateSection(candidates: PlanCandidate[]): ReportTableSection 
       "Relevant training": candidateHelpfulTraining(c),
       "Gaps closed": c.closesCount,
       Detail: c.closes
-        .map((cl) => `${cl.cert} (${cl.scopeLabel})${cl.path ? ` via ${cl.path}` : ""} [${TIER_LABEL[cl.tier]}]`)
-        .join("; "),
+        .map((cl) => `${closeSentenceText(cl)} (${cl.program} · ${cl.scopeLabel})`)
+        .join("\n"),
     })),
   };
 }
@@ -255,6 +295,9 @@ function buildPlanDocument(plan: CompliancePlanResult, level: ScopeLevel): Repor
     buildRoadmapSection(plan.targets),
     buildCandidateSection(plan.candidates),
   ];
+  if (plan.eligible.length > 0) {
+    sections.push(buildCandidateSection(plan.eligible, "All eligible candidates"));
+  }
   if (plan.renewals.length > 0) {
     sections.push(buildRenewalSection(plan.renewals, plan.renewalWindowMonths));
   }
@@ -517,6 +560,19 @@ export default function CompliancePlanningPage() {
           {/* Candidate-centric drill-down */}
           <CandidateTable candidates={plan.candidates} scopeLabel={plan.scopeLabel} />
 
+          {/* Full eligible pool (superset of the nominated candidates) */}
+          {plan.eligible.length > 0 && (
+            <CandidateTable
+              candidates={plan.eligible}
+              scopeLabel={plan.scopeLabel}
+              title="All eligible candidates"
+              subtitle="Everyone who already holds qualifying training and could be certified — the plan above recommends the cheapest subset to close the gaps."
+              filenameKind="eligible"
+              countLabel="Could close"
+              emptyText="No eligible candidates — remaining gaps need brand-new training."
+            />
+          )}
+
           {/* Renewal-at-risk */}
           {plan.renewals.length > 0 && <RenewalTable renewals={plan.renewals} windowMonths={renewalWindowMonths} scopeLabel={plan.scopeLabel} />}
         </>
@@ -633,8 +689,45 @@ function ReqRow({ r }: { r: PlanRequirement }) {
   );
 }
 
+// Plain-language explanation of a single gap a candidate would close, worded to
+// match their circumstance (easy win via training already taken, a lapsed renewal,
+// or a legacy upgrade). Renders the shared `closeSegments` wording (bolding names)
+// so it always matches the export's `closeSentenceText`.
+function CloseSentence({ cl }: { cl: PlanCandidateClose }) {
+  return (
+    <div className="flex flex-col">
+      <span>
+        {closeSegments(cl).map((s, i) =>
+          s.bold ? <strong key={i}>{s.text}</strong> : <Fragment key={i}>{s.text}</Fragment>,
+        )}
+      </span>
+      <span className="text-[11px] text-gray-400">
+        {cl.program} · {cl.scopeLabel}
+      </span>
+    </div>
+  );
+}
+
 // ── Candidate-centric drill-down ──
-function CandidateTable({ candidates, scopeLabel }: { candidates: PlanCandidate[]; scopeLabel: string }) {
+// Renders either the nominated "Who to certify" subset or the full "All eligible
+// candidates" pool — same columns, sorting, drill-down and export.
+function CandidateTable({
+  candidates,
+  scopeLabel,
+  title = "Who to certify",
+  subtitle = "These people are the cheapest to certify — most have already done the required training and just need to sit the exam.",
+  filenameKind = "candidates",
+  countLabel = "Gaps closed",
+  emptyText = "No named candidates — remaining gaps need brand-new training (net-new), or everything is already met.",
+}: {
+  candidates: PlanCandidate[];
+  scopeLabel: string;
+  title?: string;
+  subtitle?: string;
+  filenameKind?: string;
+  countLabel?: string;
+  emptyText?: string;
+}) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [showExport, setShowExport] = useState(false);
 
@@ -648,7 +741,7 @@ function CandidateTable({ candidates, scopeLabel }: { candidates: PlanCandidate[
     closesCount: (c) => c.closesCount,
   }, { defaultKey: "topTier", tiebreakKey: "fullName", descFirstKeys: ["closesCount"] });
 
-  const exportSection = buildCandidateSection(candidates);
+  const exportSection = buildCandidateSection(candidates, title);
 
   const toggle = (email: string) => setExpanded((prev) => {
     const next = new Set(prev);
@@ -660,17 +753,15 @@ function CandidateTable({ candidates, scopeLabel }: { candidates: PlanCandidate[
     <div className="bg-white rounded-lg border border-gray-200 p-4 mb-6">
       <div className="flex items-start justify-between gap-3 mb-3">
         <div>
-          <h2 className="text-base font-semibold text-gray-900">Who to certify ({candidates.length})</h2>
-          <p className="text-sm text-gray-500 mt-0.5">
-            These people are the cheapest to certify — most have already done the required training and just need to sit the exam.
-          </p>
+          <h2 className="text-base font-semibold text-gray-900">{title} ({candidates.length})</h2>
+          <p className="text-sm text-gray-500 mt-0.5">{subtitle}</p>
         </div>
         {candidates.length > 0 && (
-          <ExportMenu show={showExport} setShow={setShowExport} data={exportSection.rows} columns={exportSection.columns} filename={`compliance-plan-candidates-${scopeLabel}`} align="right" />
+          <ExportMenu show={showExport} setShow={setShowExport} data={exportSection.rows} columns={exportSection.columns} filename={`compliance-plan-${filenameKind}-${scopeLabel}`} align="right" />
         )}
       </div>
       {candidates.length === 0 ? (
-        <p className="text-sm text-gray-500">No named candidates — remaining gaps need brand-new training (net-new), or everything is already met.</p>
+        <p className="text-sm text-gray-500">{emptyText}</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -682,7 +773,7 @@ function CandidateTable({ candidates, scopeLabel }: { candidates: PlanCandidate[
                 <th className="py-2 pr-3 cursor-pointer" onClick={() => toggleSort("topTier")}>Best move{sortIndicator("topTier")}</th>
                 <th className="py-2 pr-3 cursor-pointer" onClick={() => toggleSort("specialisation")}>Specialisation{sortIndicator("specialisation")}</th>
                 <th className="py-2 pr-3 cursor-pointer" onClick={() => toggleSort("training")} title="ILT/OLX (or legacy cert) they already hold that gives them a head-start">Relevant training held{sortIndicator("training")}</th>
-                <th className="py-2 pr-3 cursor-pointer" onClick={() => toggleSort("closesCount")}>Gaps closed{sortIndicator("closesCount")}</th>
+                <th className="py-2 pr-3 cursor-pointer" onClick={() => toggleSort("closesCount")}>{countLabel}{sortIndicator("closesCount")}</th>
                 <th className="py-2"></th>
               </tr>
             </thead>
@@ -704,14 +795,11 @@ function CandidateTable({ candidates, scopeLabel }: { candidates: PlanCandidate[
                   {expanded.has(c.email) && (
                     <tr className="bg-gray-50/60">
                       <td colSpan={8} className="py-2 px-4">
-                        <ul className="space-y-1 text-xs text-gray-700">
+                        <ul className="space-y-2 text-xs text-gray-700">
                           {c.closes.map((cl, i) => (
-                            <li key={i} className="flex items-center gap-2">
-                              <span className={`px-1.5 py-0.5 rounded-full ${TIER_BADGE[cl.tier]}`}>{TIER_LABEL[cl.tier]}</span>
-                              <span className="font-medium">{cl.cert}</span>
-                              <span className="text-gray-400">·</span>
-                              <span>{cl.program}{cl.specialisation ? ` › ${cl.specialisation}` : ""}{cl.tierName ? ` › ${cl.tierName}` : ""} ({cl.scopeLabel})</span>
-                              {cl.path && <span className="text-gray-400 flex items-center gap-0.5"><ExternalLink size={11} /> via {cl.path}</span>}
+                            <li key={i} className="flex items-start gap-2">
+                              <span className={`shrink-0 px-1.5 py-0.5 rounded-full ${TIER_BADGE[cl.tier]}`}>{TIER_LABEL[cl.tier]}</span>
+                              <CloseSentence cl={cl} />
                             </li>
                           ))}
                         </ul>

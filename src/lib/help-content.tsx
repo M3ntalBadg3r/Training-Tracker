@@ -1960,6 +1960,19 @@ const helpSections: Record<string, HelpSection> = {
           person would help fulfil and the <strong>relevant training they already
           hold</strong> (the ILT/OLX behind an easy win, or the legacy cert behind a
           legacy upgrade) — so it&apos;s obvious why they&apos;re a cheap candidate.
+          Expanding a row spells each gap out in <strong>plain language</strong> —
+          e.g. &ldquo;They have taken <em>Training A</em>. Passing the <em>Cert
+          A</em> certification exam will contribute to the <em>Specialisation Y</em>
+          specialisation.&rdquo; — worded to match their situation (training already
+          taken, a lapsed renewal, or a legacy upgrade).
+        </p>
+        <p>
+          Below &ldquo;Who to certify&rdquo;, an <strong>&ldquo;All eligible
+          candidates&rdquo;</strong> section lists the <strong>full pool</strong> —
+          everyone who already holds qualifying training and could be certified, not
+          just the cheapest subset the plan nominates. Use it to pick alternatives
+          (e.g. someone in a particular country) when the recommended person
+          isn&apos;t the one you want to move.
         </p>
 
         <h3>Scope &amp; renewals</h3>

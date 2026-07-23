@@ -151,6 +151,13 @@ export interface CompliancePlanResult {
   renewalWindowMonths: number;
   targets: PlanTargetResult[];
   candidates: PlanCandidate[];
+  /**
+   * The full eligible pool — everyone in any counted requirement's candidate
+   * pool (all tiers), deduped by person, each with the gaps they *could*
+   * contribute to. A superset of `candidates`, which is only the cheapest
+   * subset the allocator nominates to close the gaps.
+   */
+  eligible: PlanCandidate[];
   renewals: PlanRenewalRow[];
   totals: {
     peopleMoves: number;
@@ -539,6 +546,11 @@ export function allocateCandidates(instances: ReqInstance[]): AllocationResult {
   const committedTier = new Map<string, Exclude<CandidateTier, "net-new">>();
   const filled = new Map<string, number>();
   const closesByEmail = new Map<string, PlanCandidateClose[]>();
+  // Guard so each person is credited to a given instance at most once. Without
+  // it, a cert shared by two instances (e.g. required by two specialisations)
+  // re-credits an already-committed person every time the outer loop reaches
+  // another same-cert instance — inflating `filled` and duplicating `closes`.
+  const credited = new Set<string>(); // `${email}::${instanceId}`
 
   const record = (email: string, inst: ReqInstance, member: PoolMember) => {
     if (!closesByEmail.has(email)) closesByEmail.set(email, []);
@@ -580,11 +592,16 @@ export function allocateCandidates(instances: ReqInstance[]): AllocationResult {
         committedTier.set(cand.email, cand.tier);
       }
 
-      // Credit this move to every open same-cert instance that can use them.
+      // Credit this move to every open same-cert instance that can use them,
+      // but never twice to the same instance (a later same-cert pass would
+      // otherwise re-credit an already-committed person).
       for (const other of byCertKey.get(inst.certKey)!) {
         if ((filled.get(other.id) ?? 0) >= other.shortfall) continue;
+        const ck = `${cand.email}::${other.id}`;
+        if (credited.has(ck)) continue;
         const m = other.pool.find((p) => p.email === cand.email);
         if (!m) continue;
+        credited.add(ck);
         filled.set(other.id, (filled.get(other.id) ?? 0) + 1);
         record(cand.email, other, m);
       }
@@ -785,9 +802,13 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
   // are shown for reference but don't inflate the plan's totals.
   const alloc = allocateCandidates(countedInstances);
 
-  // Student display info for every committed candidate + every renewal-at-risk holder.
+  // Student display info for every committed candidate + every renewal-at-risk
+  // holder + every eligible pool member (so the full-pool list can be named).
   const candidateEmails = new Set<string>(alloc.closesByEmail.keys());
-  for (const inst of countedInstances) for (const e of inst.expiringEmails) candidateEmails.add(e);
+  for (const inst of countedInstances) {
+    for (const e of inst.expiringEmails) candidateEmails.add(e);
+    for (const m of inst.pool) candidateEmails.add(m.email);
+  }
   const students = candidateEmails.size > 0
     ? await prisma.student.findMany({
         where: { email: { in: [...candidateEmails] } },
@@ -866,6 +887,43 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
     (a, b) => tierOrder(a.topTier) - tierOrder(b.topTier) || b.closesCount - a.closesCount || a.fullName.localeCompare(b.fullName),
   );
 
+  // ── Full eligible pool (superset of the nominated candidates) ──
+  // Everyone in any counted requirement's pool, deduped by person, with every
+  // gap they could contribute to. Unlike `candidates`, this ignores allocation
+  // and contention — it's the "who else could we certify" list.
+  const eligibleByEmail = new Map<string, PlanCandidateClose[]>();
+  for (const inst of countedInstances) {
+    for (const m of inst.pool) {
+      if (!eligibleByEmail.has(m.email)) eligibleByEmail.set(m.email, []);
+      eligibleByEmail.get(m.email)!.push({
+        program: inst.program,
+        specialisation: inst.specialisation,
+        tierName: inst.tierName,
+        cert: inst.cert,
+        scopeLabel: inst.scopeLabel,
+        tier: m.tier,
+        path: m.path,
+      });
+    }
+  }
+  const eligible: PlanCandidate[] = [];
+  for (const [email, closes] of eligibleByEmail) {
+    const s = studentById.get(email);
+    const sortedCloses = [...closes].sort((a, b) => tierOrder(a.tier) - tierOrder(b.tier));
+    eligible.push({
+      email,
+      fullName: s?.fullName ?? email,
+      country: s?.country ?? "",
+      theatre: s?.theatre ?? "",
+      topTier: sortedCloses[0]?.tier ?? "easy-win",
+      closesCount: closes.length,
+      closes: sortedCloses,
+    });
+  }
+  eligible.sort(
+    (a, b) => tierOrder(a.topTier) - tierOrder(b.topTier) || b.closesCount - a.closesCount || a.fullName.localeCompare(b.fullName),
+  );
+
   // ── Renewal-at-risk rows (deduped by email+cert+scope) ──
   const renewals: PlanRenewalRow[] = [];
   const renewalSeen = new Set<string>();
@@ -905,6 +963,7 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
     renewalWindowMonths: input.renewalWindowMonths,
     targets,
     candidates,
+    eligible,
     renewals,
     totals: {
       peopleMoves: alloc.closesByEmail.size + netNew,
