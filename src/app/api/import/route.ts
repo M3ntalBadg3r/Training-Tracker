@@ -212,6 +212,10 @@ export async function POST(request: NextRequest) {
   // Resolved lazily on first auto-create of a training row (see below).
   let cachedDefaultProductTypeId: number | undefined;
 
+  // Distinct companies touched by this import — used to stamp per-company
+  // "last imported" timestamps alongside the global one.
+  const touchedCompanies = new Set<number>();
+
   for (let i = 0; i < mappedRows.length; i++) {
     const row = mappedRows[i];
     const rowNum = i + 2;
@@ -372,6 +376,8 @@ export async function POST(request: NextRequest) {
         summary.studentsCreated++;
       }
 
+      touchedCompanies.add(studentCompanyId);
+
       const trainingExists = await prisma.trainingData.findUnique({
         where: { trainingTitle: row.title },
       });
@@ -435,11 +441,21 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  const importedAt = new Date();
   await prisma.importMetadata.upsert({
     where: { key: "students" },
-    update: { timestamp: new Date() },
-    create: { key: "students", timestamp: new Date() },
+    update: { timestamp: importedAt },
+    create: { key: "students", timestamp: importedAt },
   });
+  // Per-company stamps so the Students page can show the last import for the
+  // currently selected company (blank when that company has never imported).
+  for (const cid of touchedCompanies) {
+    await prisma.importMetadata.upsert({
+      where: { key: `students:${cid}` },
+      update: { timestamp: importedAt },
+      create: { key: `students:${cid}`, timestamp: importedAt },
+    });
+  }
 
   invalidateReportCache();
   return NextResponse.json(summary);

@@ -133,12 +133,13 @@ function StudentsPageInner() {
     if (companyScope.loading) return;
     setLoading(true);
     fetchStudents().finally(() => setLoading(false));
-    fetch("/api/import-metadata?key=students")
+    // Show the last import for the selected company; system-wide under "All".
+    const importKey =
+      companyScope.selected === "all" ? "students" : `students:${companyScope.selected}`;
+    fetch(`/api/import-metadata?key=${encodeURIComponent(importKey)}`)
       .then((res) => res.json())
-      .then((data) => {
-        if (data?.timestamp) setLastImport(data.timestamp);
-      })
-      .catch(() => {});
+      .then((data) => setLastImport(data?.timestamp ?? null))
+      .catch(() => setLastImport(null));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [companyScope.loading, companyScope.selected]);
 

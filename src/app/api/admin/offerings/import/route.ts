@@ -285,5 +285,19 @@ export async function POST(request: NextRequest) {
     { timeout: 120_000, maxWait: 10_000 }
   );
 
+  // Stamp the global + per-company "last imported" timestamps (offerings are
+  // company-scoped, so the Offerings page shows the selected company's time).
+  const importedAt = new Date();
+  await prisma.importMetadata.upsert({
+    where: { key: "offerings" },
+    update: { timestamp: importedAt },
+    create: { key: "offerings", timestamp: importedAt },
+  });
+  await prisma.importMetadata.upsert({
+    where: { key: `offerings:${companyId}` },
+    update: { timestamp: importedAt },
+    create: { key: `offerings:${companyId}`, timestamp: importedAt },
+  });
+
   return NextResponse.json({ created, skipped, errors });
 }

@@ -398,5 +398,12 @@ export async function POST(request: NextRequest) {
   );
 
   invalidateReportCache();
+
+  await prisma.importMetadata.upsert({
+    where: { key: "program-data" },
+    update: { timestamp: new Date() },
+    create: { key: "program-data", timestamp: new Date() },
+  });
+
   return NextResponse.json({ created, skipped, errors });
 }
