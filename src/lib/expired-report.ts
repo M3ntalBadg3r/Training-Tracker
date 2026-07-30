@@ -48,6 +48,27 @@ export function bucketLapse(expiry: Date, now: Date): string | null {
   return "12+";
 }
 
+/**
+ * The "lapsed within the last N months" window, parsed from its query-param form.
+ * Anything that isn't a positive month count (including the "all" sentinel) means
+ * no window.
+ */
+export function parseWindowMonths(window: string | null | undefined): number | null {
+  const n = parseInt(window ?? "", 10);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/**
+ * Does a lapse band overlap a "lapsed in the last N months" window?
+ * Each BUCKETS key encodes its own lower bound ("6-12" -> 6, "12+" -> 12) and a
+ * window of N keeps records with monthsBetween <= N, so a band is in range iff
+ * its lower bound is below N. `null` months = all time.
+ */
+export function bucketWithinWindow(bucketKey: string, months: number | null): boolean {
+  if (months === null) return true;
+  return parseInt(bucketKey, 10) < months;
+}
+
 // ─── Types ──────────────────────────────────────────────────────────────────────
 
 /** One detail row — the shared deduped training-record shape. */
@@ -63,6 +84,8 @@ export interface ExpiredReportInput {
   region?: string;
   country?: string;
   bucket?: string | null;
+  /** "all" (default) or a month count — keep only records that lapsed within the last N months. */
+  window?: string;
   excludeRetired?: boolean;
   groupBy?: GroupByMode | null;
   sortColumn?: string;
@@ -145,6 +168,7 @@ export function computeFromRecords(
     region = "",
     country = "",
     bucket = null,
+    window = "all",
     excludeRetired = false,
     groupBy = null,
     sortColumn = "fullName",
@@ -164,9 +188,13 @@ export function computeFromRecords(
 
   // The exact `filtered` predicate from the page.
   const q = search.toLowerCase();
+  // The window edges reuse `monthsBetween`, so they land exactly on the chart's
+  // bucket boundaries (at window=3, "≤ 1 month" + "1–3 months" sums to the total).
+  const windowMonths = parseWindowMonths(window);
   const filtered = records.filter((r) => {
     const expiry = new Date(r.expiryDate);
     if (expiry >= now) return false;
+    if (windowMonths !== null && monthsBetween(expiry, now) > windowMonths) return false;
     if (excludeRetired && r.isLegacy) return false;
     if (search && !r.fullName.toLowerCase().includes(q) && !r.email.toLowerCase().includes(q)) return false;
     if (type && r.trainingType !== type) return false;
