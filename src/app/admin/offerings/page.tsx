@@ -90,6 +90,7 @@ export default function OfferingsAdminPage() {
   const [companies, setCompanies] = useState<CompanyOpt[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [lastImport, setLastImport] = useState<string | null>(null);
 
   const [showExport, setShowExport] = useState(false);
   const showCompanyColumn = companyScope.selected === "all";
@@ -142,6 +143,14 @@ export default function OfferingsAdminPage() {
       if (res.ok) setAllRows(await res.json());
     } catch { /* ignore */ }
   }, [companyScope.selected]);
+  const fetchLastImport = useCallback(() => {
+    // Show the last import for the selected company; system-wide under "All".
+    const key = companyScope.selected === "all" ? "offerings" : `offerings:${companyScope.selected}`;
+    fetch(`/api/import-metadata?key=${encodeURIComponent(key)}`)
+      .then((r) => r.json())
+      .then((d) => setLastImport(d?.timestamp ?? null))
+      .catch(() => setLastImport(null));
+  }, [companyScope.selected]);
   const fetchSpecialisations = async () => {
     try {
       const res = await fetch("/api/admin/specialisations");
@@ -164,7 +173,8 @@ export default function OfferingsAdminPage() {
     if (companyScope.loading) return;
     fetchOfferings();
     fetchRows();
-  }, [companyScope.loading, fetchOfferings, fetchRows]);
+    fetchLastImport();
+  }, [companyScope.loading, fetchOfferings, fetchRows, fetchLastImport]);
 
   const handleNew = async () => {
     setNewError("");
@@ -337,6 +347,7 @@ export default function OfferingsAdminPage() {
       setImportStep("result");
       fetchOfferings();
       fetchRows();
+      fetchLastImport();
     } finally {
       setImportLoading(false);
     }
@@ -365,6 +376,9 @@ export default function OfferingsAdminPage() {
         helpSlug="offerings"
         rightContent={
           <div className="flex items-center gap-2">
+            {lastImport && (
+              <span className="text-sm text-gray-500">Last imported: {new Date(lastImport).toLocaleString()}</span>
+            )}
             <button onClick={() => setShowImport(true)} className="flex items-center gap-1 px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">
               <Upload size={16} /> Import
             </button>

@@ -169,6 +169,12 @@ const helpSections: Record<string, HelpSection> = {
           restores the list exactly as you left it.
         </p>
         <p>
+          The header shows a <strong>Last imported</strong> date/time for the
+          company currently selected in the header switcher (or the most recent
+          import system-wide when <strong>All companies</strong> is selected). If
+          the selected company has never had a student import, the line is blank.
+        </p>
+        <p>
           Admins can click <strong>Add Student</strong> to create a student
           manually without an import. Provide Full Name, Email, Company, and
           pick a Country from the dropdown &mdash; the Theatre and Region are
@@ -686,7 +692,11 @@ const helpSections: Record<string, HelpSection> = {
         <p className="text-sm text-gray-500">
           Offerings are configured under <strong>Admin &gt; Offerings</strong> by a
           company&apos;s Admins or a SuperAdmin (create, edit, import/export — each
-          scoped to a company). They are included in both full and config backups.
+          scoped to a company). That page&apos;s header shows a{" "}
+          <strong>Last imported</strong> date/time for the selected company (or the
+          most recent import system-wide under <strong>All companies</strong>);
+          blank when the selected company has never had an offerings import. They
+          are included in both full and config backups.
         </p>
       </>
     ),
@@ -1747,7 +1757,8 @@ const helpSections: Record<string, HelpSection> = {
           for tiered programs, each tier&apos;s <strong>Tier Order</strong> and
           <strong> Tier Specialisations Required</strong> — so a program exported and
           re-imported unchanged is restored exactly (tiers with no requirements of their own
-          travel as blank tier-definition rows).
+          travel as blank tier-definition rows). After a successful import the page header
+          shows a <strong>Last imported</strong> date/time.
         </p>
 
         <h3>Tiered programs</h3>

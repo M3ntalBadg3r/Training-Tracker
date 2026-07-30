@@ -393,7 +393,7 @@ Navigate to **Students** in the sidebar to view all students in a table with col
 - Region
 - Country
 
-Click **View** on any row to open the student's detailed record. The table's search, column filters, and sort order are mirrored to the URL, so opening a student and pressing **Back** restores the list exactly as you left it. Admins can click **Add Student** in the page header to create a student manually (Full Name, Email, Company, Country) without running an import. Country is a dropdown limited to entries in **Region Data** that have a Theatre assigned — Theatre and Region are auto-derived from the chosen country and shown read-only. To use a country that doesn't appear in the dropdown, ask a SuperAdmin to add it (with a Theatre) on the Region Data page first.
+Click **View** on any row to open the student's detailed record. The table's search, column filters, and sort order are mirrored to the URL, so opening a student and pressing **Back** restores the list exactly as you left it. The page header shows a **Last imported** date/time for the **company currently selected** in the header switcher (or the most recent import system-wide when **All companies** is selected); if the selected company has never been imported, the line is blank. Admins can click **Add Student** in the page header to create a student manually (Full Name, Email, Company, Country) without running an import. Country is a dropdown limited to entries in **Region Data** that have a Theatre assigned — Theatre and Region are auto-derived from the chosen country and shown read-only. To use a country that doesn't appear in the dropdown, ask a SuperAdmin to add it (with a Theatre) on the Region Data page first.
 
 ### Student Detail
 
@@ -907,7 +907,7 @@ The page shows a **box for each program**. From here you can:
 - **New Program** — create a program by name. It persists immediately (and shows as a box) even before it has any requirements.
 - **Rename** (pencil icon on a box) — renames the program and every one of its requirements.
 - **Delete** (bin icon on a box) — deletes the program together with all of its requirements.
-- **Import / Export** — bulk-import (CSV/Excel drag-and-drop or browse) or export (CSV/Excel/PDF) across all programs at once. Export/import round-trips the **full program structure**: alongside each requirement it carries the program-level **Deployment Handling** (deployment mode) and, for tiered programs, each tier's **Tier Order** and **Tier Specialisations Required** — tiers that have no requirement rows of their own are exported as blank tier-definition rows so they survive a round-trip. Import is **replace, not merge**: for every program named in the file, its existing requirements are deleted and re-created from the file (programs not in the file are untouched), so re-importing an edited export never duplicates rows. The import preview warns you which programs will be replaced and asks you to confirm before it runs.
+- **Import / Export** — bulk-import (CSV/Excel drag-and-drop or browse) or export (CSV/Excel/PDF) across all programs at once. Export/import round-trips the **full program structure**: alongside each requirement it carries the program-level **Deployment Handling** (deployment mode) and, for tiered programs, each tier's **Tier Order** and **Tier Specialisations Required** — tiers that have no requirement rows of their own are exported as blank tier-definition rows so they survive a round-trip. Import is **replace, not merge**: for every program named in the file, its existing requirements are deleted and re-created from the file (programs not in the file are untouched), so re-importing an edited export never duplicates rows. The import preview warns you which programs will be replaced and asks you to confirm before it runs. After a successful import the page header shows a **Last imported** date/time.
 
 Click a box to open the program's page, which lists just that program's requirements and lets you **Add / Edit / Delete** them. When you add a requirement from a program's page it is attached to that program automatically — there is no program picker to get wrong. The requirements table can be filtered by **Specialisation**, **Level**, and **Type** via the column-header dropdowns. New specialisations are added inline from the **+** next to the Specialisation dropdown in the requirement form.
 
@@ -1085,6 +1085,11 @@ SuperAdmins):
   downloadable template and a dry-run validation preview). Export includes a
   **Company** column; import loads every row into a single company you pick and is
   a per-offering overwrite scoped to that company.
+
+The page header shows a **Last imported** date/time for the **company currently
+selected** in the header switcher (the most recent offerings import system-wide
+when **All companies** is selected); if the selected company has never had an
+offerings import, the line is blank.
 
 ### Viewing an offering — Onshore, Nearshore & Offshore
 
