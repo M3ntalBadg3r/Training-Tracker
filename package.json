@@ -1,6 +1,6 @@
 {
   "name": "training-tracker-temp",
-  "version": "2.65",
+  "version": "2.66",
   "private": true,
   "scripts": {
     "dev": "next dev",

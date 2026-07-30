@@ -3,7 +3,7 @@
 import { useState, useMemo } from "react";
 import PageHeader from "@/components/layout/PageHeader";
 import Modal from "@/components/ui/Modal";
-import { Plus, Trash2, Pencil, Ban, Power, Copy, Check } from "lucide-react";
+import { Plus, Trash2, Pencil, Ban, Power, Copy, Check, ShieldCheck, ShieldOff } from "lucide-react";
 import { useDateFormat } from "@/components/date-format/DateFormatProvider";
 import FailedAttemptsPanel from "@/components/admin/FailedAttemptsPanel";
 import { useFetchJson } from "@/hooks/useFetchJson";
@@ -11,6 +11,10 @@ import { useFetchJson } from "@/hooks/useFetchJson";
 interface CompanyOption {
   id: number;
   name: string;
+}
+
+interface SystemSettings {
+  publicApiEnabled: boolean;
 }
 
 interface ApiKeyRow {
@@ -45,6 +49,13 @@ export default function ApiKeysPage() {
     () => (companiesData ?? []).map((c) => ({ id: c.id, name: c.name })),
     [companiesData]
   );
+  // The global on/off switch for the whole public API, independent of any key.
+  const {
+    data: settings,
+    loading: settingsLoading,
+    reload: reloadSettings,
+  } = useFetchJson<SystemSettings>("/api/admin/system-settings");
+  const apiEnabled = settings?.publicApiEnabled ?? false;
 
   const [showAdd, setShowAdd] = useState(false);
   const [addForm, setAddForm] = useState({ name: "", companyIds: [] as number[], expiresAt: "" });
@@ -60,6 +71,31 @@ export default function ApiKeysPage() {
   // The plaintext key is shown exactly once, immediately after creation.
   const [createdKey, setCreatedKey] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+
+  const [confirmDisableApi, setConfirmDisableApi] = useState(false);
+  const [apiToggleBusy, setApiToggleBusy] = useState(false);
+  const [apiToggleError, setApiToggleError] = useState("");
+
+  const setApiEnabled = async (enabled: boolean) => {
+    setApiToggleBusy(true);
+    setApiToggleError("");
+    try {
+      const res = await fetch("/api/admin/system-settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ publicApiEnabled: enabled }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setApiToggleError(data.error || "Failed to update the public API setting");
+        return;
+      }
+      setConfirmDisableApi(false);
+      reloadSettings();
+    } finally {
+      setApiToggleBusy(false);
+    }
+  };
 
   const handleAdd = async () => {
     setAddError("");
@@ -142,7 +178,7 @@ export default function ApiKeysPage() {
     }
   };
 
-  if (loading) {
+  if (loading || settingsLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-gray-500">Loading API keys...</div>
@@ -169,6 +205,54 @@ export default function ApiKeysPage() {
           </button>
         }
       />
+
+      <div
+        className={`mb-4 rounded-lg border p-4 flex flex-wrap items-start gap-3 ${
+          apiEnabled
+            ? "bg-green-50 border-green-200"
+            : "bg-amber-50 border-amber-200"
+        }`}
+      >
+        <div className={apiEnabled ? "text-green-700" : "text-amber-700"}>
+          {apiEnabled ? <ShieldCheck size={20} /> : <ShieldOff size={20} />}
+        </div>
+        <div className="flex-1 min-w-[16rem]">
+          <p
+            className={`text-sm font-semibold ${
+              apiEnabled ? "text-green-800" : "text-amber-800"
+            }`}
+          >
+            Public API {apiEnabled ? "enabled" : "disabled"}
+          </p>
+          <p className={`text-sm ${apiEnabled ? "text-green-700" : "text-amber-700"}`}>
+            {apiEnabled ? (
+              <>
+                Keys below can read data from <code>/api/public/v1</code>, subject to their own
+                status and company scope.
+              </>
+            ) : (
+              <>
+                Every request to <code>/api/public/v1</code> is refused with a{" "}
+                <strong>503</strong>, no matter how a key is configured below. Changes can take
+                up to 30 seconds to take effect.
+              </>
+            )}
+          </p>
+          {apiToggleError && (
+            <p className="mt-2 text-sm text-red-600">{apiToggleError}</p>
+          )}
+        </div>
+        <button
+          onClick={() => (apiEnabled ? setConfirmDisableApi(true) : setApiEnabled(true))}
+          disabled={apiToggleBusy}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm text-white disabled:opacity-50 ${
+            apiEnabled ? "bg-gray-600 hover:bg-gray-700" : "bg-green-600 hover:bg-green-700"
+          }`}
+        >
+          <Power size={14} />
+          {apiEnabled ? "Disable API" : "Enable API"}
+        </button>
+      </div>
 
       <p className="mb-4 text-sm text-gray-500">
         API keys grant <strong>read-only</strong> access to the public API for the selected
@@ -417,6 +501,27 @@ export default function ApiKeysPage() {
         <p className="text-gray-600">
           Revoke <strong>{revokeKey?.name}</strong>? Any system using this key will immediately
           lose access. This cannot be undone.
+        </p>
+      </Modal>
+
+      {/* Disable the whole public API */}
+      <Modal
+        open={confirmDisableApi}
+        onClose={() => setConfirmDisableApi(false)}
+        title="Disable the public API"
+        actions={
+          <>
+            <button onClick={() => setConfirmDisableApi(false)} className="px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300">Cancel</button>
+            <button onClick={() => setApiEnabled(false)} disabled={apiToggleBusy} className="px-4 py-2 text-sm bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50">
+              {apiToggleBusy ? "Disabling..." : "Disable API"}
+            </button>
+          </>
+        }
+      >
+        <p className="text-gray-600">
+          Every system using the public API will stop working within about 30 seconds, whatever
+          keys they hold. Your keys are kept as they are, so turning the API back on restores
+          access without re-issuing anything.
         </p>
       </Modal>
 
