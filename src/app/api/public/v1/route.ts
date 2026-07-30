@@ -9,12 +9,19 @@ import {
 } from "@/lib/api-key";
 import { getClientIp } from "@/lib/rate-limit";
 import { recordApiFailure } from "@/lib/failed-attempts";
+import { ensurePublicApiEnabled } from "@/lib/public-api";
 
 /**
  * GET /api/public/v1 — self-describing index. Confirms the key works and reports
  * which companies it can read plus the available read-only endpoints.
+ *
+ * This route keeps its own guard chain (it needs the key's name/companies, which
+ * `authorizePublicRequest` doesn't surface), so it checks the global switch itself.
  */
 export async function GET(request: NextRequest) {
+  const disabled = await ensurePublicApiEnabled();
+  if (disabled) return disabled;
+
   let auth;
   try {
     auth = await requireApiKey(request);

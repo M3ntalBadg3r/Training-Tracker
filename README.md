@@ -943,6 +943,21 @@ Training Tracker exposes a **read-only public API** so trusted third-party
 systems (CRMs, BI tools, partner portals) can pull data programmatically. Access
 is controlled by **API keys**, each scoped to one or more companies.
 
+### Turning the API on
+
+**The public API ships switched off.** Until it is enabled, every request to
+`/api/public/v1/*` is refused with HTTP **503** regardless of how many valid keys
+exist. Go to **Admin > API Keys** (SuperAdmin only) and click **Enable API** in the
+banner at the top of the page; the banner turns green once the API is live.
+
+The same banner turns it back off — a single kill switch for the whole API. This
+leaves your keys untouched, so re-enabling restores access without re-issuing
+anything. Changes take up to 30 seconds to take effect (the setting is cached).
+
+> **Upgrading from a version before 2.66?** The API is disabled by the upgrade, so
+> any existing integration stops working until you enable it. Switch it on at
+> **Admin > API Keys** to restore access — your keys are unchanged.
+
 ### Issuing a key
 
 In **Admin > API Keys** (SuperAdmin only):
@@ -984,6 +999,7 @@ rows (program compliance figures are scoped to the key's companies the same way)
 
 ### Security
 
+- **Off by default** — the whole API is disabled until a SuperAdmin enables it, and can be switched off again at any time (a global kill switch, checked before the key is even looked up). While off, every endpoint returns HTTP 503.
 - **Read-only by design** — there are no write endpoints under `/api/public`, so a leaked key can never modify data.
 - **Company-scoped** — a key only ever sees data for its assigned companies.
 - **Hashed at rest** — only a SHA-256 hash of the key is stored; the plaintext is shown once.

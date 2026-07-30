@@ -410,13 +410,17 @@ model ImportAlias {
   @@map("import_aliases")
 }
 
-// Singleton: always id = 1. Stores system-wide preferences (currently just
-// the default date format). Application code must upsert with id: 1; the
-// migration also adds a CHECK constraint as defence-in-depth.
+// Singleton: always id = 1. Stores system-wide preferences (default date
+// format, idle-session timeout, public-API switch). Application code must
+// upsert with id: 1; the migration also adds a CHECK constraint as
+// defence-in-depth.
 model SystemSetting {
   id                 Int      @id @default(1)
   dateFormat         String   @default("DD/MM/YYYY") @map("date_format")
   sessionIdleMinutes Int      @default(30) @map("session_idle_minutes")
+  // Global kill switch for the read-only public API (`/api/public/v1/*`).
+  // Off by default: the API must be switched on deliberately before any key works.
+  publicApiEnabled   Boolean  @default(false) @map("public_api_enabled")
   updatedAt          DateTime @updatedAt @map("updated_at")
   updatedById        Int?     @map("updated_by_id")
 

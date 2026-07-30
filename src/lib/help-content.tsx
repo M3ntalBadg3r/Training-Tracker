@@ -2257,6 +2257,20 @@ const helpSections: Record<string, HelpSection> = {
           or delete data with a key. This page is SuperAdmin-only.
         </p>
 
+        <h3>Turning the API on and off</h3>
+        <p>
+          The banner at the top of this page is a <strong>single switch for the whole
+          public API</strong>, separate from the individual keys below. It ships
+          <strong> switched off</strong>: until you click <strong>Enable API</strong>,
+          every request to <code>/api/public/v1</code> is refused with an HTTP
+          <strong> 503</strong>, no matter how many valid, active keys exist.
+        </p>
+        <ul>
+          <li>Use it as a <strong>kill switch</strong> — turning the API off stops all external access at once, without touching your keys, so switching it back on restores access with no re-issuing.</li>
+          <li>The switch always wins: while the API is off, a key showing <em>Active</em> in the table below still can&rsquo;t be used.</li>
+          <li>Changes take up to <strong>30 seconds</strong> to take effect, because the setting is briefly cached.</li>
+        </ul>
+
         <h3>Creating a key</h3>
         <ul>
           <li>Click <strong>New API Key</strong>, give it a descriptive name (e.g. &ldquo;Partner CRM sync&rdquo;), and tick the companies it may read.</li>

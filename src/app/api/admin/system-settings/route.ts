@@ -5,10 +5,22 @@ import {
   setSystemDateFormat,
   getSessionIdleMinutes,
   setSessionIdleMinutes,
+  getPublicApiEnabled,
+  setPublicApiEnabled,
   MIN_SESSION_IDLE_MINUTES,
   MAX_SESSION_IDLE_MINUTES,
 } from "@/lib/system-settings";
 import { isDateFormat } from "@/lib/date-format";
+
+/** Current values of every system-wide setting. */
+async function readAll() {
+  const [dateFormat, sessionIdleMinutes, publicApiEnabled] = await Promise.all([
+    getSystemDateFormat(),
+    getSessionIdleMinutes(),
+    getPublicApiEnabled(),
+  ]);
+  return { dateFormat, sessionIdleMinutes, publicApiEnabled };
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -16,11 +28,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     return handleAuthError(error);
   }
-  const [dateFormat, sessionIdleMinutes] = await Promise.all([
-    getSystemDateFormat(),
-    getSessionIdleMinutes(),
-  ]);
-  return NextResponse.json({ dateFormat, sessionIdleMinutes });
+  return NextResponse.json(await readAll());
 }
 
 export async function PUT(request: NextRequest) {
@@ -36,10 +44,11 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }
 
-  // Partial update: a request may set the date format, the idle timeout, or both.
+  // Partial update: a request may set any combination of the settings below.
   const hasDateFormat = body.dateFormat !== undefined;
   const hasIdle = body.sessionIdleMinutes !== undefined;
-  if (!hasDateFormat && !hasIdle) {
+  const hasPublicApi = body.publicApiEnabled !== undefined;
+  if (!hasDateFormat && !hasIdle && !hasPublicApi) {
     return NextResponse.json({ error: "No settings provided" }, { status: 400 });
   }
 
@@ -67,9 +76,15 @@ export async function PUT(request: NextRequest) {
     await setSessionIdleMinutes(minutes, auth.sub);
   }
 
-  const [dateFormat, sessionIdleMinutes] = await Promise.all([
-    getSystemDateFormat(),
-    getSessionIdleMinutes(),
-  ]);
-  return NextResponse.json({ dateFormat, sessionIdleMinutes });
+  if (hasPublicApi) {
+    if (typeof body.publicApiEnabled !== "boolean") {
+      return NextResponse.json(
+        { error: "publicApiEnabled must be true or false" },
+        { status: 400 }
+      );
+    }
+    await setPublicApiEnabled(body.publicApiEnabled, auth.sub);
+  }
+
+  return NextResponse.json(await readAll());
 }
