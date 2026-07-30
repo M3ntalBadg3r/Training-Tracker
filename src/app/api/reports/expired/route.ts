@@ -11,8 +11,8 @@ import type { GroupByMode } from "@/lib/group-by";
  * detail rows instead of the whole training-records dataset.
  *
  * Query params: companyId, search (q), type, theatre, region, country, bucket,
- * excludeRetired, groupBy (theatre|region|country), sort, sortDir, page,
- * pageSize, all (export).
+ * window (all|3|6|12 — lapsed within the last N months), excludeRetired,
+ * groupBy (theatre|region|country), sort, sortDir, page, pageSize, all (export).
  */
 export async function GET(request: NextRequest) {
   let auth;
@@ -44,6 +44,7 @@ export async function GET(request: NextRequest) {
   const region = p.get("region") || "";
   const country = p.get("country") || "";
   const bucket = p.get("bucket") || "";
+  const window = p.get("window") || "all";
   const excludeRetired = p.get("excludeRetired") === "true";
   const rawGroupBy = p.get("groupBy") || "";
   const groupBy: GroupByMode | null =
@@ -64,6 +65,7 @@ export async function GET(request: NextRequest) {
     region,
     country,
     bucket,
+    window,
     excludeRetired ? "1" : "0",
     groupBy ?? "",
     sortColumn,
@@ -80,6 +82,7 @@ export async function GET(request: NextRequest) {
       region,
       country,
       bucket: bucket || null,
+      window,
       excludeRetired,
       groupBy,
       sortColumn,

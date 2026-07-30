@@ -103,6 +103,27 @@ function parseGroupBy(v: string | null, fallback: GroupByMode | null): GroupByMo
   return fallback;
 }
 
+const WINDOW_OPTIONS = [
+  { value: "all", label: "Lapsed Any Time" },
+  { value: "3", label: "Lapsed ≤ 3 Months Ago" },
+  { value: "6", label: "Lapsed ≤ 6 Months Ago" },
+  { value: "12", label: "Lapsed ≤ 12 Months Ago" },
+];
+
+/**
+ * Does a lapse band still overlap the chosen window? Each chart band key encodes
+ * its own lower bound ("6-12" -> 6, "12+" -> 12) and a window of N keeps records
+ * with monthsBetween <= N, so a band is in range iff its lower bound is below N.
+ * Mirrors `bucketWithinWindow` in `lib/expired-report.ts` (which can't be imported
+ * here — that module pulls in Prisma).
+ */
+function bucketWithinWindow(bucketKey: string, windowValue: string): boolean {
+  if (windowValue === "all") return true;
+  const months = parseInt(windowValue, 10);
+  if (!Number.isFinite(months) || months <= 0) return true;
+  return parseInt(bucketKey, 10) < months;
+}
+
 function ExpiredPageInner() {
   const router = useRouter();
   const pathname = usePathname();
@@ -122,6 +143,7 @@ function ExpiredPageInner() {
     country: searchParams.get("country") ?? "",
   }));
   const [filterBucket, setFilterBucket] = useState<string | null>(() => searchParams.get("bucket"));
+  const [filterWindow, setFilterWindow] = useState(() => searchParams.get("window") ?? "all"); // all | 3 | 6 | 12
   const [excludeRetired, setExcludeRetired] = useState(() => searchParams.get("excludeRetired") === "true");
   const [groupBy, setGroupBy] = useState<GroupByMode | null>(() => parseGroupBy(searchParams.get("groupBy"), "theatre"));
   const [sortColumn, setSortColumn] = useState(() => searchParams.get("sort") ?? "fullName");
@@ -143,6 +165,7 @@ function ExpiredPageInner() {
       if (geo.region) params.set("region", geo.region);
       if (geo.country) params.set("country", geo.country);
       if (filterBucket) params.set("bucket", filterBucket);
+      params.set("window", filterWindow);
       if (excludeRetired) params.set("excludeRetired", "true");
       if (groupBy) params.set("groupBy", groupBy);
       params.set("sort", sortColumn);
@@ -154,7 +177,7 @@ function ExpiredPageInner() {
       }
       return params;
     },
-    [debouncedSearch, filterType, geo, filterBucket, excludeRetired, groupBy, sortColumn, sortDir, page, pageSize]
+    [debouncedSearch, filterType, geo, filterBucket, filterWindow, excludeRetired, groupBy, sortColumn, sortDir, page, pageSize]
   );
 
   // Reset to page 1 when a filter/sort/scope changes — but not on initial mount,
@@ -166,7 +189,7 @@ function ExpiredPageInner() {
       return;
     }
     setPage(1);
-  }, [debouncedSearch, filterType, geo, filterBucket, excludeRetired, groupBy, sortColumn, sortDir, companyScope.selected]);
+  }, [debouncedSearch, filterType, geo, filterBucket, filterWindow, excludeRetired, groupBy, sortColumn, sortDir, companyScope.selected]);
 
   // Mirror view state to the URL so Back restores filters + page. groupBy is
   // written explicitly (with a "none" sentinel) because its default is "theatre".
@@ -379,7 +402,10 @@ function ExpiredPageInner() {
 
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-wrap gap-2">
-          <p className="text-sm text-gray-500">Certifications &amp; trainings whose latest completion has already expired</p>
+          <p className="text-sm text-gray-500">
+            Certifications &amp; trainings whose latest completion has already expired
+            {filterWindow !== "all" && ` — lapsed within the last ${filterWindow} months`}
+          </p>
           <span className="text-sm font-medium text-gray-500">{total} result{total !== 1 ? "s" : ""}</span>
         </div>
         <div className="px-6 py-4">
@@ -392,6 +418,18 @@ function ExpiredPageInner() {
               <ExportMenu onExport={handleExport} busy={exporting} />
             </div>
             <div className="flex flex-wrap items-center gap-3">
+              <select
+                value={filterWindow}
+                onChange={(e) => {
+                  const w = e.target.value;
+                  setFilterWindow(w);
+                  // A band outside the new window could only ever render an empty report.
+                  if (filterBucket && !bucketWithinWindow(filterBucket, w)) setFilterBucket(null);
+                }}
+                className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+              >
+                {WINDOW_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
               <select value={filterType} onChange={(e) => setFilterType(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
                 <option value="">All Types</option>
                 {types.map((t) => <option key={t} value={t}>{t}</option>)}
