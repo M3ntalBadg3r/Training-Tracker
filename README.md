@@ -874,14 +874,16 @@ Click **Scan for Issues** to check all student records for problems in the Full 
 
 | Issue | Description | Fix Applied |
 |-------|-------------|-------------|
-| **Spaces** | Leading or trailing whitespace | Trimmed |
+| **Spaces** | Leading, trailing, or repeated internal whitespace | Trimmed and collapsed |
 | **Email as Name** | Full name is an email address | Derived from email local part (e.g. `jane.doe@co.com` → `Jane Doe`) |
 | **Question Marks** | Full name contains only question marks and whitespace (e.g. `?`, `? ??`, `??? ??`) | Derived from email local part (e.g. `jane.doe@co.com` → `Jane Doe`) |
-| **Duplicate Name** | Full name repeats the same word (e.g. `Jane Jane`) | Duplicates removed; if only one word remains, the name is derived from the email local part instead |
+| **Duplicate Name** | Full name repeats the same word (e.g. `Jane Jane`) | Duplicates removed. A fuller name is taken from the email only when it names the same person — otherwise the single remaining word is kept (`Jane Jane` → `Jane`) |
 | **Numbers** | Digits in the name | Removed |
-| **Special Characters** | Non-letter/space/hyphen/apostrophe chars | Removed |
+| **Special Characters** | Non-letter/space/hyphen/apostrophe chars | Removed. Accented and non-Latin letters are left alone, and a typographic apostrophe is converted rather than deleted (`O’Brien` → `O'Brien`) |
 
-Results are shown with issues highlighted inline. The **Suggested Fix** column is an editable field, so you can override the suggested name before applying it. By default no rows are selected after a scan — tick the rows you want to fix (or use the issue filter chips to bulk-select), then click **Fix Selected**.
+Every suggested fix is itself clean — applying one can never leave a name that the next scan flags again. Names derived from an email address have any digits and plus-addressing tags stripped (`jane11.jane@co.com` → `Jane`, not `Jane11 Jane`), and initials are never mistaken for duplicates (`J R R Smith` is left alone). Casing is corrected only when a name is entirely upper- or lower-case, so `McDonald` and `van der Berg` survive a scan intact.
+
+Results are shown with issues highlighted inline. The **Suggested Fix** column is an editable field, so you can override the suggested name before applying it. Where no safe automatic fix exists the field is left blank with a prompt to enter one, and the row can't be selected until you do. By default no rows are selected after a scan — tick the rows you want to fix (or use the issue filter chips to bulk-select), then click **Fix Selected**.
 
 #### Future Completion Dates
 

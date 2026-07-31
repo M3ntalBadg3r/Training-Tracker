@@ -760,8 +760,8 @@ const helpSections: Record<string, HelpSection> = {
           <tbody>
             <tr>
               <td><strong>Spaces</strong></td>
-              <td>Leading or trailing whitespace</td>
-              <td>Trimmed</td>
+              <td>Leading, trailing, or repeated internal whitespace</td>
+              <td>Trimmed and collapsed</td>
             </tr>
             <tr>
               <td><strong>Email as Name</strong></td>
@@ -776,7 +776,7 @@ const helpSections: Record<string, HelpSection> = {
             <tr>
               <td><strong>Duplicate Name</strong></td>
               <td>Full name repeats the same word (e.g. <code>Jane Jane</code>)</td>
-              <td>Duplicates removed; if only one word remains, the name is derived from the email local part instead</td>
+              <td>Duplicates removed. A fuller name is taken from the email only when it names the same person &mdash; otherwise the single remaining word is kept (<code>Jane Jane</code> &rarr; <code>Jane</code>)</td>
             </tr>
             <tr>
               <td><strong>Numbers</strong></td>
@@ -785,18 +785,31 @@ const helpSections: Record<string, HelpSection> = {
             </tr>
             <tr>
               <td><strong>Special Characters</strong></td>
-              <td>Characters other than letters, spaces, hyphens, apostrophes, or periods</td>
-              <td>Removed</td>
+              <td>Characters other than letters, spaces, hyphens and apostrophes (periods are flagged too, and become word separators)</td>
+              <td>Removed. Accented and non-Latin letters are left alone, and a typographic apostrophe is converted rather than deleted (<code>O&rsquo;Brien</code> &rarr; <code>O&apos;Brien</code>)</td>
             </tr>
           </tbody>
         </table>
         <p>
+          Every suggested fix is itself clean &mdash; applying one can never leave
+          a name that the next scan flags again. Names derived from an email
+          address have digits and plus-addressing tags stripped
+          (<code>jane11.jane@co.com</code> &rarr; <code>Jane</code>, not{" "}
+          <code>Jane11 Jane</code>), and initials are never mistaken for
+          duplicates (<code>J R R Smith</code> is left alone). Casing is corrected
+          only when a name is entirely upper- or lower-case, so{" "}
+          <code>McDonald</code> and <code>van der Berg</code> survive a scan
+          intact.
+        </p>
+        <p>
           Results are shown in a table with the issues highlighted inline. The
           <strong> Suggested Fix</strong> for each row is shown in an editable
-          field, so you can override the suggested name before applying it. By
-          default no rows are selected after a scan &mdash; tick the rows you
-          want to fix (or use the issue filter chips to bulk-select), then
-          click <strong>Fix Selected</strong>.
+          field, so you can override the suggested name before applying it. Where
+          no safe automatic fix exists the field is left blank with a prompt to
+          enter one, and the row cannot be selected until you do. By default no
+          rows are selected after a scan &mdash; tick the rows you want to fix
+          (or use the issue filter chips to bulk-select), then click{" "}
+          <strong>Fix Selected</strong>.
         </p>
 
         <h3>Future Completion Dates</h3>

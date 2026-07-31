@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import PageHeader from "@/components/layout/PageHeader";
 import Modal from "@/components/ui/Modal";
 import {
@@ -90,7 +90,8 @@ function HighlightedName({ fullName, issues }: { fullName: string; issues: strin
         const isLeadingSpace = issues.includes("leading_trailing_spaces") && i < fullName.length - fullName.trimStart().length;
         const isTrailingSpace = issues.includes("leading_trailing_spaces") && i >= fullName.trimEnd().length;
         const isNumber = issues.includes("numbers") && /[0-9]/.test(ch);
-        const isSpecial = issues.includes("special_characters") && /[^\p{L}\s\-'\d]/u.test(ch);
+        // Lockstep with SPECIAL_CHARS_REGEX in api/admin/cleanup/route.ts.
+        const isSpecial = issues.includes("special_characters") && /[^\p{L}\p{M}\s\-'\d]/u.test(ch);
         const isDup = isInDuplicateRange(i);
 
         if (isLeadingSpace || isTrailingSpace) {
@@ -121,6 +122,7 @@ export default function DataCleanUpPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [fixing, setFixing] = useState(false);
   const [fixResult, setFixResult] = useState<{ count: number } | null>(null);
+  const [studentError, setStudentError] = useState<string | null>(null);
 
   // Future completion dates scan
   const [futureOpen, setFutureOpen] = useState(true);
@@ -138,9 +140,30 @@ export default function DataCleanUpPage() {
   const [wipeText, setWipeText] = useState("");
   const [wiping, setWiping] = useState(false);
 
+  /**
+   * A row is fixable when it has a suggestion that would actually change something.
+   * Character-identical to POST's skip rule, so "Fix Selected (N)" always matches
+   * the server's fixedCount.
+   */
+  const canFix = (r: StudentIssue) =>
+    r.suggestedName.trim().length > 0 && r.suggestedName.trim() !== r.fullName;
+
+  const fixableEmails = useMemo(
+    () => new Set(results.filter(canFix).map((r) => r.email)),
+    [results]
+  );
+  // Derive rather than mutate: editing a suggestion to blank after ticking its box
+  // would otherwise leave it in `selected` and in the POST payload, so the button
+  // would promise more rows than the server reports fixing.
+  const effectiveSelected = useMemo(
+    () => new Set([...selected].filter((e) => fixableEmails.has(e))),
+    [selected, fixableEmails]
+  );
+
   const handleScan = async () => {
     setScanning(true);
     setFixResult(null);
+    setStudentError(null);
     try {
       const res = await fetch("/api/admin/cleanup");
       if (res.ok) {
@@ -148,19 +171,26 @@ export default function DataCleanUpPage() {
         setResults(data);
         setSelected(new Set());
         setScanned(true);
+      } else {
+        setStudentError(
+          res.status === 401 ? "Your session has expired — sign in again." : "Scan failed. Please try again."
+        );
       }
+    } catch {
+      setStudentError("Scan failed. Please try again.");
     } finally {
       setScanning(false);
     }
   };
 
   const handleFix = async () => {
-    if (selected.size === 0) return;
+    if (effectiveSelected.size === 0) return;
     setFixing(true);
+    setStudentError(null);
     try {
       const updates = results
-        .filter((r) => selected.has(r.email))
-        .map((r) => ({ email: r.email, fullName: r.suggestedName }));
+        .filter((r) => effectiveSelected.has(r.email))
+        .map((r) => ({ email: r.email, fullName: r.suggestedName.trim() }));
       const res = await fetch("/api/admin/cleanup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -171,7 +201,13 @@ export default function DataCleanUpPage() {
         setFixResult({ count: data.fixedCount });
         // Re-scan to refresh
         await handleScan();
+      } else {
+        setStudentError(
+          res.status === 401 ? "Your session has expired — sign in again." : "Could not apply the fixes. Please try again."
+        );
       }
+    } catch {
+      setStudentError("Could not apply the fixes. Please try again.");
     } finally {
       setFixing(false);
     }
@@ -184,10 +220,12 @@ export default function DataCleanUpPage() {
   };
 
   const toggleAll = () => {
-    if (selected.size === results.length) {
+    // Denominator is the fixable count, not results.length — otherwise the label
+    // can never flip to "Deselect All" once unfixable rows exist.
+    if (effectiveSelected.size === fixableEmails.size) {
       setSelected(new Set());
     } else {
-      setSelected(new Set(results.map((r) => r.email)));
+      setSelected(new Set(fixableEmails));
     }
   };
 
@@ -327,14 +365,14 @@ export default function DataCleanUpPage() {
                       onClick={toggleAll}
                       className="px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300"
                     >
-                      {selected.size === results.length ? "Deselect All" : "Select All"}
+                      {effectiveSelected.size === fixableEmails.size ? "Deselect All" : "Select All"}
                     </button>
                     <button
                       onClick={handleFix}
-                      disabled={fixing || selected.size === 0}
+                      disabled={fixing || effectiveSelected.size === 0}
                       className="flex items-center gap-2 px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
                     >
-                      {fixing ? "Fixing..." : `Fix Selected (${selected.size})`}
+                      {fixing ? "Fixing..." : `Fix Selected (${effectiveSelected.size})`}
                     </button>
                   </>
                 )}
@@ -344,9 +382,13 @@ export default function DataCleanUpPage() {
                 <div className="flex flex-wrap items-center gap-2 mb-4">
                   <span className="text-sm text-gray-500">Select by issue:</span>
                   {Object.entries(ISSUE_LABELS).map(([key, meta]) => {
-                    const emailsWithIssue = results.filter((r) => r.issues.includes(key)).map((r) => r.email);
+                    // Fixable rows only: a chip whose group has no applicable fix
+                    // could never reach its "all selected" state.
+                    const emailsWithIssue = results
+                      .filter((r) => r.issues.includes(key) && fixableEmails.has(r.email))
+                      .map((r) => r.email);
                     if (emailsWithIssue.length === 0) return null;
-                    const allSelected = emailsWithIssue.every((e) => selected.has(e));
+                    const allSelected = emailsWithIssue.every((e) => effectiveSelected.has(e));
                     return (
                       <button
                         key={key}
@@ -371,6 +413,13 @@ export default function DataCleanUpPage() {
                       </button>
                     );
                   })}
+                </div>
+              )}
+
+              {studentError && (
+                <div className="flex items-center gap-2 mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800">
+                  <AlertTriangle size={16} />
+                  {studentError}
                 </div>
               )}
 
@@ -427,16 +476,26 @@ export default function DataCleanUpPage() {
                               type="text"
                               value={row.suggestedName}
                               onChange={(e) => updateSuggestedName(row.email, e.target.value)}
-                              className="w-full px-2 py-1 text-sm font-medium text-green-700 bg-green-50 border border-green-200 rounded focus:bg-white focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                              placeholder="No automatic fix — enter a name"
+                              className={`w-full px-2 py-1 text-sm font-medium rounded focus:bg-white focus:outline-none focus:ring-2 ${
+                                fixableEmails.has(row.email)
+                                  ? "text-green-700 bg-green-50 border border-green-200 focus:ring-green-500 focus:border-green-500"
+                                  : "text-gray-700 bg-gray-50 border border-gray-300 focus:ring-blue-500 focus:border-blue-500"
+                              }`}
                               aria-label={`Suggested name for ${row.email}`}
                             />
+                            {!fixableEmails.has(row.email) && row.suggestedName.trim().length > 0 && (
+                              <p className="mt-1 text-xs text-gray-500">Same as the current name</p>
+                            )}
                           </td>
                           <td className="px-4 py-3 text-center">
                             <input
                               type="checkbox"
-                              checked={selected.has(row.email)}
+                              checked={effectiveSelected.has(row.email)}
+                              disabled={!fixableEmails.has(row.email)}
                               onChange={() => toggleOne(row.email)}
-                              className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                              title={fixableEmails.has(row.email) ? undefined : "Enter a name to fix this row"}
+                              className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 disabled:opacity-40"
                             />
                           </td>
                         </tr>
