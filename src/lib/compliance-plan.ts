@@ -10,6 +10,10 @@
  * the dashboards can never disagree on what counts as *met*.
  *
  * On top of the gap we nominate the cheapest specific people to close it, ranked:
+ *   0. renewal         — holds the cert today but it expires inside the renewal
+ *                        window. Only in play when the caller asks to *plan for*
+ *                        that window (`planForWindow`); otherwise these people
+ *                        still count as attained and sit in no pool.
  *   1. easy-win        — did an ILT/OLX that leads to the cert, never certified
  *                        (needs only the exam). Uses the reverse ILT/OLX→cert index.
  *   2. lapsed          — held the cert but it expired (needs only a renewal).
@@ -39,7 +43,7 @@ import {
 
 // ─── Public types ────────────────────────────────────────────────────────────
 
-export type CandidateTier = "easy-win" | "lapsed" | "legacy" | "net-new";
+export type CandidateTier = "renewal" | "easy-win" | "lapsed" | "legacy" | "net-new";
 
 /** How the whole plan is targeted for one program. */
 export interface PlanTarget {
@@ -61,6 +65,13 @@ export interface CompliancePlanInput {
   companyIds: number[] | null;
   /** 0 disables the renewal overlay; otherwise 1 | 3 | 6 | 12 months. */
   renewalWindowMonths: number;
+  /**
+   * Plan *for* the renewal window rather than just reporting it: gaps are sized
+   * from the projected (end-of-window) holder count, so training that lapses
+   * inside the window has to be renewed to count as closed. Ignored when
+   * `renewalWindowMonths` is 0.
+   */
+  planForWindow: boolean;
 }
 
 /** One geography-scoped instance of a program requirement (a distinct gap). */
@@ -76,7 +87,19 @@ export interface PlanRequirement {
   cert: string;
   required: number;
   attained: number;
+  /**
+   * Distinct holders still active at the end of the renewal window. `null` when
+   * no window is selected. Note this is a fresh point-in-time count, not
+   * `attained - expiringSoon` — someone whose completion lands inside the window
+   * is counted here but not in `attained`.
+   */
+  projectedAttained: number | null;
+  /** The gap today: `required - attained`. Independent of `planForWindow`. */
   shortfall: number;
+  /** The gap at the end of the window. `null` when no window is selected. */
+  projectedShortfall: number | null;
+  /** Only non-zero when planning for the renewal window (see `CandidateTier`). */
+  renewalPool: number;
   easyWinPool: number;
   lapsedPool: number;
   legacyPool: number;
@@ -88,7 +111,14 @@ export interface PlanRequirement {
 
 export interface PlanSpecialisation {
   name: string;
+  /** Every requirement met *today*. Independent of `planForWindow`. */
   achieved: boolean;
+  /**
+   * Every requirement still met at the end of the renewal window. `null` when no
+   * window is selected. `achieved && projectedAchieved === false` is the "at
+   * risk" state — compliant now, not compliant then.
+   */
+  projectedAchieved: boolean | null;
   /** People-moves to close this specialisation (sum of its instances' shortfall). */
   cost: number;
   easyWins: number;
@@ -137,6 +167,18 @@ export interface PlanCandidate {
   closes: PlanCandidateClose[];
 }
 
+/** One requirement that falls below target as training expires in the window. */
+export interface PlanRiskImpact {
+  program: string;
+  specialisation: string | null;
+  tierName: string | null;
+  cert: string;
+  scopeLabel: string;
+  required: number;
+  attained: number;
+  projectedAttained: number;
+}
+
 export interface PlanRenewalRow {
   email: string;
   fullName: string;
@@ -149,6 +191,8 @@ export interface PlanRenewalRow {
 export interface CompliancePlanResult {
   scopeLabel: string;
   renewalWindowMonths: number;
+  /** Echo of the input flag, so the client knows which basis this payload used. */
+  planForWindow: boolean;
   targets: PlanTargetResult[];
   candidates: PlanCandidate[];
   /**
@@ -159,12 +203,19 @@ export interface CompliancePlanResult {
    */
   eligible: PlanCandidate[];
   renewals: PlanRenewalRow[];
+  /**
+   * The requirements those renewals break. Scoped to counted instances, so it
+   * always agrees with `renewals` — see the note where it's built.
+   */
+  riskImpacts: PlanRiskImpact[];
   totals: {
     peopleMoves: number;
     easyWins: number;
     lapsed: number;
     legacy: number;
     netNew: number;
+    /** People nominated to renew (0 unless planning for the window). */
+    renewalMoves: number;
     renewalsAtRisk: number;
   };
 }
@@ -191,6 +242,17 @@ interface ReqInstance {
   cert: string;
   required: number;
   attained: number;
+  /** Holders still active at the horizon; null when no renewal window is set. */
+  projectedAttained: number | null;
+  /** Gap today. */
+  shortfallNow: number;
+  /** Gap at the horizon; null when no renewal window is set. */
+  shortfallProjected: number | null;
+  /**
+   * THE planning gap — the single value the allocator, specialisation cost and
+   * tier cheapest-path selection all cost against. Equals `shortfallNow` unless
+   * we're planning for the renewal window.
+   */
   shortfall: number;
   pool: PoolMember[];
   poolEmails: Set<string>;
@@ -198,6 +260,9 @@ interface ReqInstance {
 }
 
 const TIER_RANK: Record<Exclude<CandidateTier, "net-new">, number> = {
+  // A renewal is the cheapest possible move: they already hold the training and
+  // only need to re-sit it before it lapses.
+  renewal: -1,
   "easy-win": 0,
   lapsed: 1,
   legacy: 2,
@@ -393,6 +458,7 @@ async function buildInstances(
   idx: CatalogueIndex,
   now: Date,
   horizon: Date | null,
+  planForWindow: boolean,
 ): Promise<ReqInstance[]> {
   // Only this scope's own-level requirements are planned against.
   if (row.level !== geo.reqLevel) return [];
@@ -407,19 +473,48 @@ async function buildInstances(
     const activeMap = await getEmailSetsByTitle(row.titles, now, t.scope);
     const active = unionEmails(activeMap);
     const attained = active.size;
-    const shortfall = Math.max(0, row.quantityRequired - attained);
 
-    // Renewal overlay: active holders who will drop out by the horizon.
+    // Renewal overlay: the same count taken at the horizon, plus the active
+    // holders who drop out before it. With no holders today there is nothing to
+    // lose, so we skip the query and call the projection 0 — an under-count only
+    // if someone's completion lands inside the window, which can never invent a
+    // false "at risk".
     let expiringEmails: string[] = [];
-    if (horizon && attained > 0) {
-      const futureMap = await getEmailSetsByTitle(row.titles, horizon, t.scope);
-      const future = unionEmails(futureMap);
-      expiringEmails = [...active].filter((e) => !future.has(e));
+    let projectedAttained: number | null = null;
+    if (horizon) {
+      if (attained === 0) {
+        projectedAttained = 0;
+      } else {
+        const futureMap = await getEmailSetsByTitle(row.titles, horizon, t.scope);
+        const future = unionEmails(futureMap);
+        projectedAttained = future.size;
+        expiringEmails = [...active].filter((e) => !future.has(e));
+      }
     }
+
+    const shortfallNow = Math.max(0, row.quantityRequired - attained);
+    const shortfallProjected =
+      projectedAttained === null ? null : Math.max(0, row.quantityRequired - projectedAttained);
+
+    // Planning *for* the window means closing the gap now AND still holding it at
+    // the horizon — hence the max, not just the projected figure (a completion
+    // landing inside the window must not discount a gap that is real today).
+    // Every downstream consumer of `shortfall` (pools, the allocator, spec cost,
+    // tier cheapest-path selection) then follows without further plumbing.
+    const shortfall =
+      planForWindow && shortfallProjected !== null
+        ? Math.max(shortfallNow, shortfallProjected)
+        : shortfallNow;
 
     const pool: PoolMember[] = [];
     const seen = new Map<string, PoolMember>();
     if (shortfall > 0) {
+      // renewal: holders who lapse inside the window. They're excluded from every
+      // other pool below (all skip `active`), so there's nothing to double-count.
+      if (planForWindow) {
+        for (const email of expiringEmails) addPool(seen, { email, tier: "renewal", path: null });
+      }
+
       // easy-win: holders of an ILT/OLX that leads to any qualifying cert.
       const iltTitles: string[] = [];
       const iltFullFor = new Map<string, string>();
@@ -481,6 +576,9 @@ async function buildInstances(
       cert: row.cert,
       required: row.quantityRequired,
       attained,
+      projectedAttained,
+      shortfallNow,
+      shortfallProjected,
       shortfall,
       pool,
       poolEmails: new Set(pool.map((p) => p.email)),
@@ -521,6 +619,10 @@ export interface AllocationResult {
  *    easy people aren't burned on the largest gaps;
  *  - within an instance prefer cheaper tiers, then higher-coverage people (those
  *    whose one move closes the most same-cert instances).
+ *
+ * One move per person applies to renewals too: someone committed to renewing
+ * Cert A won't also be nominated to earn Cert B. That's right for "they can only
+ * sit one exam", and mildly pessimistic for anyone who could do both.
  */
 export function allocateCandidates(instances: ReqInstance[]): AllocationResult {
   const open = instances.filter((i) => i.shortfall > 0);
@@ -631,6 +733,8 @@ interface TierInfo {
 export async function computeCompliancePlan(input: CompliancePlanInput): Promise<CompliancePlanResult> {
   const now = new Date();
   const horizon = input.renewalWindowMonths > 0 ? addMonths(now, input.renewalWindowMonths) : null;
+  // "Plan for the window" is meaningless without a window.
+  const planForWindow = horizon !== null && input.planForWindow;
 
   const idx = await buildCatalogueIndex();
   const geo = await resolveGeoPlan(input);
@@ -711,7 +815,7 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
     // Build instances for every active row (one scoped instance per in-scope row).
     const rowInstances: ReqInstance[] = [];
     for (const row of activeRows) {
-      const built = await buildInstances(target.program, row, geo, idx, now, horizon);
+      const built = await buildInstances(target.program, row, geo, idx, now, horizon, planForWindow);
       // Tag tier-deployment instances with the tier name for display.
       if (chosenTier && row.tierId === chosenTier.id) {
         for (const b of built) b.tierName = chosenTier.name;
@@ -758,6 +862,9 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
     const recommendedSpecs = new Set<string>();
     if (chosenTier && targetResult.tierPlan) {
       // Per-specialisation cost (Σ shortfall) + achieved, before any allocation.
+      // Both read the *planning* gap, so when planning for the renewal window a
+      // specialisation that lapses inside it stops counting toward the tier —
+      // `needed` rises and the cheapest path can legitimately change.
       const specCost = new Map<string, number>();
       const specAchieved = new Map<string, boolean>();
       for (const [name, insts] of bySpec) {
@@ -822,13 +929,23 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
     const specs: PlanSpecialisation[] = [];
     for (const [name, specInsts] of bySpec) {
       const requirements = specInsts.map((inst) => toPlanRequirement(inst, alloc));
-      const cost = requirements.reduce((s, r) => s + r.shortfall, 0);
+      // Cost is the *planning* gap, so read the instance — the DTO's `shortfall`
+      // is deliberately today's figure.
+      const cost = specInsts.reduce((s, i) => s + i.shortfall, 0);
       const easyWins = specInsts.reduce(
         (s, inst) => s + inst.pool.filter((p) => p.tier === "easy-win").length,
         0,
       );
-      const achieved = requirements.every((r) => r.shortfall === 0);
-      const spec: PlanSpecialisation = { name, achieved, cost, easyWins, requirements };
+      const spec: PlanSpecialisation = {
+        name,
+        // Derived from the attained counts, not `shortfall`, so both flags mean
+        // the same thing whether or not we're planning for the window.
+        achieved: isAchievedNow(requirements),
+        projectedAchieved: isAchievedAtHorizon(requirements),
+        cost,
+        easyWins,
+        requirements,
+      };
       if (target.tierPlan) spec.chosen = recommendedSpecs.has(name);
       specs.push(spec);
     }
@@ -836,12 +953,14 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
 
     // Surface tier deployment requirements as a synthetic specialisation block.
     if (target.tierPlan && tierDeployInsts.length > 0) {
+      const deployReqs = tierDeployInsts.map((inst) => toPlanRequirement(inst, alloc));
       specs.push({
         name: `${target.tierName} — delivery certs`,
-        achieved: tierDeployInsts.every((i) => i.shortfall === 0),
+        achieved: isAchievedNow(deployReqs),
+        projectedAchieved: isAchievedAtHorizon(deployReqs),
         cost: tierDeployInsts.reduce((s, i) => s + i.shortfall, 0),
         easyWins: tierDeployInsts.reduce((s, i) => s + i.pool.filter((p) => p.tier === "easy-win").length, 0),
-        requirements: tierDeployInsts.map((inst) => toPlanRequirement(inst, alloc)),
+        requirements: deployReqs,
         chosen: true,
       });
     }
@@ -863,7 +982,7 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
     target.easyWins = easyWins;
     target.netNew = netNew;
     target.peopleMoves = targetEmails.size + netNew;
-    target.headline = buildHeadline(target, geo.scopeLabel);
+    target.headline = buildHeadline(target, geo.scopeLabel, input.renewalWindowMonths);
   }
 
   // ── Candidate-centric drill-down ──
@@ -924,6 +1043,31 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
     (a, b) => tierOrder(a.topTier) - tierOrder(b.topTier) || b.closesCount - a.closesCount || a.fullName.localeCompare(b.fullName),
   );
 
+  // ── What the renewals actually break ──
+  // Built here, not on the client, because only this side knows which instances
+  // are *counted*: `spec.chosen` is the recommended tie-set (a superset of the
+  // cheapest-K the plan pursues), so a client-side derive would name
+  // requirements whose expiring holders never appear in the table below it.
+  const riskImpacts: PlanRiskImpact[] = countedInstances
+    .filter((i) => i.shortfallProjected !== null && i.shortfallProjected > 0 && i.expiringEmails.length > 0)
+    .map((i) => ({
+      program: i.program,
+      specialisation: i.specialisation,
+      tierName: i.tierName,
+      cert: i.cert,
+      scopeLabel: i.scopeLabel,
+      required: i.required,
+      attained: i.attained,
+      projectedAttained: i.projectedAttained ?? i.attained,
+    }))
+    // Requirements that are fine today lead — those are the surprising ones.
+    .sort(
+      (a, b) =>
+        Number(b.attained >= b.required) - Number(a.attained >= a.required) ||
+        (b.required - b.projectedAttained) - (a.required - a.projectedAttained) ||
+        a.cert.localeCompare(b.cert),
+    );
+
   // ── Renewal-at-risk rows (deduped by email+cert+scope) ──
   const renewals: PlanRenewalRow[] = [];
   const renewalSeen = new Set<string>();
@@ -951,26 +1095,33 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
   let easyWins = 0;
   let lapsed = 0;
   let legacy = 0;
+  let renewalMoves = 0;
+  // Explicit four-way branch: a catch-all `else` would silently bank every
+  // renewal commitment as legacy.
   for (const tier of alloc.committedTier.values()) {
-    if (tier === "easy-win") easyWins++;
+    if (tier === "renewal") renewalMoves++;
+    else if (tier === "easy-win") easyWins++;
     else if (tier === "lapsed") lapsed++;
-    else legacy++;
+    else if (tier === "legacy") legacy++;
   }
   const netNew = [...alloc.netNewByInstance.values()].reduce((s, n) => s + n, 0);
 
   return {
     scopeLabel: geo.scopeLabel,
     renewalWindowMonths: input.renewalWindowMonths,
+    planForWindow,
     targets,
     candidates,
     eligible,
     renewals,
+    riskImpacts,
     totals: {
       peopleMoves: alloc.closesByEmail.size + netNew,
       easyWins,
       lapsed,
       legacy,
       netNew,
+      renewalMoves,
       renewalsAtRisk: renewalEmails.size,
     },
   };
@@ -979,7 +1130,18 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
 // ─── Small helpers ───────────────────────────────────────────────────────────
 
 function tierOrder(t: CandidateTier): number {
-  return t === "easy-win" ? 0 : t === "lapsed" ? 1 : t === "legacy" ? 2 : 3;
+  return t === "renewal" ? -1 : t === "easy-win" ? 0 : t === "lapsed" ? 1 : t === "legacy" ? 2 : 3;
+}
+
+/** Met today — the plain requirement check, independent of the planning basis. */
+function isAchievedNow(reqs: PlanRequirement[]): boolean {
+  return reqs.every((r) => r.attained >= r.required);
+}
+
+/** Still met at the end of the renewal window; null when no window is selected. */
+function isAchievedAtHorizon(reqs: PlanRequirement[]): boolean | null {
+  if (reqs.some((r) => r.projectedAttained === null)) return null;
+  return reqs.every((r) => (r.projectedAttained ?? r.attained) >= r.required);
 }
 
 function toPlanRequirement(inst: ReqInstance, alloc: AllocationResult): PlanRequirement {
@@ -993,7 +1155,10 @@ function toPlanRequirement(inst: ReqInstance, alloc: AllocationResult): PlanRequ
     cert: inst.cert,
     required: inst.required,
     attained: inst.attained,
-    shortfall: inst.shortfall,
+    projectedAttained: inst.projectedAttained,
+    shortfall: inst.shortfallNow,
+    projectedShortfall: inst.shortfallProjected,
+    renewalPool: inst.pool.filter((p) => p.tier === "renewal").length,
     easyWinPool: inst.pool.filter((p) => p.tier === "easy-win").length,
     lapsedPool: inst.pool.filter((p) => p.tier === "lapsed").length,
     legacyPool: inst.pool.filter((p) => p.tier === "legacy").length,
@@ -1004,9 +1169,20 @@ function toPlanRequirement(inst: ReqInstance, alloc: AllocationResult): PlanRequ
   };
 }
 
-function buildHeadline(target: PlanTargetResult, scopeLabel: string): string {
+function buildHeadline(target: PlanTargetResult, scopeLabel: string, windowMonths: number): string {
   const where = scopeLabel === "Global" ? "globally" : `in ${scopeLabel}`;
   if (target.peopleMoves === 0) {
+    // Don't claim "nobody left to certify" when the window says otherwise: a
+    // specialisation met today can still fall below target as training expires.
+    const atRisk = target.specialisations.filter((s) => s.achieved && s.projectedAchieved === false);
+    if (atRisk.length > 0) {
+      const n = atRisk.length;
+      return (
+        `${target.program} is compliant ${where} today, but ${n} specialisation${n === 1 ? "" : "s"} ` +
+        `fall${n === 1 ? "s" : ""} below target within ${windowMonths} month${windowMonths === 1 ? "" : "s"} ` +
+        `as training expires — renew to hold it.`
+      );
+    }
     return `${target.program} is fully compliant ${where} — nobody left to certify.`;
   }
   const noun = target.peopleMoves === 1 ? "person" : "people";

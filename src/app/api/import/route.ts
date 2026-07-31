@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { computeExpiryDate } from "@/lib/utils";
+import { computeExpiryDate, titleCaseName, deriveNameFromEmail } from "@/lib/utils";
 import { requireAuth, handleAuthError } from "@/lib/auth";
 import { canAccessCompany, getAuthorizedCompanyIds, isSuperAdmin } from "@/lib/company-scope";
 import { recomputeParentsForMany } from "@/lib/olx";
@@ -17,21 +17,6 @@ interface ImportRow {
   title: string;
   completedDate: string;
   company: string;
-}
-
-function titleCase(str: string): string {
-  return str
-    .toLowerCase()
-    .replace(/(?:^|\s)\S/g, (char) => char.toUpperCase());
-}
-
-function deriveFullName(email: string): string {
-  const localPart = email.split("@")[0];
-  const parts = localPart.split(".");
-  if (parts.length === 2 && parts[0] && parts[1]) {
-    return titleCase(`${parts[0]} ${parts[1]}`);
-  }
-  return email;
 }
 
 export async function POST(request: NextRequest) {
@@ -190,11 +175,15 @@ export async function POST(request: NextRequest) {
     const rawLast = (columnMapping.lastName ? row[columnMapping.lastName] || "" : "").trim();
     let fullName: string;
     if (rawFullName) {
-      fullName = titleCase(rawFullName);
+      fullName = titleCaseName(rawFullName);
     } else if (rawFirst || rawLast) {
-      fullName = titleCase(`${rawFirst} ${rawLast}`.replace(/\s+/g, " ").trim());
+      fullName = titleCaseName(`${rawFirst} ${rawLast}`);
     } else {
-      fullName = deriveFullName(email);
+      // Never fall back to the raw address — that writes an email into the name
+      // field, which is precisely the "Email as Name" defect Data Clean-Up exists
+      // to fix. The `||` is also load-bearing: an empty name hits the guard below
+      // and drops the whole training record, not just the name.
+      fullName = deriveNameFromEmail(email) || email.split("@")[0];
     }
     const company = (columnMapping.company ? (row[columnMapping.company] || "").trim() : "");
 

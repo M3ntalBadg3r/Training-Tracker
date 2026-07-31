@@ -760,8 +760,8 @@ const helpSections: Record<string, HelpSection> = {
           <tbody>
             <tr>
               <td><strong>Spaces</strong></td>
-              <td>Leading or trailing whitespace</td>
-              <td>Trimmed</td>
+              <td>Leading, trailing, or repeated internal whitespace</td>
+              <td>Trimmed and collapsed</td>
             </tr>
             <tr>
               <td><strong>Email as Name</strong></td>
@@ -776,7 +776,7 @@ const helpSections: Record<string, HelpSection> = {
             <tr>
               <td><strong>Duplicate Name</strong></td>
               <td>Full name repeats the same word (e.g. <code>Jane Jane</code>)</td>
-              <td>Duplicates removed; if only one word remains, the name is derived from the email local part instead</td>
+              <td>Duplicates removed. A fuller name is taken from the email only when it names the same person &mdash; otherwise the single remaining word is kept (<code>Jane Jane</code> &rarr; <code>Jane</code>)</td>
             </tr>
             <tr>
               <td><strong>Numbers</strong></td>
@@ -785,18 +785,31 @@ const helpSections: Record<string, HelpSection> = {
             </tr>
             <tr>
               <td><strong>Special Characters</strong></td>
-              <td>Characters other than letters, spaces, hyphens, apostrophes, or periods</td>
-              <td>Removed</td>
+              <td>Characters other than letters, spaces, hyphens and apostrophes (periods are flagged too, and become word separators)</td>
+              <td>Removed. Accented and non-Latin letters are left alone, and a typographic apostrophe is converted rather than deleted (<code>O&rsquo;Brien</code> &rarr; <code>O&apos;Brien</code>)</td>
             </tr>
           </tbody>
         </table>
         <p>
+          Every suggested fix is itself clean &mdash; applying one can never leave
+          a name that the next scan flags again. Names derived from an email
+          address have digits and plus-addressing tags stripped
+          (<code>jane11.jane@co.com</code> &rarr; <code>Jane</code>, not{" "}
+          <code>Jane11 Jane</code>), and initials are never mistaken for
+          duplicates (<code>J R R Smith</code> is left alone). Casing is corrected
+          only when a name is entirely upper- or lower-case, so{" "}
+          <code>McDonald</code> and <code>van der Berg</code> survive a scan
+          intact.
+        </p>
+        <p>
           Results are shown in a table with the issues highlighted inline. The
           <strong> Suggested Fix</strong> for each row is shown in an editable
-          field, so you can override the suggested name before applying it. By
-          default no rows are selected after a scan &mdash; tick the rows you
-          want to fix (or use the issue filter chips to bulk-select), then
-          click <strong>Fix Selected</strong>.
+          field, so you can override the suggested name before applying it. Where
+          no safe automatic fix exists the field is left blank with a prompt to
+          enter one, and the row cannot be selected until you do. By default no
+          rows are selected after a scan &mdash; tick the rows you want to fix
+          (or use the issue filter chips to bulk-select), then click{" "}
+          <strong>Fix Selected</strong>.
         </p>
 
         <h3>Future Completion Dates</h3>
@@ -1945,6 +1958,11 @@ const helpSections: Record<string, HelpSection> = {
         <p>For each gap, candidates are ranked cheapest-first:</p>
         <ul>
           <li>
+            <strong>Renewal (expiring)</strong> — holds the required cert today,
+            but it expires inside the renewal window. Only offered when{" "}
+            <strong>Plan for this window</strong> is ticked (see below).
+          </li>
+          <li>
             <strong>Easy win</strong> — completed an ILT/OLX that leads to the
             required cert but never earned it; needs only the exam.
           </li>
@@ -1992,9 +2010,30 @@ const helpSections: Record<string, HelpSection> = {
           exactly like the program dashboards: choosing a <em>country</em> shows
           that country&apos;s Country-level requirements — not the theatre-wide
           requirement above it. Select the <em>theatre</em> if you want to plan
-          against theatre-level requirements. The <strong>Renewals at risk</strong>{" "}
-          section lists holders whose training expires within the selected window;
-          their expiry will re-open a gap the plan currently reports as closed.
+          against theatre-level requirements.
+        </p>
+        <p>
+          The <strong>Renewal window</strong> (Off / 1 / 3 / 6 / 12 months) projects
+          compliance forward, so you can see what upcoming expiry does to it. With a
+          window selected, attained figures read <strong>current &rarr; projected</strong>{" "}
+          (e.g. <em>16 &rarr; 3</em>) with a <strong>&#9660;N expiring</strong> note, and
+          anything that is met <em>today</em> but falls below its requirement by the end
+          of the window is shaded <strong>amber</strong> and badged{" "}
+          <strong>&ldquo;At risk in Nmo&rdquo;</strong> alongside its green{" "}
+          <strong>Achieved</strong> badge — it is compliant now and won&apos;t be then.
+          The <strong>Renewals at risk</strong> section lists the holders whose training
+          expires, led by a summary of exactly which requirements their expiry breaks.
+        </p>
+        <p>
+          By default the window is <em>informational</em>: the KPIs and
+          &ldquo;Who to certify&rdquo; still answer &ldquo;what is broken today?&rdquo;.
+          Tick <strong>Plan for this window</strong> to fold it in — gaps are then sized
+          from the projected figure, <strong>People to certify</strong> includes the
+          renewals needed to hold compliance through the window, and those people appear
+          in &ldquo;Who to certify&rdquo; as <strong>Renewal (expiring)</strong>{" "}
+          candidates. For a tiered program this can change which specialisations are
+          &ldquo;Recommended&rdquo;, since one that lapses inside the window no longer
+          counts toward the tier.
         </p>
 
         <h3>Export</h3>
@@ -2005,8 +2044,11 @@ const helpSections: Record<string, HelpSection> = {
           certify&rdquo; candidate list, and the renewals-at-risk list — in CSV,
           Excel, or PDF. In Excel each section becomes its own sheet; the PDF
           stacks each section as a headed table; CSV concatenates them with
-          section titles. The candidate list and the renewals list also keep their
-          own per-section export buttons for a quick single-table download.
+          section titles. With a renewal window selected the roadmap gains projected
+          columns and a <strong>Requirements at risk</strong> section is included, and
+          the filename carries the window (and <em>-planned</em> when you are planning
+          for it). The candidate list and the renewals list also keep their own
+          per-section export buttons for a quick single-table download.
         </p>
       </>
     ),
