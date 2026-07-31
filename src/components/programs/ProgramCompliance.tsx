@@ -121,7 +121,7 @@ export type ViewStudentsFn = (
   alternatives?: AlternativeEntry[]
 ) => void;
 
-type RiskState = "compliant" | "atRisk" | "nonCompliant";
+export type RiskState = "compliant" | "atRisk" | "nonCompliant";
 
 /**
  * Classify a requirement's compliance taking the projection into account:
@@ -130,8 +130,12 @@ type RiskState = "compliant" | "atRisk" | "nonCompliant";
  *  - nonCompliant: already below the requirement today (red)
  * When `projected` is undefined (no horizon) this reduces to the old
  * green/red split on the current attained figure.
+ *
+ * Exported (with RISK_TEXT/RISK_BADGE/AttainedValue/ExpiringNote) because the
+ * Compliance Planning page renders the same amber "at risk" state — this is the
+ * single definition of amber-vs-red, and a copy is how the two drifted before.
  */
-function riskState(attained: number, projected: number | undefined, required: number): RiskState {
+export function riskState(attained: number, projected: number | undefined, required: number): RiskState {
   const future = projected ?? attained;
   if (future >= required) return "compliant";
   if (attained >= required) return "atRisk";
@@ -144,20 +148,20 @@ const RISK_BG: Record<RiskState, string> = {
   nonCompliant: "bg-red-50",
 };
 
-const RISK_TEXT: Record<RiskState, string> = {
+export const RISK_TEXT: Record<RiskState, string> = {
   compliant: "text-green-700",
   atRisk: "text-amber-700",
   nonCompliant: "text-red-700",
 };
 
-const RISK_BADGE: Record<RiskState, string> = {
+export const RISK_BADGE: Record<RiskState, string> = {
   compliant: "bg-green-100 text-green-800",
   atRisk: "bg-amber-100 text-amber-800",
   nonCompliant: "bg-red-100 text-red-800",
 };
 
 /** Inline "current → projected" attained value with an optional unit label. */
-function AttainedValue({
+export function AttainedValue({
   attained,
   projected,
   unitLabel,
@@ -190,7 +194,7 @@ function AttainedValue({
 }
 
 /** Small "▼N expiring" note shown under an at-risk/projected attained value. */
-function ExpiringNote({ attained, projected }: { attained: number; projected?: number }) {
+export function ExpiringNote({ attained, projected }: { attained: number; projected?: number }) {
   if (projected === undefined || projected >= attained) return null;
   return (
     <div className="text-[11px] text-amber-600 mt-0.5 font-medium">▼{attained - projected} expiring</div>

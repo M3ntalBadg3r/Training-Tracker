@@ -1945,6 +1945,11 @@ const helpSections: Record<string, HelpSection> = {
         <p>For each gap, candidates are ranked cheapest-first:</p>
         <ul>
           <li>
+            <strong>Renewal (expiring)</strong> — holds the required cert today,
+            but it expires inside the renewal window. Only offered when{" "}
+            <strong>Plan for this window</strong> is ticked (see below).
+          </li>
+          <li>
             <strong>Easy win</strong> — completed an ILT/OLX that leads to the
             required cert but never earned it; needs only the exam.
           </li>
@@ -1992,9 +1997,30 @@ const helpSections: Record<string, HelpSection> = {
           exactly like the program dashboards: choosing a <em>country</em> shows
           that country&apos;s Country-level requirements — not the theatre-wide
           requirement above it. Select the <em>theatre</em> if you want to plan
-          against theatre-level requirements. The <strong>Renewals at risk</strong>{" "}
-          section lists holders whose training expires within the selected window;
-          their expiry will re-open a gap the plan currently reports as closed.
+          against theatre-level requirements.
+        </p>
+        <p>
+          The <strong>Renewal window</strong> (Off / 1 / 3 / 6 / 12 months) projects
+          compliance forward, so you can see what upcoming expiry does to it. With a
+          window selected, attained figures read <strong>current &rarr; projected</strong>{" "}
+          (e.g. <em>16 &rarr; 3</em>) with a <strong>&#9660;N expiring</strong> note, and
+          anything that is met <em>today</em> but falls below its requirement by the end
+          of the window is shaded <strong>amber</strong> and badged{" "}
+          <strong>&ldquo;At risk in Nmo&rdquo;</strong> alongside its green{" "}
+          <strong>Achieved</strong> badge — it is compliant now and won&apos;t be then.
+          The <strong>Renewals at risk</strong> section lists the holders whose training
+          expires, led by a summary of exactly which requirements their expiry breaks.
+        </p>
+        <p>
+          By default the window is <em>informational</em>: the KPIs and
+          &ldquo;Who to certify&rdquo; still answer &ldquo;what is broken today?&rdquo;.
+          Tick <strong>Plan for this window</strong> to fold it in — gaps are then sized
+          from the projected figure, <strong>People to certify</strong> includes the
+          renewals needed to hold compliance through the window, and those people appear
+          in &ldquo;Who to certify&rdquo; as <strong>Renewal (expiring)</strong>{" "}
+          candidates. For a tiered program this can change which specialisations are
+          &ldquo;Recommended&rdquo;, since one that lapses inside the window no longer
+          counts toward the tier.
         </p>
 
         <h3>Export</h3>
@@ -2005,8 +2031,11 @@ const helpSections: Record<string, HelpSection> = {
           certify&rdquo; candidate list, and the renewals-at-risk list — in CSV,
           Excel, or PDF. In Excel each section becomes its own sheet; the PDF
           stacks each section as a headed table; CSV concatenates them with
-          section titles. The candidate list and the renewals list also keep their
-          own per-section export buttons for a quick single-table download.
+          section titles. With a renewal window selected the roadmap gains projected
+          columns and a <strong>Requirements at risk</strong> section is included, and
+          the filename carries the window (and <em>-planned</em> when you are planning
+          for it). The candidate list and the renewals list also keep their own
+          per-section export buttons for a quick single-table download.
         </p>
       </>
     ),

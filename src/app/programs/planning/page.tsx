@@ -14,7 +14,15 @@ import {
 } from "lucide-react";
 import PageHeader from "@/components/layout/PageHeader";
 import KpiStrip from "@/components/ui/KpiStrip";
-import { ExportMenu } from "@/components/programs/ProgramCompliance";
+import {
+  ExportMenu,
+  AttainedValue,
+  ExpiringNote,
+  riskState,
+  RISK_TEXT,
+  RISK_BADGE,
+  type RiskState,
+} from "@/components/programs/ProgramCompliance";
 import { ReportExportMenu } from "@/components/ui/ReportExportMenu";
 import type { ReportDocument, ReportSection, ReportTableSection } from "@/lib/report-export";
 import { useCompanyScope } from "@/components/company/CompanyScopeProvider";
@@ -24,18 +32,23 @@ import { useDebounce } from "@/hooks/useDebounce";
 import { useFetchJson } from "@/hooks/useFetchJson";
 
 // ── API shapes (mirror lib/compliance-plan.ts) ──
-type CandidateTier = "easy-win" | "lapsed" | "legacy" | "net-new";
+type CandidateTier = "renewal" | "easy-win" | "lapsed" | "legacy" | "net-new";
 
 interface PlanRequirement {
   instanceId: string;
   specialisation: string | null;
   tierName: string | null;
+  purpose: string;
   nativeLevel: string;
   scopeLabel: string;
   cert: string;
   required: number;
   attained: number;
+  /** Holders left at the end of the renewal window; null when no window is set. */
+  projectedAttained: number | null;
   shortfall: number;
+  projectedShortfall: number | null;
+  renewalPool: number;
   easyWinPool: number;
   lapsedPool: number;
   legacyPool: number;
@@ -45,6 +58,8 @@ interface PlanRequirement {
 interface PlanSpecialisation {
   name: string;
   achieved: boolean;
+  /** Still met at the end of the window; null when no window is set. */
+  projectedAchieved: boolean | null;
   cost: number;
   easyWins: number;
   requirements: PlanRequirement[];
@@ -80,6 +95,16 @@ interface PlanCandidate {
   closesCount: number;
   closes: PlanCandidateClose[];
 }
+interface PlanRiskImpact {
+  program: string;
+  specialisation: string | null;
+  tierName: string | null;
+  cert: string;
+  scopeLabel: string;
+  required: number;
+  attained: number;
+  projectedAttained: number;
+}
 interface PlanRenewalRow {
   email: string;
   fullName: string;
@@ -91,11 +116,21 @@ interface PlanRenewalRow {
 interface CompliancePlanResult {
   scopeLabel: string;
   renewalWindowMonths: number;
+  planForWindow: boolean;
   targets: PlanTargetResult[];
   candidates: PlanCandidate[];
   eligible: PlanCandidate[];
   renewals: PlanRenewalRow[];
-  totals: { peopleMoves: number; easyWins: number; lapsed: number; legacy: number; netNew: number; renewalsAtRisk: number };
+  riskImpacts: PlanRiskImpact[];
+  totals: {
+    peopleMoves: number;
+    easyWins: number;
+    lapsed: number;
+    legacy: number;
+    netNew: number;
+    renewalMoves: number;
+    renewalsAtRisk: number;
+  };
 }
 interface PlanningOption {
   name: string;
@@ -114,16 +149,27 @@ interface TargetSelection {
 }
 
 const TIER_LABEL: Record<CandidateTier, string> = {
+  renewal: "Renewal (expiring)",
   "easy-win": "Easy win",
   lapsed: "Lapsed (renew)",
   legacy: "Legacy upgrade",
   "net-new": "Net-new",
 };
 const TIER_BADGE: Record<CandidateTier, string> = {
+  // Orange, not amber: `lapsed` already owns amber and the two are semantically
+  // adjacent, so they have to stay visually separable.
+  renewal: "bg-orange-100 text-orange-800",
   "easy-win": "bg-green-100 text-green-800",
   lapsed: "bg-amber-100 text-amber-800",
   legacy: "bg-indigo-100 text-indigo-800",
   "net-new": "bg-gray-100 text-gray-700",
+};
+
+/** Row tints for the roadmap table — lighter than the dashboard's cell shading. */
+const ROW_BG: Record<RiskState, string> = {
+  compliant: "",
+  atRisk: "bg-amber-50/40",
+  nonCompliant: "bg-red-50/40",
 };
 
 // ── Reusable export section builders ───────────────────────────────────────
@@ -154,6 +200,12 @@ function closeSegments(cl: PlanCandidateClose): { text: string; bold?: boolean }
       : [{ text: "this requirement" }];
   const cert = { text: cl.cert, bold: true };
   switch (cl.tier) {
+    case "renewal":
+      return [
+        { text: "They hold " }, cert,
+        { text: ", but it expires within the renewal window. Renewing it keeps " }, ...goal,
+        { text: " compliant." },
+      ];
     case "easy-win":
       return [
         { text: "They have taken " }, { text: cl.path ?? "the required training", bold: true },
@@ -236,12 +288,21 @@ function buildSummarySection(plan: CompliancePlanResult): ReportTableSection {
       { Metric: "Lapsed (renew)", Value: plan.totals.lapsed },
       { Metric: "Legacy upgrade", Value: plan.totals.legacy },
       { Metric: "Net-new training", Value: plan.totals.netNew },
-      { Metric: "Renewals at risk", Value: plan.totals.renewalsAtRisk },
+      // Two different things: holders whose training lapses in the window, vs the
+      // subset the plan has costed as renewals. Labelled so they don't read as additive.
+      { Metric: "Renewals at risk (holders expiring)", Value: plan.totals.renewalsAtRisk },
+      ...(plan.planForWindow
+        ? [{ Metric: "Renewals included in plan", Value: plan.totals.renewalMoves }]
+        : []),
     ],
   };
 }
 
-function buildRoadmapSection(targets: PlanTargetResult[]): ReportTableSection {
+function buildRoadmapSection(
+  targets: PlanTargetResult[],
+  windowMonths: number,
+  planForWindow: boolean,
+): ReportTableSection {
   const rows: Record<string, string | number>[] = [];
   for (const t of targets) {
     const target = t.tierName ?? (t.mode === "all" ? "All requirements" : "Specialisations");
@@ -257,11 +318,19 @@ function buildRoadmapSection(targets: PlanTargetResult[]): ReportTableSection {
           attained: r.attained,
           required: r.required,
           gap: r.shortfall,
+          ...(windowMonths > 0
+            ? {
+                projectedAttained: r.projectedAttained ?? r.attained,
+                expiringSoon: r.expiringSoon,
+                projectedGap: r.projectedShortfall ?? r.shortfall,
+                projectedAchieved: s.projectedAchieved === false ? "No" : "Yes",
+              }
+            : {}),
+          ...(planForWindow ? { renewals: r.renewalPool } : {}),
           easy: r.easyWinPool,
           lapsed: r.lapsedPool,
           legacy: r.legacyPool,
           netNew: r.netNew,
-          expiringSoon: r.expiringSoon,
         });
       }
     }
@@ -278,13 +347,49 @@ function buildRoadmapSection(targets: PlanTargetResult[]): ReportTableSection {
       { key: "attained", header: "Attained" },
       { key: "required", header: "Required" },
       { key: "gap", header: "Gap" },
+      // Only meaningful with a window selected — at Off these are constant noise.
+      ...(windowMonths > 0
+        ? [
+            { key: "projectedAttained", header: `Projected (+${windowMonths}mo)` },
+            { key: "expiringSoon", header: "Expiring" },
+            { key: "projectedGap", header: "Projected gap" },
+            { key: "projectedAchieved", header: "Projected achieved" },
+          ]
+        : []),
+      ...(planForWindow ? [{ key: "renewals", header: "Renewals" }] : []),
       { key: "easy", header: "Easy wins" },
       { key: "lapsed", header: "Lapsed" },
       { key: "legacy", header: "Legacy" },
       { key: "netNew", header: "Net-new" },
-      { key: "expiringSoon", header: "Expiring soon" },
     ],
     rows,
+  };
+}
+
+function buildRiskImpactSection(impacts: PlanRiskImpact[], windowMonths: number): ReportTableSection {
+  return {
+    title: "Requirements at risk",
+    subtitle: `Falling below target within ${windowMonths} month${windowMonths === 1 ? "" : "s"} as training expires`,
+    columns: [
+      { key: "Program", header: "Program" },
+      { key: "Specialisation", header: "Specialisation" },
+      { key: "Requirement", header: "Requirement" },
+      { key: "Scope", header: "Scope" },
+      { key: "Attained", header: "Attained" },
+      { key: "Projected", header: "Projected" },
+      { key: "Required", header: "Required" },
+      { key: "Shortfall", header: "Projected shortfall" },
+    ],
+    rows: impacts.map((i) => ({
+      Program: i.program,
+      Specialisation: i.specialisation ?? i.tierName ?? "",
+      Requirement: i.cert,
+      Scope: i.scopeLabel,
+      Attained: i.attained,
+      Projected: i.projectedAttained,
+      Required: i.required,
+      Shortfall: Math.max(0, i.required - i.projectedAttained),
+    })),
   };
 }
 
@@ -292,11 +397,14 @@ function buildRoadmapSection(targets: PlanTargetResult[]): ReportTableSection {
 function buildPlanDocument(plan: CompliancePlanResult, level: ScopeLevel): ReportDocument {
   const sections: ReportSection[] = [
     buildSummarySection(plan),
-    buildRoadmapSection(plan.targets),
+    buildRoadmapSection(plan.targets, plan.renewalWindowMonths, plan.planForWindow),
     buildCandidateSection(plan.candidates),
   ];
   if (plan.eligible.length > 0) {
     sections.push(buildCandidateSection(plan.eligible, "All eligible candidates"));
+  }
+  if (plan.riskImpacts.length > 0) {
+    sections.push(buildRiskImpactSection(plan.riskImpacts, plan.renewalWindowMonths));
   }
   if (plan.renewals.length > 0) {
     sections.push(buildRenewalSection(plan.renewals, plan.renewalWindowMonths));
@@ -309,6 +417,12 @@ function buildPlanDocument(plan: CompliancePlanResult, level: ScopeLevel): Repor
       {
         label: "Renewal window",
         value: plan.renewalWindowMonths === 0 ? "Off" : `${plan.renewalWindowMonths} month${plan.renewalWindowMonths === 1 ? "" : "s"}`,
+      },
+      {
+        label: "Planning mode",
+        value: plan.planForWindow
+          ? `Planning for the ${plan.renewalWindowMonths}-month window`
+          : "Status projection only",
       },
       { label: "Generated", value: new Date().toLocaleString() },
     ],
@@ -348,6 +462,7 @@ export default function CompliancePlanningPage() {
   // Targets: program name → selection (only selected programs are keys).
   const [targets, setTargets] = useState<Record<string, TargetSelection>>({});
   const [renewalWindowMonths, setRenewalWindowMonths] = useState(3);
+  const [planForWindow, setPlanForWindow] = useState(false);
   const [showReportExport, setShowReportExport] = useState(false);
 
   const toggleProgram = (name: string, isTiered: boolean) => {
@@ -398,17 +513,33 @@ export default function CompliancePlanningPage() {
     if (level === "country") params.set("country", scopeValue);
     params.set("companyId", String(companyId));
     params.set("renewalWindowMonths", String(renewalWindowMonths));
+    params.set("planForWindow", String(planForWindow && renewalWindowMonths > 0));
     return `/api/programs/planning?${params.toString()}`;
-  }, [active, debouncedPayload, level, scopeValue, companyId, renewalWindowMonths]);
+  }, [active, debouncedPayload, level, scopeValue, companyId, renewalWindowMonths, planForWindow]);
 
   const { data: plan, loading } = useFetchJson<CompliancePlanResult>(planUrl, { enabled: active });
 
   const kpis = plan
     ? [
-        { label: "People to certify", value: plan.totals.peopleMoves, icon: Users, tone: "blue" as const },
+        {
+          label: "People to certify",
+          value: plan.totals.peopleMoves,
+          icon: Users,
+          tone: "blue" as const,
+          hint:
+            plan.planForWindow && plan.totals.renewalMoves > 0
+              ? `Incl. ${plan.totals.renewalMoves} renewal${plan.totals.renewalMoves === 1 ? "" : "s"}`
+              : undefined,
+        },
         { label: "Easy wins", value: plan.totals.easyWins, icon: Zap, tone: "green" as const, hint: "Just need the exam" },
         { label: "Net-new training", value: plan.totals.netNew, icon: ClipboardCheck, tone: "indigo" as const },
-        { label: "Renewals at risk", value: plan.totals.renewalsAtRisk, icon: RefreshCw, tone: "amber" as const, hint: `Expire within ${renewalWindowMonths}mo` },
+        {
+          label: "Renewals at risk",
+          value: plan.totals.renewalsAtRisk,
+          icon: RefreshCw,
+          tone: "amber" as const,
+          hint: plan.planForWindow ? "Counted in the plan" : `Expire within ${plan.renewalWindowMonths}mo`,
+        },
       ]
     : [];
 
@@ -424,7 +555,12 @@ export default function CompliancePlanningPage() {
               Renewal window
               <select
                 value={renewalWindowMonths}
-                onChange={(e) => setRenewalWindowMonths(parseInt(e.target.value, 10))}
+                onChange={(e) => {
+                  const n = parseInt(e.target.value, 10);
+                  setRenewalWindowMonths(n);
+                  // Clear rather than leave the checkbox ticked-but-inert.
+                  if (n === 0) setPlanForWindow(false);
+                }}
                 className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white"
               >
                 <option value={0}>Off</option>
@@ -434,12 +570,27 @@ export default function CompliancePlanningPage() {
                 <option value={12}>12 months</option>
               </select>
             </label>
+            <label
+              className={`flex items-center gap-2 text-sm ${renewalWindowMonths === 0 ? "text-gray-400" : "text-gray-600"}`}
+              title="Count the renewals needed to stay compliant through the window as gaps to close — People to certify and Who to certify will include them."
+            >
+              <input
+                type="checkbox"
+                checked={planForWindow}
+                disabled={renewalWindowMonths === 0}
+                onChange={(e) => setPlanForWindow(e.target.checked)}
+                className="rounded border-gray-300"
+              />
+              Plan for this window
+            </label>
             {active && !loading && plan && (
               <ReportExportMenu
                 show={showReportExport}
                 setShow={setShowReportExport}
                 document={() => buildPlanDocument(plan, level)}
-                filename={`compliance-plan-${plan.scopeLabel}`}
+                filename={`compliance-plan-${plan.scopeLabel}${
+                  plan.renewalWindowMonths > 0 ? `-plus${plan.renewalWindowMonths}mo` : ""
+                }${plan.planForWindow ? "-planned" : ""}`}
                 align="right"
               />
             )}
@@ -550,11 +701,36 @@ export default function CompliancePlanningPage() {
 
       {active && !loading && plan && (
         <>
+          {/* Projection explainer — mirrors the program dashboard's horizon banner.
+              Reads the window off the payload, not local state, so it can never
+              describe a projection the table below it isn't showing yet. */}
+          {plan.renewalWindowMonths > 0 && (
+            <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800">
+              <span className="font-medium">Projection:</span>
+              <span>
+                Requirements shaded <span className="font-medium text-amber-700">amber</span> are met today but fall
+                below target within <strong>{plan.renewalWindowMonths} month{plan.renewalWindowMonths === 1 ? "" : "s"}</strong>{" "}
+                as training expires (shown as current → projected).{" "}
+                {plan.planForWindow
+                  ? "The renewals needed to hold them are counted in the plan below."
+                  : "Tick “Plan for this window” to count the renewals needed to hold them."}
+              </span>
+            </div>
+          )}
+
           <KpiStrip cards={kpis} />
 
-          {/* Aggregate roadmap */}
+          {/* Aggregate roadmap. Keyed by the projection because SpecBlock's
+              collapse default is a mount-only useState initialiser — without this
+              a spec that becomes at-risk would stay collapsed. */}
           <div className="space-y-4 mb-6">
-            {plan.targets.map((t) => <TargetCard key={t.program} target={t} />)}
+            {plan.targets.map((t) => (
+              <TargetCard
+                key={`${t.program}-${plan.renewalWindowMonths}-${plan.planForWindow}`}
+                target={t}
+                windowMonths={plan.renewalWindowMonths}
+              />
+            ))}
           </div>
 
           {/* Candidate-centric drill-down */}
@@ -574,7 +750,15 @@ export default function CompliancePlanningPage() {
           )}
 
           {/* Renewal-at-risk */}
-          {plan.renewals.length > 0 && <RenewalTable renewals={plan.renewals} windowMonths={renewalWindowMonths} scopeLabel={plan.scopeLabel} />}
+          {plan.renewals.length > 0 && (
+            <RenewalTable
+              renewals={plan.renewals}
+              impacts={plan.riskImpacts}
+              windowMonths={plan.renewalWindowMonths}
+              planForWindow={plan.planForWindow}
+              scopeLabel={plan.scopeLabel}
+            />
+          )}
         </>
       )}
 
@@ -591,7 +775,7 @@ export default function CompliancePlanningPage() {
 }
 
 // ── Roadmap card for one target ──
-function TargetCard({ target }: { target: PlanTargetResult }) {
+function TargetCard({ target, windowMonths }: { target: PlanTargetResult; windowMonths: number }) {
   return (
     <div className="bg-white rounded-lg border border-gray-200 p-5">
       <div className="flex items-start justify-between gap-3 flex-wrap">
@@ -618,22 +802,52 @@ function TargetCard({ target }: { target: PlanTargetResult }) {
       )}
 
       <div className="mt-4 space-y-3">
-        {target.specialisations.map((s) => <SpecBlock key={s.name} spec={s} tiered={!!target.tierPlan} />)}
+        {target.specialisations.map((s) => (
+          <SpecBlock key={s.name} spec={s} tiered={!!target.tierPlan} windowMonths={windowMonths} />
+        ))}
       </div>
     </div>
   );
 }
 
-function SpecBlock({ spec, tiered }: { spec: PlanSpecialisation; tiered: boolean }) {
-  const [open, setOpen] = useState(!spec.achieved);
-  const dim = tiered && spec.chosen === false && !spec.achieved;
+function SpecBlock({
+  spec,
+  tiered,
+  windowMonths,
+}: {
+  spec: PlanSpecialisation;
+  tiered: boolean;
+  windowMonths: number;
+}) {
+  // Achieved today but not at the horizon = at risk. Same three-way split the
+  // program dashboard uses, so the two pages colour identically.
+  const state: RiskState = spec.achieved
+    ? spec.projectedAchieved === false
+      ? "atRisk"
+      : "compliant"
+    : "nonCompliant";
+  // An at-risk block starts open — hiding the lapse behind a collapsed card is
+  // exactly the problem this is here to fix.
+  const [open, setOpen] = useState(state !== "compliant");
+  const dim = tiered && spec.chosen === false && state === "compliant";
+  const tint =
+    state === "compliant"
+      ? "border-green-200 bg-green-50/50"
+      : state === "atRisk"
+        ? "border-amber-200 bg-amber-50/50"
+        : "border-gray-200";
   return (
-    <div className={`rounded-lg border ${spec.achieved ? "border-green-200 bg-green-50/50" : "border-gray-200"} ${dim ? "opacity-60" : ""}`}>
+    <div className={`rounded-lg border ${tint} ${dim ? "opacity-60" : ""}`}>
       <button onClick={() => setOpen((o) => !o)} className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left">
         <span className="flex items-center gap-2 text-sm font-medium">
           {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
           {spec.name}
           {spec.achieved && <span className="text-xs px-1.5 py-0.5 rounded-full bg-green-100 text-green-800">Achieved</span>}
+          {state === "atRisk" && (
+            <span className={`text-xs px-1.5 py-0.5 rounded-full ${RISK_BADGE.atRisk}`}>
+              At risk in {windowMonths}mo
+            </span>
+          )}
           {tiered && spec.chosen && !spec.achieved && <span className="text-xs px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-800">Recommended</span>}
         </span>
         <span className="text-xs text-gray-500">
@@ -654,7 +868,9 @@ function SpecBlock({ spec, tiered }: { spec: PlanSpecialisation; tiered: boolean
                 </tr>
               </thead>
               <tbody>
-                {spec.requirements.map((r) => <ReqRow key={r.instanceId} r={r} />)}
+                {spec.requirements.map((r) => (
+                  <ReqRow key={r.instanceId} r={r} windowMonths={windowMonths} />
+                ))}
               </tbody>
             </table>
           </div>
@@ -664,20 +880,44 @@ function SpecBlock({ spec, tiered }: { spec: PlanSpecialisation; tiered: boolean
   );
 }
 
-function ReqRow({ r }: { r: PlanRequirement }) {
-  const met = r.shortfall === 0;
+function ReqRow({ r, windowMonths }: { r: PlanRequirement; windowMonths: number }) {
+  const projected = r.projectedAttained ?? undefined;
+  const state = riskState(r.attained, projected, r.required);
+  const projectedGap = r.projectedShortfall ?? r.shortfall;
+  const hasCandidates =
+    r.renewalPool > 0 || r.easyWinPool > 0 || r.lapsedPool > 0 || r.legacyPool > 0 || r.netNew > 0;
   return (
-    <tr className={`border-b border-gray-50 ${met ? "" : "bg-red-50/40"}`}>
+    <tr className={`border-b border-gray-50 ${ROW_BG[state]}`}>
       <td className="py-1.5 pr-3">{r.cert}</td>
-      <td className="py-1.5 pr-3">
-        {r.scopeLabel}
-        {r.expiringSoon > 0 && <span className="ml-1 text-xs text-amber-600" title="Active holders expiring within the renewal window">▼{r.expiringSoon}</span>}
+      <td className="py-1.5 pr-3">{r.scopeLabel}</td>
+      {/* The expiry marker lives here, under the numbers it changes — not beside
+          the scope label, where it read as a property of the geography. */}
+      <td className={`py-1.5 pr-3 ${RISK_TEXT[state]}`}>
+        <AttainedValue attained={r.attained} projected={projected} /> / {r.required}
+        <ExpiringNote attained={r.attained} projected={projected} />
       </td>
-      <td className={`py-1.5 pr-3 ${met ? "text-green-700" : "text-red-700"}`}>{r.attained} / {r.required}</td>
-      <td className="py-1.5 pr-3">{met ? <span className="text-green-600">✓</span> : <span className="font-medium text-red-700">need {r.shortfall}</span>}</td>
+      <td className="py-1.5 pr-3">
+        {state === "compliant" && <span className="text-green-600">✓</span>}
+        {state === "atRisk" && (
+          <span className="font-medium text-amber-700">
+            ✓ now · need {projectedGap} in {windowMonths}mo
+          </span>
+        )}
+        {state === "nonCompliant" && (
+          <>
+            <span className="font-medium text-red-700">need {r.shortfall}</span>
+            {projectedGap > r.shortfall && (
+              <div className="text-[11px] text-amber-600 mt-0.5 font-medium">
+                → {projectedGap} in {windowMonths}mo
+              </div>
+            )}
+          </>
+        )}
+      </td>
       <td className="py-1.5 text-xs text-gray-600">
-        {met ? "—" : (
+        {!hasCandidates ? "—" : (
           <span className="flex flex-wrap gap-1">
+            {r.renewalPool > 0 && <span className="px-1.5 py-0.5 rounded bg-orange-100 text-orange-800">{r.renewalPool} renewals</span>}
             {r.easyWinPool > 0 && <span className="px-1.5 py-0.5 rounded bg-green-100 text-green-800">{r.easyWinPool} easy</span>}
             {r.lapsedPool > 0 && <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">{r.lapsedPool} lapsed</span>}
             {r.legacyPool > 0 && <span className="px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-800">{r.legacyPool} legacy</span>}
@@ -817,7 +1057,19 @@ function CandidateTable({
 }
 
 // ── Renewal-at-risk overlay ──
-function RenewalTable({ renewals, windowMonths, scopeLabel }: { renewals: PlanRenewalRow[]; windowMonths: number; scopeLabel: string }) {
+function RenewalTable({
+  renewals,
+  impacts,
+  windowMonths,
+  planForWindow,
+  scopeLabel,
+}: {
+  renewals: PlanRenewalRow[];
+  impacts: PlanRiskImpact[];
+  windowMonths: number;
+  planForWindow: boolean;
+  scopeLabel: string;
+}) {
   const [showExport, setShowExport] = useState(false);
   const exportSection = buildRenewalSection(renewals, windowMonths);
   return (
@@ -828,7 +1080,33 @@ function RenewalTable({ renewals, windowMonths, scopeLabel }: { renewals: PlanRe
         </h2>
         <ExportMenu show={showExport} setShow={setShowExport} data={exportSection.rows} columns={exportSection.columns} filename={`compliance-plan-renewals-${scopeLabel}`} align="right" />
       </div>
-      <p className="text-xs text-gray-500 mb-2">These holders currently count toward a gap the plan reports as closed — their expiry will re-open it.</p>
+      {impacts.length > 0 && (
+        <div className="mb-3 rounded-md border border-amber-200 bg-amber-50/60 px-3 py-2">
+          <div className="text-xs font-medium text-amber-800 mb-1">
+            If these aren&apos;t renewed, {impacts.length} requirement{impacts.length === 1 ? "" : "s"}{" "}
+            fall{impacts.length === 1 ? "s" : ""} below target:
+          </div>
+          <ul className="text-xs text-amber-900 space-y-0.5">
+            {impacts.map((i, n) => (
+              <li key={n}>
+                <span className="font-medium">{i.program}</span>
+                {(i.specialisation || i.tierName) && <span className="text-amber-700/80"> · {i.specialisation ?? i.tierName}</span>}
+                {" — "}
+                {i.cert}:{" "}
+                <span className="font-medium">
+                  {i.attained} → {i.projectedAttained}
+                </span>{" "}
+                / {i.required} ({i.scopeLabel})
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      <p className="text-xs text-gray-500 mb-2">
+        {planForWindow
+          ? "These holders' training expires within the window. The renewals needed to hold compliance are already counted in “People to certify” above — don't add the two figures together."
+          : "These holders currently count toward a gap the plan reports as closed — their expiry will re-open it."}
+      </p>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
