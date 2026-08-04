@@ -1,8 +1,18 @@
 # Training Tracker
 
-A full-stack application for tracking student certifications, accreditations, and instructor-led training programs across product lines and business functions.
+A self-hosted, multi-company platform for tracking student certifications, accreditations, instructor-led training, and online learning across product lines, business functions, and geographies.
 
-Built with Next.js, React, PostgreSQL, and Prisma.
+Access & security — JWT authentication with SuperAdmin / Admin / User roles scoped per company, TOTP multi-factor authentication with forced enrolment, secrets encrypted at rest, rate limiting, and reverse-proxy aware request handling.
+
+Data in — Bulk CSV/Excel import with automatic column mapping, name and email cleansing, strict date-format detection (including recovery of day/month-transposed Excel dates), and a Data Clean-Up console for fixing malformed names and future-dated completions. Country → region → theatre mapping is admin-managed and acts as the source of truth during import.
+
+Data out — Twelve interactive reports with KPI strips, drill-down charts, and grouping, including Trained but Not Certified, Legacy Replacement Gap, Learner Achievement Scorecard, Coverage/Compliance, Theatre/Region/Country Comparison, Catalogue Health, Program Compliance Trend, and Renewal Forecast. Everything exports to CSV, Excel, or PDF, and any report can be put on a schedule with delivery to local disk, email, Google Drive, Box, or OneDrive via guided OAuth wizards with credential-expiry monitoring.
+
+Partner programs — Fully data-driven compliance dashboards: every program defined in Program Data gets its own country, region, theatre, and global views with per-theatre minimums and OR-logic alternative trainings, with no code changes required.
+
+Operations — One-command install on any Debian LXC or VM, systemd service, encrypted and passphrase-portable backups with scheduled retention, and an in-app updater with stable/dev channels, automatic database and build rollback, and optional unattended updates.
+
+Built with Next.js, React, TypeScript, PostgreSQL, and Prisma.
 
 ---
 
