@@ -1717,9 +1717,10 @@ const helpSections: Record<string, HelpSection> = {
         </p>
         <p>
           A daily cron script (<code>deploy/auto-credential-check.sh</code>)
-          probes each credential and updates its health status. Add it to
-          cron or systemd to ensure the banner stays accurate even when no
-          schedule runs that day.
+          probes each credential and updates its health status, so the banner
+          stays accurate even when no schedule runs that day. The installer sets
+          this up for you in <code>/etc/cron.d/training-tracker</code>; it runs
+          as the unprivileged service account.
         </p>
 
         <h3>Actions</h3>

@@ -99,10 +99,15 @@ export async function POST(request: NextRequest) {
     // Save config
     fs.writeFileSync(getConfigPath(), JSON.stringify(config, null, 2));
 
-    // Update cron
+    // Update cron. The backup schedule is user-configurable, so unlike the
+    // fixed auto-update/auto-export entries this one stays a crontab edit — but
+    // it lands in the *service user's* own crontab and needs no privilege.
     const appDir = process.cwd();
     const scriptPath = path.join(appDir, "deploy", "auto-backup.sh");
 
+    // A failure here used to be swallowed. Silently doing nothing is how you
+    // end up believing a schedule is active when it never was, so report it.
+    let cronWarning: string | undefined;
     try {
       const currentCron = execSync("crontab -l 2>/dev/null || true", {
         encoding: "utf-8",
@@ -121,10 +126,14 @@ export async function POST(request: NextRequest) {
       const newCron = filteredLines.join("\n") + "\n";
       execSync("crontab -", { input: newCron, encoding: "utf-8" });
     } catch {
-      // Cron may not be available in all environments
+      cronWarning =
+        "The schedule was saved, but the cron entry could not be installed. " +
+        "Check that cron is installed and that the service user is permitted " +
+        "to use it (see /etc/cron.allow). Backups will not run automatically " +
+        "until this is resolved.";
     }
 
-    return NextResponse.json({ success: true, config });
+    return NextResponse.json({ success: true, config, warning: cronWarning });
   } catch {
     return NextResponse.json(
       { error: "Failed to save schedule" },

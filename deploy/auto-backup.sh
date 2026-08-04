@@ -1,7 +1,8 @@
 #!/bin/bash
 # Training Tracker - Automatic Backup
 # Saves a backup to the configured directory.
-# Designed to be called from cron.
+# Designed to be called from cron as the unprivileged service user: it only
+# reads .env and POSTs to localhost, so it needs no privilege of any kind.
 
 # Ensure node/npm are on PATH (cron uses minimal PATH)
 export PATH="/usr/local/bin:/usr/bin:/bin:$PATH"
@@ -9,7 +10,7 @@ export PATH="/usr/local/bin:/usr/bin:/bin:$PATH"
 [ -s "$HOME/.nvm/nvm.sh" ] && . "$HOME/.nvm/nvm.sh"
 
 APP_DIR="${1:-/opt/training-tracker}"
-LOG_FILE="/var/log/training-tracker-backups.log"
+LOG_FILE="/var/log/training-tracker/backups.log"
 
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "${LOG_FILE}"

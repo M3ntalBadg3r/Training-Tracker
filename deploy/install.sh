@@ -1,23 +1,28 @@
 #!/bin/bash
 
 # Training Tracker - Installation Script for Debian-based LXC containers or VMs
-# Needs root. On an LXC you are usually root already; on a VM you typically log
-# in as a normal user, so re-exec under sudo when not root.
-if [ "$(id -u)" -ne 0 ]; then
-    if command -v sudo >/dev/null 2>&1; then
-        echo "Not running as root — re-executing under sudo..."
-        exec sudo -E bash "$0" "$@"
-    fi
-    echo "ERROR: This script must be run as root and sudo is not available." >&2
-    echo "       Re-run as root, or install sudo." >&2
-    exit 1
-fi
+#
+# Installing needs root: on an LXC you are usually root already, on a VM you
+# normally log in as a regular user and the script re-execs under sudo. The
+# installed *application* does not run as root — it runs as an unprivileged
+# service account and reaches privileged work through the root-owned update
+# helper. See deploy/lib/common.sh for why there is no sudoers rule anywhere.
 
 set -e
 
 APP_DIR="/opt/training-tracker"
 DB_NAME="training_tracker"
 DB_USER="tracker"
+
+SCRIPT_DIR_SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/common.sh
+. "${SCRIPT_DIR_SELF}/lib/common.sh"
+
+require_root "$@"
+
+# Fail loudly and completely on a missing dependency rather than discovering it
+# half way through — or worse, at first use in production.
+check_dependencies
 
 # CA bundle that Node should trust in addition to its built-ins. On Debian this
 # file is maintained by `update-ca-certificates`, so it already includes any
@@ -34,11 +39,11 @@ generate_secret() {
 echo "=== Training Tracker - Installation ==="
 
 # 1. Update system
-echo "[1/9] Updating system packages..."
+echo "[1/10] Updating system packages..."
 apt-get update -qq
 
 # 2. Install Node.js 22 LTS
-echo "[2/9] Installing Node.js 22 LTS..."
+echo "[2/10] Installing Node.js 22 LTS..."
 apt-get install -y ca-certificates curl gnupg
 curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
 apt-get install -y nodejs
@@ -53,7 +58,7 @@ fi
 echo "Using Node $(node --version), npm $(npm --version)"
 
 # 3. Install PostgreSQL
-echo "[3/9] Installing PostgreSQL..."
+echo "[3/10] Installing PostgreSQL..."
 if ! command -v psql &> /dev/null; then
     apt-get install -y postgresql postgresql-contrib
 fi
@@ -76,7 +81,7 @@ for i in $(seq 1 10); do
 done
 
 # 4. Create database and user
-echo "[4/9] Setting up database..."
+echo "[4/10] Setting up database..."
 
 # Decide the database password before creating the role. On a re-run where .env
 # already has a DATABASE_URL, keep the existing credentials (CREATE USER no-ops
@@ -97,7 +102,10 @@ su - postgres -c "psql -c \"ALTER DATABASE ${DB_NAME} OWNER TO ${DB_USER};\""
 su - postgres -c "psql -d ${DB_NAME} -c \"GRANT ALL ON SCHEMA public TO ${DB_USER};\""
 
 # 5. Set up application directory
-echo "[5/9] Setting up application directory..."
+echo "[5/10] Setting up application directory..."
+ensure_service_user
+ensure_log_dir
+ensure_cron_allow
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 # Determine if we're already running from APP_DIR or need to copy
@@ -113,7 +121,7 @@ else
 fi
 
 # 6. Configure environment
-echo "[6/9] Configuring environment..."
+echo "[6/10] Configuring environment..."
 
 # URL-encode a password so special characters (#$&@etc.) don't break the connection string
 url_encode_password() {
@@ -190,9 +198,15 @@ chmod 600 "${ENV_FILE}"
 [ -f "${CA_BUNDLE}" ] && export NODE_EXTRA_CA_CERTS="${NODE_EXTRA_CA_CERTS:-${CA_BUNDLE}}"
 
 # 7. Install dependencies and build
-echo "[7/9] Installing dependencies and building..."
+echo "[7/10] Installing dependencies and building..."
+
+# Everything so far ran as root, so the tree is root-owned. Hand it to the
+# service account (which also locks deploy/ and .git back to root) before the
+# build, so npm never runs a dependency's postinstall script with privilege.
+ensure_ownership
+
 cd ${APP_DIR}
-npm install
+run_as_service_user npm install
 # Self-heal npm's optional-dependency bug (npm/cli#4828): a package-lock.json
 # generated on another OS/arch can leave platform-native binaries uninstalled
 # (e.g. lightningcss for Tailwind v4), breaking the build. If the native CSS
@@ -200,20 +214,25 @@ npm install
 if ! node -e "require('lightningcss')" >/dev/null 2>&1; then
     echo "Native CSS engine missing for this platform; reinstalling dependencies..."
     rm -rf node_modules package-lock.json
-    npm install
+    run_as_service_user npm install
 fi
-npx prisma migrate deploy
-npx prisma generate
-npm run build
+run_as_service_user npx prisma migrate deploy
+run_as_service_user npx prisma generate
+run_as_service_user npm run build
 
-# 8. Install systemd service
-echo "[8/9] Installing systemd service..."
+# The build wrote .next; re-reconcile so nothing is left root-owned.
+ensure_ownership
+
+# 8. Install systemd service + the root-owned update helper
+echo "[8/10] Installing systemd service..."
 if command -v systemctl &> /dev/null; then
-    cp ${APP_DIR}/deploy/training-tracker.service /etc/systemd/system/
-    systemctl daemon-reload
+    # training-tracker.service (the app, unprivileged) plus
+    # training-tracker-update.path/.service — the root side of the update
+    # boundary, see deploy/update-agent.sh.
+    install_units
     systemctl enable training-tracker
     systemctl start training-tracker
-    echo "Started via systemd."
+    echo "Started via systemd (running as ${SVC_USER})."
 else
     echo "systemd not available. Starting manually..."
     echo "You can start the app with: cd ${APP_DIR} && NODE_ENV=production npm start"
@@ -230,14 +249,21 @@ else
 ### END INIT INFO
 
 APP_DIR="/opt/training-tracker"
+SVC_USER="training-tracker"
 PIDFILE="/var/run/training-tracker.pid"
-LOGFILE="/var/log/training-tracker.log"
+LOGFILE="/var/log/training-tracker/app.log"
 
 case "$1" in
     start)
         echo "Starting Training Tracker..."
         cd $APP_DIR
-        NODE_ENV=production PORT=3000 npm start >> $LOGFILE 2>&1 &
+        # Drop to the service account — this fallback must not run as root either.
+        if command -v runuser >/dev/null 2>&1 && id -u "$SVC_USER" >/dev/null 2>&1; then
+            runuser -u "$SVC_USER" -- env HOME="$APP_DIR" NODE_ENV=production PORT=3000 \
+                npm start >> $LOGFILE 2>&1 &
+        else
+            NODE_ENV=production PORT=3000 npm start >> $LOGFILE 2>&1 &
+        fi
         echo $! > $PIDFILE
         echo "Started (PID: $(cat $PIDFILE))"
         ;;
@@ -272,12 +298,37 @@ INITEOF
     echo "Started via init.d."
 fi
 
-# 9. Done
+# 9. Install the fixed cron entries
+echo "[9/10] Installing scheduled jobs..."
+if command -v crontab &> /dev/null || [ -d /etc/cron.d ]; then
+    # Fixed entries, owned by root, so the app never edits a crontab it would
+    # need privilege to write. auto-update.sh decides for itself whether an
+    # update is due by reading .auto-update.json (which the app does own);
+    # auto-export.sh runs every minute regardless and exits immediately when
+    # nothing is scheduled.
+    cat > /etc/cron.d/training-tracker << CRONEOF
+# Training Tracker scheduled jobs. Managed by deploy/install.sh — edits here
+# will be overwritten on the next install. Schedules are configured in the app.
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+*/5 * * * * root bash ${APP_DIR}/deploy/auto-update.sh ${APP_DIR}
+* * * * * ${SVC_USER} bash ${APP_DIR}/deploy/auto-export.sh ${APP_DIR}
+0 6 * * * ${SVC_USER} bash ${APP_DIR}/deploy/auto-credential-check.sh ${APP_DIR}
+CRONEOF
+    chmod 0644 /etc/cron.d/training-tracker
+    echo "Installed /etc/cron.d/training-tracker"
+else
+    echo "cron not available — scheduled updates, exports and credential checks will not run."
+fi
+
+# 10. Done
 echo ""
 echo "=== Installation Complete ==="
 echo "Training Tracker is now running on http://$(hostname -I | awk '{print $1}'):3000"
 echo ""
 echo "  Configuration (stored in ${APP_DIR}/.env, permissions 600):"
+echo "    Runs as:         ${SVC_USER} (unprivileged; not root)"
 echo "    Database:        ${DB_NAME} (user: ${DB_USER})"
 if [ "${REUSE_DB_CREDS}" = false ]; then
     echo "    DB password:     ${DB_PASS}"

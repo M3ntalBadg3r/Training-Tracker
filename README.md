@@ -50,7 +50,33 @@ Built with Next.js, React, TypeScript, PostgreSQL, and Prisma.
 
 ## Getting Started
 
-The `deploy/` directory contains scripts for installing and updating Training Tracker on a Debian-based Linux server, **LXC container, or VM**. The scripts need root privileges: on an LXC you are normally root already, while on a VM you typically log in as a regular user — in that case the scripts **automatically re-exec themselves under `sudo`**, so no manual elevation is required. (If `sudo` is not installed, they exit with a clear message.) The app itself runs as **root** on both LXC and VM, so the in-app updater and the scheduled cron jobs behave identically in either environment.
+The `deploy/` directory contains scripts for installing and updating Training Tracker on a Debian-based Linux server, **LXC container, or VM**. Installing needs root privileges: on an LXC you are normally root already, while on a VM you typically log in as a regular user — in that case the scripts **automatically re-exec themselves under `sudo`**, so no manual elevation is required. (If `sudo` is not installed, they exit with a clear message.)
+
+### How the application runs (privileges)
+
+The **application itself does not run as root.** It runs as a dedicated unprivileged system account, `training-tracker`, created by the installer, under a sandboxed systemd unit (`NoNewPrivileges`, `ProtectSystem=strict`, an empty capability set, and a syscall filter). A login-handling web app has no business running as root.
+
+That raises an obvious question: if the app is unprivileged, how does the in-app **"Update now"** button restart the service? The usual answers — a `sudoers` rule, a setuid helper, a polkit rule — all work by *granting the service user an escalation capability*. Each one is a new thing to scope correctly, and each depends on a package that may not be installed: minimal Debian LXC templates frequently ship **without `sudo` at all**, so a sudoers-based design silently breaks on exactly the platform this project targets.
+
+Training Tracker takes a different approach. The service user is granted **nothing**:
+
+1. The app asks for privileged work by writing `/opt/training-tracker/.update-request` — a file it already owns, containing one of three fixed strings.
+2. A **root-owned systemd path unit** (`training-tracker-update.path`) notices the file and starts `training-tracker-update.service`.
+3. That runs `deploy/update-agent.sh` as root, which treats the file as hostile input: it must be a regular file (not a symlink), owned by the service user, under 256 bytes, and its contents must match one of three literal strings. No path, branch name, or argument is ever taken from it — the only thing that crosses the boundary is *which of three things you wanted*.
+
+This needs **no extra packages** beyond systemd and util-linux, and behaves identically on an LXC and a VM. `sudo` is used only by the human-invoked installer, never by the running service.
+
+Privileges are also kept narrow *inside* the update itself. `git pull` and the service restart run as root; **`npm install`, the Prisma steps, the production build and `pg_dump` all drop to the service user**, so a compromised dependency's `postinstall` script never sees root. `deploy/` and `.git` stay root-owned (and `/opt/training-tracker` carries the sticky bit, so they cannot be renamed out of the way), which is what stops a compromised app from rewriting the very scripts root is about to execute.
+
+**Upgrading from a pre-2.70 install takes one command, once.** The old updater knows nothing about service accounts or helper units, so it cannot install them while upgrading *to* the release that introduces them. After updating to 2.70, run:
+
+```bash
+sudo bash /opt/training-tracker/deploy/install.sh
+```
+
+It is idempotent — it creates the service account, corrects ownership, installs the helper units and the scheduled jobs, and leaves your database and `.env` untouched. If you try the in-app updater before doing this, it tells you so rather than silently doing nothing. From 2.70 onward every update applies deploy-layer changes itself, so this is a one-time step.
+
+> **If you change `PORT` to a value below 1024**, the unprivileged service will not be able to bind it. Add `AmbientCapabilities=CAP_NET_BIND_SERVICE` (and the matching `CapabilityBoundingSet`) to `deploy/training-tracker.service`, or — better — leave `PORT` alone and put a reverse proxy in front.
 
 ### Quick Install (curl)
 
@@ -112,12 +138,14 @@ If the deployment directory is not a git repository (e.g. files were copied manu
 
 ```bash
 cd /opt/training-tracker
-npm install
-npx prisma migrate deploy
-npx prisma generate
-npm run build
-systemctl restart training-tracker
+sudo -u training-tracker npm install          # or: runuser -u training-tracker -- npm install
+sudo -u training-tracker npx prisma migrate deploy
+sudo -u training-tracker npx prisma generate
+sudo -u training-tracker npm run build
+sudo systemctl restart training-tracker
 ```
+
+(The build steps run as the service account so they do not need — and should not have — root. Only the restart does.)
 
 ### Service Management
 
@@ -145,7 +173,7 @@ If systemd is not available (e.g. in some LXC containers), the init.d fallback i
 ```bash
 /etc/init.d/training-tracker status
 /etc/init.d/training-tracker restart
-tail -f /var/log/training-tracker.log
+tail -f /var/log/training-tracker/app.log
 ```
 
 The application runs on **port 3000** by default. To change the port, edit the `PORT` environment variable in `/opt/training-tracker/.env` or in the systemd service file at `/etc/systemd/system/training-tracker.service`, then restart the service.
@@ -852,7 +880,7 @@ A daily cron script keeps health status fresh:
 
 ```bash
 # /etc/cron.d/training-tracker-credentials  (runs at 04:30 each day)
-30 4 * * * www-data /opt/training-tracker/deploy/auto-credential-check.sh /opt/training-tracker
+30 4 * * * training-tracker /opt/training-tracker/deploy/auto-credential-check.sh /opt/training-tracker
 ```
 
 The script reads `CRON_SECRET` from `.env` and POSTs an HMAC-signed request to the credentials/check endpoint. Without it, health updates only happen when admins click Test Connection or when scheduled exports run.

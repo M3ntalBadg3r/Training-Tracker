@@ -1,8 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSuperAdmin, handleAuthError } from "@/lib/auth";
-import { spawn } from "child_process";
 import path from "path";
 import fs from "fs";
+import {
+  UPDATE_REQUESTS,
+  writeUpdateRequest,
+  updateHelperInstalled,
+  UPDATE_HELPER_MISSING,
+} from "@/lib/update-request";
 
 const GITHUB_REPO = "M3ntalBadg3r/Training-Tracker";
 
@@ -79,8 +84,16 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Update UPDATE_CHANNEL in .env
     const appDir = process.cwd();
+
+    if (!updateHelperInstalled(appDir)) {
+      return NextResponse.json(
+        { error: UPDATE_HELPER_MISSING },
+        { status: 503 }
+      );
+    }
+
+    // Update UPDATE_CHANNEL in .env (the service user owns .env)
     const envPath = path.join(appDir, ".env");
     if (fs.existsSync(envPath)) {
       let envContent = fs.readFileSync(envPath, "utf-8");
@@ -107,25 +120,16 @@ export async function POST(request: NextRequest) {
       })
     );
 
-    // Spawn perform-update.sh with TARGET_BRANCH env var
-    // Use systemd-run --scope so the script survives the service
-    // restart at step 6 (systemctl restart kills the entire cgroup)
-    const scriptPath = path.join(appDir, "deploy", "perform-update.sh");
+    // Ask the root-owned helper to switch branch and update. The target branch
+    // is derived on the root side from the request literal, never sent as an
+    // argument — see src/lib/update-request.ts.
     const targetBranch = channel === "dev" ? "dev" : "master";
-    const child = spawn(
-      "systemd-run",
-      ["--scope", "--unit=tt-channel-switch", "bash", scriptPath, appDir],
-      {
-        detached: true,
-        stdio: "ignore",
-        env: {
-          ...process.env,
-          PATH: process.env.PATH,
-          TARGET_BRANCH: targetBranch,
-        },
-      }
+    writeUpdateRequest(
+      appDir,
+      channel === "dev"
+        ? UPDATE_REQUESTS.switchToDev
+        : UPDATE_REQUESTS.switchToStable
     );
-    child.unref();
 
     return NextResponse.json({ status: "started", channel, targetBranch });
   } catch {

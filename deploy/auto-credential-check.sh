@@ -10,7 +10,7 @@ export PATH="/usr/local/bin:/usr/bin:/bin:$PATH"
 [ -s "$HOME/.nvm/nvm.sh" ] && . "$HOME/.nvm/nvm.sh"
 
 APP_DIR="${1:-/opt/training-tracker}"
-LOG_FILE="/var/log/training-tracker-credential-check.log"
+LOG_FILE="/var/log/training-tracker/credential-check.log"
 
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "${LOG_FILE}"

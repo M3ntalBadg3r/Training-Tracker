@@ -1,0 +1,14 @@
+[Unit]
+Description=Training Tracker privileged update helper
+# Deliberately no After=/Requires= on training-tracker.service. This unit runs
+# `systemctl restart training-tracker` at the end of an update; an ordering
+# relationship between the two would let that turn into a job deadlock. It also
+# means this unit lives in its own cgroup, so the restart does not kill the
+# update half way through — which is what the old `systemd-run --scope` call in
+# the app was working around.
+
+[Service]
+Type=oneshot
+ExecStart=/opt/training-tracker/deploy/update-agent.sh /opt/training-tracker
+# Updates run npm install and a Next.js production build.
+TimeoutStartSec=3600
