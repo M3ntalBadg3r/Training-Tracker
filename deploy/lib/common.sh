@@ -233,6 +233,56 @@ restart_app() {
     fi
 }
 
+# --- Cron -------------------------------------------------------------------
+
+# Install the fixed scheduled jobs, root-owned, so the app never has to edit a
+# crontab it has no privilege to write.
+ensure_cron_jobs() {
+    [ -d /etc/cron.d ] || return 0
+
+    cat > /etc/cron.d/training-tracker << CRONEOF
+# Training Tracker scheduled jobs. Managed by deploy/ — edits here are
+# overwritten on the next install or update. Schedules are set in the app.
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+*/5 * * * * root bash ${APP_DIR}/deploy/auto-update.sh ${APP_DIR}
+* * * * * ${SVC_USER} bash ${APP_DIR}/deploy/auto-export.sh ${APP_DIR}
+0 6 * * * ${SVC_USER} bash ${APP_DIR}/deploy/auto-credential-check.sh ${APP_DIR}
+CRONEOF
+    chmod 0644 /etc/cron.d/training-tracker
+
+    # Pre-2.70 installs had the app (running as root) write these two entries
+    # into root's crontab. The cron.d file above now covers both, so leaving
+    # them would double up — auto-export in particular would fire twice a
+    # minute. The auto-backup entry is deliberately left alone: its schedule is
+    # still app-managed and removing it here would silently stop backups.
+    command -v crontab >/dev/null 2>&1 || return 0
+    local current
+    current="$(crontab -l 2>/dev/null || true)"
+    case "${current}" in
+        *training-tracker-auto-update*|*training-tracker-auto-export*)
+            echo "Removing superseded root crontab entries (now in /etc/cron.d)..."
+            printf '%s\n' "${current}" \
+                | grep -v 'training-tracker-auto-update' \
+                | grep -v 'training-tracker-auto-export' \
+                | crontab - 2>/dev/null || true
+            ;;
+    esac
+}
+
+# True when this install has not yet been moved to the unprivileged model.
+# Deliberately cheap: it is polled from cron, and the repair it gates chowns the
+# whole tree (node_modules included), which must not run every five minutes.
+needs_non_root_migration() {
+    id -u "${SVC_USER}" >/dev/null 2>&1 || return 0
+    if command -v systemctl >/dev/null 2>&1 &&
+       [ ! -f /etc/systemd/system/training-tracker-update.path ]; then
+        return 0
+    fi
+    return 1
+}
+
 # Bring an install up to the current privilege model. Safe to call repeatedly.
 ensure_non_root_runtime() {
     ensure_service_user
@@ -240,4 +290,5 @@ ensure_non_root_runtime() {
     ensure_cron_allow
     ensure_ownership
     install_units
+    ensure_cron_jobs
 }

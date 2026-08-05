@@ -11,6 +11,9 @@
 # Because the trigger is fixed and the decision is made here, a missed window
 # (host suspended, update already running) simply runs late the same day rather
 # than being skipped.
+#
+# It is also where a pre-2.70 install finishes migrating to the unprivileged
+# service model — see needs_non_root_migration below.
 
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${PATH}"
 
@@ -21,6 +24,26 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "${SCRIPT_DIR}/lib/common.sh"
 
 require_root "$@"
+
+# Finish the migration to the unprivileged model, if it has not happened yet.
+#
+# The 2.69 updater could not install the service account or the helper units
+# while installing the very release that introduces them, so a site that came
+# from 2.69 is left running as root with no watcher — which also blocks the
+# in-app updater. This is the first thing afterwards that runs as root on a
+# schedule, so it is the natural place to finish the job. Guarded, because the
+# repair chowns the whole tree and this runs every five minutes.
+if needs_non_root_migration; then
+    mkdir -p "${LOG_DIR}" 2>/dev/null || true
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Migrating to the unprivileged service model..." \
+        >> "${LOG_DIR}/updates.log"
+    ensure_non_root_runtime
+    # The app is still running as root under the old unit; restart so it picks
+    # up the new one and comes back as the service account.
+    restart_app
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Migration complete — app now runs as ${SVC_USER}" \
+        >> "${LOG_DIR}/updates.log"
+fi
 
 # Hosts without systemd have no .path unit to notice an in-app update request,
 # so drain it here instead — the same validating agent, just polled rather than

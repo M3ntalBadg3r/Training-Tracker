@@ -305,18 +305,9 @@ if command -v crontab &> /dev/null || [ -d /etc/cron.d ]; then
     # need privilege to write. auto-update.sh decides for itself whether an
     # update is due by reading .auto-update.json (which the app does own);
     # auto-export.sh runs every minute regardless and exits immediately when
-    # nothing is scheduled.
-    cat > /etc/cron.d/training-tracker << CRONEOF
-# Training Tracker scheduled jobs. Managed by deploy/install.sh — edits here
-# will be overwritten on the next install. Schedules are configured in the app.
-SHELL=/bin/bash
-PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-
-*/5 * * * * root bash ${APP_DIR}/deploy/auto-update.sh ${APP_DIR}
-* * * * * ${SVC_USER} bash ${APP_DIR}/deploy/auto-export.sh ${APP_DIR}
-0 6 * * * ${SVC_USER} bash ${APP_DIR}/deploy/auto-credential-check.sh ${APP_DIR}
-CRONEOF
-    chmod 0644 /etc/cron.d/training-tracker
+    # nothing is scheduled. Defined once in lib/common.sh so an update applies
+    # the same entries.
+    ensure_cron_jobs
     echo "Installed /etc/cron.d/training-tracker"
 else
     echo "cron not available — scheduled updates, exports and credential checks will not run."

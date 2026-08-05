@@ -68,13 +68,16 @@ This needs **no extra packages** beyond systemd and util-linux, and behaves iden
 
 Privileges are also kept narrow *inside* the update itself. `git pull` and the service restart run as root; **`npm install`, the Prisma steps, the production build and `pg_dump` all drop to the service user**, so a compromised dependency's `postinstall` script never sees root. `deploy/` and `.git` stay root-owned (and `/opt/training-tracker` carries the sticky bit, so they cannot be renamed out of the way), which is what stops a compromised app from rewriting the very scripts root is about to execute.
 
-**Upgrading from a pre-2.70 install takes one command, once.** The old updater knows nothing about service accounts or helper units, so it cannot install them while upgrading *to* the release that introduces them. After updating to 2.70, run:
+### Upgrading from a pre-2.70 install
 
-```bash
-sudo bash /opt/training-tracker/deploy/install.sh
-```
+The updater performing a 2.69 → 2.70 upgrade *is 2.69's updater*. It knows nothing about service accounts or helper units, so it cannot install them while installing the release that introduces them. Completing the move therefore takes one more step:
 
-It is idempotent — it creates the service account, corrects ownership, installs the helper units and the scheduled jobs, and leaves your database and `.env` untouched. If you try the in-app updater before doing this, it tells you so rather than silently doing nothing. From 2.70 onward every update applies deploy-layer changes itself, so this is a one-time step.
+- **With automatic updates enabled** — nothing to do. `deploy/auto-update.sh` runs as root every few minutes; it detects the half-migrated state, creates the service account, corrects ownership, installs the helper units and scheduled jobs, and restarts the app unprivileged. Logged to `/var/log/training-tracker/updates.log`.
+- **Otherwise** — run `sudo bash /opt/training-tracker/deploy/install.sh` once. It is idempotent and leaves your database and `.env` untouched.
+
+Until one of those happens the app keeps running as root and the **in-app updater returns an error** rather than writing a request nothing would consume. From 2.70 onward every update applies its own deploy-layer changes, so this only ever applies to that one hop.
+
+Migration also removes the pre-2.70 update/export entries the app used to write into root's crontab, which `/etc/cron.d/training-tracker` now supersedes. The **backup** schedule entry is left in place so backups are never silently disabled; re-saving the schedule in the app moves it to the service account's crontab.
 
 > **If you change `PORT` to a value below 1024**, the unprivileged service will not be able to bind it. Add `AmbientCapabilities=CAP_NET_BIND_SERVICE` (and the matching `CapabilityBoundingSet`) to `deploy/training-tracker.service`, or — better — leave `PORT` alone and put a reverse proxy in front.
 
