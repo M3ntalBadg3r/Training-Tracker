@@ -249,10 +249,14 @@ export default function UpdatesPage() {
       if (res.ok) {
         startPolling();
       } else {
+        // Use the server's message: it names the command to run when the update
+        // helper is missing. Hardcoding a generic string here made a fixable
+        // problem undiagnosable. Same pattern as switchChannel below.
+        const data = await res.json().catch(() => ({}));
         setUpdateStatus({
           status: "error",
           message: "Failed to start update",
-          error: "Server returned an error",
+          error: data.error || data.message || "Server returned an error",
         });
       }
     } catch {
@@ -552,7 +556,7 @@ export default function UpdatesPage() {
                     </div>
                   )}
                   {updateStatus.error && (
-                    <p className="text-sm text-red-600 mt-2 font-mono whitespace-pre-wrap">
+                    <p className="text-sm text-red-600 mt-2 font-mono whitespace-pre-wrap break-words">
                       {updateStatus.error}
                     </p>
                   )}

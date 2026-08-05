@@ -56,17 +56,10 @@ MIGRATIONS_RAN=false
 
 # --- Logging ---
 
-# The app reads .update-status/.update-log and deletes .update-status once the
-# result has been shown. APP_DIR carries the sticky bit, so a root-owned file
-# there could not be removed by the service user — create both up front and hand
-# them over, after which `>` and `>>` preserve the ownership.
-for _f in "${STATUS_FILE}" "${LOG_FILE}"; do
-    [ -e "${_f}" ] || : > "${_f}"
-    if id -u "${SVC_USER}" >/dev/null 2>&1; then
-        chown "${SVC_USER}:${SVC_GROUP}" "${_f}" 2>/dev/null || true
-    fi
-done
-unset _f
+# Root writes both of these and the app reads them, so they are root-owned and
+# group-writable — see ensure_state_file in lib/common.sh for why handing them
+# to the service user (as this used to) silently breaks every write below.
+ensure_state_file "${STATUS_FILE}" "${LOG_FILE}"
 
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "${LOG_FILE}"
@@ -122,11 +115,15 @@ rollback() {
         fi
     fi
 
-    # Restore .next build
+    # Restore .next build. .next belongs to the service user, and root cannot
+    # write inside a directory it does not own on a container without an
+    # effective CAP_DAC_OVERRIDE — so the removal and the copy both drop
+    # privilege. This is the rollback path; a latent failure here would only
+    # surface during an already-failing update.
     if [ -d "${BACKUP_DIR}/.next" ]; then
         log "Restoring previous build..."
-        rm -rf "${APP_DIR}/.next"
-        cp -r "${BACKUP_DIR}/.next" "${APP_DIR}/.next"
+        run_as_service_user rm -rf "${APP_DIR}/.next"
+        run_as_service_user cp -r "${BACKUP_DIR}/.next" "${APP_DIR}/.next"
         log "Build restored"
     fi
 
@@ -286,7 +283,8 @@ log "Dependencies installed"
 # Self-heal npm optional-dependency bug (npm/cli#4828) on cross-platform lockfiles.
 if ! node -e "require('lightningcss')" >/dev/null 2>&1; then
     log "Native CSS engine missing; reinstalling dependencies for this platform"
-    rm -rf node_modules package-lock.json
+    # node_modules and the lockfile belong to the service user.
+    run_as_service_user rm -rf node_modules package-lock.json
     HEAL_OUTPUT=$(run_as_service_user npm install 2>&1) || {
         log "npm reinstall failed: ${HEAL_OUTPUT}"
         rollback 3 "Failed to reinstall dependencies"

@@ -66,5 +66,7 @@ export function updateHelperInstalled(appDir: string): boolean {
 /** Actionable message for the case above. */
 export const UPDATE_HELPER_MISSING =
   "The privileged update helper is not installed, so this update cannot be " +
-  "started from the app. Run this once on the server to complete the upgrade " +
-  "to the unprivileged service model: sudo bash /opt/training-tracker/deploy/install.sh";
+  "started from the app. Run this once on the server, as root, to complete " +
+  "the upgrade to the unprivileged service model:\n\n" +
+  "    bash /opt/training-tracker/deploy/install.sh\n\n" +
+  "(On an LXC you are usually root already. On a VM, prefix it with sudo.)";

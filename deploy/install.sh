@@ -24,6 +24,11 @@ require_root "$@"
 # half way through — or worse, at first use in production.
 check_dependencies
 
+# With `set -e`, an abort between creating the service account and installing the
+# helper units leaves a host that looks installed but cannot update, with nothing
+# on screen explaining why. Say so.
+trap 'echo "" >&2; echo "ERROR: install failed at line ${LINENO}. The service account and update helper may be only partly installed — fix the cause above and re-run this script (it is safe to re-run)." >&2' ERR
+
 # CA bundle that Node should trust in addition to its built-ins. On Debian this
 # file is maintained by `update-ca-certificates`, so it already includes any
 # corporate/firewall root certs the admin imported — which is what lets Prisma's
@@ -113,6 +118,12 @@ if [ "$(realpath "${SCRIPT_DIR}")" = "$(realpath "${APP_DIR}" 2>/dev/null)" ]; t
     echo "Already running from ${APP_DIR}, skipping copy."
 else
     mkdir -p ${APP_DIR}
+    # Installing from somewhere else over an existing install: the tree belongs
+    # to the service user, and root cannot overwrite files it does not own here.
+    # Take it back first; step 7's ensure_ownership hands it over again.
+    if id -u "${SVC_USER}" >/dev/null 2>&1; then
+        chown -R root:root "${APP_DIR}" 2>/dev/null || true
+    fi
     if [ -f "${SCRIPT_DIR}/package.json" ]; then
         echo "Copying application files..."
         cp -r "${SCRIPT_DIR}/"* ${APP_DIR}/
@@ -190,7 +201,14 @@ else
         echo "TRUSTED_PROXIES=\"${TRUSTED_PROXIES}\"" >> "${ENV_FILE}"; echo "Added TRUSTED_PROXIES to existing .env"
     fi
 fi
-chmod 600 "${ENV_FILE}"
+# root:service-group 0660 rather than 0600 — see ensure_ownership in
+# lib/common.sh. Both root and the app write this file.
+if id -u "${SVC_USER}" >/dev/null 2>&1; then
+    chown "root:${SVC_GROUP}" "${ENV_FILE}"
+    chmod 0660 "${ENV_FILE}"
+else
+    chmod 600 "${ENV_FILE}"
+fi
 
 # Make Node trust the system CA bundle for the build below (install.sh does not
 # source .env). This is what lets the Prisma engine download succeed behind an
@@ -213,7 +231,9 @@ run_as_service_user npm install
 # engine can't load, regenerate the lockfile for this platform and reinstall.
 if ! node -e "require('lightningcss')" >/dev/null 2>&1; then
     echo "Native CSS engine missing for this platform; reinstalling dependencies..."
-    rm -rf node_modules package-lock.json
+    # node_modules belongs to the service user; root cannot delete inside a
+    # directory it does not own on a container without CAP_DAC_OVERRIDE.
+    run_as_service_user rm -rf node_modules package-lock.json
     run_as_service_user npm install
 fi
 run_as_service_user npx prisma migrate deploy
@@ -231,7 +251,10 @@ if command -v systemctl &> /dev/null; then
     # boundary, see deploy/update-agent.sh.
     install_units
     systemctl enable training-tracker
-    systemctl start training-tracker
+    # restart, not start: on a re-run (which is exactly how an existing install
+    # migrates) the service is already up, and `start` is a no-op — so the newly
+    # written unit would never take effect and the app would keep running as root.
+    restart_app || echo "WARNING: could not restart the service — run 'systemctl restart training-tracker' manually." >&2
     echo "Started via systemd (running as ${SVC_USER})."
 else
     echo "systemd not available. Starting manually..."
@@ -294,7 +317,8 @@ esac
 INITEOF
     chmod +x /etc/init.d/training-tracker
     update-rc.d training-tracker defaults 2>/dev/null || true
-    /etc/init.d/training-tracker start
+    # restart, not start — see the systemd branch above.
+    /etc/init.d/training-tracker restart
     echo "Started via init.d."
 fi
 
@@ -319,7 +343,17 @@ echo "=== Installation Complete ==="
 echo "Training Tracker is now running on http://$(hostname -I | awk '{print $1}'):3000"
 echo ""
 echo "  Configuration (stored in ${APP_DIR}/.env, permissions 600):"
-echo "    Runs as:         ${SVC_USER} (unprivileged; not root)"
+if command -v systemctl &> /dev/null; then
+    _EFFECTIVE_USER="$(systemctl show -p User --value training-tracker 2>/dev/null)"
+    if [ "${_EFFECTIVE_USER}" = "${SVC_USER}" ]; then
+        echo "    Runs as:         ${SVC_USER} (unprivileged; confirmed)"
+    else
+        echo "    Runs as:         ${_EFFECTIVE_USER:-root} — EXPECTED ${SVC_USER}!"
+        echo "                     ^ run: systemctl restart training-tracker"
+    fi
+else
+    echo "    Runs as:         ${SVC_USER} (unprivileged; not root)"
+fi
 echo "    Database:        ${DB_NAME} (user: ${DB_USER})"
 if [ "${REUSE_DB_CREDS}" = false ]; then
     echo "    DB password:     ${DB_PASS}"

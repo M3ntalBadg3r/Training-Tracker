@@ -73,7 +73,7 @@ Privileges are also kept narrow *inside* the update itself. `git pull` and the s
 The updater performing a 2.69 → 2.70 upgrade *is 2.69's updater*. It knows nothing about service accounts or helper units, so it cannot install them while installing the release that introduces them. Completing the move therefore takes one more step:
 
 - **With automatic updates enabled** — nothing to do. `deploy/auto-update.sh` runs as root every few minutes; it detects the half-migrated state, creates the service account, corrects ownership, installs the helper units and scheduled jobs, and restarts the app unprivileged. Logged to `/var/log/training-tracker/updates.log`.
-- **Otherwise** — run `sudo bash /opt/training-tracker/deploy/install.sh` once. It is idempotent and leaves your database and `.env` untouched.
+- **Otherwise** — run `bash /opt/training-tracker/deploy/install.sh` once, **as root** (on an LXC you already are; on a VM prefix with `sudo`). It is idempotent and leaves your database and `.env` untouched.
 
 Until one of those happens the app keeps running as root and the **in-app updater returns an error** rather than writing a request nothing would consume. From 2.70 onward every update applies its own deploy-layer changes, so this only ever applies to that one hop.
 
@@ -141,14 +141,14 @@ If the deployment directory is not a git repository (e.g. files were copied manu
 
 ```bash
 cd /opt/training-tracker
-sudo -u training-tracker npm install          # or: runuser -u training-tracker -- npm install
-sudo -u training-tracker npx prisma migrate deploy
-sudo -u training-tracker npx prisma generate
-sudo -u training-tracker npm run build
-sudo systemctl restart training-tracker
+runuser -u training-tracker -- npm install
+runuser -u training-tracker -- npx prisma migrate deploy
+runuser -u training-tracker -- npx prisma generate
+runuser -u training-tracker -- npm run build
+systemctl restart training-tracker
 ```
 
-(The build steps run as the service account so they do not need — and should not have — root. Only the restart does.)
+Run the above as root. `runuser` is used rather than `sudo -u` deliberately: it comes from `util-linux`, which is always present, whereas `sudo` is frequently absent on a minimal LXC. The build steps run as the service account because they do not need — and should not have — root. Only the restart does.
 
 ### Service Management
 

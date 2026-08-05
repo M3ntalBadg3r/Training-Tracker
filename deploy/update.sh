@@ -76,11 +76,13 @@ rollback() {
         fi
     fi
 
-    # Restore .next build
+    # Restore .next build. Both operations act on a service-user-owned tree, so
+    # they drop privilege — root cannot write inside a directory it does not own
+    # on a container without an effective CAP_DAC_OVERRIDE.
     if [ -d "${BACKUP_DIR}/.next" ]; then
         echo "  Restoring previous build..."
-        rm -rf "${APP_DIR}/.next"
-        cp -r "${BACKUP_DIR}/.next" "${APP_DIR}/.next"
+        run_as_service_user rm -rf "${APP_DIR}/.next"
+        run_as_service_user cp -r "${BACKUP_DIR}/.next" "${APP_DIR}/.next"
         echo "  Build restored."
     fi
 
@@ -227,7 +229,8 @@ echo "  Dependencies installed."
 # Self-heal npm optional-dependency bug (npm/cli#4828) on cross-platform lockfiles.
 if ! node -e "require('lightningcss')" >/dev/null 2>&1; then
     echo "  Native CSS engine missing; reinstalling dependencies for this platform..."
-    rm -rf node_modules package-lock.json
+    # node_modules and the lockfile belong to the service user.
+    run_as_service_user rm -rf node_modules package-lock.json
     HEAL_OUTPUT=$(run_as_service_user npm install 2>&1) || {
         echo "  npm reinstall failed: ${HEAL_OUTPUT}"
         rollback 3 "Failed to reinstall dependencies"

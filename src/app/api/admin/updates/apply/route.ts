@@ -45,9 +45,14 @@ export async function POST(request: NextRequest) {
     writeUpdateRequest(appDir, UPDATE_REQUESTS.update);
 
     return NextResponse.json({ status: "started" });
-  } catch {
+  } catch (error) {
+    console.error("Failed to start update:", error);
     return NextResponse.json(
-      { error: "Failed to start update" },
+      {
+        error:
+          "Failed to start update. Check the server log: " +
+          "journalctl -u training-tracker",
+      },
       { status: 500 }
     );
   }

@@ -31,6 +31,11 @@ LOG_FILE="${LOG_DIR}/update-agent.log"
 
 mkdir -p "${LOG_DIR}" 2>/dev/null || true
 
+# reject() and the handover both write STATUS_FILE as root, so establish the
+# root-owned/group-writable ownership before either can run. Without this a
+# rejection is invisible to the operator: the reason is written nowhere they look.
+ensure_state_file "${STATUS_FILE}" "${APP_DIR}/.update-log"
+
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "${LOG_FILE}" 2>/dev/null || true
 }
@@ -39,7 +44,6 @@ reject() {
     log "REJECTED: $1"
     printf '{"step":0,"totalSteps":8,"message":"Update request rejected: %s","status":"failed"}\n' "$1" \
         > "${STATUS_FILE}" 2>/dev/null || true
-    chown "${SVC_USER}:${SVC_GROUP}" "${STATUS_FILE}" 2>/dev/null || true
     exit 0
 }
 
@@ -64,11 +68,15 @@ if [ "${REQ_SIZE}" -gt 256 ]; then
     reject "request too large (${REQ_SIZE} bytes)"
 fi
 
-# Only the app may ask. Anything else — including a root-owned file dropped by
-# some other process — is not a request this helper knows the provenance of.
-if [ "${REQ_OWNER}" != "${SVC_USER}" ]; then
+# The request must come from the app or from root. Accepting root is not a
+# weakening: root can already execute perform-update.sh directly, so a root-owned
+# request conveys no authority its writer did not already have. Excluding it,
+# however, breaks a real case — during migration the app may still be running as
+# root, and its request would be refused with the reason written somewhere the
+# operator never sees.
+if [ "${REQ_OWNER}" != "${SVC_USER}" ] && [ "${REQ_OWNER}" != "root" ]; then
     rm -f "${REQ}"
-    reject "request not owned by ${SVC_USER} (owner: ${REQ_OWNER})"
+    reject "request not owned by ${SVC_USER} or root (owner: ${REQ_OWNER})"
 fi
 
 ACTION_RAW="$(head -c 256 "${REQ}" 2>/dev/null | tr -d '[:space:]')"
@@ -102,7 +110,11 @@ esac
 # --- Act ---------------------------------------------------------------------
 
 # Idempotent; repairs an install whose service account, ownership or units have
-# drifted (or were removed) before handing over to the updater.
+# drifted (or were removed) before handing over to the updater. This can chown the
+# whole tree including node_modules, so say what is happening first — otherwise
+# the UI sits on the app's own "Starting update..." with no explanation.
+printf '{"step":0,"totalSteps":8,"message":"Preparing update...","status":"in_progress"}\n' \
+    > "${STATUS_FILE}" 2>/dev/null || true
 ensure_non_root_runtime
 
 if [ -n "${TARGET_BRANCH}" ]; then

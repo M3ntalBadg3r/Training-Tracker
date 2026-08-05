@@ -127,8 +127,9 @@ ensure_service_user() {
 # but cannot touch entries owned by root, and cannot clear the sticky bit
 # because it does not own the directory.
 #
-# .env is 0600 and service-owned: the app rewrites it when the update channel
-# is switched, and systemd reads EnvironmentFile= as root regardless of mode.
+# .env and the two update state files are the exception to "the service user owns
+# the tree" — see the comments on each below. systemd reads EnvironmentFile= as
+# root regardless of mode, so tightening .env costs nothing.
 ensure_ownership() {
     [ -d "${APP_DIR}" ] || return 0
     id -u "${SVC_USER}" >/dev/null 2>&1 || return 0
@@ -149,10 +150,43 @@ ensure_ownership() {
     chown "root:${SVC_GROUP}" "${APP_DIR}"
     chmod 1775 "${APP_DIR}"
 
+    # .env is written by root (install.sh appends missing keys) *and* by the app
+    # (the update-channel switch), so it follows the same rule as the state files
+    # below: root owns it, the service user reaches it through the group. 0660
+    # keeps it as private as the old 0600 did — only root and the service account
+    # are in that group.
     if [ -f "${APP_DIR}/.env" ]; then
-        chown "${SVC_USER}:${SVC_GROUP}" "${APP_DIR}/.env"
-        chmod 600 "${APP_DIR}/.env"
+        chown "root:${SVC_GROUP}" "${APP_DIR}/.env"
+        chmod 0660 "${APP_DIR}/.env"
     fi
+
+    # Must come last: the blanket chown above would otherwise hand these to the
+    # service user, which is exactly what breaks root's writes to them.
+    ensure_state_file "${APP_DIR}/.update-status" "${APP_DIR}/.update-log"
+}
+
+# Files that BOTH root and the app write: update progress and the update log.
+#
+# These are root-owned and group-writable, and that detail is load-bearing.
+# Do NOT "simplify" it by giving them to the service user like everything else
+# in the tree. On a container whose root lacks an effective CAP_DAC_OVERRIDE —
+# an unprivileged LXC, i.e. a platform this project explicitly targets — root
+# cannot write a file it does not own. When these were service-user-owned,
+# every log() and write_status() call in perform-update.sh failed with
+# "Permission denied", updates ran to completion with the UI frozen on step 0,
+# and nothing was recorded anywhere the operator would look.
+#
+# Root owns them and writes as owner; the app writes through the group. The
+# corollary is that the app cannot *unlink* them (APP_DIR is sticky and they are
+# root-owned), so the ack path in api/admin/updates/status truncates to an idle
+# payload instead of deleting.
+ensure_state_file() {
+    local f
+    for f in "$@"; do
+        [ -e "${f}" ] || : > "${f}"
+        chown "root:${SVC_GROUP}" "${f}" 2>/dev/null || true
+        chmod 0664 "${f}" 2>/dev/null || true
+    done
 }
 
 ensure_log_dir() {
