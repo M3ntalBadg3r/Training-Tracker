@@ -1,0 +1,13 @@
+[Unit]
+Description=Watch for Training Tracker privileged update requests
+Documentation=file:/opt/training-tracker/deploy/update-agent.sh
+
+[Path]
+# The unprivileged app writes this file to ask for privileged work. It carries
+# no authority of its own — update-agent.sh validates its owner and reduces its
+# contents to a fixed set of literals before acting on it.
+PathExists=/opt/training-tracker/.update-request
+Unit=training-tracker-update.service
+
+[Install]
+WantedBy=multi-user.target

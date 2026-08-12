@@ -1,7 +1,8 @@
 #!/bin/bash
 # Training Tracker - Automatic Report Export
 # Checks for scheduled exports that are due and runs them.
-# Designed to be called from cron every minute.
+# Designed to be called from cron every minute as the unprivileged service
+# user: it only reads .env and POSTs to localhost, so it needs no privilege.
 
 # Ensure node/npm are on PATH (cron uses minimal PATH)
 export PATH="/usr/local/bin:/usr/bin:/bin:$PATH"
@@ -9,7 +10,7 @@ export PATH="/usr/local/bin:/usr/bin:/bin:$PATH"
 [ -s "$HOME/.nvm/nvm.sh" ] && . "$HOME/.nvm/nvm.sh"
 
 APP_DIR="${1:-/opt/training-tracker}"
-LOG_FILE="/var/log/training-tracker-exports.log"
+LOG_FILE="/var/log/training-tracker/exports.log"
 
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "${LOG_FILE}"

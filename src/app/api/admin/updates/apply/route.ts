@@ -1,8 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSuperAdmin, handleAuthError } from "@/lib/auth";
-import { spawn } from "child_process";
 import path from "path";
 import fs from "fs";
+import {
+  UPDATE_REQUESTS,
+  writeUpdateRequest,
+  updateHelperInstalled,
+  UPDATE_HELPER_MISSING,
+} from "@/lib/update-request";
 
 export async function POST(request: NextRequest) {
   try {
@@ -13,12 +18,11 @@ export async function POST(request: NextRequest) {
 
   try {
     const appDir = process.cwd();
-    const scriptPath = path.join(appDir, "deploy", "perform-update.sh");
 
-    if (!fs.existsSync(scriptPath)) {
+    if (!updateHelperInstalled(appDir)) {
       return NextResponse.json(
-        { error: "Update script not found" },
-        { status: 500 }
+        { error: UPDATE_HELPER_MISSING },
+        { status: 503 }
       );
     }
 
@@ -34,24 +38,21 @@ export async function POST(request: NextRequest) {
       })
     );
 
-    // Spawn in a separate systemd scope so the script survives
-    // the service restart at step 6 (systemctl restart kills the
-    // entire service cgroup, which would kill a plain child process)
-    const child = spawn(
-      "systemd-run",
-      ["--scope", "--unit=tt-update", "bash", scriptPath, appDir],
-      {
-        detached: true,
-        stdio: "ignore",
-        env: { ...process.env, PATH: process.env.PATH },
-      }
-    );
-    child.unref();
+    // Ask the root-owned helper to do the privileged part. The app holds no
+    // privilege of its own — see src/lib/update-request.ts. This also means the
+    // updater runs in its own unit, so the service restart it performs at step 6
+    // cannot kill it mid-update.
+    writeUpdateRequest(appDir, UPDATE_REQUESTS.update);
 
     return NextResponse.json({ status: "started" });
-  } catch {
+  } catch (error) {
+    console.error("Failed to start update:", error);
     return NextResponse.json(
-      { error: "Failed to start update" },
+      {
+        error:
+          "Failed to start update. Check the server log: " +
+          "journalctl -u training-tracker",
+      },
       { status: 500 }
     );
   }

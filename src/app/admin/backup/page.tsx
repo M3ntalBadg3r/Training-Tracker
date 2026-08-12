@@ -332,7 +332,14 @@ export default function BackupPage() {
         body: JSON.stringify({ ...schedule, time: localToUtc(schedule.time) }),
       });
       if (res.ok) {
-        setScheduleResult({ type: "success", message: "Settings saved successfully" });
+        // The settings save and the cron install can succeed independently —
+        // show the warning rather than a bare "saved" if cron did not take.
+        const data = await res.json().catch(() => ({}));
+        setScheduleResult(
+          data?.warning
+            ? { type: "error", message: data.warning }
+            : { type: "success", message: "Settings saved successfully" }
+        );
       } else {
         setScheduleResult({ type: "error", message: "Failed to save settings" });
       }

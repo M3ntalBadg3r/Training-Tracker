@@ -20,14 +20,23 @@ export async function GET(request: NextRequest) {
     const content = fs.readFileSync(statusFile, "utf-8");
     const status = JSON.parse(content);
 
-    // Clean up status file only when explicitly requested via ?ack=1
+    // Clear the status only when explicitly requested via ?ack=1.
+    //
+    // Truncate to an idle payload rather than unlinking: the file is root-owned
+    // (the update helper writes it as root — see ensure_state_file in
+    // deploy/lib/common.sh) and APP_DIR carries the sticky bit, so this process
+    // can write the file through its group but cannot delete it. A missing file
+    // and an idle payload are treated identically above, so nothing else changes.
     const ack = request.nextUrl.searchParams.get("ack");
     if (ack === "1" && (status.status === "complete" || status.status === "error")) {
-      fs.unlinkSync(statusFile);
+      fs.writeFileSync(statusFile, JSON.stringify({ status: "idle" }));
     }
 
     return NextResponse.json(status);
-  } catch {
+  } catch (error) {
+    // Reporting "idle" for a real failure is how a broken update looks like a
+    // stalled one. Leave a trace in journalctl -u training-tracker.
+    console.error("Failed to read update status:", error);
     return NextResponse.json({ status: "idle" });
   }
 }
