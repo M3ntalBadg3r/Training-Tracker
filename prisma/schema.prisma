@@ -411,9 +411,9 @@ model ImportAlias {
 }
 
 // Singleton: always id = 1. Stores system-wide preferences (default date
-// format, idle-session timeout, public-API switch). Application code must
-// upsert with id: 1; the migration also adds a CHECK constraint as
-// defence-in-depth.
+// format, idle-session timeout, public-API switch, white-label branding).
+// Application code must upsert with id: 1; the migration also adds a CHECK
+// constraint as defence-in-depth.
 model SystemSetting {
   id                 Int      @id @default(1)
   dateFormat         String   @default("DD/MM/YYYY") @map("date_format")
@@ -421,6 +421,20 @@ model SystemSetting {
   // Global kill switch for the read-only public API (`/api/public/v1/*`).
   // Off by default: the API must be switched on deliberately before any key works.
   publicApiEnabled   Boolean  @default(false) @map("public_api_enabled")
+  // White-label branding. The images are held base64-encoded rather than as
+  // Bytes so the JSON backup pipeline round-trips them with no special casing.
+  // Anything reading only the scalar settings must select these columns out —
+  // they are large and sit on an otherwise hot, cached row.
+  appName            String   @default("Training Tracker") @map("app_name")
+  brandColor         String?  @map("brand_color")
+  logoData           String?  @map("logo_data")
+  logoMimeType       String?  @map("logo_mime_type")
+  faviconData        String?  @map("favicon_data")
+  faviconMimeType    String?  @map("favicon_mime_type")
+  // Login-page header switches. The logo/name can each be suppressed there —
+  // e.g. when the uploaded logo already contains the company name.
+  loginShowName      Boolean  @default(true) @map("login_show_name")
+  loginShowLogo      Boolean  @default(true) @map("login_show_logo")
   updatedAt          DateTime @updatedAt @map("updated_at")
   updatedById        Int?     @map("updated_by_id")
 

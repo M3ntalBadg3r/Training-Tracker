@@ -11,6 +11,7 @@ import {
   decryptBufferWithPassphrase,
 } from "@/lib/crypto";
 import { prepareBackupRestore } from "@/lib/product-types";
+import { invalidateSystemSettingsCache } from "@/lib/system-settings";
 
 // Backup archive variants. A "full" backup is the historical shape (everything,
 // including students and training records). A "config" backup is the reference
@@ -126,7 +127,7 @@ export async function generateBackupZip(): Promise<{
     prisma.programData.findMany({ orderBy: { id: "asc" } }),
     prisma.programDataAlternative.findMany({ orderBy: { id: "asc" } }),
     prisma.offering.findMany({ orderBy: { id: "asc" } }),
-    prisma.offeringSpecialisation.findMany({ orderBy: [{ offeringName: "asc" }, { specialisationId: "asc" }] }),
+    prisma.offeringSpecialisation.findMany({ orderBy: [{ offeringId: "asc" }, { specialisationId: "asc" }] }),
     prisma.offeringData.findMany({ orderBy: { id: "asc" } }),
     prisma.offeringDataAlternative.findMany({ orderBy: { id: "asc" } }),
   ]);
@@ -210,7 +211,7 @@ export async function generateConfigZip(): Promise<{
     prisma.programData.findMany({ orderBy: { id: "asc" } }),
     prisma.programDataAlternative.findMany({ orderBy: { id: "asc" } }),
     prisma.offering.findMany({ orderBy: { id: "asc" } }),
-    prisma.offeringSpecialisation.findMany({ orderBy: [{ offeringName: "asc" }, { specialisationId: "asc" }] }),
+    prisma.offeringSpecialisation.findMany({ orderBy: [{ offeringId: "asc" }, { specialisationId: "asc" }] }),
     prisma.offeringData.findMany({ orderBy: { id: "asc" } }),
     prisma.offeringDataAlternative.findMany({ orderBy: { id: "asc" } }),
     prisma.importAlias.findMany({ orderBy: { id: "asc" } }),
@@ -575,7 +576,25 @@ async function restoreConfigArchive(zip: JSZip): Promise<NextResponse> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   type OfferingDataAlternativeRow = any;
   type ImportAliasRow = { id: number; targetField: string; alias: string; createdAt: string };
-  type SystemSettingRow = { id: number; dateFormat: string; updatedAt: string; updatedById: number | null } | null;
+  // Every field is optional bar dateFormat: archives written before a given
+  // setting existed simply omit it, and the upsert below falls back to the
+  // column default in that case.
+  type SystemSettingRow = {
+    id: number;
+    dateFormat: string;
+    sessionIdleMinutes?: number;
+    publicApiEnabled?: boolean;
+    appName?: string;
+    brandColor?: string | null;
+    logoData?: string | null;
+    logoMimeType?: string | null;
+    faviconData?: string | null;
+    faviconMimeType?: string | null;
+    loginShowName?: boolean;
+    loginShowLogo?: boolean;
+    updatedAt: string;
+    updatedById: number | null;
+  } | null;
 
   const archiveProductTypes = await readJson<ProductTypeRow[]>("product_types.json");
   const archiveRegionData = await readJson<RegionDataRow[]>("region_data.json");
@@ -829,19 +848,36 @@ async function restoreConfigArchive(zip: JSZip): Promise<NextResponse> {
 
       // 9. Upsert SystemSetting singleton (id=1). The updatedById is reset to
       //    NULL so we don't dangle a FK to a user that doesn't exist on this
-      //    system.
+      //    system. Every settable field is carried across — this used to write
+      //    only dateFormat, which silently dropped the rest of the settings on
+      //    every restore. Fields absent from an older archive are left out of
+      //    the payload so the column default applies.
       if (archiveSystemSetting) {
+        const s = archiveSystemSetting;
+        const settingFields = {
+          dateFormat: s.dateFormat,
+          ...(s.sessionIdleMinutes !== undefined
+            ? { sessionIdleMinutes: s.sessionIdleMinutes }
+            : {}),
+          ...(s.publicApiEnabled !== undefined
+            ? { publicApiEnabled: s.publicApiEnabled }
+            : {}),
+          ...(s.appName !== undefined ? { appName: s.appName } : {}),
+          ...(s.brandColor !== undefined ? { brandColor: s.brandColor } : {}),
+          ...(s.logoData !== undefined ? { logoData: s.logoData } : {}),
+          ...(s.logoMimeType !== undefined ? { logoMimeType: s.logoMimeType } : {}),
+          ...(s.faviconData !== undefined ? { faviconData: s.faviconData } : {}),
+          ...(s.faviconMimeType !== undefined
+            ? { faviconMimeType: s.faviconMimeType }
+            : {}),
+          ...(s.loginShowName !== undefined ? { loginShowName: s.loginShowName } : {}),
+          ...(s.loginShowLogo !== undefined ? { loginShowLogo: s.loginShowLogo } : {}),
+          updatedById: null,
+        };
         await tx.systemSetting.upsert({
           where: { id: 1 },
-          create: {
-            id: 1,
-            dateFormat: archiveSystemSetting.dateFormat,
-            updatedById: null,
-          },
-          update: {
-            dateFormat: archiveSystemSetting.dateFormat,
-            updatedById: null,
-          },
+          create: { id: 1, ...settingFields },
+          update: settingFields,
         });
       }
     });
@@ -851,6 +887,11 @@ async function restoreConfigArchive(zip: JSZip): Promise<NextResponse> {
       { status: 400 }
     );
   }
+
+  // The settings singleton was just rewritten underneath the 30s in-memory
+  // cache, so drop it — otherwise the restored date format and branding stay
+  // invisible (and the stale values keep being served) until the TTL expires.
+  invalidateSystemSettingsCache();
 
   return NextResponse.json({
     success: true,

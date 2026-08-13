@@ -34,6 +34,8 @@ Built with Next.js, React, TypeScript, PostgreSQL, and Prisma.
   - [Region Data](#region-data)
   - [Training Data](#training-data)
   - [User Management](#user-management)
+  - [System Settings](#system-settings-superadmin-only)
+  - [Branding](#branding-white-labelling)
   - [Backup & Restore](#backup--restore)
   - [Updates](#updates)
   - [Scheduled Report Exports](#scheduled-report-exports)
@@ -242,6 +244,8 @@ Training Tracker is multi-company: every student belongs to exactly one company,
 
 Navigate to any page and you will be redirected to the login screen. Enter your username and password. If MFA is enabled on your account, you will be prompted for a 6-digit code from your authenticator app. Usernames are **case-insensitive** — `Alice`, `alice`, and `ALICE` all match the same account.
 
+The login screen shows the application name and logo, both configurable (and individually hideable) under **Admin → System Settings → Branding**. It does **not** display the version number — the running version is shown in the sidebar footer and on the **About** page instead, so it isn't exposed to anyone who hasn't signed in.
+
 #### Brute-force protection
 
 Login and the other credential endpoints are defended on two levels, both backed
@@ -287,7 +291,7 @@ Click **My Account** in the sidebar to view your profile and manage MFA settings
 
 ### About page
 
-Click **About** in the sidebar footer (between Night Mode and Sign out) to open the **About Training Tracker** page. It shows a short description of the application, the **current version** you're running, the developer credit, and quick links to the **release notes** and the **GitHub repository** (both open in a new tab).
+Click **About** in the sidebar footer (between Night Mode and Sign out) to open the **About** page (titled with your configured application name). It shows a short description of the application, the **current version** you're running, the developer credit, and quick links to the **release notes** and the **GitHub repository** (both open in a new tab).
 
 ### Multi-Factor Authentication (MFA)
 
@@ -713,8 +717,31 @@ Navigate to **Admin > Users** to manage user accounts.
   - Parsing dates during CSV / Excel imports (the import flow detects format mismatches and prompts before committing — see **Import Data → Date Format Detection**).
   - Displaying dates throughout the app for users who haven't picked a personal preference.
 - **Session Timeout** — How long a signed-in user can be **inactive** before being automatically signed out (default **30 minutes**, adjustable 5–1440 minutes). A warning dialog with a countdown appears shortly before the timeout so an active user can choose **Stay signed in**. Ongoing activity keeps the session alive; a change takes effect the next time a user signs in. A fixed **absolute cap** (8 hours, overridable with the `SESSION_ABSOLUTE_HOURS` environment variable) also applies — a session is ended once it reaches the cap regardless of activity.
+- **Import Aliases** — The per-field header alias list used by the student import's column auto-mapper.
+- **Branding** — White-labelling; see below.
 
 Individual users override their display preference on the **My Account** page (Sidebar → username avatar → Display Date Format). The stored data is format-neutral; the format only affects parsing on input and rendering on output, so changing it is non-destructive and reversible.
+
+#### Branding (white-labelling)
+
+**Admin → System Settings → Branding** replaces the stock product identity with your own. Every setting is stored in the database and applied at runtime — there is no rebuild, no config file to edit, and no service restart.
+
+| Setting | Where it appears |
+|---------|------------------|
+| **Application name** | Sidebar heading, browser tab title, login and first-run setup pages, the About page, and the entry users see in their authenticator app when enrolling in MFA. Max 60 characters. |
+| **Brand colour** | Every accent in the app — buttons, links, focus rings, active tabs, the selected nav item — in both light and dark mode. Clear it to return to the default blue. |
+| **Logo** | Login, first-run setup and MFA-enrolment pages. PNG, JPEG, WebP or ICO, up to 512 KB. Falls back to a built-in shield icon when unset. |
+| **Favicon** | The browser tab icon. PNG or ICO, up to 128 KB; square and at least 32×32 works best. |
+| **Login page switches** | Hide the logo and/or the name on the login page independently — useful when the logo already contains the name, or for a plain sign-in form. The sidebar always shows the name. |
+
+Notes:
+
+- Charts and PDF exports keep their own colour palette and are **not** re-tinted.
+- Picking a light brand colour raises a contrast warning, because buttons render white text on it.
+- **SVG uploads are refused.** An SVG is an executable document and would run scripts if opened directly, so only raster formats are accepted. Uploads are identified by inspecting the file's actual content, not the type the browser claims.
+- Branding is carried in configuration backups, and a full **Wipe** (Data Clean-Up → Danger Zone) resets it to the defaults.
+- **Reset to defaults** clears the name, colour, logo and favicon in one step without touching any data.
+- On browsers older than roughly 2023 (before `color-mix()` support) the app falls back to its default blue palette; everything else still works.
 
 ### Backup & Restore
 
@@ -746,7 +773,7 @@ To move data to a **different** installation, click **Portable backup…** and c
 
 When you stand up a new Training Tracker instance and want to carry over the catalogue, regions, programs, and import aliases — but **not** any learner data — click **Config Backup** (standard, tied to `ENCRYPTION_KEY`) or **Portable config backup…** (passphrase-encrypted, restores anywhere). The file is saved as `training-tracker-config-<timestamp>.zip[.enc]`.
 
-A config backup contains: product types, region data, the full training catalogue, OLX parent/sub-item relationships, programs (incl. tiered-program settings), program tiers, specialisations, program data + alternatives, import aliases, and the system settings singleton. It explicitly excludes students, training-taken records, users, companies, scheduled exports, export credentials, and import metadata.
+A config backup contains: product types, region data, the full training catalogue, OLX parent/sub-item relationships, programs (incl. tiered-program settings), program tiers, specialisations, program data + alternatives, import aliases, and the system settings singleton (including the date format, session timeout, public-API switch and all branding — name, colour, logo and favicon). It explicitly excludes students, training-taken records, users, companies, scheduled exports, export credentials, and import metadata.
 
 Restoring a config backup wipes and replaces only the included reference tables and **leaves student and training-taken rows untouched**, so it is safe to run on a populated system when you just need to refresh the catalogue. Archive type is auto-detected on upload via a `kind` flag in `backup_metadata.json`; the upload form is shared with the standard restore.
 

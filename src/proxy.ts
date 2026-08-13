@@ -30,6 +30,10 @@ const PUBLIC_PATHS = [
   "/setup",
   "/api/auth/login",
   "/api/auth/setup",
+  // White-label logo/favicon. The login and setup pages render these before
+  // anyone has authenticated. Note this does NOT match "/api/admin/branding"
+  // (the write side) — isPublicPath requires an exact or "/"-delimited match.
+  "/api/branding",
 ];
 
 function isPublicPath(pathname: string): boolean {
@@ -82,6 +86,7 @@ const SUPER_ADMIN_PREFIXES = [
   "/api/admin/security",
   "/admin/api-keys",
   "/api/admin/api-keys",
+  "/api/admin/branding",
 ];
 
 function isSuperAdminPath(pathname: string): boolean {

@@ -4,6 +4,82 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+/* Brand colour — white-labelling.
+ *
+ * `--brand-base` is the "600" anchor of the blue ramp. The root layout sets it
+ * as an inline style on <html> (which *is* :root) from the configured brand
+ * colour, so one value re-tints every blue utility in the app without touching
+ * the ~500 hardcoded blue-* classes across src/. This works because Tailwind v4
+ * compiles `.bg-blue-600` to `background-color: var(--color-blue-600)` — the
+ * same mechanism the dark theme below already relies on.
+ *
+ * Two placement rules, both load-bearing:
+ *   1. This block is UNLAYERED, so it beats Tailwind's own `@layer theme`
+ *      defaults regardless of source order.
+ *   2. It must stay ABOVE the `.dark` block. `:root` and `.dark` have equal
+ *      specificity (0,1,0) and match the same element, so source order decides
+ *      the winner — putting this after `.dark` would break dark mode's blues.
+ *
+ * Mix percentages are chosen so the default value reproduces Tailwind's stock
+ * blue ramp: oklab mixing is linear in lightness, so p = L_target / 0.546 for
+ * the darker shades and p = (1 - L_target) / (1 - 0.546) for the lighter ones.
+ *
+ * The derived ramp is gated on `[data-branded]`, which the root layout sets on
+ * <html> only when a brand colour is configured. A ramp derived by mixing
+ * towards white/black can't reproduce Tailwind's own blue exactly (its ramp
+ * shifts hue and chroma, not just lightness) — measured up to 22/255 off on the
+ * mid-tones. Gating it means an install with no brand colour renders the stock
+ * palette byte-for-byte, and only a branded install takes the derived values,
+ * where there is no "original" to deviate from.
+ *
+ * `:where()` keeps the gated selectors at specificity (0,1,0) — identical to
+ * bare `:root` and `.dark` — so pure source order continues to decide, which is
+ * what makes the ordering rules above hold.
+ *
+ * The `@supports` guard is written out by hand rather than left to the build's
+ * CSS downleveller. `color-mix()` needs Chrome 111 / Safari 16.2 / Firefox 113
+ * (2023); left to itself lightningcss emits `--color-blue-50: var(--brand-base)`
+ * as the pre-`@supports` fallback, which would paint the light tints
+ * (`bg-blue-50`/`bg-blue-100` — ~75 usages, mostly info panels) in the
+ * full-strength brand colour: dark text on a dark block. Duplicate declarations
+ * inside one rule don't help — the downleveller drops the literal and
+ * regenerates its own fallback. An explicit guard leaves the stock ramp below as
+ * the fallback, so a pre-2023 browser renders unbranded but readable.
+ */
+:root {
+  --brand-base: oklch(0.546 0.245 262.881); /* Tailwind blue-600 (#155dfc) */
+
+  /* Stock Tailwind blue. Used verbatim when no brand colour is set, and as the
+     fallback for browsers without color-mix(). */
+  --color-blue-50: #eff6ff;
+  --color-blue-100: #dbeafe;
+  --color-blue-200: #bedbff;
+  --color-blue-300: #90c5ff;
+  --color-blue-400: #54a2ff;
+  --color-blue-500: #3080ff;
+  --color-blue-600: #155dfc;
+  --color-blue-700: #1447e6;
+  --color-blue-800: #193cb8;
+  --color-blue-900: #1c398e;
+  --color-blue-950: #162456;
+}
+
+@supports (color: color-mix(in oklab, red, red)) {
+  :root:where([data-branded]) {
+    --color-blue-50: color-mix(in oklab, var(--brand-base) 7%, white);
+    --color-blue-100: color-mix(in oklab, var(--brand-base) 15%, white);
+    --color-blue-200: color-mix(in oklab, var(--brand-base) 26%, white);
+    --color-blue-300: color-mix(in oklab, var(--brand-base) 42%, white);
+    --color-blue-400: color-mix(in oklab, var(--brand-base) 65%, white);
+    --color-blue-500: color-mix(in oklab, var(--brand-base) 83%, white);
+    --color-blue-600: var(--brand-base);
+    --color-blue-700: color-mix(in oklab, var(--brand-base) 89%, black);
+    --color-blue-800: color-mix(in oklab, var(--brand-base) 78%, black);
+    --color-blue-900: color-mix(in oklab, var(--brand-base) 69%, black);
+    --color-blue-950: color-mix(in oklab, var(--brand-base) 52%, black);
+  }
+}
+
 /* Dark mode — invert the gray scale so all existing Tailwind gray/white classes adapt automatically */
 .dark {
   color-scheme: dark;
@@ -42,6 +118,8 @@ body {
   --color-red-100: oklch(0.3 0.06 25);
   --color-green-50: oklch(0.22 0.04 155);
   --color-green-100: oklch(0.27 0.05 155);
+  /* Stock dark-mode blues; brand-derived equivalents are applied in the
+     @supports block after this rule (same color-mix fallback reasoning). */
   --color-blue-50: oklch(0.22 0.04 260);
   --color-blue-100: oklch(0.27 0.05 260);
   --color-amber-50: oklch(0.25 0.04 80);
@@ -58,5 +136,19 @@ body {
   /* Preserve real white inside the sidebar (which uses bg-slate-* and needs text-white to stay white) */
   & .sidebar-nav {
     --color-white: oklch(1 0 0);
+  }
+}
+
+/* Dark-mode blues, brand-derived. Placed after the `.dark` rule so it wins in
+ * dark mode, and guarded for the same reason as the light ramp above — without
+ * the brand these keep the stock dark blues declared in `.dark`.
+ *
+ * Mixed against the dark input surface rather than black: at the ratio that
+ * matches the target lightness, mixing with black leaves the chroma far too
+ * high for a subdued info panel. */
+@supports (color: color-mix(in oklab, red, red)) {
+  .dark:where([data-branded]) {
+    --color-blue-50: color-mix(in oklab, var(--brand-base) 18%, oklch(0.17 0.005 285.88));
+    --color-blue-100: color-mix(in oklab, var(--brand-base) 26%, oklch(0.17 0.005 285.88));
   }
 }
