@@ -592,6 +592,7 @@ async function restoreConfigArchive(zip: JSZip): Promise<NextResponse> {
     faviconMimeType?: string | null;
     loginShowName?: boolean;
     loginShowLogo?: boolean;
+    showNameInTab?: boolean;
     updatedAt: string;
     updatedById: number | null;
   } | null;
@@ -872,6 +873,7 @@ async function restoreConfigArchive(zip: JSZip): Promise<NextResponse> {
             : {}),
           ...(s.loginShowName !== undefined ? { loginShowName: s.loginShowName } : {}),
           ...(s.loginShowLogo !== undefined ? { loginShowLogo: s.loginShowLogo } : {}),
+          ...(s.showNameInTab !== undefined ? { showNameInTab: s.showNameInTab } : {}),
           updatedById: null,
         };
         await tx.systemSetting.upsert({
