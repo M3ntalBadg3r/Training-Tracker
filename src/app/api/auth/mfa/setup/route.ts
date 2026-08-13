@@ -6,6 +6,7 @@ import {
   generateMfaQrCode,
   sealMfaSecret,
 } from "@/lib/auth";
+import { getBrandingSafe } from "@/lib/system-settings";
 
 // POST: Generate MFA secret + QR code for the current user
 export async function POST(request: NextRequest) {
@@ -26,7 +27,10 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { secret, uri } = generateMfaSecret(user.username);
+  // Brand the authenticator-app entry so a white-labelled install doesn't show
+  // the stock product name in the user's authenticator.
+  const { appName } = await getBrandingSafe();
+  const { secret, uri } = generateMfaSecret(user.username, appName);
   const qrCode = await generateMfaQrCode(uri);
 
   // Store the secret temporarily (not enabled yet until verified). The

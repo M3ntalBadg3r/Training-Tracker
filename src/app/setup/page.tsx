@@ -2,10 +2,12 @@
 
 import { useState, useEffect, FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { ShieldCheck } from "lucide-react";
+import BrandMark from "@/components/brand/BrandMark";
+import { useBrand } from "@/components/brand/BrandProvider";
 
 export default function SetupPage() {
   const router = useRouter();
+  const { appName } = useBrand();
   const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
@@ -73,10 +75,8 @@ export default function SetupPage() {
       <div className="w-full max-w-md">
         <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-8">
           <div className="flex items-center justify-center gap-3 mb-2">
-            <ShieldCheck size={32} className="text-blue-600" />
-            <h1 className="text-2xl font-bold text-gray-900">
-              Training Tracker
-            </h1>
+            <BrandMark />
+            <h1 className="text-2xl font-bold text-gray-900">{appName}</h1>
           </div>
           <p className="text-center text-sm text-gray-500 mb-6">
             Create your administrator account to get started.

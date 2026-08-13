@@ -47,6 +47,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useTheme } from "@/components/theme/ThemeProvider";
+import { useBrand } from "@/components/brand/BrandProvider";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -113,6 +114,7 @@ export default function Sidebar({ mobile = false, onClose }: { mobile?: boolean;
   const { user, isAdmin, logout } = useAuth();
   const isSuperAdmin = user?.role === "SuperAdmin";
   const { theme, toggleTheme } = useTheme();
+  const { appName } = useBrand();
   // Collapse state lives in localStorage; read via useSyncExternalStore so there
   // is no setState-in-effect on mount (server snapshot defaults to collapsed).
   // In the mobile drawer the sidebar is always expanded (full labels).
@@ -193,8 +195,8 @@ export default function Sidebar({ mobile = false, onClose }: { mobile?: boolean;
     >
       <div className="shrink-0 flex items-center justify-between p-4 border-b border-slate-700">
         {!collapsed && (
-          <h1 className="text-lg font-bold whitespace-nowrap">
-            Training Tracker
+          <h1 className="text-lg font-bold whitespace-nowrap truncate" title={appName}>
+            {appName}
           </h1>
         )}
         {mobile ? (

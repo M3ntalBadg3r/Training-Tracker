@@ -6,6 +6,7 @@ import {
   clearAuthCookie,
   isRequestSecure,
 } from "@/lib/auth";
+import { invalidateSystemSettingsCache } from "@/lib/system-settings";
 
 type WipeScope = "data" | "all";
 
@@ -73,6 +74,12 @@ export async function POST(request: NextRequest) {
       await tx.user.deleteMany({});
     }
   });
+
+  if (scope === "all") {
+    // The settings singleton (including branding) is gone; drop the 30s cache
+    // so nothing keeps serving the wiped values.
+    invalidateSystemSettingsCache();
+  }
 
   const message =
     scope === "all"

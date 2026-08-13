@@ -244,13 +244,22 @@ export function handleAuthError(error: unknown): NextResponse {
 
 // --- TOTP / MFA ---
 
-export function generateMfaSecret(username: string): {
+/**
+ * The issuer is the name the user sees against the entry in their authenticator
+ * app, so a white-labelled install passes its configured app name in. Taken as
+ * a parameter rather than read here to keep this module free of a dependency on
+ * the settings store.
+ */
+export function generateMfaSecret(
+  username: string,
+  issuer: string = "Training Tracker"
+): {
   secret: string;
   uri: string;
 } {
   const secret = new Secret();
   const totp = new TOTP({
-    issuer: "Training Tracker",
+    issuer,
     label: username,
     algorithm: "SHA1",
     digits: 6,
@@ -284,6 +293,8 @@ export function openMfaSecret(stored: string): string {
 
 export function verifyMfaToken(storedSecret: string, token: string): boolean {
   const base32 = openMfaSecret(storedSecret);
+  // issuer/label are descriptive metadata only — validation depends solely on
+  // the secret and the algorithm/digits/period, so branding is irrelevant here.
   const totp = new TOTP({
     issuer: "Training Tracker",
     label: "user",

@@ -1362,6 +1362,82 @@ const helpSections: Record<string, HelpSection> = {
         <p>
           Changes take effect the next time a user signs in.
         </p>
+
+        <h3>Branding</h3>
+        <p>
+          The <strong>Branding</strong> tab white-labels the app for your
+          organisation. Everything here applies instance-wide and takes effect
+          immediately &mdash; there is no reinstall, rebuild or restart.
+        </p>
+        <table>
+          <thead>
+            <tr>
+              <th>Setting</th>
+              <th>Where it shows</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Application name</strong></td>
+              <td>
+                The sidebar heading, the browser tab title, the login and setup
+                pages, the About page, and the entry your users see in their
+                authenticator app when they set up MFA. Up to 60 characters.
+              </td>
+            </tr>
+            <tr>
+              <td><strong>Show the name in the browser tab</strong></td>
+              <td>
+                On by default. Turn it off and the tab is left untitled, so the
+                browser falls back to showing the address. Use this when you want
+                no product name visible at all rather than a different one.
+              </td>
+            </tr>
+            <tr>
+              <td><strong>Brand colour</strong></td>
+              <td>
+                Re-tints every accent in the app &mdash; buttons, links, focus
+                rings, active tabs and the selected navigation item &mdash; in both
+                light and dark mode. Clear the field to return to the default blue.
+              </td>
+            </tr>
+            <tr>
+              <td><strong>Logo</strong></td>
+              <td>
+                The login, first-run setup and MFA-enrolment pages. PNG, JPEG,
+                WebP or ICO, up to 512&nbsp;KB. Without one, a built-in shield icon
+                is used.
+              </td>
+            </tr>
+            <tr>
+              <td><strong>Favicon</strong></td>
+              <td>
+                The browser tab icon. PNG or ICO, up to 128&nbsp;KB; square and at
+                least 32&times;32 works best.
+              </td>
+            </tr>
+            <tr>
+              <td><strong>Login page switches</strong></td>
+              <td>
+                Hide the logo and/or the name on the login page independently &mdash;
+                useful when your logo already contains the name, or when you want a
+                plain sign-in form. The sidebar always shows the name.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <p>
+          <strong>Notes.</strong> Charts and PDF exports keep their own colour
+          palette and are not re-tinted. If you pick a light brand colour the app
+          warns you, because buttons use white text on that colour. SVG uploads
+          are refused for security reasons &mdash; an SVG can carry scripts.
+          Branding is included in configuration backups, and a full{" "}
+          <strong>Wipe</strong> from Data Clean-Up resets it to the defaults.
+        </p>
+        <p>
+          Use <strong>Reset to defaults</strong> to clear the name, colour, logo
+          and favicon in one step. It doesn&apos;t touch any of your data.
+        </p>
       </>
     ),
   },

@@ -2,14 +2,16 @@
 
 import PageHeader from "@/components/layout/PageHeader";
 import { ExternalLink, FileText } from "lucide-react";
+import { useBrand } from "@/components/brand/BrandProvider";
 
 const REPO_URL = "https://github.com/M3ntalBadg3r/Training-Tracker";
 const RELEASES_URL = `${REPO_URL}/releases`;
 
 export default function AboutPage() {
+  const { appName } = useBrand();
   return (
     <div>
-      <PageHeader title="About Training Tracker" />
+      <PageHeader title={`About ${appName}`} />
       <div className="max-w-2xl space-y-6">
         <div className="bg-white rounded-lg border border-gray-200 p-6 space-y-6">
           <p className="text-gray-600 leading-relaxed">

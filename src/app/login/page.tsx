@@ -2,10 +2,12 @@
 
 import { useState, useEffect, FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { ShieldCheck } from "lucide-react";
+import BrandMark from "@/components/brand/BrandMark";
+import { useBrand } from "@/components/brand/BrandProvider";
 
 export default function LoginPage() {
   const router = useRouter();
+  const { appName, loginShowName, loginShowLogo } = useBrand();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [mfaCode, setMfaCode] = useState("");
@@ -74,12 +76,16 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
       <div className="w-full max-w-md">
         <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-8">
-          <div className="flex items-center justify-center gap-3 mb-6">
-            <ShieldCheck size={32} className="text-blue-600" />
-            <h1 className="text-2xl font-bold text-gray-900">
-              Training Tracker
-            </h1>
-          </div>
+          {/* Both halves are individually suppressible. When neither is shown
+              the wrapper goes too, so the form doesn't inherit a stray gap. */}
+          {(loginShowLogo || loginShowName) && (
+            <div className="flex items-center justify-center gap-3 mb-6">
+              {loginShowLogo && <BrandMark />}
+              {loginShowName && (
+                <h1 className="text-2xl font-bold text-gray-900">{appName}</h1>
+              )}
+            </div>
+          )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             {!mfaRequired ? (
@@ -162,9 +168,6 @@ export default function LoginPage() {
             )}
           </form>
         </div>
-        <p className="text-center text-xs text-gray-400 mt-4">
-          v{process.env.APP_VERSION}
-        </p>
       </div>
     </div>
   );

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { ShieldCheck } from "lucide-react";
+import BrandMark from "@/components/brand/BrandMark";
 
 export default function SetupMfaPage() {
   const router = useRouter();
@@ -63,7 +63,7 @@ export default function SetupMfaPage() {
       <div className="w-full max-w-md">
         <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-8">
           <div className="flex items-center justify-center gap-3 mb-2">
-            <ShieldCheck size={32} className="text-blue-600" />
+            <BrandMark />
             <h1 className="text-2xl font-bold text-gray-900">
               Set Up Multi-Factor Authentication
             </h1>
