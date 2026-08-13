@@ -22,7 +22,10 @@ export const dynamic = "force-dynamic";
 export async function generateMetadata(): Promise<Metadata> {
   const brand = await getBrandingSafe();
   return {
-    title: brand.appName,
+    // An empty string (rather than omitting the key) is deliberate: Next falls
+    // back to the nearest ancestor's title when `title` is undefined, so only an
+    // explicit "" actually clears it. The browser then shows the URL instead.
+    title: brand.showNameInTab ? brand.appName : "",
     description: "Student Certification & Training Tracker",
     icons: {
       icon: brand.faviconMimeType

@@ -435,6 +435,10 @@ model SystemSetting {
   // e.g. when the uploaded logo already contains the company name.
   loginShowName      Boolean  @default(true) @map("login_show_name")
   loginShowLogo      Boolean  @default(true) @map("login_show_logo")
+  // When false the browser tab carries no title, so the browser falls back to
+  // showing the URL. For deployments that want no product name visible at all
+  // rather than a different one.
+  showNameInTab      Boolean  @default(true) @map("show_name_in_tab")
   updatedAt          DateTime @updatedAt @map("updated_at")
   updatedById        Int?     @map("updated_by_id")
 

@@ -42,6 +42,7 @@ const SETTINGS_SELECT = {
   faviconMimeType: true,
   loginShowName: true,
   loginShowLogo: true,
+  showNameInTab: true,
   updatedAt: true,
 } as const;
 
@@ -55,6 +56,7 @@ type SettingsRow = {
   faviconMimeType: string | null;
   loginShowName: boolean;
   loginShowLogo: boolean;
+  showNameInTab: boolean;
   updatedAt: Date;
 };
 
@@ -66,6 +68,8 @@ export interface Branding {
   faviconMimeType: string | null;
   loginShowName: boolean;
   loginShowLogo: boolean;
+  /** When false the page renders no <title> and the browser shows the URL. */
+  showNameInTab: boolean;
   /** Drives the `?v=` cache-buster on the image URLs. */
   updatedAtMs: number;
 }
@@ -77,6 +81,7 @@ export const BRANDING_DEFAULTS: Branding = {
   faviconMimeType: null,
   loginShowName: true,
   loginShowLogo: true,
+  showNameInTab: true,
   updatedAtMs: 0,
 };
 
@@ -114,6 +119,7 @@ function toSettings(row: SettingsRow | null): Omit<CachedSettings, "loadedAt"> {
           faviconMimeType: row.faviconMimeType,
           loginShowName: row.loginShowName,
           loginShowLogo: row.loginShowLogo,
+          showNameInTab: row.showNameInTab,
           updatedAtMs: row.updatedAt.getTime(),
         }
       : BRANDING_DEFAULTS,
@@ -248,6 +254,7 @@ export type BrandingPatch = Partial<{
   faviconMimeType: string | null;
   loginShowName: boolean;
   loginShowLogo: boolean;
+  showNameInTab: boolean;
 }>;
 
 /** Apply a partial branding update and refresh the cache. */

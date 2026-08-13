@@ -15,6 +15,7 @@ interface BrandingState {
   hasFavicon: boolean;
   loginShowName: boolean;
   loginShowLogo: boolean;
+  showNameInTab: boolean;
   updatedAtMs: number;
 }
 
@@ -25,6 +26,7 @@ const EMPTY: BrandingState = {
   hasFavicon: false,
   loginShowName: true,
   loginShowLogo: true,
+  showNameInTab: true,
   updatedAtMs: 0,
 };
 
@@ -114,6 +116,7 @@ export default function BrandingSection() {
       form.append("brandColor", state.brandColor ?? "");
       form.append("loginShowName", String(state.loginShowName));
       form.append("loginShowLogo", String(state.loginShowLogo));
+      form.append("showNameInTab", String(state.showNameInTab));
       if (logoFile) form.append("logo", logoFile);
       if (faviconFile) form.append("favicon", faviconFile);
       if (removeLogo) form.append("removeLogo", "true");
@@ -165,6 +168,7 @@ export default function BrandingSection() {
     state.brandColor !== original.brandColor ||
     state.loginShowName !== original.loginShowName ||
     state.loginShowLogo !== original.loginShowLogo ||
+    state.showNameInTab !== original.showNameInTab ||
     logoFile !== null ||
     faviconFile !== null ||
     removeLogo ||
@@ -207,6 +211,18 @@ export default function BrandingSection() {
         <p className="text-xs text-gray-500 mt-1">
           Shown in the sidebar, the browser tab, the login page and your users&apos;
           authenticator apps. Up to {MAX_APP_NAME_LENGTH} characters.
+        </p>
+        <label className="flex items-center gap-2 text-sm text-gray-700 mt-3">
+          <input
+            type="checkbox"
+            checked={state.showNameInTab}
+            onChange={(e) => setState({ ...state, showNameInTab: e.target.checked })}
+          />
+          Show the name in the browser tab
+        </label>
+        <p className="text-xs text-gray-500 mt-1">
+          Turn this off to leave the tab untitled &mdash; the browser then shows the
+          address instead of a name.
         </p>
       </div>
 

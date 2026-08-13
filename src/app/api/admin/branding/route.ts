@@ -26,6 +26,7 @@ async function readBranding() {
     hasFavicon: brand.faviconMimeType !== null,
     loginShowName: brand.loginShowName,
     loginShowLogo: brand.loginShowLogo,
+    showNameInTab: brand.showNameInTab,
     updatedAtMs: brand.updatedAtMs,
   };
 }
@@ -143,7 +144,7 @@ export async function PUT(request: NextRequest) {
     }
   }
 
-  for (const key of ["loginShowName", "loginShowLogo"] as const) {
+  for (const key of ["loginShowName", "loginShowLogo", "showNameInTab"] as const) {
     const value = form.get(key);
     if (typeof value === "string") patch[key] = value === "true";
   }
@@ -195,6 +196,7 @@ export async function DELETE(request: NextRequest) {
       faviconMimeType: null,
       loginShowName: true,
       loginShowLogo: true,
+      showNameInTab: true,
     },
     auth.sub
   );

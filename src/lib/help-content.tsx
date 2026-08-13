@@ -1386,6 +1386,14 @@ const helpSections: Record<string, HelpSection> = {
               </td>
             </tr>
             <tr>
+              <td><strong>Show the name in the browser tab</strong></td>
+              <td>
+                On by default. Turn it off and the tab is left untitled, so the
+                browser falls back to showing the address. Use this when you want
+                no product name visible at all rather than a different one.
+              </td>
+            </tr>
+            <tr>
               <td><strong>Brand colour</strong></td>
               <td>
                 Re-tints every accent in the app &mdash; buttons, links, focus

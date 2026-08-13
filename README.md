@@ -729,6 +729,7 @@ Individual users override their display preference on the **My Account** page (S
 | Setting | Where it appears |
 |---------|------------------|
 | **Application name** | Sidebar heading, browser tab title, login and first-run setup pages, the About page, and the entry users see in their authenticator app when enrolling in MFA. Max 60 characters. |
+| **Show the name in the browser tab** | On by default. Turn it off to leave the tab untitled, so the browser shows the address instead of a name — for deployments that want no product name visible anywhere, rather than a different one. |
 | **Brand colour** | Every accent in the app — buttons, links, focus rings, active tabs, the selected nav item — in both light and dark mode. Clear it to return to the default blue. |
 | **Logo** | Login, first-run setup and MFA-enrolment pages. PNG, JPEG, WebP or ICO, up to 512 KB. Falls back to a built-in shield icon when unset. |
 | **Favicon** | The browser tab icon. PNG or ICO, up to 128 KB; square and at least 32×32 works best. |
