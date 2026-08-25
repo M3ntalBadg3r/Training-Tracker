@@ -84,6 +84,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // A disabled account is refused even with the right credentials. Checked
+    // *after* the password so bcrypt always runs (no timing side-channel that
+    // would distinguish a disabled account from an unknown one) and *before*
+    // MFA so the user is never asked for a code they can't use. The error is
+    // the same generic string as a bad password — a disabled account must not
+    // be enumerable — and we return before registerSuccess, so lastLoginAt
+    // isn't stamped. No registerFailure either: there is nothing to gain from
+    // locking an account that is already suspended.
+    if (user.disabledAt) {
+      recordLoginFailure({ username: normalizedUsername, ip, reason: "disabled_account" });
+      return NextResponse.json(
+        { error: "Invalid username or password" },
+        { status: 401 }
+      );
+    }
+
     // MFA check
     if (user.mfaEnabled && user.mfaSecret) {
       if (!mfaCode) {

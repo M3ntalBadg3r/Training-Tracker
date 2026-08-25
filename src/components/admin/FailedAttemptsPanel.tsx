@@ -29,6 +29,7 @@ const REASON_LABEL: Record<string, string> = {
   bad_password: "Wrong password",
   bad_mfa: "Wrong MFA code",
   unknown_user: "Unknown username",
+  disabled_account: "Account disabled",
   invalid_key: "Invalid key",
   disabled_key: "Disabled key",
   revoked_key: "Revoked key",

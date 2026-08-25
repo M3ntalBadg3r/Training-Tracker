@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { getAuthFromRequest, ABSOLUTE_SESSION_MS, DEFAULT_IDLE_MS } from "@/lib/auth";
+import {
+  getAuthFromRequest,
+  accountDisabledResponse,
+  ABSOLUTE_SESSION_MS,
+  DEFAULT_IDLE_MS,
+} from "@/lib/auth";
+import { isUserDisabled } from "@/lib/user-status";
 import { getSystemDateFormat } from "@/lib/system-settings";
 import { isDateFormat } from "@/lib/date-format";
 
@@ -9,6 +15,11 @@ export async function GET(request: NextRequest) {
   if (!authUser) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  // Explicit, since this route uses `getAuthFromRequest` (it must stay reachable
+  // during pending-MFA enrolment) rather than `requireAuth`. Routing it through
+  // the shared helper keeps one definition of the rule.
+  if (await isUserDisabled(authUser.sub)) return accountDisabledResponse();
 
   const [user, systemDateFormat] = await Promise.all([
     prisma.user.findUnique({
