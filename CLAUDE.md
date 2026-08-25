@@ -276,7 +276,28 @@ notes**.
   #      with the aggregated notes (see below), commit.
   #   2. git push -u origin master
   #   -> release.yml creates the v<version> full release automatically.
+  #   3. Re-sync dev (see "Keeping dev in step with master" below):
+  #      git checkout dev && git merge --ff-only master && git push origin dev
   ```
+- **Keeping dev in step with master** — step 3 above, and easy to forget. A stable
+  promotion creates two commits that exist **only on master**: the `--no-ff` merge
+  and the `Add v<version> stable release notes` commit that adds
+  `.github/releases/v<version>.md`. Nothing brings them back on its own, so without
+  the re-sync `dev` slowly loses the stable half of its own changelog — which is
+  exactly what happened between v2.70 and v2.75, leaving `v2.72.md`/`v2.74.md`/`v2.75.md`
+  on master only. Because those two commits sit on top of the dev tip that was just
+  merged, `master` contains every `dev` commit and the re-sync is always a
+  **fast-forward**, never a merge:
+  ```bash
+  git checkout dev && git merge --ff-only master && git push origin dev
+  ```
+  If `--ff-only` refuses, someone has pushed to `dev` since the promotion — merge
+  that work into master first rather than forcing anything. The push re-triggers
+  release.yml, which finds `v<version>-dev` already tagged and skips (it is
+  idempotent), so no spurious release is cut. Nothing *breaks* if you skip the
+  re-sync — the workflow reads notes from the branch being pushed and each branch
+  has the files its own channel needs — but the drift compounds and `git log dev`
+  stops showing what has been promoted.
 - **Stable release notes MUST aggregate every dev pre-release since the previous stable.** Dev systems already saw each `-dev` entry individually, but stable systems only ever see one set of notes per stable bump — so anything that shipped only on `-dev` releases between the last stable and this one needs to be folded into this stable's body. Skipping this means stable users see an incomplete changelog (e.g. v2.00 originally documented only the v2.00 work and silently dropped v1.99-dev's import-aliases feature).
   - Before writing the stable body, list the pre-releases tagged since the previous stable and read their bodies:
     ```bash
