@@ -13,7 +13,11 @@
 import prisma from "@/lib/prisma";
 import { hashApiKey, maskPresentedKey } from "@/lib/api-key";
 
-export type LoginFailureReason = "bad_password" | "bad_mfa" | "unknown_user";
+export type LoginFailureReason =
+  | "bad_password"
+  | "bad_mfa"
+  | "unknown_user"
+  | "disabled_account";
 
 const RETENTION_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 

@@ -4,12 +4,14 @@ import {
   createContext,
   useContext,
   useEffect,
+  useRef,
   useState,
   useCallback,
   ReactNode,
 } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { fetchMe } from "@/lib/fetch-me";
+import { SESSION_TERMINATED_HEADER } from "@/lib/auth-headers";
 
 interface AuthUser {
   id: number;
@@ -95,6 +97,34 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
   }, [router]);
 
   const refreshUser = useCallback(() => fetchUser(true), [fetchUser]);
+
+  // Watch every response for the "this session is over" marker the auth guards
+  // set when the signed-in account has been disabled, and sign out cleanly.
+  //
+  // Wrapping `window.fetch` is deliberate: there is no shared fetch helper in
+  // this app — each page calls `fetch` directly — so this is the only way to
+  // cover all three paths a disabled user can arrive by (a full page load's
+  // /api/auth/me, a client-side navigation's own data fetch, and the idle
+  // keep-alive ping) without touching every call site. Only headers are read,
+  // so no body is consumed or cloned and streaming responses are unaffected.
+  const loggingOutRef = useRef(false);
+  useEffect(() => {
+    const original = window.fetch;
+    window.fetch = async (...args: Parameters<typeof fetch>) => {
+      const response = await original(...args);
+      if (response.headers.has(SESSION_TERMINATED_HEADER) && !loggingOutRef.current) {
+        // Latch, so the logout POST's own response can't re-enter this.
+        loggingOutRef.current = true;
+        void logout().finally(() => {
+          loggingOutRef.current = false;
+        });
+      }
+      return response;
+    };
+    return () => {
+      window.fetch = original;
+    };
+  }, [logout]);
 
   return (
     <AuthContext.Provider

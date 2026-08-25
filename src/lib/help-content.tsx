@@ -1207,13 +1207,15 @@ const helpSections: Record<string, HelpSection> = {
           <li><strong>Edit User</strong> &mdash; Change display name, role, or company assignments. Tick <strong>Require MFA at next login</strong> to force an existing user to enrol in MFA on their next session.</li>
           <li><strong>Reset Password</strong> &mdash; Set a new password for any user.</li>
           <li><strong>Disable MFA</strong> &mdash; Turn off multi-factor authentication for a user.</li>
-          <li><strong>Delete User</strong> &mdash; Remove a user account. You cannot delete yourself or the last admin.</li>
+          <li><strong>Disable / Enable Account</strong> &mdash; Suspend an account without deleting it &mdash; the power icon in the Actions column. A disabled user cannot sign in, and any session they already have open is signed out on their very next click. Nothing is lost: their role, company access, MFA setup and login history are all kept, so enabling the account restores it exactly as it was. You can record an optional reason, shown to other admins in the tooltip on the <em>Disabled</em> badge. You cannot disable your own account or the last SuperAdmin.</li>
+          <li><strong>Delete User</strong> &mdash; Remove a user account. You cannot delete yourself or the last admin. If you only want to stop someone signing in, disable the account instead &mdash; deleting is permanent and loses their history.</li>
         </ul>
 
         <h3>Columns</h3>
         <ul>
           <li><strong>Username</strong> &mdash; Stored in lowercase. Login is case-insensitive (typing <code>Alice</code>, <code>alice</code>, or <code>ALICE</code> all match the same account).</li>
-          <li><strong>MFA</strong> &mdash; <em>Enabled</em> (green) when the user has set up an authenticator, <em>Required</em> (amber) when an admin has flagged the user with <strong>mustEnableMfa</strong> but they haven&apos;t enrolled yet, otherwise <em>Disabled</em>.</li>
+          <li><strong>Role</strong> &mdash; The account&rsquo;s role, plus a grey <em>Disabled</em> badge if the account is suspended. Hover the badge to see who disabled it, when, and why. Disabled rows are greyed out.</li>
+          <li><strong>MFA</strong> &mdash; <em>Enabled</em> (green) when the user has set up an authenticator, <em>Required</em> (amber) when an admin has flagged the user with <strong>mustEnableMfa</strong> but they haven&apos;t enrolled yet, otherwise <em>Off</em>.</li>
           <li><strong>Last login</strong> &mdash; Date and time of the most recent successful login (24-hour format).</li>
           <li><strong>Last IP</strong> &mdash; Source IP of the most recent login, taken from the <code>X-Forwarded-For</code> header.</li>
         </ul>
@@ -1255,6 +1257,13 @@ const helpSections: Record<string, HelpSection> = {
           with an <strong>Unlock</strong> button, and any currently throttled IP can be
           cleared with <strong>Unblock IP</strong>. Unlocking lets that user (or IP) in
           again straight away; the log is kept for 30 days.
+        </p>
+        <p>
+          A <strong>disabled</strong> account is refused with the same
+          &ldquo;Invalid username or password&rdquo; message as a wrong password.
+          That is deliberate &mdash; a distinct message would tell an attacker
+          that the username is real. The attempt is recorded in the panel above
+          as <em>Account disabled</em>, so you can still see that someone tried.
         </p>
       </>
     ),

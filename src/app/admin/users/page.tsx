@@ -3,10 +3,11 @@
 import { useState, useMemo } from "react";
 import PageHeader from "@/components/layout/PageHeader";
 import Modal from "@/components/ui/Modal";
-import { Plus, Pencil, Trash2, KeyRound, ShieldOff, Unlock } from "lucide-react";
+import { Plus, Pencil, Trash2, KeyRound, ShieldOff, Unlock, Power, PowerOff } from "lucide-react";
 import { useDateFormat } from "@/components/date-format/DateFormatProvider";
 import FailedAttemptsPanel from "@/components/admin/FailedAttemptsPanel";
 import { useFetchJson } from "@/hooks/useFetchJson";
+import { useAuth } from "@/components/auth/AuthProvider";
 
 interface CompanyOption {
   id: number;
@@ -24,12 +25,21 @@ interface UserRow {
   failedLoginAttempts: number;
   lastLoginAt: string | null;
   lastLoginIp: string | null;
+  disabledAt: string | null;
+  disabledBy: string | null;
+  disabledReason: string | null;
   createdAt: string;
   companies: CompanyOption[];
 }
 
 function isLocked(user: UserRow): boolean {
   return !!user.lockedUntil && new Date(user.lockedUntil) > new Date();
+}
+
+// A suspended account. `disabledAt` is the single source of truth server-side,
+// so there is no separate boolean to fall out of step with it.
+function isDisabled(user: UserRow): boolean {
+  return !!user.disabledAt;
 }
 
 const ROLE_BADGE: Record<string, string> = {
@@ -40,6 +50,10 @@ const ROLE_BADGE: Record<string, string> = {
 
 export default function UserManagementPage() {
   const { formatDateTime } = useDateFormat();
+  // Used only to hide the disable toggle on your own row — the server refuses
+  // it anyway, but offering a button that can only fail is worse than not
+  // offering it.
+  const { user: currentUser } = useAuth();
   // `reload` is aliased as fetchUsers so mutation handlers can refresh the list;
   // the hook derives `loading` without a setState-in-effect.
   const { data: usersData, loading, reload: fetchUsers } = useFetchJson<UserRow[]>("/api/admin/users");
@@ -83,6 +97,10 @@ export default function UserManagementPage() {
 
   const [deleteUser, setDeleteUser] = useState<UserRow | null>(null);
   const [deleteError, setDeleteError] = useState("");
+
+  const [disableUser, setDisableUser] = useState<UserRow | null>(null);
+  const [disableReason, setDisableReason] = useState("");
+  const [disableError, setDisableError] = useState("");
 
   // Bumped to force the failed-attempts panel to refetch after an unlock here.
   const [panelReload, setPanelReload] = useState(0);
@@ -180,6 +198,41 @@ export default function UserManagementPage() {
     fetchUsers();
   };
 
+  // Shared by both directions of the toggle. Enabling is a direct call (nothing
+  // to confirm); disabling goes through the modal so a reason can be captured
+  // and the "signed out immediately" consequence is spelled out first.
+  const setAccountDisabled = async (
+    user: UserRow,
+    disabled: boolean,
+    reason?: string
+  ): Promise<string | null> => {
+    const res = await fetch(`/api/admin/users/${user.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ disabled, reason }),
+    });
+    const data = await res.json();
+    if (!res.ok) return data.error || "Failed to update account";
+    fetchUsers();
+    return null;
+  };
+
+  const handleDisableUser = async () => {
+    if (!disableUser) return;
+    setDisableError("");
+    const error = await setAccountDisabled(disableUser, true, disableReason);
+    if (error) {
+      setDisableError(error);
+      return;
+    }
+    setDisableUser(null);
+    setDisableReason("");
+  };
+
+  const handleEnableUser = async (user: UserRow) => {
+    await setAccountDisabled(user, false);
+  };
+
   const handleUnlockUser = async (user: UserRow) => {
     const res = await fetch("/api/admin/failed-attempts/unblock", {
       method: "POST",
@@ -190,6 +243,15 @@ export default function UserManagementPage() {
       fetchUsers();
       setPanelReload((n) => n + 1);
     }
+  };
+
+  // "Disabled by jane.doe on 01/01/2026 — Left the company". The reason is
+  // optional, so it's appended only when one was given.
+  const disabledTooltip = (user: UserRow): string => {
+    const who = user.disabledBy ? ` by ${user.disabledBy}` : "";
+    const when = user.disabledAt ? ` on ${formatDateTime(user.disabledAt)}` : "";
+    const why = user.disabledReason ? ` — ${user.disabledReason}` : "";
+    return `Disabled${who}${when}${why}`;
   };
 
   const toggleCompanyId = (
@@ -241,7 +303,12 @@ export default function UserManagementPage() {
           </thead>
           <tbody>
             {users.map((user) => (
-              <tr key={user.id} className="border-b border-gray-100 hover:bg-gray-50">
+              <tr
+                key={user.id}
+                className={`border-b border-gray-100 hover:bg-gray-50 ${
+                  isDisabled(user) ? "opacity-60" : ""
+                }`}
+              >
                 <td className="px-4 py-3 text-gray-700 font-medium">
                   <span className="flex items-center gap-2">
                     {user.username}
@@ -257,8 +324,18 @@ export default function UserManagementPage() {
                 </td>
                 <td className="px-4 py-3 text-gray-700">{user.displayName}</td>
                 <td className="px-4 py-3">
-                  <span className={`px-2 py-0.5 rounded text-xs font-medium ${ROLE_BADGE[user.role] ?? "bg-gray-100 text-gray-700"}`}>
-                    {user.role}
+                  <span className="flex items-center gap-2">
+                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${ROLE_BADGE[user.role] ?? "bg-gray-100 text-gray-700"}`}>
+                      {user.role}
+                    </span>
+                    {isDisabled(user) && (
+                      <span
+                        className="px-2 py-0.5 rounded text-xs font-medium bg-gray-200 text-gray-700"
+                        title={disabledTooltip(user)}
+                      >
+                        Disabled
+                      </span>
+                    )}
                   </span>
                 </td>
                 <td className="px-4 py-3 text-gray-600 text-xs">
@@ -278,7 +355,11 @@ export default function UserManagementPage() {
                       Required
                     </span>
                   ) : (
-                    <span className="text-gray-400 text-xs">Disabled</span>
+                    // "Off", not "Disabled": the account-status badge in the
+                    // Role column now uses that word for a suspended account,
+                    // and two different meanings of "Disabled" on one row read
+                    // as a contradiction.
+                    <span className="text-gray-400 text-xs">Off</span>
                   )}
                 </td>
                 <td className="px-4 py-3 text-gray-500 text-xs">
@@ -340,6 +421,27 @@ export default function UserManagementPage() {
                         title="Disable MFA"
                       >
                         <ShieldOff size={14} />
+                      </button>
+                    )}
+                    {user.id === currentUser?.id ? null : isDisabled(user) ? (
+                      <button
+                        onClick={() => handleEnableUser(user)}
+                        className="p-1.5 text-green-600 hover:bg-green-50 rounded"
+                        title="Enable account"
+                      >
+                        <Power size={14} />
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          setDisableUser(user);
+                          setDisableReason("");
+                          setDisableError("");
+                        }}
+                        className="p-1.5 text-gray-500 hover:bg-gray-100 rounded"
+                        title="Disable account"
+                      >
+                        <PowerOff size={14} />
                       </button>
                     )}
                     <button
@@ -615,6 +717,48 @@ export default function UserManagementPage() {
           </div>
           {disableMfaError && (
             <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2">{disableMfaError}</div>
+          )}
+        </div>
+      </Modal>
+
+      <Modal
+        open={!!disableUser}
+        onClose={() => setDisableUser(null)}
+        title="Disable Account"
+        actions={
+          <>
+            <button onClick={() => setDisableUser(null)} className="px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300">Cancel</button>
+            <button onClick={handleDisableUser} className="px-4 py-2 text-sm bg-gray-700 text-white rounded-lg hover:bg-gray-800">Disable Account</button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <p className="text-gray-600">
+            Disable <strong>{disableUser?.username}</strong>? They will not be able
+            to sign in, and any session they currently have open is signed out on
+            their next request.
+          </p>
+          <p className="text-gray-600 text-sm">
+            Nothing is deleted — their role, company access and MFA setup are kept,
+            so enabling the account later restores it exactly as it is now.
+          </p>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Reason <span className="font-normal text-gray-400">(optional)</span>
+            </label>
+            <textarea
+              value={disableReason}
+              onChange={(e) => setDisableReason(e.target.value)}
+              rows={2}
+              placeholder="e.g. Left the company"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+            />
+            <p className="mt-1 text-xs text-gray-500">
+              Shown to other admins on this page.
+            </p>
+          </div>
+          {disableError && (
+            <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2">{disableError}</div>
           )}
         </div>
       </Modal>

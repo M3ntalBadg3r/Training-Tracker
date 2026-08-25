@@ -350,6 +350,15 @@ model User {
   lockedUntil         DateTime?     @map("locked_until")
   lastLoginAt         DateTime?     @map("last_login_at")
   lastLoginIp         String?       @map("last_login_ip")
+  // Reversible account suspension. `disabledAt` is the single source of truth
+  // ("enabled" == disabledAt IS NULL) and carries its own timestamp, so the
+  // flag and the "when" can never disagree. `disabledBy` is a *snapshot* of the
+  // disabling admin's username rather than a user-id FK: the full-restore paths
+  // strip row ids and let Postgres reassign them, so a stored id would point at
+  // the wrong user (or none) after a restore.
+  disabledAt          DateTime?     @map("disabled_at")
+  disabledBy          String?       @map("disabled_by")
+  disabledReason      String?       @map("disabled_reason")
   dateFormat          String?       @map("date_format")
   createdAt           DateTime      @default(now()) @map("created_at")
   updatedAt           DateTime      @updatedAt @map("updated_at")
@@ -386,7 +395,7 @@ model FailedAttempt {
   kind       String // "login" | "api"
   identifier String // attempted username (login) | masked key prefix (api)
   ip         String
-  reason     String // login: bad_password|bad_mfa|unknown_user ; api: invalid_key|disabled_key|revoked_key|expired_key
+  reason     String // login: bad_password|bad_mfa|unknown_user|disabled_account ; api: invalid_key|disabled_key|revoked_key|expired_key
   keyName    String?  @map("key_name") // api only: name of the known key whose hash matched, if any
   createdAt  DateTime @default(now()) @map("created_at")
 

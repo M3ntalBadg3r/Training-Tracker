@@ -707,7 +707,10 @@ Navigate to **Admin > Users** to manage user accounts.
 - **Edit User** — Change display name or role. Cannot demote the last admin.
 - **Reset Password** — Set a new password for any user.
 - **Disable MFA** — Turn off multi-factor authentication for a user.
-- **Delete User** — Remove a user account. Cannot delete yourself or the last admin.
+- **Disable / Enable Account** — Suspend an account without deleting it (the power icon in the Actions column). A disabled user cannot sign in, and any session they already have open is signed out on their very next request. Their role, company access, MFA setup and login history are all preserved, so enabling the account restores it exactly as it was. An optional reason can be recorded and is shown to other admins in the tooltip on the grey **Disabled** badge. You cannot disable your own account or the last SuperAdmin.
+- **Delete User** — Remove a user account. Cannot delete yourself or the last admin. To simply stop someone signing in, disable the account instead — deletion is permanent and discards their history.
+
+A disabled account is refused at login with the same generic "Invalid username or password" message as a wrong password, so a disabled username can't be distinguished from a nonexistent one. The attempt is still recorded in the **Failed login attempts** panel with the reason *Account disabled*.
 
 ### System Settings (SuperAdmin only)
 

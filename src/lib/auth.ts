@@ -9,6 +9,11 @@ import {
   isEncryptedBlob,
   isEncryptionConfigured,
 } from "@/lib/crypto";
+import { isUserDisabled } from "@/lib/user-status";
+import {
+  ACCOUNT_DISABLED_CODE,
+  SESSION_TERMINATED_HEADER,
+} from "@/lib/auth-headers";
 
 const COOKIE_NAME = "tt-auth";
 
@@ -183,6 +188,18 @@ export async function getAuthFromRequest(
 
 // --- Auth Guards ---
 
+/**
+ * Reject the request if the token's account has since been disabled. Every
+ * authenticated route funnels through the guards below, so this is what makes a
+ * suspension take effect on the very next request rather than at the end of the
+ * idle window (proxy.ts can't do it — the edge has no DB access).
+ */
+async function assertAccountActive(userId: number): Promise<void> {
+  if (await isUserDisabled(userId)) {
+    throw new AuthError("Account disabled", 401, ACCOUNT_DISABLED_CODE);
+  }
+}
+
 export async function requireAuth(
   request: NextRequest,
   requiredRole?: string
@@ -191,6 +208,7 @@ export async function requireAuth(
   if (!user) {
     throw new AuthError("Unauthorized", 401);
   }
+  await assertAccountActive(user.sub);
   if (requiredRole) {
     // "Admin" should accept SuperAdmin too — SuperAdmin is a superset of Admin.
     if (requiredRole === "Admin") {
@@ -207,6 +225,7 @@ export async function requireAuth(
 export async function requireSuperAdmin(request: NextRequest): Promise<TokenPayload> {
   const user = await getAuthFromRequest(request);
   if (!user) throw new AuthError("Unauthorized", 401);
+  await assertAccountActive(user.sub);
   if (user.pendingMfaEnrollment) throw new AuthError("MFA enrollment required", 403);
   if (user.role !== "SuperAdmin") throw new AuthError("Forbidden", 403);
   return user;
@@ -226,14 +245,28 @@ export async function requireFullSession(
 
 export class AuthError extends Error {
   status: number;
-  constructor(message: string, status: number) {
+  /** Machine-readable discriminator for callers that must react specially. */
+  code?: string;
+  constructor(message: string, status: number, code?: string) {
     super(message);
     this.status = status;
+    this.code = code;
   }
+}
+
+export { ACCOUNT_DISABLED_CODE, SESSION_TERMINATED_HEADER };
+
+/** Build the 401 a suspended account gets from any authenticated endpoint. */
+export function accountDisabledResponse(): NextResponse {
+  return NextResponse.json(
+    { error: "Account disabled", code: ACCOUNT_DISABLED_CODE },
+    { status: 401, headers: { [SESSION_TERMINATED_HEADER]: "account-disabled" } }
+  );
 }
 
 export function handleAuthError(error: unknown): NextResponse {
   if (error instanceof AuthError) {
+    if (error.code === ACCOUNT_DISABLED_CODE) return accountDisabledResponse();
     return NextResponse.json(
       { error: error.message },
       { status: error.status }
