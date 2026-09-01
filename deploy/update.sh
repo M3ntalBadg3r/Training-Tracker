@@ -226,17 +226,10 @@ INSTALL_OUTPUT=$(run_as_service_user npm install 2>&1) || {
 }
 echo "  Dependencies installed."
 
-# Self-heal npm optional-dependency bug (npm/cli#4828) on cross-platform lockfiles.
-if ! node -e "require('lightningcss')" >/dev/null 2>&1; then
-    echo "  Native CSS engine missing; reinstalling dependencies for this platform..."
-    # node_modules and the lockfile belong to the service user.
-    run_as_service_user rm -rf node_modules package-lock.json
-    HEAL_OUTPUT=$(run_as_service_user npm install 2>&1) || {
-        echo "  npm reinstall failed: ${HEAL_OUTPUT}"
-        rollback 3 "Failed to reinstall dependencies"
-    }
-    echo "  Dependencies reinstalled."
-fi
+# Self-heal npm's optional-dependency bug (npm/cli#4828) on cross-platform
+# lockfiles. ensure_native_deps probes both native engines the build needs — see
+# lib/common.sh for why probing only lightningcss was not enough.
+ensure_native_deps || rollback 3 "The platform-native build engine could not be installed"
 
 # Step 4: Run database migrations
 echo "[4/7] Running database migrations..."
@@ -253,11 +246,48 @@ GENERATE_OUTPUT=$(run_as_service_user npx prisma generate 2>&1) || {
 echo "  Migrations applied."
 
 # Step 5: Build application
+#
+# Mirrors perform-update.sh: a pre-flight that stops the app when memory is
+# tight, one retry with the app stopped and the build cache cleared, and a
+# classified reason when both attempts fail. See the Build section of
+# lib/common.sh for why a failed build says so little on its own.
 echo "[5/7] Building application..."
-BUILD_OUTPUT=$(run_as_service_user npm run build 2>&1) || {
-    echo "  Build failed: ${BUILD_OUTPUT}"
-    rollback 5 "Build failed"
-}
+
+BUILD_START=$(date +%s)
+AVAILABLE_MB=$(available_memory_mb)
+MIN_MB=$(build_min_mb)
+APP_STOPPED=false
+echo "  Memory available for the build: ${AVAILABLE_MB} MB (want at least ${MIN_MB} MB)."
+
+if [ "${AVAILABLE_MB}" -lt "${MIN_MB}" ]; then
+    echo "  Low memory — stopping the app for the duration of the build."
+    stop_app
+    APP_STOPPED=true
+fi
+
+BUILD_OUTPUT=$(run_as_service_user npm run build 2>&1)
+BUILD_RC=$?
+
+if [ "${BUILD_RC}" -ne 0 ]; then
+    echo "  Build failed; retrying once with the app stopped and the build cache cleared..."
+    capture_panic_logs "${BUILD_START}" "${APP_DIR}/.update-log"
+    if [ "${APP_STOPPED}" = false ]; then
+        stop_app
+        APP_STOPPED=true
+    fi
+    run_as_service_user rm -rf "${APP_DIR}/.next/cache"
+
+    BUILD_START=$(date +%s)
+    AVAILABLE_MB=$(available_memory_mb)
+    BUILD_OUTPUT=$(run_as_service_user npm run build 2>&1)
+    BUILD_RC=$?
+fi
+
+if [ "${BUILD_RC}" -ne 0 ]; then
+    echo "${BUILD_OUTPUT}"
+    capture_panic_logs "${BUILD_START}" "${APP_DIR}/.update-log"
+    rollback 5 "$(classify_build_failure "${BUILD_OUTPUT}" "${AVAILABLE_MB}" "${BUILD_START}")"
+fi
 echo "  Build successful."
 
 # Step 6: Restart service

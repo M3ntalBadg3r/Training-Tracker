@@ -1514,6 +1514,24 @@ const helpSections: Record<string, HelpSection> = {
           automatically rolls back to the previous working version. The
           rollback restores the git state, build output, and database.
         </p>
+        <p>
+          The build step is the one most likely to fail on a small server,
+          because rebuilding the application needs a fair amount of memory
+          (roughly 2 GB) and the old version is still running while it happens.
+          Two things guard against that. If memory looks tight, the app is
+          paused for the length of the build and started again afterwards — you
+          will see &quot;low memory &mdash; app paused&quot; in the progress
+          panel. And if a build fails anyway, it is retried once with the app
+          paused and the build cache cleared, which is usually enough to get it
+          through.
+        </p>
+        <p>
+          If both attempts fail, the update is rolled back and the error message
+          says what actually went wrong &mdash; typically that the server ran
+          out of memory (add RAM or swap and try again) or that a required build
+          component could not be loaded. The full technical detail is kept in
+          the Update Log.
+        </p>
 
         <h3>Update Log</h3>
         <p>

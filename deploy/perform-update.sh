@@ -88,6 +88,12 @@ write_error() {
 rollback() {
     local failed_step="$1"
     local error_msg="$2"
+    # Optional operator-facing detail. write_status writes "message" into the
+    # JSON unescaped, so error_msg stays a short fixed headline; the detail goes
+    # through write_error's escaping into the "error" field, which is the one the
+    # admin Updates page renders as the explanation. Step 5 passes a classified
+    # reason for a failed build here.
+    local detail="${3:-Update failed and was rolled back automatically. Check the update log for details.}"
 
     log "=== ROLLBACK STARTED ==="
     log "Failed at step ${failed_step}: ${error_msg}"
@@ -139,7 +145,7 @@ rollback() {
     restart_app
 
     log "=== ROLLBACK COMPLETE ==="
-    write_error "$failed_step" "$error_msg" "Update failed and was rolled back automatically. Check the update log for details."
+    write_error "$failed_step" "$error_msg" "$detail"
 }
 
 # --- Main ---
@@ -280,18 +286,15 @@ INSTALL_OUTPUT=$(run_as_service_user npm install 2>&1) || {
 }
 log "Dependencies installed"
 
-# Self-heal npm optional-dependency bug (npm/cli#4828) on cross-platform lockfiles.
-if ! node -e "require('lightningcss')" >/dev/null 2>&1; then
-    log "Native CSS engine missing; reinstalling dependencies for this platform"
-    # node_modules and the lockfile belong to the service user.
-    run_as_service_user rm -rf node_modules package-lock.json
-    HEAL_OUTPUT=$(run_as_service_user npm install 2>&1) || {
-        log "npm reinstall failed: ${HEAL_OUTPUT}"
-        rollback 3 "Failed to reinstall dependencies"
-        exit 1
-    }
-    log "Dependencies reinstalled"
-fi
+# Self-heal npm's optional-dependency bug (npm/cli#4828) on cross-platform
+# lockfiles. ensure_native_deps probes both native engines the build needs — see
+# lib/common.sh for why probing only lightningcss was not enough.
+HEAL_OUTPUT=$(ensure_native_deps 2>&1) || {
+    log "Native engine repair failed: ${HEAL_OUTPUT}"
+    rollback 3 "The platform-native build engine could not be installed"
+    exit 1
+}
+[ -n "${HEAL_OUTPUT}" ] && log "${HEAL_OUTPUT}" || true
 
 # Step 4: Run database migrations
 write_status 4 "Running database migrations..." "in_progress"
@@ -312,13 +315,66 @@ GENERATE_OUTPUT=$(run_as_service_user npx prisma generate 2>&1) || {
 log "Prisma client generated"
 
 # Step 5: Build application
+#
+# The build is the step most likely to fail on a small host, and until 2.76 it
+# failed opaquely: the app is still running at this point (the restart is step 6)
+# alongside Postgres, so on a memory-constrained system the kernel kills the
+# Turbopack child process and the update rolls back reporting only "Build
+# failed". Three things guard against that now — a pre-flight that stops the app
+# when memory is tight, one retry that stops it if the first build died anyway,
+# and a classified error message when both fail.
 write_status 5 "Building application..." "in_progress"
 log "Step 5: Building application"
-BUILD_OUTPUT=$(run_as_service_user npm run build 2>&1) || {
-    log "Build failed: ${BUILD_OUTPUT}"
-    rollback 5 "Build failed"
+
+BUILD_START=$(date +%s)
+AVAILABLE_MB=$(available_memory_mb)
+MIN_MB=$(build_min_mb)
+APP_STOPPED=false
+log "Memory available for the build: ${AVAILABLE_MB} MB (want at least ${MIN_MB} MB)"
+
+# Pre-flight: hand the running app's memory back before building. Above the
+# threshold nothing changes, so a healthy host sees no extra downtime.
+if [ "${AVAILABLE_MB}" -lt "${MIN_MB}" ]; then
+    log "Low memory — stopping the app for the duration of the build"
+    write_status 5 "Building application (low memory — app paused)..." "in_progress"
+    stop_app
+    APP_STOPPED=true
+fi
+
+BUILD_OUTPUT=$(run_as_service_user npm run build 2>&1)
+BUILD_RC=$?
+
+# One retry, and only a targeted one. If the app was still running, stopping it
+# frees the memory the build was short of; clearing .next/cache drops a stale
+# Turbopack cache carried across a Next.js version bump. Either way this turns
+# the common failure into a completed update instead of a rollback.
+if [ "${BUILD_RC}" -ne 0 ]; then
+    log "Build failed (rc=${BUILD_RC}); retrying once with the app stopped and the build cache cleared"
+    capture_panic_logs "${BUILD_START}" "${LOG_FILE}"
+    log "First attempt output: ${BUILD_OUTPUT}"
+
+    if [ "${APP_STOPPED}" = false ]; then
+        write_status 5 "Retrying build (app paused)..." "in_progress"
+        stop_app
+        APP_STOPPED=true
+    fi
+    run_as_service_user rm -rf "${APP_DIR}/.next/cache"
+
+    BUILD_START=$(date +%s)
+    AVAILABLE_MB=$(available_memory_mb)
+    log "Memory available for the retry: ${AVAILABLE_MB} MB"
+    BUILD_OUTPUT=$(run_as_service_user npm run build 2>&1)
+    BUILD_RC=$?
+fi
+
+if [ "${BUILD_RC}" -ne 0 ]; then
+    log "Build failed on retry: ${BUILD_OUTPUT}"
+    capture_panic_logs "${BUILD_START}" "${LOG_FILE}"
+    # Both realistic causes look identical in the build output; classify_build_failure
+    # gathers the evidence that tells them apart and returns something actionable.
+    rollback 5 "Build failed" "$(classify_build_failure "${BUILD_OUTPUT}" "${AVAILABLE_MB}" "${BUILD_START}")"
     exit 1
-}
+fi
 log "Build successful"
 
 # Step 6: Restart service
