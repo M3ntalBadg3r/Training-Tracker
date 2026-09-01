@@ -267,6 +267,20 @@ restart_app() {
     fi
 }
 
+# Stop the app, whichever init system is in play.
+#
+# Used by the update scripts to hand the running app's memory back to the kernel
+# before a production build on a constrained host — see available_memory_mb.
+# Every path that stops the app calls restart_app afterwards (step 6 on success,
+# rollback on failure), so this never leaves the service down.
+stop_app() {
+    if command -v systemctl >/dev/null 2>&1; then
+        systemctl stop training-tracker 2>/dev/null
+    elif [ -x /etc/init.d/training-tracker ]; then
+        /etc/init.d/training-tracker stop
+    fi
+}
+
 # --- Cron -------------------------------------------------------------------
 
 # Install the fixed scheduled jobs, root-owned, so the app never has to edit a
@@ -325,4 +339,185 @@ ensure_non_root_runtime() {
     ensure_ownership
     install_units
     ensure_cron_jobs
+}
+
+# --- Build -------------------------------------------------------------------
+#
+# Everything below exists because of one failure mode: a production build dying
+# without saying why. Turbopack runs PostCSS (Tailwind) in a child process, so
+# both of the realistic causes — the child being OOM-killed, and the native
+# engine failing to load — surface identically, as the child vanishing mid-IPC:
+#
+#   [project]/src/app/globals.css [app-client] (css)
+#    - Execution of evaluate_webpack_loader failed
+#    - failed to receive message / reading packet length / unexpected end of file
+#
+# globals.css is named only because it is the sole file that goes through
+# PostCSS. Nothing in that text distinguishes the two causes, so the helpers
+# here gather the evidence that does.
+
+# Memory (MiB) a production build is assumed to need. Below this the update
+# scripts stop the app for the duration of the build rather than let the kernel
+# pick which process to kill. A function rather than a constant so a value set in
+# .env still applies — .env is sourced after this file.
+build_min_mb() { echo "${TT_BUILD_MIN_MB:-2048}"; }
+
+# Memory available to a build here, in MiB: MemAvailable + SwapFree, clamped by
+# the cgroup's own headroom when this is running inside one.
+#
+# The clamp is the whole point. Inside an LXC /proc/meminfo reports the *host's*
+# memory, so a 2 GB container reads back as whatever the host has — and the
+# check would pass on exactly the systems that cannot complete a build. Both
+# cgroup versions report a sentinel ("max", or a huge number) when unlimited,
+# which is why the limit is only applied when it parses as a number and comes
+# out lower than /proc/meminfo's figure.
+available_memory_mb() {
+    local avail=0 swap=0 total limit used headroom
+
+    if [ -r /proc/meminfo ]; then
+        avail=$(awk '/^MemAvailable:/ {print int($2/1024)}' /proc/meminfo)
+        swap=$(awk '/^SwapFree:/ {print int($2/1024)}' /proc/meminfo)
+    fi
+    total=$(( ${avail:-0} + ${swap:-0} ))
+
+    limit=""
+    if [ -r /sys/fs/cgroup/memory.max ] && [ -r /sys/fs/cgroup/memory.current ]; then
+        limit=$(cat /sys/fs/cgroup/memory.max 2>/dev/null)
+        used=$(cat /sys/fs/cgroup/memory.current 2>/dev/null)
+    elif [ -r /sys/fs/cgroup/memory/memory.limit_in_bytes ] &&
+         [ -r /sys/fs/cgroup/memory/memory.usage_in_bytes ]; then
+        limit=$(cat /sys/fs/cgroup/memory/memory.limit_in_bytes 2>/dev/null)
+        used=$(cat /sys/fs/cgroup/memory/memory.usage_in_bytes 2>/dev/null)
+    fi
+
+    case "${limit}" in
+        ''|*[!0-9]*) ;;                     # absent, or "max" — no cgroup cap
+        *)
+            case "${used}" in ''|*[!0-9]*) used=0 ;; esac
+            headroom=$(( (limit - used) / 1024 / 1024 ))
+            if [ "${headroom}" -ge 0 ] && [ "${headroom}" -lt "${total}" ]; then
+                total="${headroom}"
+            fi
+            ;;
+    esac
+
+    echo "${total}"
+}
+
+# Do the platform-native build engines actually load?
+#
+# npm's optional-dependency bug (npm/cli#4828) can leave a platform's native
+# binary uninstalled when the committed package-lock.json was generated on a
+# different OS/arch. TWO separate packages matter and both must be probed:
+#
+#   lightningcss        — the CSS minifier
+#   @tailwindcss/oxide  — Tailwind v4's native engine, which @tailwindcss/postcss
+#                         is the thing that actually loads
+#
+# Probing only lightningcss (as the three deploy scripts each did, in three
+# copies, before 2.76) misses the oxide case completely — and that is the case
+# that produces the unreadable Turbopack panic described at the top of this
+# section. Probes run as the service user from APP_DIR so they resolve
+# node_modules exactly as the build will.
+native_deps_ok() {
+    ( cd "${APP_DIR}" 2>/dev/null &&
+      run_as_service_user node -e "require('lightningcss');require('@tailwindcss/oxide')" \
+    ) >/dev/null 2>&1
+}
+
+# Verify the native engines and, if they are missing, regenerate the lockfile for
+# this platform and reinstall. Returns non-zero if the repair did not take.
+ensure_native_deps() {
+    native_deps_ok && return 0
+
+    echo "Native build engine missing for this platform; reinstalling dependencies..."
+    # node_modules and the lockfile belong to the service user; root cannot
+    # delete inside a directory it does not own on a container without an
+    # effective CAP_DAC_OVERRIDE.
+    ( cd "${APP_DIR}" && run_as_service_user rm -rf node_modules package-lock.json ) || return 1
+    ( cd "${APP_DIR}" && run_as_service_user npm install ) || return 1
+
+    native_deps_ok
+}
+
+# Copy any Next.js panic dumps written since <epoch seconds> into <logfile>.
+#
+# A Turbopack panic writes its detail to /tmp/next-panic-<hash>.log and prints
+# only the path, so the build output on its own says almost nothing. /tmp is
+# cleared on reboot: unless the dump is copied somewhere durable at the moment it
+# happens, the one artefact that explains the failure is gone before anyone looks.
+capture_panic_logs() {
+    local since="$1" dest="$2" f
+
+    [ -n "${dest}" ] && [ -w "${dest}" ] || return 0
+    [ -d /tmp ] || return 0
+
+    while IFS= read -r f; do
+        [ -f "${f}" ] || continue
+        {
+            echo "--- begin ${f} ---"
+            head -c 8000 "${f}"
+            echo ""
+            echo "--- end ${f} ---"
+        } >> "${dest}"
+    done < <(find /tmp -maxdepth 1 -name 'next-panic-*.log' -newermt "@${since}" 2>/dev/null)
+
+    return 0
+}
+
+# Did the kernel OOM-kill anything since <epoch seconds>? Best-effort: journalctl
+# is absent on some hosts and dmesg is unavailable in most containers, so a
+# negative answer is not evidence of anything — it only ever adds confidence.
+recent_oom_kill() {
+    local since="$1"
+
+    if command -v journalctl >/dev/null 2>&1; then
+        journalctl -k --since "@${since}" 2>/dev/null \
+            | grep -qiE "out of memory: killed|oom-kill" && return 0
+    fi
+    if command -v dmesg >/dev/null 2>&1; then
+        dmesg 2>/dev/null | tail -n 200 \
+            | grep -qiE "out of memory: killed|oom-kill" && return 0
+    fi
+    return 1
+}
+
+# Turn a failed build into one sentence an operator can act on. This is what
+# reaches the admin UI, via the "error" field of .update-status.
+#
+# Ordering matters, for the reason given at the top of this section: a missing
+# native engine and an OOM kill produce the same Turbopack text. So test the
+# engines first — that cause can be proven — and only then weigh the memory
+# evidence. Note the build output usually will NOT contain "Killed": it is the
+# child process the kernel takes, not the npm process whose output we captured,
+# which is why the measured-memory branch has to exist at all.
+#
+# Keep the result well under the 2000-character truncation in write_error.
+classify_build_failure() {
+    local output="$1" mem="${2:-}" since="${3:-0}" min
+
+    if ! native_deps_ok; then
+        echo "Build failed: the platform-native build engine (lightningcss / @tailwindcss/oxide) could not be loaded. Reinstall dependencies as the service user: cd ${APP_DIR} && runuser -u ${SVC_USER} -- rm -rf node_modules package-lock.json && runuser -u ${SVC_USER} -- npm install"
+        return 0
+    fi
+
+    case "${output}" in
+        *"JavaScript heap out of memory"*|*"out of memory"*|*"Out of memory"*|*"Killed"*|*"signal: 9"*)
+            echo "Build ran out of memory (${mem:-unknown} MB available at the time). Add RAM or swap to this system, then retry the update. Full build output is in .update-log."
+            return 0
+            ;;
+    esac
+
+    if recent_oom_kill "${since}"; then
+        echo "Build failed and the kernel OOM-killed a process during it (${mem:-unknown} MB available). Add RAM or swap to this system, then retry the update. Full build output is in .update-log."
+        return 0
+    fi
+
+    min="$(build_min_mb)"
+    if [ -n "${mem}" ] && [ "${mem}" -lt "${min}" ] 2>/dev/null; then
+        echo "Build failed, most likely out of memory: ${mem} MB was available and a production build needs roughly ${min} MB. Add RAM or swap, then retry the update. Full build output is in .update-log."
+        return 0
+    fi
+
+    echo "Build failed. See ${APP_DIR}/.update-log for the full build output and any captured Next.js panic dump."
 }

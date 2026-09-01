@@ -276,7 +276,28 @@ notes**.
   #      with the aggregated notes (see below), commit.
   #   2. git push -u origin master
   #   -> release.yml creates the v<version> full release automatically.
+  #   3. Re-sync dev (see "Keeping dev in step with master" below):
+  #      git checkout dev && git merge --ff-only master && git push origin dev
   ```
+- **Keeping dev in step with master** — step 3 above, and easy to forget. A stable
+  promotion creates two commits that exist **only on master**: the `--no-ff` merge
+  and the `Add v<version> stable release notes` commit that adds
+  `.github/releases/v<version>.md`. Nothing brings them back on its own, so without
+  the re-sync `dev` slowly loses the stable half of its own changelog — which is
+  exactly what happened between v2.70 and v2.75, leaving `v2.72.md`/`v2.74.md`/`v2.75.md`
+  on master only. Because those two commits sit on top of the dev tip that was just
+  merged, `master` contains every `dev` commit and the re-sync is always a
+  **fast-forward**, never a merge:
+  ```bash
+  git checkout dev && git merge --ff-only master && git push origin dev
+  ```
+  If `--ff-only` refuses, someone has pushed to `dev` since the promotion — merge
+  that work into master first rather than forcing anything. The push re-triggers
+  release.yml, which finds `v<version>-dev` already tagged and skips (it is
+  idempotent), so no spurious release is cut. Nothing *breaks* if you skip the
+  re-sync — the workflow reads notes from the branch being pushed and each branch
+  has the files its own channel needs — but the drift compounds and `git log dev`
+  stops showing what has been promoted.
 - **Stable release notes MUST aggregate every dev pre-release since the previous stable.** Dev systems already saw each `-dev` entry individually, but stable systems only ever see one set of notes per stable bump — so anything that shipped only on `-dev` releases between the last stable and this one needs to be folded into this stable's body. Skipping this means stable users see an incomplete changelog (e.g. v2.00 originally documented only the v2.00 work and silently dropped v1.99-dev's import-aliases feature).
   - Before writing the stable body, list the pre-releases tagged since the previous stable and read their bodies:
     ```bash
@@ -322,4 +343,13 @@ Production runs via systemd at `/opt/training-tracker` on port 3000. See `deploy
 
 `ensure_cron_jobs` (in `lib/common.sh`, called from `ensure_non_root_runtime` **and** `install.sh` so the entries have a single definition) writes `/etc/cron.d/training-tracker` and strips the superseded `training-tracker-auto-update`/`-auto-export` markers from root's crontab that pre-2.70 app code wrote there — without that, auto-export would fire twice a minute. The `-auto-backup` marker is **deliberately left**: its schedule is still app-managed and removing it would silently stop backups.
 
-`deploy/lib/common.sh` is sourced by `install.sh`, `update.sh`, `perform-update.sh` and `update-agent.sh`; it holds `require_root` (the old duplicated `id -u`/`exec sudo -E` preamble, now in one place), `check_dependencies` (reports **every** missing binary at once, up front — the direct guard against "the mechanism assumed a package that wasn't installed"), `ensure_service_user`, `ensure_ownership`, `ensure_log_dir`, `ensure_cron_allow`, `run_as_service_user`, `install_units`, `restart_app`, `ensure_cron_jobs`, `needs_non_root_migration` and `ensure_non_root_runtime`.
+`deploy/lib/common.sh` is sourced by `install.sh`, `update.sh`, `perform-update.sh` and `update-agent.sh`; it holds `require_root` (the old duplicated `id -u`/`exec sudo -E` preamble, now in one place), `check_dependencies` (reports **every** missing binary at once, up front — the direct guard against "the mechanism assumed a package that wasn't installed"), `ensure_service_user`, `ensure_ownership`, `ensure_log_dir`, `ensure_cron_allow`, `run_as_service_user`, `install_units`, `restart_app`, `stop_app`, `ensure_cron_jobs`, `needs_non_root_migration`, `ensure_non_root_runtime`, plus the **Build** section described below.
+
+**Why a failed build says so little, and the Build section that compensates.** Turbopack runs PostCSS (Tailwind) in a child process, so the two realistic causes of a failed `npm run build` — the child being OOM-killed, and a platform-native engine failing to load — surface *identically*, as the child vanishing mid-IPC: `evaluate_webpack_loader failed` / `failed to receive message` / `unexpected end of file`, blamed on `globals.css` because that is the only file that goes through PostCSS. Nothing in that text tells the two apart, and the build output usually does **not** contain `Killed` (the kernel takes the child, not the npm process whose output is captured). The Build section of `lib/common.sh` gathers the evidence that does:
+
+- `native_deps_ok` / `ensure_native_deps` — probe **both** `lightningcss` *and* `@tailwindcss/oxide` as the service user from `APP_DIR`, and regenerate the lockfile + reinstall if either fails. `@tailwindcss/oxide` is the one `@tailwindcss/postcss` actually loads; until 2.76 the three scripts each carried a copy of a probe that tested **only** `lightningcss`, so the oxide case — the very failure the heal exists to catch — slipped straight through all three.
+- `available_memory_mb` — `MemAvailable + SwapFree`, **clamped by the cgroup's headroom** (`memory.max`/`memory.current` on v2, `memory.limit_in_bytes`/`memory.usage_in_bytes` on v1). The clamp is load-bearing: inside an LXC `/proc/meminfo` reports the *host's* memory, so without it a 2 GB container reads back as the host's total and the check passes on exactly the systems that cannot build. `build_min_mb` is the threshold (default 2048, `TT_BUILD_MIN_MB` overrides) and is a *function*, not a constant, because `.env` is sourced after `lib/common.sh`.
+- `capture_panic_logs <since-epoch> <logfile>` — copies `/tmp/next-panic-*.log` into `.update-log`. The build prints only the dump's path and `/tmp` clears on reboot, so unless the dump is copied at the moment it happens the one artefact explaining the failure is gone before anyone looks.
+- `recent_oom_kill` (best-effort; `journalctl -k`/`dmesg` are unavailable in most containers, so a negative answer proves nothing) and `classify_build_failure <output> <mem> <since>`, which returns one operator-facing sentence. **Order matters**: prove the native engines first (that cause is provable), then weigh the memory evidence.
+
+**Step 5 in `perform-update.sh` (mirrored in `update.sh`)** uses these for a pre-flight → retry → classify sequence: measure memory and `stop_app` when it is below `build_min_mb` (above the threshold nothing changes, so a healthy host sees no extra downtime); on failure, stop the app if it is still up, clear `.next/cache` (a stale Turbopack cache across a Next version bump is the third cause) and build once more; if that fails too, capture the panic dumps and roll back with the classified reason. Step 6 and `rollback` both call `restart_app` unconditionally, so a stopped app comes back on either path. `rollback` takes an **optional third `detail` argument**: `write_status` writes `message` into the status JSON *unescaped*, so the headline stays a short fixed string and the classified sentence goes through `write_error`'s escaping into the `error` field — which is the one `admin/updates/page.tsx` renders as the explanation.

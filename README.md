@@ -185,31 +185,53 @@ The application runs on **port 3000** by default. To change the port, edit the `
 
 ### Troubleshooting
 
-**Build fails on ARM64 with `Cannot find module '...lightningcss...node'`** — On
-ARM64 hosts (e.g. a Debian VM on Apple Silicon) the build can fail while
-compiling CSS with an error such as `Cannot find module
-'../lightningcss.linux-arm64-gnu.node'`. This is a known npm bug
-([npm/cli#4828](https://github.com/npm/cli/issues/4828)): a `package-lock.json`
-generated on a different OS/architecture can leave the platform-native binary
-uninstalled. The install and update scripts now detect this and reinstall
-automatically. To fix an existing install manually, regenerate the lockfile for
-your platform:
+**Build fails with `Cannot find module '...lightningcss...node'` or
+`...@tailwindcss/oxide...`** — On a host whose OS/architecture differs from the
+one the committed `package-lock.json` was generated on (e.g. an ARM64 Debian VM
+on Apple Silicon), the build can fail while compiling CSS. This is a known npm
+bug ([npm/cli#4828](https://github.com/npm/cli/issues/4828)): a lockfile
+generated elsewhere can leave a platform-native binary uninstalled. Two packages
+are involved — `lightningcss` and `@tailwindcss/oxide` — and the install and
+update scripts check both and reinstall automatically. To fix an existing
+install manually, regenerate the lockfile for your platform:
 
 ```bash
 cd /opt/training-tracker
-rm -rf node_modules package-lock.json
-npm install
-npx prisma generate
-npm run build
+runuser -u training-tracker -- rm -rf node_modules package-lock.json
+runuser -u training-tracker -- npm install
+runuser -u training-tracker -- npx prisma generate
+runuser -u training-tracker -- npm run build
 systemctl restart training-tracker
 ```
 
-**Update/build fails with `Killed` at step 5 (Building application)** — This is
-the Linux out-of-memory (OOM) killer terminating `next build`: the VM ran out of
-RAM. Next.js 16's production build uses **Turbopack**, which allocates native
-memory, so Node's `--max-old-space-size` won't help — you need more available
-memory. This is common on small VMs (especially 1–2 GB ARM64 instances). We
-recommend at least **4 GB of RAM**, or add a swapfile:
+**Update fails at step 5 (Building application), with `Killed` or with a
+Turbopack panic** — Usually the Linux out-of-memory (OOM) killer terminating
+`next build`. Next.js 16's production build uses **Turbopack**, which allocates
+native memory, so Node's `--max-old-space-size` won't help — you need more
+available memory. This is common on small VMs and containers (especially 1–2 GB
+instances). We recommend at least **4 GB of RAM**.
+
+The OOM kill does not always announce itself. Turbopack runs the CSS/Tailwind
+step in a child process, and when the kernel takes *that* process the build
+reports only that it lost contact with it — pointing at `globals.css`, the one
+file that goes through PostCSS:
+
+```
+[project]/src/app/globals.css [app-client] (css)
+ - Execution of evaluate_webpack_loader failed
+ - failed to receive message / reading packet length / unexpected end of file
+```
+
+The updater handles this for you: it measures available memory before step 5 and
+stops the app for the duration of the build when memory is tight, and if a build
+fails anyway it stops the app, clears the build cache and retries once. If both
+attempts fail it rolls back and reports *why* — the Updates page names memory or
+the native build engine rather than just "Build failed", and the full build
+output plus any Turbopack panic dump is saved to
+`/opt/training-tracker/.update-log` (which survives a reboot, unlike the
+`/tmp/next-panic-*.log` the build itself writes).
+
+To give the build more room on a VM, add a swapfile:
 
 ```bash
 sudo fallocate -l 2G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=2048
@@ -219,8 +241,13 @@ sudo swapon /swapfile
 echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab   # persist across reboots
 ```
 
+On an **unprivileged LXC container** `swapon` is not permitted inside the
+container — raise the container's memory allocation on the host instead.
+
 Then re-run the update. The rollback is automatic and safe, so a killed build
-leaves your previous version running and unaffected.
+leaves your previous version running and unaffected. You can override the memory
+threshold the updater uses (default 2048 MB) by setting `TT_BUILD_MIN_MB` in
+`/opt/training-tracker/.env`.
 
 ---
 

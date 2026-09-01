@@ -226,18 +226,26 @@ ensure_ownership
 cd ${APP_DIR}
 run_as_service_user npm install
 # Self-heal npm's optional-dependency bug (npm/cli#4828): a package-lock.json
-# generated on another OS/arch can leave platform-native binaries uninstalled
-# (e.g. lightningcss for Tailwind v4), breaking the build. If the native CSS
-# engine can't load, regenerate the lockfile for this platform and reinstall.
-if ! node -e "require('lightningcss')" >/dev/null 2>&1; then
-    echo "Native CSS engine missing for this platform; reinstalling dependencies..."
-    # node_modules belongs to the service user; root cannot delete inside a
-    # directory it does not own on a container without CAP_DAC_OVERRIDE.
-    run_as_service_user rm -rf node_modules package-lock.json
-    run_as_service_user npm install
-fi
+# generated on another OS/arch can leave platform-native binaries uninstalled,
+# breaking the build. ensure_native_deps probes both engines the build needs
+# (lightningcss and @tailwindcss/oxide) and regenerates the lockfile for this
+# platform if either is missing.
+ensure_native_deps || {
+    echo "ERROR: the platform-native build engine could not be installed." >&2
+    exit 1
+}
 run_as_service_user npx prisma migrate deploy
 run_as_service_user npx prisma generate
+
+# A production build wants roughly build_min_mb of memory. This is only a
+# warning: the install is interactive and the operator is better placed than we
+# are to decide whether to add swap or press on. If it does die here, it usually
+# dies as an unreadable Turbopack panic — see the Build section of lib/common.sh.
+INSTALL_AVAIL_MB=$(available_memory_mb)
+if [ "${INSTALL_AVAIL_MB}" -lt "$(build_min_mb)" ]; then
+    echo "WARNING: only ${INSTALL_AVAIL_MB} MB of memory is available and the build wants about $(build_min_mb) MB."
+    echo "         If the build fails, add RAM or swap and re-run this script."
+fi
 run_as_service_user npm run build
 
 # The build wrote .next; re-reconcile so nothing is left root-owned.
