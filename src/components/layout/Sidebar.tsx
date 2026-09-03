@@ -49,6 +49,7 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { useTheme } from "@/components/theme/ThemeProvider";
 import { useBrand } from "@/components/brand/BrandProvider";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
+import { OFFERINGS_CHANGED_EVENT } from "@/lib/nav-refresh";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -152,6 +153,14 @@ export default function Sidebar({ mobile = false, onClose }: { mobile?: boolean;
   // /offerings card grid does. Under "All companies" every accessible offering is
   // listed, labelled with its company so same-named offerings stay distinguishable.
   const { loading: scopeLoading, selected: selectedCompany, companies } = companyScope;
+  // Bumped by the admin pages after an offering is created/renamed/deleted or an
+  // import lands, so the nav reflects the change without a reload.
+  const [offeringsVersion, setOfferingsVersion] = useState(0);
+  useEffect(() => {
+    const onChanged = () => setOfferingsVersion((v) => v + 1);
+    window.addEventListener(OFFERINGS_CHANGED_EVENT, onChanged);
+    return () => window.removeEventListener(OFFERINGS_CHANGED_EVENT, onChanged);
+  }, []);
   useEffect(() => {
     if (scopeLoading) return;
     let cancelled = false;
@@ -176,7 +185,7 @@ export default function Sidebar({ mobile = false, onClose }: { mobile?: boolean;
     return () => {
       cancelled = true;
     };
-  }, [scopeLoading, selectedCompany, companies]);
+  }, [scopeLoading, selectedCompany, companies, offeringsVersion]);
 
   const isAdminActive = pathname.startsWith("/admin");
   const isProgramsActive = pathname.startsWith("/programs");

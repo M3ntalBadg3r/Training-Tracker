@@ -1216,6 +1216,13 @@ SuperAdmins):
   **Company** column; import loads every row into a single company you pick and is
   a per-offering overwrite scoped to that company.
 
+When you create an offering for — or import offerings into — a company other than
+the one you are currently viewing, the header company switcher moves to that
+company so you land on what you just changed rather than on the previous
+company's (unchanged) list. The sidebar's Offerings list refreshes at the same
+time. Under **All companies** the selection is left alone, since the new data is
+already in view.
+
 The page header shows a **Last imported** date/time for the **company currently
 selected** in the header switcher (the most recent offerings import system-wide
 when **All companies** is selected); if the selected company has never had an

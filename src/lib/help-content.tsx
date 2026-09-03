@@ -687,6 +687,9 @@ const helpSections: Record<string, HelpSection> = {
           company you pick in the header switcher, so you only see that
           company&apos;s offerings. Under <strong>All companies</strong> every
           offering you can see is listed, each labelled with its company name.
+          The list refreshes as soon as an offering is added, renamed, deleted or
+          imported — and creating or importing for another company switches the
+          header to that company, so you land on what you just changed.
         </p>
         <ul>
           <li>Pick a <strong>Country</strong> or <strong>Region</strong> to see capability. Nothing is shown until you make a selection.</li>
