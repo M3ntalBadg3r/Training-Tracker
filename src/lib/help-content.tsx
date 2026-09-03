@@ -682,6 +682,12 @@ const helpSections: Record<string, HelpSection> = {
           can see or manage it. Offering names are unique <strong>per company</strong>,
           so two companies can each have an offering with the same name.
         </p>
+        <p>
+          The <strong>Offerings</strong> list in the left navigation follows the
+          company you pick in the header switcher, so you only see that
+          company&apos;s offerings. Under <strong>All companies</strong> every
+          offering you can see is listed, each labelled with its company name.
+        </p>
         <ul>
           <li>Pick a <strong>Country</strong> or <strong>Region</strong> to see capability. Nothing is shown until you make a selection.</li>
           <li><strong>Onshore</strong> counts the distinct people who hold each training in the selected country (or the region&apos;s countries). A <strong>Met / Not met</strong> badge compares the Onshore count against the minimum required.</li>

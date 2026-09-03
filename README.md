@@ -1197,7 +1197,10 @@ two companies can each have an offering with the same name.
 
 Offerings appear in their own **Offerings** section in the sidebar (one child
 link per offering you can see, generated automatically) with a dashboard at
-`/offerings/[name]`.
+`/offerings/[name]`. That sidebar list **follows the company selected** in the
+header switcher, so you only see the offerings belonging to the company you are
+working in; under **All companies** every offering you can see is listed, each
+labelled with its company name.
 
 ### Configuring offerings
 
