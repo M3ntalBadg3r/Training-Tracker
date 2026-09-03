@@ -25,16 +25,23 @@ export async function GET(request: NextRequest) {
 
   const offerings = await prisma.offering.findMany({
     where: companyFilter ? { companyId: { in: companyFilter } } : {},
-    include: { _count: { select: { specialisations: true } } },
+    include: {
+      company: { select: { name: true } },
+      _count: { select: { specialisations: true, offeringData: true } },
+    },
     orderBy: { name: "asc" },
   });
 
   const result = offerings.map((o) => ({
     name: o.name,
     companyId: o.companyId,
+    // Named so the index can label a card with its company under "All companies";
+    // only ever a company the caller is already scoped to.
+    companyName: o.company?.name ?? null,
     description: o.description ?? null,
     link: o.link ?? null,
     specialisationCount: o._count.specialisations,
+    requirementCount: o._count.offeringData,
   }));
 
   return NextResponse.json({ offerings: result });

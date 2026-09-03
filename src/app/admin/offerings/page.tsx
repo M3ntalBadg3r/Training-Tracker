@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
+import { notifyOfferingsChanged } from "@/lib/nav-refresh";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 
@@ -126,6 +127,23 @@ export default function OfferingsAdminPage() {
   const [importFileError, setImportFileError] = useState("");
   const [overwriteAck, setOverwriteAck] = useState(false);
 
+  // Point the header company switcher at `companyId` when the current view would
+  // not show that company's data — otherwise an offering created or imported for
+  // another company lands out of sight and looks like it never arrived. "All
+  // companies" already shows it, so that selection is left alone.
+  const { selected: selectedCompany, setSelected: setSelectedCompany } = companyScope;
+  // Returns true when the selection actually moved — the caller can then skip its
+  // own refetch, since the scope-driven effect re-runs the loads for the new
+  // company (racing them against a fetch for the company we just left).
+  const focusCompany = useCallback(
+    (companyId: number): boolean => {
+      if (selectedCompany === "all" || selectedCompany === companyId) return false;
+      setSelectedCompany(companyId);
+      return true;
+    },
+    [selectedCompany, setSelectedCompany]
+  );
+
   const fetchOfferings = useCallback(async () => {
     try {
       const res = await fetch(withCompany("/api/admin/offerings", companyScope.selected));
@@ -188,6 +206,10 @@ export default function OfferingsAdminPage() {
     const result = await res.json();
     if (!res.ok) { setNewError(result.error || "Failed to create offering"); return; }
     setShowNew(false);
+    // Follow the offering into its own company so it is visible in the nav and
+    // the index when you come back, then refresh the nav list.
+    focusCompany(newCompanyId);
+    notifyOfferingsChanged();
     router.push(`/admin/offerings/${encodeURIComponent(newName.trim())}?companyId=${newCompanyId}`);
   };
 
@@ -204,6 +226,7 @@ export default function OfferingsAdminPage() {
     setRenameTarget(null);
     fetchOfferings();
     fetchRows();
+    notifyOfferingsChanged();
   };
 
   const handleDelete = async () => {
@@ -218,6 +241,7 @@ export default function OfferingsAdminPage() {
     setDeleteTarget(null);
     fetchOfferings();
     fetchRows();
+    notifyOfferingsChanged();
   };
 
   // --- Export ---
@@ -345,9 +369,16 @@ export default function OfferingsAdminPage() {
       const result = await res.json();
       setImportResult(result);
       setImportStep("result");
-      fetchOfferings();
-      fetchRows();
-      fetchLastImport();
+      // Show what was just imported: switch the header scope to the company the
+      // file was imported for, so the index (and the nav) isn't still showing the
+      // company you happened to be viewing when you started the import.
+      const switched = res.ok && focusCompany(importCompanyId);
+      notifyOfferingsChanged();
+      if (!switched) {
+        fetchOfferings();
+        fetchRows();
+        fetchLastImport();
+      }
     } finally {
       setImportLoading(false);
     }

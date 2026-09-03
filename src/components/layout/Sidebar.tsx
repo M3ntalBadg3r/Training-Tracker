@@ -48,6 +48,8 @@ import {
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useTheme } from "@/components/theme/ThemeProvider";
 import { useBrand } from "@/components/brand/BrandProvider";
+import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
+import { OFFERINGS_CHANGED_EVENT } from "@/lib/nav-refresh";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -115,6 +117,7 @@ export default function Sidebar({ mobile = false, onClose }: { mobile?: boolean;
   const isSuperAdmin = user?.role === "SuperAdmin";
   const { theme, toggleTheme } = useTheme();
   const { appName } = useBrand();
+  const companyScope = useCompanyScope();
   // Collapse state lives in localStorage; read via useSyncExternalStore so there
   // is no setState-in-effect on mount (server snapshot defaults to collapsed).
   // In the mobile drawer the sidebar is always expanded (full labels).
@@ -126,9 +129,12 @@ export default function Sidebar({ mobile = false, onClose }: { mobile?: boolean;
   const [reportsOpen, setReportsOpen] = useState(false);
   // Programs submenu is data-driven — one entry per configured program.
   const [programSubItems, setProgramSubItems] = useState<{ href: string; label: string }[]>([]);
-  // Offerings submenu is data-driven — one entry per configured offering.
-  const [offeringSubItems, setOfferingSubItems] = useState<{ href: string; label: string }[]>([]);
+  // Offerings submenu is data-driven — one entry per configured offering, scoped
+  // to the company chosen in the header switcher (`path` is the href without the
+  // ?companyId= query so it can be compared against the pathname).
+  const [offeringSubItems, setOfferingSubItems] = useState<{ href: string; path: string; label: string }[]>([]);
 
+  // Programs are global (not company-scoped), so this list is fetched once.
   useEffect(() => {
     fetch("/api/programs")
       .then((r) => r.json())
@@ -141,18 +147,45 @@ export default function Sidebar({ mobile = false, onClose }: { mobile?: boolean;
         );
       })
       .catch(() => {});
-    fetch("/api/offerings")
+  }, []);
+
+  // Offerings are tenant data — follow the selected company, the same way the
+  // /offerings card grid does. Under "All companies" every accessible offering is
+  // listed, labelled with its company so same-named offerings stay distinguishable.
+  const { loading: scopeLoading, selected: selectedCompany, companies } = companyScope;
+  // Bumped by the admin pages after an offering is created/renamed/deleted or an
+  // import lands, so the nav reflects the change without a reload.
+  const [offeringsVersion, setOfferingsVersion] = useState(0);
+  useEffect(() => {
+    const onChanged = () => setOfferingsVersion((v) => v + 1);
+    window.addEventListener(OFFERINGS_CHANGED_EVENT, onChanged);
+    return () => window.removeEventListener(OFFERINGS_CHANGED_EVENT, onChanged);
+  }, []);
+  useEffect(() => {
+    if (scopeLoading) return;
+    let cancelled = false;
+    fetch(withCompany("/api/offerings", selectedCompany))
       .then((r) => r.json())
       .then((d: { offerings?: { name: string; companyId: number }[] }) => {
+        if (cancelled) return;
+        const showCompany = selectedCompany === "all";
         setOfferingSubItems(
-          (d.offerings || []).map((o) => ({
-            href: `/offerings/${encodeURIComponent(o.name)}?companyId=${o.companyId}`,
-            label: o.name,
-          }))
+          (d.offerings || []).map((o) => {
+            const path = `/offerings/${encodeURIComponent(o.name)}`;
+            const companyName = companies.find((c) => c.id === o.companyId)?.name;
+            return {
+              href: `${path}?companyId=${o.companyId}`,
+              path,
+              label: showCompany && companyName ? `${o.name} (${companyName})` : o.name,
+            };
+          })
         );
       })
       .catch(() => {});
-  }, []);
+    return () => {
+      cancelled = true;
+    };
+  }, [scopeLoading, selectedCompany, companies, offeringsVersion]);
 
   const isAdminActive = pathname.startsWith("/admin");
   const isProgramsActive = pathname.startsWith("/programs");
@@ -362,7 +395,9 @@ export default function Sidebar({ mobile = false, onClose }: { mobile?: boolean;
                     <span>Overview</span>
                   </Link>
                   {offeringSubItems.map((item) => {
-                    const isActive = pathname === item.href;
+                    // Compare against `path`, not `href` — the href carries a
+                    // ?companyId= query string that the pathname never has.
+                    const isActive = pathname === item.path;
                     return (
                       <Link
                         key={item.href}

@@ -1197,7 +1197,15 @@ two companies can each have an offering with the same name.
 
 Offerings appear in their own **Offerings** section in the sidebar (one child
 link per offering you can see, generated automatically) with a dashboard at
-`/offerings/[name]`.
+`/offerings/[name]`. That sidebar list **follows the company selected** in the
+header switcher, so you only see the offerings belonging to the company you are
+working in; under **All companies** every offering you can see is listed, each
+labelled with its company name in brackets (`Offering 1 (Company A)`).
+
+The **Offerings** index itself is a card per offering — the same cards as
+**Admin > Offerings** — showing the description plus how many specialisations and
+supporting-training requirements it holds, and, under **All companies**, a badge
+naming the company it belongs to.
 
 ### Configuring offerings
 
@@ -1212,6 +1220,13 @@ SuperAdmins):
   downloadable template and a dry-run validation preview). Export includes a
   **Company** column; import loads every row into a single company you pick and is
   a per-offering overwrite scoped to that company.
+
+When you create an offering for — or import offerings into — a company other than
+the one you are currently viewing, the header company switcher moves to that
+company so you land on what you just changed rather than on the previous
+company's (unchanged) list. The sidebar's Offerings list refreshes at the same
+time. Under **All companies** the selection is left alone, since the new data is
+already in view.
 
 The page header shows a **Last imported** date/time for the **company currently
 selected** in the header switcher (the most recent offerings import system-wide
