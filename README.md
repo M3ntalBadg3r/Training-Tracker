@@ -1202,6 +1202,11 @@ header switcher, so you only see the offerings belonging to the company you are
 working in; under **All companies** every offering you can see is listed, each
 labelled with its company name in brackets (`Offering 1 (Company A)`).
 
+The **Offerings** index itself is a card per offering — the same cards as
+**Admin > Offerings** — showing the description plus how many specialisations and
+supporting-training requirements it holds, and, under **All companies**, a badge
+naming the company it belongs to.
+
 ### Configuring offerings
 
 Under **Admin > Offerings** (available to a company's Admins as well as

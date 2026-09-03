@@ -692,6 +692,13 @@ const helpSections: Record<string, HelpSection> = {
           imported — and creating or importing for another company switches the
           header to that company, so you land on what you just changed.
         </p>
+        <p>
+          The <strong>Offerings</strong> index lists one card per offering — the
+          same cards as <strong>Admin &gt; Offerings</strong> — with its
+          description and how many specialisations and supporting-training
+          requirements it holds, plus a company badge under{" "}
+          <strong>All companies</strong>.
+        </p>
         <ul>
           <li>Pick a <strong>Country</strong> or <strong>Region</strong> to see capability. Nothing is shown until you make a selection.</li>
           <li><strong>Onshore</strong> counts the distinct people who hold each training in the selected country (or the region&apos;s countries). A <strong>Met / Not met</strong> badge compares the Onshore count against the minimum required.</li>
