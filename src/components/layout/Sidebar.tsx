@@ -176,7 +176,7 @@ export default function Sidebar({ mobile = false, onClose }: { mobile?: boolean;
             return {
               href: `${path}?companyId=${o.companyId}`,
               path,
-              label: showCompany && companyName ? `${o.name} — ${companyName}` : o.name,
+              label: showCompany && companyName ? `${o.name} (${companyName})` : o.name,
             };
           })
         );

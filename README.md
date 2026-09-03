@@ -1200,7 +1200,7 @@ link per offering you can see, generated automatically) with a dashboard at
 `/offerings/[name]`. That sidebar list **follows the company selected** in the
 header switcher, so you only see the offerings belonging to the company you are
 working in; under **All companies** every offering you can see is listed, each
-labelled with its company name.
+labelled with its company name in brackets (`Offering 1 (Company A)`).
 
 ### Configuring offerings
 

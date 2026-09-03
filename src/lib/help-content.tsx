@@ -686,7 +686,8 @@ const helpSections: Record<string, HelpSection> = {
           The <strong>Offerings</strong> list in the left navigation follows the
           company you pick in the header switcher, so you only see that
           company&apos;s offerings. Under <strong>All companies</strong> every
-          offering you can see is listed, each labelled with its company name.
+          offering you can see is listed, each labelled with its company name in
+          brackets — <em>Offering 1 (Company A)</em>.
           The list refreshes as soon as an offering is added, renamed, deleted or
           imported — and creating or importing for another company switches the
           header to that company, so you land on what you just changed.
