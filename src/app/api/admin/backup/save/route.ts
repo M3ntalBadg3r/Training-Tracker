@@ -10,6 +10,7 @@ const CONFIG_FILENAME = ".auto-backup.json";
 interface AutoBackupConfig {
   backupPath: string;
   retentionCount: number;
+  includeCredentials?: boolean;
 }
 
 function readConfig(): AutoBackupConfig {
@@ -70,7 +71,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { buffer, filename } = await generateBackupArchive();
+    // Scheduled backups are the archive the server-side restore path consumes,
+    // so the credentials opt-in has to be reachable from here too — it lives in
+    // .auto-backup.json (set from the Automatic Backups panel) rather than a
+    // per-download click. generateBackupArchive still drops it when the output
+    // would not be encrypted.
+    const { buffer, filename } = await generateBackupArchive({
+      includeCredentials: !!config.includeCredentials,
+    });
     const filePath = path.join(config.backupPath, filename);
 
     fs.writeFileSync(filePath, buffer);

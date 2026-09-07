@@ -75,3 +75,32 @@ export async function isUserDisabled(userId: number): Promise<boolean> {
 export function invalidateUserStatusCache(): void {
   cache = null;
 }
+
+/**
+ * The predicate for "a SuperAdmin who could actually administer this instance".
+ *
+ * Disabled accounts are excluded deliberately: a suspended SuperAdmin can't
+ * administer anything, so counting one would let the last usable SuperAdmin be
+ * removed and lock everyone out of admin. Kept here, next to the rest of the
+ * account-usability reasoning, so the user-management guards and the backup
+ * restore can't drift on what "usable" means.
+ */
+export const USABLE_SUPER_ADMIN_WHERE = {
+  role: "SuperAdmin",
+  disabledAt: null,
+} as const;
+
+/**
+ * How many usable SuperAdmins the instance has, optionally ignoring one id
+ * (the account being demoted, disabled or deleted).
+ */
+export async function countUsableSuperAdmins(
+  excludeUserId?: number
+): Promise<number> {
+  return prisma.user.count({
+    where:
+      excludeUserId === undefined
+        ? USABLE_SUPER_ADMIN_WHERE
+        : { ...USABLE_SUPER_ADMIN_WHERE, id: { not: excludeUserId } },
+  });
+}

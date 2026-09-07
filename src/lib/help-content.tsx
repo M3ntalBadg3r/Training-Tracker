@@ -1643,15 +1643,55 @@ const helpSections: Record<string, HelpSection> = {
               <td>All training completion records</td>
             </tr>
             <tr>
+              <td><code>companies.json</code></td>
+              <td>Companies (tenants)</td>
+            </tr>
+            <tr>
+              <td><code>user_companies.json</code></td>
+              <td>Which companies each user may access</td>
+            </tr>
+            <tr>
+              <td><code>users.json</code></td>
+              <td>
+                User accounts. Password hashes and MFA secrets are included
+                only when <strong>Include user credentials</strong> is ticked
+              </td>
+            </tr>
+            <tr>
               <td><code>import_metadata.json</code></td>
               <td>Import timestamps</td>
             </tr>
             <tr>
               <td><code>backup_metadata.json</code></td>
-              <td>Backup version and creation timestamp</td>
+              <td>
+                Backup version, kind, creation timestamp, and whether
+                credentials are included
+              </td>
             </tr>
           </tbody>
         </table>
+
+        <h3>Including user credentials</h3>
+        <p>
+          By default a backup <strong>excludes</strong> password hashes and MFA
+          secrets. That keeps the file far less sensitive, but it also means the
+          archive cannot recreate user accounts — restoring it leaves the
+          accounts already on the system untouched rather than replacing them.
+        </p>
+        <p>
+          To carry accounts across to a rebuilt server, tick{" "}
+          <strong>Include user credentials</strong> before downloading. It is
+          only offered for an archive that will actually be encrypted: the
+          standard download needs <code>ENCRYPTION_KEY</code> to be set, and a
+          portable backup is always passphrase-encrypted. Treat the resulting
+          file like the password database. Scheduled backups have the same
+          option in the Automatic Backups panel, also off by default.
+        </p>
+        <p>
+          MFA secrets are re-encrypted with the target system&apos;s key during
+          a restore, so a portable backup restored onto a machine with a
+          different <code>ENCRYPTION_KEY</code> still leaves MFA working.
+        </p>
         <p>
           When an <code>ENCRYPTION_KEY</code> is configured, a standard backup is
           encrypted with <strong>this server&apos;s</strong> key (saved as{" "}
@@ -1716,16 +1756,53 @@ const helpSections: Record<string, HelpSection> = {
           </li>
         </ol>
         <p>
+          <strong>User accounts and companies work differently from
+          everything else:</strong>
+        </p>
+        <ul>
+          <li>
+            <strong>Accounts are only replaced when the archive can actually
+            restore them</strong> &mdash; i.e. when it was created with{" "}
+            <strong>Include user credentials</strong>. Otherwise the existing
+            accounts are left exactly as they are, and the result banner says
+            how many the archive held and that none could be restored. An
+            archive without credentials can never leave you with an instance
+            nobody can sign in to.
+          </li>
+          <li>
+            <strong>Companies are matched by name and never deleted.</strong> A
+            company already present here is reused; one that isn&apos;t is
+            created. Students are re-pointed at the right company by name even
+            when the two systems number them differently, and nothing else that
+            references a company (offerings, scheduled exports, API-key grants)
+            is disturbed.
+          </li>
+          <li>
+            A restore that <em>would</em> leave no enabled SuperAdmin is{" "}
+            <strong>refused</strong> before anything changes.
+          </li>
+          <li>
+            Restoring accounts signs you out, since the restored accounts
+            aren&apos;t the ones your session was issued for. Sign in again with
+            an account from the archive.
+          </li>
+        </ul>
+        <p>
           <strong>Important:</strong> Restoring a backup{" "}
-          <strong>replaces all existing data</strong>. Create a backup of the
-          current system first if you need to preserve it.
+          <strong>replaces all existing data</strong> other than the user
+          accounts described above. Create a backup of the current system first
+          if you need to preserve it.
         </p>
 
         <h3>Automatic Backups</h3>
         <p>
           Enable automatic backups to have the system save a backup to a local
           directory on a schedule. Configure the backup location, retention
-          count, frequency (daily or weekly), and time.
+          count, frequency (daily or weekly), and time. <strong>Include user
+          credentials</strong> is off by default &mdash; turn it on if you want
+          a scheduled backup to be able to restore user accounts (it needs{" "}
+          <code>ENCRYPTION_KEY</code> to be set, since scheduled backups are
+          otherwise written unencrypted).
         </p>
         <ul>
           <li>
