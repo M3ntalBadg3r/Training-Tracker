@@ -12,26 +12,38 @@ import {
 import { flushSync } from "react-dom";
 import { ForceLightChartsContext } from "@/lib/chart-theme";
 import { captureCharts, type CapturedChart } from "@/lib/chart-capture";
+import type { ReportKpi, ReportKpiTone } from "@/lib/report-export";
 
 /**
- * Lets an export menu anywhere on the page capture the charts above it.
+ * Lets an export menu anywhere on the page capture the visuals above it — the
+ * charts and the `KpiStrip`'s metric boxes.
  *
- * Mounted once in `AppShell`, so any report page's charts are visible to any
+ * Mounted once in `AppShell`, so any report page's visuals are available to any
  * export button without either side knowing about the other.
  */
+export interface PageVisuals {
+  charts: CapturedChart[];
+  kpis: ReportKpi[];
+}
+
 interface ChartCaptureValue {
   /** Charts currently mounted. Zero hides the "include charts" option. */
   chartCount: number;
   /** Called by `ExportableChart` on mount; returns its unregister. */
   registerChart: () => () => void;
-  /** Force the light palette, wait for the charts to settle, capture, restore. Never throws. */
-  captureAllCharts: () => Promise<CapturedChart[]>;
+  /**
+   * Read the KPI strip, then force the light palette, wait for the charts to
+   * settle, capture them and restore. Never throws.
+   */
+  capturePageVisuals: () => Promise<PageVisuals>;
 }
+
+const EMPTY_VISUALS: PageVisuals = { charts: [], kpis: [] };
 
 const ChartCaptureContext = createContext<ChartCaptureValue>({
   chartCount: 0,
   registerChart: () => () => {},
-  captureAllCharts: async () => [],
+  capturePageVisuals: async () => EMPTY_VISUALS,
 });
 
 export function useChartCapture(): ChartCaptureValue {
@@ -50,6 +62,34 @@ function findChartCards(): HTMLElement[] {
   return Array.from(document.querySelectorAll<HTMLElement>("[data-exportable-chart]")).filter(
     (node) => node.isConnected && node.getBoundingClientRect().width > 0
   );
+}
+
+const KPI_TONES: ReportKpiTone[] = ["blue", "green", "amber", "red", "indigo", "emerald"];
+
+function isTone(value: string | null): value is ReportKpiTone {
+  return value !== null && (KPI_TONES as string[]).includes(value);
+}
+
+/**
+ * The page's metric boxes, in document order.
+ *
+ * Same attribute-driven discovery as the charts (see `findChartCards`), reading
+ * the markers `KpiStrip` writes. The values are text, so nothing needs
+ * rasterising and this can run before the palette flip.
+ */
+function readKpiCards(): ReportKpi[] {
+  return Array.from(document.querySelectorAll<HTMLElement>("[data-kpi-card]"))
+    .filter((node) => node.isConnected && node.getBoundingClientRect().width > 0)
+    .map((node) => {
+      const tone = node.getAttribute("data-kpi-tone");
+      return {
+        label: node.getAttribute("data-kpi-label") ?? "",
+        value: node.getAttribute("data-kpi-value") ?? "",
+        hint: node.getAttribute("data-kpi-hint") ?? undefined,
+        tone: isTone(tone) ? tone : undefined,
+      };
+    })
+    .filter((kpi) => kpi.label.length > 0 || kpi.value.length > 0);
 }
 
 function nextFrame(): Promise<void> {
@@ -95,25 +135,29 @@ export default function ChartCaptureProvider({ children }: { children: ReactNode
     return () => setChartCount((n) => n - 1);
   }, []);
 
-  const captureAllCharts = useCallback(async (): Promise<CapturedChart[]> => {
+  const capturePageVisuals = useCallback(async (): Promise<PageVisuals> => {
+    // Read the KPI strip first: it is plain text, so it needs neither the light
+    // palette nor the settle wait, and reading it up front means a page whose
+    // charts all fail to capture still exports its metrics.
+    const kpis = readKpiCards();
     const cards = findChartCards();
-    if (cards.length === 0) return [];
+    if (cards.length === 0) return { charts: [], kpis };
     try {
       // Commit the palette switch before we start polling for stability, so the
       // first frames we measure are already the light ones.
       flushSync(() => setForceLight(true));
       await settle(cards);
-      return await captureCharts(cards);
+      return { charts: await captureCharts(cards), kpis };
     } catch {
-      return [];
+      return { charts: [], kpis };
     } finally {
       setForceLight(false);
     }
   }, []);
 
   const value = useMemo(
-    () => ({ chartCount, registerChart, captureAllCharts }),
-    [chartCount, registerChart, captureAllCharts]
+    () => ({ chartCount, registerChart, capturePageVisuals }),
+    [chartCount, registerChart, capturePageVisuals]
   );
 
   return (

@@ -215,7 +215,7 @@ function LegacyGapPageInner() {
   };
   const sortIndicator = (key: string) => (sortColumn === key ? (sortDir === "asc" ? " ▲" : " ▼") : "");
 
-  const { captureAllCharts } = useChartCapture();
+  const { capturePageVisuals } = useChartCapture();
 
   const handleExport = async (fmt: ExportFormat, { includeCharts }: { includeCharts: boolean }) => {
     setExporting(true);
@@ -239,7 +239,8 @@ function LegacyGapPageInner() {
           filename: "legacy-replacement-gap",
           columns: exportColumns,
           rows: exportRows as never,
-          charts: includeCharts ? await captureAllCharts() : [],
+          // Charts and the KPI strip travel together: one tickbox governs both.
+          ...(includeCharts ? await capturePageVisuals() : {}),
         });
       }
     } finally {

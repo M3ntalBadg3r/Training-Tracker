@@ -11,6 +11,7 @@ import { exportToCsv, exportToExcel } from "@/lib/export";
 import { exportReportTablePdf } from "@/lib/report-export";
 import ExportMenu, { type ExportFormat } from "@/components/ui/ExportMenu";
 import { ExportableChart, useChartCapture } from "@/components/reports/ChartCaptureProvider";
+import { TitleYAxisTick } from "@/components/reports/ChartTicks";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
 import { useFetchJson } from "@/hooks/useFetchJson";
 import { ArrowLeft, BookOpen, AlertOctagon, AlertTriangle, TrendingDown } from "lucide-react";
@@ -40,20 +41,6 @@ interface CatalogueRow {
 
 // Single-line, ellipsised Y-axis tick so long training titles never wrap/overlap.
 // Full text stays available via the SVG <title> tooltip and the detail table below.
-const truncateLabel = (s: string, n: number) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
-
-function TitleYAxisTick(props: { x?: number; y?: number; payload?: { value?: string }; fill?: string }) {
-  const value = props.payload?.value ?? "";
-  const x = typeof props.x === "number" ? props.x : Number(props.x);
-  const y = typeof props.y === "number" ? props.y : Number(props.y);
-  return (
-    <text x={x} y={y} dy={4} textAnchor="end" fontSize={11} fill={props.fill}>
-      <title>{value}</title>
-      {truncateLabel(value, 48)}
-    </text>
-  );
-}
-
 export default function CatalogueHealthPage() {
   const chart = useChartTheme();
   const productColors = useProductTypeColors();
@@ -106,7 +93,7 @@ export default function CatalogueHealthPage() {
   const topUptake = useMemo(() => filtered.slice().sort((a, b) => b.activeStudents - a.activeStudents).slice(0, 10), [filtered]);
   const topExpiring = useMemo(() => filtered.slice().filter((r) => r.expiring90d > 0).sort((a, b) => b.expiring90d - a.expiring90d).slice(0, 10), [filtered]);
 
-  const { captureAllCharts } = useChartCapture();
+  const { capturePageVisuals } = useChartCapture();
   const [exporting, setExporting] = useState(false);
 
   const exportColumns = [
@@ -133,7 +120,8 @@ export default function CatalogueHealthPage() {
         filename: "catalogue-health",
         columns: exportColumns,
         rows: exportRows as never,
-        charts: includeCharts ? await captureAllCharts() : [],
+        // Charts and the KPI strip travel together: one tickbox governs both.
+        ...(includeCharts ? await capturePageVisuals() : {}),
       });
     } finally {
       setExporting(false);

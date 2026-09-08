@@ -25,18 +25,25 @@ export default function KpiStrip({ cards }: { cards: KpiCard[] }) {
       {cards.map((c) => {
         const Icon = c.icon;
         const tone = TONE[c.tone ?? "blue"];
+        const value = typeof c.value === "number" ? c.value.toLocaleString() : c.value;
         return (
           <div
             key={c.label}
             className="bg-white rounded-lg border border-gray-200 p-4 flex items-center gap-3"
+            // Read back by `ChartCaptureProvider` so a PDF export can redraw the
+            // strip. `data-kpi-value` carries the *rendered* string, so the PDF
+            // cannot disagree with the screen about a formatted value.
+            data-kpi-card=""
+            data-kpi-label={c.label}
+            data-kpi-value={value}
+            data-kpi-tone={c.tone ?? "blue"}
+            {...(c.hint ? { "data-kpi-hint": c.hint } : {})}
           >
             <div className={`p-2.5 rounded-lg ${tone.bg}`}>
               <Icon size={20} className={tone.icon} />
             </div>
             <div className="min-w-0">
-              <div className="text-xl font-bold text-gray-900">
-                {typeof c.value === "number" ? c.value.toLocaleString() : c.value}
-              </div>
+              <div className="text-xl font-bold text-gray-900">{value}</div>
               <div className="text-xs text-gray-500 truncate">{c.label}</div>
               {c.hint && <div className="text-xs text-gray-400 truncate">{c.hint}</div>}
             </div>

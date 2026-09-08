@@ -11,10 +11,11 @@ export type ExportFormat = "csv" | "excel" | "pdf";
  * The export dropdown shared by every report page.
  *
  * Replaces the near-identical private copy each report used to carry. Beyond
- * the three formats it offers "Include charts in PDF", which appears only when
- * the page actually has charts registered with `ChartCaptureProvider` — CSV
- * cannot hold an image and the Excel writer (SheetJS community) cannot embed
- * one, so the option is named for the format it applies to.
+ * the three formats it offers "Include charts & metrics in PDF", which appears
+ * only when the page actually has charts registered with `ChartCaptureProvider`
+ * — CSV cannot hold an image and the Excel writer (SheetJS community) cannot
+ * embed one, so the option is named for the format it applies to. The metrics
+ * are the page's KPI strip, redrawn in the PDF rather than pictured.
  *
  * Not to be confused with the `ExportMenu` in `components/programs/
  * ProgramCompliance.tsx`, which is a different, controlled component serving
@@ -66,7 +67,7 @@ export default function ExportMenu({
       </button>
       {show && !busy && (
         <div
-          className={`absolute ${align === "right" ? "right-0" : "left-0"} mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 ${offerCharts ? "min-w-[220px]" : "min-w-[140px]"}`}
+          className={`absolute ${align === "right" ? "right-0" : "left-0"} mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 ${offerCharts ? "min-w-[250px]" : "min-w-[140px]"}`}
         >
           {offerCharts && (
             <label className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 border-b border-gray-200 cursor-pointer select-none rounded-t-lg hover:bg-gray-50">
@@ -76,7 +77,7 @@ export default function ExportMenu({
                 onChange={(e) => setIncludeCharts(e.target.checked)}
                 className="rounded border-gray-300"
               />
-              Include charts in PDF
+              Include charts &amp; metrics in PDF
             </label>
           )}
           <button
