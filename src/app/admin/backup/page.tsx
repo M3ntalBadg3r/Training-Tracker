@@ -589,7 +589,7 @@ export default function BackupPage() {
           <p className="text-sm text-gray-500 mb-4">
             Download a zip file containing all system data: regions, training
             programs, students, and training records. A standard backup is tied
-            to <strong>this</strong> server&apos;s encryption key — to restore on
+            to <strong>this</strong>{" "}server&apos;s encryption key — to restore on
             a <strong>different</strong> system, use a portable backup and
             remember its passphrase.
           </p>
@@ -1173,7 +1173,7 @@ export default function BackupPage() {
         <p className="text-gray-600 mb-3">
           {portableKind === "config" ? (
             <>
-              A portable <strong>config</strong> backup excludes students and
+              A portable <strong>config</strong>{" "}backup excludes students and
               training records and is encrypted with a passphrase instead of
               this server&apos;s key, so it can seed a fresh system regardless
               of its encryption key.

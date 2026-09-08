@@ -81,7 +81,7 @@ const helpSections: Record<string, HelpSection> = {
         <h3>Mobile &amp; Small Screens</h3>
         <p>
           On phones and other narrow screens the sidebar is hidden and replaced by a{" "}
-          <strong>&#9776; menu button</strong> in the top bar &mdash; tap it to slide
+          <strong>&#9776; menu button</strong>{" "}in the top bar &mdash; tap it to slide
           the navigation in over a dimmed backdrop, and tap a link, the &times;, or the
           backdrop to close it. On tablets and desktops the sidebar stays docked. Wide
           tables scroll sideways so nothing is cut off, and pop-up dialogs fit the
@@ -90,7 +90,7 @@ const helpSections: Record<string, HelpSection> = {
 
         <h3>Geographic Filter</h3>
         <p>
-          Use the cascading <strong>Theatre</strong> &rarr; <strong>Region</strong>{" "}
+          Use the cascading <strong>Theatre</strong>{" "}&rarr; <strong>Region</strong>{" "}
           &rarr; <strong>Country</strong> dropdowns in the top-right corner to filter
           all metrics and charts by geography. Leave all three on{" "}
           <em>All&nbsp;&hellip;</em> for a global view, or narrow down: picking a
@@ -163,7 +163,7 @@ const helpSections: Record<string, HelpSection> = {
           Region, and Country.
         </p>
         <p>
-          Click <strong>View</strong> on any row to open the student&apos;s
+          Click <strong>View</strong>{" "}on any row to open the student&apos;s
           detailed record. Your search, column filters, and sort order are kept
           in the page URL, so opening a student and pressing <strong>Back</strong>{" "}
           restores the list exactly as you left it.
@@ -175,7 +175,7 @@ const helpSections: Record<string, HelpSection> = {
           the selected company has never had a student import, the line is blank.
         </p>
         <p>
-          Admins can click <strong>Add Student</strong> to create a student
+          Admins can click <strong>Add Student</strong>{" "}to create a student
           manually without an import. Provide Full Name, Email, Company, and
           pick a Country from the dropdown &mdash; the Theatre and Region are
           auto-derived from the country&apos;s entry in Region Data and shown
@@ -194,7 +194,7 @@ const helpSections: Record<string, HelpSection> = {
         <p>The student detail page shows:</p>
         <ul>
           <li>
-            <strong>Contact Information</strong> &mdash; Full Name, Email,
+            <strong>Contact Information</strong>{" "}&mdash; Full Name, Email,
             Theatre, Country, Region, and the student&apos;s <strong>Company</strong>{" "}
             (shown in the sub-line under their name). Click <strong>Edit</strong>{" "}
             to modify Full Name, Email, Country, or Company. Theatre and Region
@@ -208,9 +208,9 @@ const helpSections: Record<string, HelpSection> = {
             in a confirmation modal before saving.
           </li>
           <li>
-            <strong>Summary Badges</strong> &mdash; Counts of active
+            <strong>Summary Badges</strong>{" "}&mdash; Counts of active
             Certifications, Accreditations, Instructor-Led Trainings, and OLX
-            completed, plus an <strong>Expiring in 6 Months</strong> badge
+            completed, plus an <strong>Expiring in 6 Months</strong>{" "}badge
             counting the student&apos;s active Certifications and Accreditations
             whose expiry falls within the next six months. When any of the
             student&apos;s active achievements are legacy (retired/superseded),
@@ -221,12 +221,12 @@ const helpSections: Record<string, HelpSection> = {
             legacy.
           </li>
           <li>
-            <strong>Achievement Over Time</strong> &mdash; A chart of the
+            <strong>Achievement Over Time</strong>{" "}&mdash; A chart of the
             student&apos;s completed training per month across their full
             history, so you can see when they earned their qualifications.
           </li>
           <li>
-            <strong>Training Records</strong> &mdash; A table of all trainings
+            <strong>Training Records</strong>{" "}&mdash; A table of all trainings
             completed by the student, including Title (with link if available),
             Type, Product, Function, Completed Date, Expiry Date, and Active
             status.
@@ -238,22 +238,22 @@ const helpSections: Record<string, HelpSection> = {
         </p>
         <ul>
           <li>
-            <strong>Add Training</strong> &mdash; Pick a training from the
+            <strong>Add Training</strong>{" "}&mdash; Pick a training from the
             catalog and a completed date. If the chosen training maps to
             multiple internal training titles, a second selector appears to
             disambiguate. Expiry is automatically set to two years after the
             completed date.
           </li>
           <li>
-            <strong>Edit</strong> on any row &mdash; Adjust the completed date.
+            <strong>Edit</strong>{" "}on any row &mdash; Adjust the completed date.
             Expiry is recalculated automatically.
           </li>
           <li>
-            <strong>Remove</strong> on any row &mdash; Queues the row for
+            <strong>Remove</strong>{" "}on any row &mdash; Queues the row for
             deletion when you click Save.
           </li>
           <li>
-            <strong>Delete Student</strong> &mdash; Permanently removes the
+            <strong>Delete Student</strong>{" "}&mdash; Permanently removes the
             student and every one of their training records. A confirmation
             popup is shown first; this action cannot be undone.
           </li>
@@ -323,7 +323,7 @@ const helpSections: Record<string, HelpSection> = {
           is still active.
         </p>
         <p>
-          Click <strong>View</strong> on any row to open that student&apos;s
+          Click <strong>View</strong>{" "}on any row to open that student&apos;s
           detailed record.
         </p>
         <p>
@@ -345,11 +345,11 @@ const helpSections: Record<string, HelpSection> = {
         <h3>Import Workflow</h3>
         <ol>
           <li>
-            <strong>Upload</strong> &mdash; Drag and drop or click to select a{" "}
+            <strong>Upload</strong>{" "}&mdash; Drag and drop or click to select a{" "}
             <code>.csv</code>, <code>.xls</code>, or <code>.xlsx</code> file.
           </li>
           <li>
-            <strong>Column Mapping</strong> &mdash; The system auto-maps columns
+            <strong>Column Mapping</strong>{" "}&mdash; The system auto-maps columns
             where possible, recognising common header variants (e.g.{" "}
             <code>Email</code>/<code>Email Address</code>/<code>Student Email</code>,{" "}
             <code>Theatre</code>/<code>Theater</code>/<code>Acct Theatre</code>,{" "}
@@ -366,19 +366,19 @@ const helpSections: Record<string, HelpSection> = {
             For the name, map{" "}
             <strong>either</strong> a single <strong>Full Name</strong> column{" "}
             <strong>or</strong> both <strong>First Name</strong> and{" "}
-            <strong>Last Name</strong> &mdash; split names are merged into one
+            <strong>Last Name</strong>{" "}&mdash; split names are merged into one
             record (and an explicit Full Name value wins on any row that has
             both). The name dropdowns and preview columns adapt to your file:
             whichever name style it uses is shown, and the other is hidden.
           </li>
           <li>
-            <strong>Processing</strong> &mdash; The system imports the data,
+            <strong>Processing</strong>{" "}&mdash; The system imports the data,
             creating students and training records as needed.
           </li>
           <li>
-            <strong>Summary</strong> &mdash; A summary shows counts of students
+            <strong>Summary</strong>{" "}&mdash; A summary shows counts of students
             created/updated, trainings imported/skipped, and an{" "}
-            <strong>Issues</strong> list. Issues includes both hard errors
+            <strong>Issues</strong>{" "}list. Issues includes both hard errors
             (rows skipped) and warnings (rows imported with adjustments) such
             as a row&apos;s theatre being overridden by the value in Region
             Data.
@@ -388,28 +388,28 @@ const helpSections: Record<string, HelpSection> = {
         <h3>Date Format Detection</h3>
         <p>
           Dates in the Completed Date column are parsed against the{" "}
-          <strong>system default date format</strong> (set in Admin &gt; System Settings).
+          <strong>system default date format</strong>{" "}(set in Admin &gt; System Settings).
           Before any rows are committed, the import inspects the column:
         </p>
         <ul>
           <li>
-            <strong>Match</strong> &mdash; every cell fits the system default. The import runs silently.
+            <strong>Match</strong>{" "}&mdash; every cell fits the system default. The import runs silently.
           </li>
           <li>
-            <strong>Ambiguous</strong> &mdash; every cell happens to fit both{" "}
-            <code>DD/MM/YYYY</code> and <code>MM/DD/YYYY</code> (e.g. all day numbers
+            <strong>Ambiguous</strong>{" "}&mdash; every cell happens to fit both{" "}
+            <code>DD/MM/YYYY</code> and <code>MM/DD/YYYY</code>{" "}(e.g. all day numbers
             are 1&ndash;12). The import runs using the system default and adds a single
             line to the summary so you know the file couldn&apos;t be disambiguated.
           </li>
           <li>
-            <strong>Mismatch</strong> &mdash; at least one cell forces the other
+            <strong>Mismatch</strong>{" "}&mdash; at least one cell forces the other
             format (e.g. month=15 in a system set to <code>DD/MM/YYYY</code>). A modal
             appears: <em>&quot;This file looks like MM/DD/YYYY. Use it for this import?&quot;</em>{" "}
             Accept to override for that import only; cancel and either fix the file
             or change the system default.
           </li>
           <li>
-            <strong>Internal conflict</strong> &mdash; different cells force different
+            <strong>Internal conflict</strong>{" "}&mdash; different cells force different
             formats (some <code>13/01/2025</code>, others <code>01/15/2025</code>).
             The import is rejected; clean the file and retry.
           </li>
@@ -420,15 +420,15 @@ const helpSections: Record<string, HelpSection> = {
           than silently producing a wrong-date row.
         </p>
         <p>
-          <strong>Native Excel dates</strong> &mdash; in <code>.xlsx</code>/
-          <code>.xls</code> files, cells that Excel stores as real dates (not
+          <strong>Native Excel dates</strong>{" "}&mdash; in <code>.xlsx</code>/
+          <code>.xls</code>{" "}files, cells that Excel stores as real dates (not
           text) are read by their true value and converted automatically, no
           matter how they&apos;re displayed (e.g. <code>m/d/yy</code> or a raw
           serial like <code>46147</code>). They&apos;re unambiguous, so the
           format prompt above only applies to genuine text dates and CSV cells.
         </p>
         <p>
-          <strong>Day/month-swapped Excel dates</strong> &mdash; re-saving an{" "}
+          <strong>Day/month-swapped Excel dates</strong>{" "}&mdash; re-saving an{" "}
           <code>MM/DD</code> file in a <code>DD/MM</code>-locale Excel can
           silently transpose the day and month of its native date cells (a true{" "}
           <code>2026-01-12</code> becomes a stored <code>2026-12-01</code>,
@@ -436,7 +436,7 @@ const helpSections: Record<string, HelpSection> = {
           column decodes to a future date that swapping would fix, the import
           pauses and shows a confirmation modal with sample corrections. Choose{" "}
           <strong>Yes, correct them</strong> to repair the transposed dates, or{" "}
-          <strong>Import as-is</strong> if the dates are genuinely correct. Each
+          <strong>Import as-is</strong>{" "}if the dates are genuinely correct. Each
           cell is only swapped when the corrected value isn&apos;t in the future,
           so genuinely-correct recent dates (and any day above 12) are left
           untouched &mdash; mixed files are handled. Text date cells are
@@ -450,18 +450,18 @@ const helpSections: Record<string, HelpSection> = {
         </p>
         <ul>
           <li>
-            <strong>Country in Region Data with a theatre</strong> &mdash; the
+            <strong>Country in Region Data with a theatre</strong>{" "}&mdash; the
             student&apos;s theatre is set from Region Data. If the imported
             theatre disagrees, the row imports with a warning showing what was
             overridden.
           </li>
           <li>
-            <strong>Country in Region Data without a theatre</strong> &mdash;
+            <strong>Country in Region Data without a theatre</strong>{" "}&mdash;
             the imported theatre is kept and a warning asks a SuperAdmin to
             populate the theatre in Region Data.
           </li>
           <li>
-            <strong>Country not in Region Data</strong> &mdash; the country is
+            <strong>Country not in Region Data</strong>{" "}&mdash; the country is
             auto-created with region &quot;Unknown&quot; (and the imported
             theatre, if any). A warning asks a SuperAdmin to verify and fill in
             the missing values.
@@ -475,15 +475,15 @@ const helpSections: Record<string, HelpSection> = {
         </p>
         <ul>
           <li>
-            <strong>Email</strong> &mdash; Converted to lowercase.
+            <strong>Email</strong>{" "}&mdash; Converted to lowercase.
           </li>
           <li>
-            <strong>Full Name</strong> &mdash; Leading/trailing spaces are
+            <strong>Full Name</strong>{" "}&mdash; Leading/trailing spaces are
             removed and each word is capitalised (e.g.{" "}
             <code>jOHN sMITH</code> becomes <code>John Smith</code>).
           </li>
           <li>
-            <strong>Empty Full Name</strong> &mdash; If the Full Name field is
+            <strong>Empty Full Name</strong>{" "}&mdash; If the Full Name field is
             blank, the system looks at the email address. If the local part
             (before the @) contains two words separated by a full stop (e.g.{" "}
             <code>jane.doe@company.com</code>), it uses those as the name (
@@ -511,14 +511,14 @@ const helpSections: Record<string, HelpSection> = {
         <ul>
           <li><strong>KPI strip</strong> — four headline metrics at the top of every report.</li>
           <li><strong>Charts above the table</strong> — bars/areas/leaderboards summarising the filtered data.</li>
-          <li><strong>Drill-down</strong> — click a chart segment to filter the table in place; a small &quot;Clear filter&quot; link appears when active.</li>
-          <li><strong>Theatre / Region / Country filters</strong> &mdash; a cascading scope selector narrows the whole report to a chosen geography. Choosing a theatre limits the region list to that theatre, and choosing a region limits the country list; changing a higher level resets the ones below it. Leave them on &quot;All&quot; to see everything.</li>
-          <li><strong>Group by</strong> &mdash; toggle theatre / region / country grouping. The hierarchy rolls up: country → region → theatre, with a fallback to theatre when region is missing or &quot;unknown&quot;.</li>
-          <li><strong>Sortable columns</strong> — click any column header to sort the table; click again to reverse the direction (an ▲/▼ arrow marks the active column). Tables default to Full Name A–Z (or the report&rsquo;s natural primary column). When grouping is on, rows sort within each group.</li>
+          <li><strong>Drill-down</strong>{" "}— click a chart segment to filter the table in place; a small &quot;Clear filter&quot; link appears when active.</li>
+          <li><strong>Theatre / Region / Country filters</strong>{" "}&mdash; a cascading scope selector narrows the whole report to a chosen geography. Choosing a theatre limits the region list to that theatre, and choosing a region limits the country list; changing a higher level resets the ones below it. Leave them on &quot;All&quot; to see everything.</li>
+          <li><strong>Group by</strong>{" "}&mdash; toggle theatre / region / country grouping. The hierarchy rolls up: country → region → theatre, with a fallback to theatre when region is missing or &quot;unknown&quot;.</li>
+          <li><strong>Sortable columns</strong>{" "}— click any column header to sort the table; click again to reverse the direction (an ▲/▼ arrow marks the active column). Tables default to Full Name A–Z (or the report&rsquo;s natural primary column). When grouping is on, rows sort within each group.</li>
           <li><strong>Date-range picker</strong> — limit results to a date window (where applicable). Includes presets for Last 30/90 days, Last 12 months, YTD, and All time.</li>
           <li><strong>Paginated tables</strong> — the detail-heavy reports (By Product Type, By Function, Expiring Soon, Achievement Over Time, Trained But Not Certified, Legacy Replacement Gap, Currently Expired, Learner Achievement Scorecard) are computed on the server and page through their rows one page at a time — use the <strong>Show N records</strong> selector and the numbered page buttons beneath the table. Charts, KPI cards and exports always cover the full filtered set, not just the visible page.</li>
-          <li><strong>Back restores your view</strong> — your filters, search, grouping, sort, page number and page size are kept in the page address, so clicking into a record and pressing your browser&rsquo;s Back button returns you to the report exactly as you left it. This also applies to the Students and Training lists. The address can also be bookmarked or shared to reopen the same filtered view.</li>
-          <li><strong>Include charts in PDF</strong> — the Export menu carries an <strong>Include charts in PDF</strong> tickbox (on by default; your choice is remembered on this device). With it ticked a PDF export opens with pictures of the report&rsquo;s charts, in the order they appear on screen, followed by the data table. It applies to PDF only: CSV is plain text and cannot hold a picture, and the Excel writer cannot embed one, so those two exports are unaffected. The captured charts reflect whatever filters, grouping and dates are in force when you export, and a panel currently showing no data is simply left out.</li>
+          <li><strong>Back restores your view</strong>{" "}— your filters, search, grouping, sort, page number and page size are kept in the page address, so clicking into a record and pressing your browser&rsquo;s Back button returns you to the report exactly as you left it. This also applies to the Students and Training lists. The address can also be bookmarked or shared to reopen the same filtered view.</li>
+          <li><strong>Include charts in PDF</strong> — the Export menu carries an <strong>Include charts in PDF</strong>{" "}tickbox (on by default; your choice is remembered on this device). With it ticked a PDF export opens with pictures of the report&rsquo;s charts, in the order they appear on screen, followed by the data table. It applies to PDF only: CSV is plain text and cannot hold a picture, and the Excel writer cannot embed one, so those two exports are unaffected. The captured charts reflect whatever filters, grouping and dates are in force when you export, and a panel currently showing no data is simply left out.</li>
           <li><strong>Dark mode</strong> — chart axes, gridlines, and tooltips adapt automatically. Charts in an exported PDF are always drawn on a light background so a report looks the same however it was exported; in dark mode you will see the charts flick to light for a moment while the file is prepared.</li>
         </ul>
 
@@ -526,13 +526,13 @@ const helpSections: Record<string, HelpSection> = {
         <p>Stacked bar of Cert/Accred/ILT per product, plus an active-vs-expired donut. Tick <strong>Count people, not records (active holders)</strong> to switch the chart and KPI cards from raw record counts to the number of distinct people who currently hold an active cert/training — so a learner holding several certs in one product type counts once per type instead of inflating the totals.</p>
 
         <h3>By Function</h3>
-        <p>Stacked bar of Cert/Accred/ILT per function (Sales, Pre-Sales, Deployments), plus an active-vs-expired donut. Tick <strong>Count people, not records (active holders)</strong> to switch the chart and KPI cards from raw record counts to the number of distinct active holders, so multiple certs held by the same person don&rsquo;t skew the figures.</p>
+        <p>Stacked bar of Cert/Accred/ILT per function (Sales, Pre-Sales, Deployments), plus an active-vs-expired donut. Tick <strong>Count people, not records (active holders)</strong>{" "}to switch the chart and KPI cards from raw record counts to the number of distinct active holders, so multiple certs held by the same person don&rsquo;t skew the figures.</p>
 
         <h3>Expiring Soon</h3>
         <p>Horizon bar showing records expiring within 1/3/6/12 months, plus a theatre × month stacked bar showing where the cliff falls.</p>
 
         <h3>Currently Expired</h3>
-        <p>Every certification &amp; training whose latest completion has <em>already</em> lapsed (the inverse of Expiring Soon). Records are bucketed by how long ago they expired (≤1 month, 1–3, 3–6, 6–12, &gt; 12 months) with a stacked bar by training type and an &ldquo;Expired by Theatre&rdquo; chart. The <strong>Lapsed</strong> dropdown narrows the report to a recent window — <strong>Lapsed Any Time</strong> (the default) or lapsed within the last <strong>3 / 6 / 12 months</strong> — scoping the charts, KPI cards, subtotals, table and exports together; its edges line up with the chart bands, so at 3 months the &ldquo;1–3 months&rdquo; band is the last populated one and the bands sum to the total. Choosing a window that excludes a band you had clicked clears that band filter instead of showing an empty report. Click a band to filter the table; group by theatre/region/country, search, and export to CSV/Excel/PDF. Retired (legacy) certs are shown by default — tick <strong>Exclude retired (legacy) certs</strong> to hide them. The detail table is <strong>paginated</strong> — use the page controls beneath it to page through results; charts, KPI cards and exports always cover the full filtered set. Also available as a scheduled export.</p>
+        <p>Every certification &amp; training whose latest completion has <em>already</em>{" "}lapsed (the inverse of Expiring Soon). Records are bucketed by how long ago they expired (≤1 month, 1–3, 3–6, 6–12, &gt; 12 months) with a stacked bar by training type and an &ldquo;Expired by Theatre&rdquo; chart. The <strong>Lapsed</strong> dropdown narrows the report to a recent window — <strong>Lapsed Any Time</strong> (the default) or lapsed within the last <strong>3 / 6 / 12 months</strong>{" "}— scoping the charts, KPI cards, subtotals, table and exports together; its edges line up with the chart bands, so at 3 months the &ldquo;1–3 months&rdquo; band is the last populated one and the bands sum to the total. Choosing a window that excludes a band you had clicked clears that band filter instead of showing an empty report. Click a band to filter the table; group by theatre/region/country, search, and export to CSV/Excel/PDF. Retired (legacy) certs are shown by default — tick <strong>Exclude retired (legacy) certs</strong> to hide them. The detail table is <strong>paginated</strong> — use the page controls beneath it to page through results; charts, KPI cards and exports always cover the full filtered set. Also available as a scheduled export.</p>
 
         <h3>Achievement Over Time</h3>
         <p>Area chart of completions with a dashed prior-period comparison line, plus a top-10 leaderboard of trainings by completion count. Pick a preset time range (12, 6, 3, or 1 month) or a custom date range; the chart automatically buckets by day, week, or month based on the window. Click a point to filter the table to that bucket. Type/theatre/function/region/product filters update the chart as well as the table.</p>
@@ -541,7 +541,7 @@ const helpSections: Record<string, HelpSection> = {
         <p>Gap funnel by product (ILT completed → ILT still active) plus the top theatres/regions/countries with gaps. When a training can lead to more than one certification, the options are treated as alternatives (OR): a student is only flagged if they hold none of them, and the &ldquo;Certification Not Obtained&rdquo; column lists every option joined with &ldquo;or&rdquo;.</p>
 
         <h3>Legacy Replacement Gap</h3>
-        <p>Learners who hold a <strong>legacy</strong> Certification/Accreditation but haven&rsquo;t taken its <strong>replacement</strong> (configured in Admin &gt; Training Data). Multiple replacements are alternatives — holding any one clears the learner. The expiry-horizon chart and the Already Expired / ≤ 1 / 3 / 6 / 12-month window filter key on the learner&rsquo;s legacy training expiry, so you can chase the most urgent migrations first. Two toggles tailor the view: <strong>Include legacy with no replacement</strong> (show holders of a retired cert with no successor) and <strong>Replacement must be active</strong> (when off, a previously-held but now-expired replacement also counts as satisfied).</p>
+        <p>Learners who hold a <strong>legacy</strong>{" "}Certification/Accreditation but haven&rsquo;t taken its <strong>replacement</strong>{" "}(configured in Admin &gt; Training Data). Multiple replacements are alternatives — holding any one clears the learner. The expiry-horizon chart and the Already Expired / ≤ 1 / 3 / 6 / 12-month window filter key on the learner&rsquo;s legacy training expiry, so you can chase the most urgent migrations first. Two toggles tailor the view: <strong>Include legacy with no replacement</strong> (show holders of a retired cert with no successor) and <strong>Replacement must be active</strong> (when off, a previously-held but now-expired replacement also counts as satisfied).</p>
 
         <h3>Theatre / Region / Country Comparison</h3>
         <p>
@@ -601,9 +601,9 @@ const helpSections: Record<string, HelpSection> = {
           <li><strong>Certs / Accreds / ILTs / OLX</strong> — counts per learner. Active completions only by default; tick <strong>Include expired in counts</strong> to count expired ones too.</li>
           <li><strong>Total</strong> — sum of the four count columns; also drives the Top Achievers leaderboard.</li>
           <li><strong>Expiring Soon</strong> — active Certifications/Accreditations whose expiry falls within the selected window (1/3/6 months); always looks forward from today.</li>
-          <li><strong>Expired</strong> — the learner&apos;s expired achievements.</li>
+          <li><strong>Expired</strong>{" "}— the learner&apos;s expired achievements.</li>
           <li><strong>Gaps</strong> — trainings the learner completed without earning the mapped certification (same logic as Trained But Not Certified).</li>
-          <li><strong>Last Achievement</strong> — most recent completion date across all of the learner&apos;s records.</li>
+          <li><strong>Last Achievement</strong>{" "}— most recent completion date across all of the learner&apos;s records.</li>
           <li>The whole roster is included, so learners with no completions appear with all-zero counts. OLX sub-items are excluded (the parent OLX counts once it&apos;s complete).</li>
           <li>Filter by theatre/region/country and search by name or email; every column is sortable and the table exports to CSV/Excel/PDF.</li>
           <li>The detail table is <strong>paginated</strong> — use the controls beneath it to page through learners and change the page size; the KPI cards, leaderboard and exports always cover the full filtered set.</li>
@@ -641,9 +641,9 @@ const helpSections: Record<string, HelpSection> = {
         </p>
         <ul>
           <li>For each month-end, the report re-runs the same OR-logic union of primary + alternative trainings used by the live program dashboards, counting only trainings that were <strong>completed by that month and still valid</strong> (not yet expired). This makes each point a true snapshot of that moment — historical lines reflect how compliance actually built up over time.</li>
-          <li><strong>Solid lines</strong> are history; <strong>dashed lines</strong> (after the &quot;Forecast →&quot; marker) project the next 12 months. The forecast assumes <strong>no new completions</strong> and simply shows compliance decaying as today&apos;s active certifications reach their expiry date — an &quot;if nothing changes&quot; view that surfaces upcoming renewal gaps.</li>
+          <li><strong>Solid lines</strong> are history; <strong>dashed lines</strong>{" "}(after the &quot;Forecast →&quot; marker) project the next 12 months. The forecast assumes <strong>no new completions</strong>{" "}and simply shows compliance decaying as today&apos;s active certifications reach their expiry date — an &quot;if nothing changes&quot; view that surfaces upcoming renewal gaps.</li>
           <li>The <strong>Forecast 12-mo Δ</strong> KPI shows the projected change (in percentage points) from now to 12 months out — a negative value flags certifications due to lapse.</li>
-          <li>Narrow the view with the <strong>Theatre / Region / Country</strong> filters (the &quot;Showing&quot; caption states the active scope); the report is also scoped to the company selected in the header. The program dropdown lists every program found in Program Data.</li>
+          <li>Narrow the view with the <strong>Theatre / Region / Country</strong>{" "}filters (the &quot;Showing&quot; caption states the active scope); the report is also scoped to the company selected in the header. The program dropdown lists every program found in Program Data.</li>
         </ul>
       </>
     ),
@@ -658,7 +658,7 @@ const helpSections: Record<string, HelpSection> = {
           will be renewed vs lapsed, based on historical renewal behaviour.
         </p>
         <ul>
-          <li>A <strong>renewal</strong> is any later re-completion of the same training by the same student (at least 30 days after the previous one, so duplicate rows aren&apos;t double-counted). An expired record with no later re-completion is a <strong>lapse</strong>.</li>
+          <li>A <strong>renewal</strong>{" "}is any later re-completion of the same training by the same student (at least 30 days after the previous one, so duplicate rows aren&apos;t double-counted). An expired record with no later re-completion is a <strong>lapse</strong>.</li>
           <li><strong>Renewal rate</strong> is computed per training when ≥5 historical expiries exist; otherwise it falls back to per-product, then to a global rate.</li>
           <li>The at-risk leaderboard ranks trainings by projected lapses over the 12-month horizon.</li>
           <li>Use the <strong>Theatre / Region / Country</strong> filters to scope the whole report — the metric boxes, the monthly chart, and the at-risk table all update together. The filters cascade (picking a theatre narrows the regions, and so on).</li>
@@ -672,7 +672,7 @@ const helpSections: Record<string, HelpSection> = {
     content: (
       <>
         <p>
-          <strong>Offerings</strong> track a partner&apos;s ability to deliver a
+          <strong>Offerings</strong>{" "}track a partner&apos;s ability to deliver a
           joint product offering. Each offering bundles one or more{" "}
           <strong>specialisations</strong>, and each specialisation lists the
           supporting trainings (Certifications, Accreditations, ILTs, OLXs) — with
@@ -685,7 +685,7 @@ const helpSections: Record<string, HelpSection> = {
           so two companies can each have an offering with the same name.
         </p>
         <p>
-          The <strong>Offerings</strong> list in the left navigation follows the
+          The <strong>Offerings</strong>{" "}list in the left navigation follows the
           company you pick in the header switcher, so you only see that
           company&apos;s offerings. Under <strong>All companies</strong> every
           offering you can see is listed, each labelled with its company name in
@@ -703,13 +703,13 @@ const helpSections: Record<string, HelpSection> = {
         </p>
         <ul>
           <li>Pick a <strong>Country</strong> or <strong>Region</strong> to see capability. Nothing is shown until you make a selection.</li>
-          <li><strong>Onshore</strong> counts the distinct people who hold each training in the selected country (or the region&apos;s countries). A <strong>Met / Not met</strong> badge compares the Onshore count against the minimum required.</li>
-          <li><strong>Nearshore</strong> counts the rest of that country/region&apos;s <strong>theatre</strong>, with the onshore countries removed — the wider in-theatre capability available to support delivery.</li>
-          <li><strong>Offshore</strong> counts everyone <strong>worldwide</strong> who holds the training, with the onshore countries removed (so it includes the nearshore people plus every other theatre). Nearshore and Offshore are informational and don&apos;t change the Met status.</li>
+          <li><strong>Onshore</strong>{" "}counts the distinct people who hold each training in the selected country (or the region&apos;s countries). A <strong>Met / Not met</strong> badge compares the Onshore count against the minimum required.</li>
+          <li><strong>Nearshore</strong>{" "}counts the rest of that country/region&apos;s <strong>theatre</strong>, with the onshore countries removed — the wider in-theatre capability available to support delivery.</li>
+          <li><strong>Offshore</strong> counts everyone <strong>worldwide</strong>{" "}who holds the training, with the onshore countries removed (so it includes the nearshore people plus every other theatre). Nearshore and Offshore are informational and don&apos;t change the Met status.</li>
           <li>Figures are scoped to the offering&apos;s company. Use <strong>Export</strong> for the current view, and click <strong>View</strong> on any count to list the people behind it.</li>
         </ul>
         <p className="text-sm text-gray-500">
-          Offerings are configured under <strong>Admin &gt; Offerings</strong> by a
+          Offerings are configured under <strong>Admin &gt; Offerings</strong>{" "}by a
           company&apos;s Admins or a SuperAdmin (create, edit, import/export — each
           scoped to a company). That page&apos;s header shows a{" "}
           <strong>Last imported</strong> date/time for the selected company (or the
@@ -730,23 +730,23 @@ const helpSections: Record<string, HelpSection> = {
         </p>
         <ul>
           <li>
-            <strong>Region Data</strong> &mdash; Manage the mapping between
+            <strong>Region Data</strong>{" "}&mdash; Manage the mapping between
             countries and regions.
           </li>
           <li>
-            <strong>Training Data</strong> &mdash; Manage training program
+            <strong>Training Data</strong>{" "}&mdash; Manage training program
             definitions.
           </li>
           <li>
-            <strong>Backup &amp; Restore</strong> &mdash; Create and restore
+            <strong>Backup &amp; Restore</strong>{" "}&mdash; Create and restore
             full system backups.
           </li>
           <li>
-            <strong>User Management</strong> &mdash; Manage user accounts,
+            <strong>User Management</strong>{" "}&mdash; Manage user accounts,
             roles, and multi-factor authentication.
           </li>
           <li>
-            <strong>Data Clean-Up</strong> &mdash; Scan and fix data quality
+            <strong>Data Clean-Up</strong>{" "}&mdash; Scan and fix data quality
             issues, and manage the Wipe All Data function.
           </li>
         </ul>
@@ -795,7 +795,7 @@ const helpSections: Record<string, HelpSection> = {
             <tr>
               <td><strong>Duplicate Name</strong></td>
               <td>Full name repeats the same word (e.g. <code>Jane Jane</code>)</td>
-              <td>Duplicates removed. A fuller name is taken from the email only when it names the same person &mdash; otherwise the single remaining word is kept (<code>Jane Jane</code> &rarr; <code>Jane</code>)</td>
+              <td>Duplicates removed. A fuller name is taken from the email only when it names the same person &mdash; otherwise the single remaining word is kept (<code>Jane Jane</code>{" "}&rarr; <code>Jane</code>)</td>
             </tr>
             <tr>
               <td><strong>Numbers</strong></td>
@@ -805,7 +805,7 @@ const helpSections: Record<string, HelpSection> = {
             <tr>
               <td><strong>Special Characters</strong></td>
               <td>Characters other than letters, spaces, hyphens and apostrophes (periods are flagged too, and become word separators)</td>
-              <td>Removed. Accented and non-Latin letters are left alone, and a typographic apostrophe is converted rather than deleted (<code>O&rsquo;Brien</code> &rarr; <code>O&apos;Brien</code>)</td>
+              <td>Removed. Accented and non-Latin letters are left alone, and a typographic apostrophe is converted rather than deleted (<code>O&rsquo;Brien</code>{" "}&rarr; <code>O&apos;Brien</code>)</td>
             </tr>
           </tbody>
         </table>
@@ -813,7 +813,7 @@ const helpSections: Record<string, HelpSection> = {
           Every suggested fix is itself clean &mdash; applying one can never leave
           a name that the next scan flags again. Names derived from an email
           address have digits and plus-addressing tags stripped
-          (<code>jane11.jane@co.com</code> &rarr; <code>Jane</code>, not{" "}
+          (<code>jane11.jane@co.com</code>{" "}&rarr; <code>Jane</code>, not{" "}
           <code>Jane11 Jane</code>), and initials are never mistaken for
           duplicates (<code>J R R Smith</code> is left alone). Casing is corrected
           only when a name is entirely upper- or lower-case, so{" "}
@@ -822,7 +822,7 @@ const helpSections: Record<string, HelpSection> = {
         </p>
         <p>
           Results are shown in a table with the issues highlighted inline. The{" "}
-          <strong>Suggested Fix</strong> for each row is shown in an editable
+          <strong>Suggested Fix</strong>{" "}for each row is shown in an editable
           field, so you can override the suggested name before applying it. Where
           no safe automatic fix exists the field is left blank with a prompt to
           enter one, and the row cannot be selected until you do. By default no
@@ -834,7 +834,7 @@ const helpSections: Record<string, HelpSection> = {
         <h3>Future Completion Dates</h3>
         <p>
           Click <strong>Scan for Issues</strong> to list every training record
-          whose <strong>Completed Date</strong> is later than today. These rows
+          whose <strong>Completed Date</strong>{" "}is later than today. These rows
           are usually data-entry mistakes &mdash; a course cannot be completed
           in the future. They also inflate dashboard counts and push expiry
           dates out by two years from the wrong starting point.
@@ -842,7 +842,7 @@ const helpSections: Record<string, HelpSection> = {
         <p>
           Each row&apos;s completed date is shown as an editable date input
           (highlighted in amber while it is still in the future). Pick the
-          correct date and click <strong>Save</strong> on that row to commit
+          correct date and click <strong>Save</strong>{" "}on that row to commit
           the change. There is no automated fix &mdash; every correction is
           made manually, one row at a time. Saving recomputes the expiry as
           completed + 2 years.
@@ -885,37 +885,37 @@ const helpSections: Record<string, HelpSection> = {
         <h3>Features</h3>
         <ul>
           <li>
-            <strong>View</strong> &mdash; Table of all countries with their
+            <strong>View</strong>{" "}&mdash; Table of all countries with their
             assigned region and theatre. Countries with no theatre are flagged
             so you can fix them.
           </li>
           <li>
-            <strong>Search / Filter</strong> &mdash; Filter by country name,
+            <strong>Search / Filter</strong>{" "}&mdash; Filter by country name,
             region, or theatre. The Theatre column has a special
             &quot;(missing)&quot; filter to find rows that still need a theatre.
           </li>
           <li>
-            <strong>Add</strong> &mdash; Add a new country with its region and
+            <strong>Add</strong>{" "}&mdash; Add a new country with its region and
             (optionally) theatre. A country without a theatre cannot be selected
             for new students &mdash; set the theatre before assigning students.
           </li>
           <li>
-            <strong>Edit</strong> &mdash; Click <strong>Edit</strong> on any row
+            <strong>Edit</strong>{" "}&mdash; Click <strong>Edit</strong> on any row
             to modify the country, region, or theatre inline, then{" "}
             <strong>Save</strong> or <strong>Cancel</strong>.
           </li>
           <li>
-            <strong>Delete</strong> &mdash; Remove a country/region mapping.
+            <strong>Delete</strong>{" "}&mdash; Remove a country/region mapping.
           </li>
           <li>
-            <strong>Import</strong> &mdash; Upload a CSV or Excel file with{" "}
+            <strong>Import</strong>{" "}&mdash; Upload a CSV or Excel file with{" "}
             <code>Country</code>, <code>Region</code>, and (optionally){" "}
             <code>Theatre</code> columns. The system auto-maps columns and shows
             a preview before importing. Existing rows are updated when the
             imported value differs.
           </li>
           <li>
-            <strong>Export</strong> &mdash; Download all region data (including
+            <strong>Export</strong>{" "}&mdash; Download all region data (including
             theatre) as CSV, Excel, or PDF.
           </li>
         </ul>
@@ -993,11 +993,11 @@ const helpSections: Record<string, HelpSection> = {
         </table>
 
         <p>
-          The list shows <strong>one row per Full Title</strong> &mdash; the
+          The list shows <strong>one row per Full Title</strong>{" "}&mdash; the
           first-class &ldquo;record&rdquo;. Because several Training Titles can
           map to the same Full Title, the page groups them so you can manage the
           training as a single thing. A Full Title that contains an{" "}
-          <strong>OLX</strong> parent shows an expand arrow and a sub-item count;
+          <strong>OLX</strong>{" "}parent shows an expand arrow and a sub-item count;
           expand it to reveal the parent&rsquo;s <strong>OLX Sub-Items</strong>{" "}
           nested underneath (they are not listed as separate top-level rows).
         </p>
@@ -1005,18 +1005,18 @@ const helpSections: Record<string, HelpSection> = {
         <h3>Features</h3>
         <ul>
           <li>
-            <strong>Add Training</strong> &mdash; Click{" "}
+            <strong>Add Training</strong>{" "}&mdash; Click{" "}
             <strong>Add Training</strong> to open a modal form for creating a
             new training entry.
           </li>
           <li>
-            <strong>Edit (open the Full Title)</strong> &mdash; Click{" "}
+            <strong>Edit (open the Full Title)</strong>{" "}&mdash; Click{" "}
             <strong>Edit</strong> on any row (or click the row) to open the{" "}
             <strong>Full Title detail page</strong>, which lists every Training
             Title mapped to that Full Title and offers group-wide bulk actions.
           </li>
           <li>
-            <strong>Search / Filter</strong> &mdash; Search by training title or
+            <strong>Search / Filter</strong>{" "}&mdash; Search by training title or
             full title; filter by Type, Product, or Function. A{" "}
             <strong>Show legacy only</strong> toggle scopes the list to retired
             Certs/Accreds. Your search, filters, legacy toggle, and sort are
@@ -1024,16 +1024,16 @@ const helpSections: Record<string, HelpSection> = {
             (they&rsquo;re kept in the page URL, so the view is bookmarkable too).
           </li>
           <li>
-            <strong>Import</strong> &mdash; Upload a CSV or Excel file. Columns
+            <strong>Import</strong>{" "}&mdash; Upload a CSV or Excel file. Columns
             can be mapped to all fields including Certification and{" "}
-            <strong>Parent Training Title</strong> (which marks a row as an OLX
+            <strong>Parent Training Title</strong>{" "}(which marks a row as an OLX
             sub-item belonging to one or more parent OLX trainings &mdash;
             comma-separated when shared between parents). The system supports
             common aliases for type values (e.g. <code>ILT</code>,{" "}
             <code>cert</code>, <code>pre-sales</code>, <code>olx</code>).
           </li>
           <li>
-            <strong>Export</strong> &mdash; Download all training data as CSV,
+            <strong>Export</strong>{" "}&mdash; Download all training data as CSV,
             Excel, or PDF (one row per Training Title, so it round-trips with
             import).
           </li>
@@ -1046,11 +1046,11 @@ const helpSections: Record<string, HelpSection> = {
         </p>
         <ul>
           <li>
-            <strong>Rename Full Title</strong> &mdash; Renames every mapped
+            <strong>Rename Full Title</strong>{" "}&mdash; Renames every mapped
             Training Title&rsquo;s Full Title at once.
           </li>
           <li>
-            <strong>Mark the whole Full Title as Legacy</strong> &mdash;
+            <strong>Mark the whole Full Title as Legacy</strong>{" "}&mdash;
             Cascades the legacy flag to <strong>all</strong>{" "}
             Certification/Accreditation Training Titles under it in one click
             (other types are unaffected). Pick the replacement as a{" "}
@@ -1058,16 +1058,16 @@ const helpSections: Record<string, HelpSection> = {
             replacements automatically.
           </li>
           <li>
-            <strong>Set Product / Function for all</strong> &mdash; Apply a
+            <strong>Set Product / Function for all</strong>{" "}&mdash; Apply a
             product type or function across every mapped Training Title.
           </li>
           <li>
-            <strong>Per-Title editing</strong> &mdash; Each Training Title keeps
+            <strong>Per-Title editing</strong>{" "}&mdash; Each Training Title keeps
             its own Link, Certifications, and OLX membership, and can still be
             edited or deleted individually.
           </li>
           <li>
-            <strong>Add / Delete</strong> &mdash; Add another Training Title to
+            <strong>Add / Delete</strong>{" "}&mdash; Add another Training Title to
             this Full Title, or delete the whole group at once.
           </li>
         </ul>
@@ -1078,7 +1078,7 @@ const helpSections: Record<string, HelpSection> = {
           exist yet, it is auto-created and highlighted in an amber{" "}
           <strong>&ldquo;needs attention&rdquo;</strong> section at the top of
           the page. When completing one, you can either{" "}
-          <strong>attach it to an existing Full Title</strong> via a dropdown
+          <strong>attach it to an existing Full Title</strong>{" "}via a dropdown
           (it inherits that group&rsquo;s Type/Product/Function as editable
           defaults) or <strong>create a new Full Title</strong>, then click{" "}
           <strong>Mark as Complete</strong>.
@@ -1129,14 +1129,14 @@ const helpSections: Record<string, HelpSection> = {
           </li>
           <li>
             A <strong>Replaced by</strong> picker of all other{" "}
-            <strong>Full Titles</strong> that contain a
+            <strong>Full Titles</strong>{" "}that contain a
             Certification/Accreditation then appears &mdash; select one or more.
             Multiple replacements are <strong>alternatives</strong>: holding any
             one of them counts as having migrated. Leave it empty for a cert
             retired with no successor.
           </li>
           <li>
-            A <strong>Legacy</strong> badge appears in the catalogue, on the
+            A <strong>Legacy</strong>{" "}badge appears in the catalogue, on the
             training detail page, and next to the training on each learner&apos;s
             record (with the replacement name). On this admin page the grouped
             row&apos;s badge is followed by an inline{" "}
@@ -1155,7 +1155,7 @@ const helpSections: Record<string, HelpSection> = {
             (comma-separated) in a <strong>Replacement</strong> column.
           </li>
           <li>
-            The <strong>Legacy Replacement Gap</strong> report uses this to find
+            The <strong>Legacy Replacement Gap</strong>{" "}report uses this to find
             learners still holding a legacy cert who haven&apos;t taken the
             replacement.
           </li>
@@ -1175,9 +1175,9 @@ const helpSections: Record<string, HelpSection> = {
         </p>
         <h3>Managing companies</h3>
         <ul>
-          <li><strong>Add Company</strong> &mdash; SuperAdmin only. Pick a unique name; the company becomes selectable in the global header switcher and in user/import/export forms.</li>
-          <li><strong>Rename</strong> &mdash; Updates the company everywhere (students keep their assignments).</li>
-          <li><strong>Delete</strong> &mdash; Only allowed when no students or scheduled exports reference the company. Reassign or remove dependents first.</li>
+          <li><strong>Add Company</strong>{" "}&mdash; SuperAdmin only. Pick a unique name; the company becomes selectable in the global header switcher and in user/import/export forms.</li>
+          <li><strong>Rename</strong>{" "}&mdash; Updates the company everywhere (students keep their assignments).</li>
+          <li><strong>Delete</strong>{" "}&mdash; Only allowed when no students or scheduled exports reference the company. Reassign or remove dependents first.</li>
         </ul>
         <p>
           The default <strong>Unassigned</strong> company is created automatically
@@ -1222,21 +1222,21 @@ const helpSections: Record<string, HelpSection> = {
 
         <h3>Features</h3>
         <ul>
-          <li><strong>Add User</strong> &mdash; Create a new account with username, display name, password, role, and (for non-SuperAdmin roles) the companies they can see. The <strong>Require MFA at first login</strong> checkbox is on by default; the new user will be locked to the MFA enrolment page until they set up an authenticator.</li>
-          <li><strong>Edit User</strong> &mdash; Change display name, role, or company assignments. Tick <strong>Require MFA at next login</strong> to force an existing user to enrol in MFA on their next session.</li>
-          <li><strong>Reset Password</strong> &mdash; Set a new password for any user.</li>
-          <li><strong>Disable MFA</strong> &mdash; Turn off multi-factor authentication for a user.</li>
-          <li><strong>Disable / Enable Account</strong> &mdash; Suspend an account without deleting it &mdash; the power icon in the Actions column. A disabled user cannot sign in, and any session they already have open is signed out on their very next click. Nothing is lost: their role, company access, MFA setup and login history are all kept, so enabling the account restores it exactly as it was. You can record an optional reason, shown to other admins in the tooltip on the <em>Disabled</em> badge. You cannot disable your own account or the last SuperAdmin.</li>
-          <li><strong>Delete User</strong> &mdash; Remove a user account. You cannot delete yourself or the last admin. If you only want to stop someone signing in, disable the account instead &mdash; deleting is permanent and loses their history.</li>
+          <li><strong>Add User</strong>{" "}&mdash; Create a new account with username, display name, password, role, and (for non-SuperAdmin roles) the companies they can see. The <strong>Require MFA at first login</strong> checkbox is on by default; the new user will be locked to the MFA enrolment page until they set up an authenticator.</li>
+          <li><strong>Edit User</strong>{" "}&mdash; Change display name, role, or company assignments. Tick <strong>Require MFA at next login</strong> to force an existing user to enrol in MFA on their next session.</li>
+          <li><strong>Reset Password</strong>{" "}&mdash; Set a new password for any user.</li>
+          <li><strong>Disable MFA</strong>{" "}&mdash; Turn off multi-factor authentication for a user.</li>
+          <li><strong>Disable / Enable Account</strong>{" "}&mdash; Suspend an account without deleting it &mdash; the power icon in the Actions column. A disabled user cannot sign in, and any session they already have open is signed out on their very next click. Nothing is lost: their role, company access, MFA setup and login history are all kept, so enabling the account restores it exactly as it was. You can record an optional reason, shown to other admins in the tooltip on the <em>Disabled</em> badge. You cannot disable your own account or the last SuperAdmin.</li>
+          <li><strong>Delete User</strong>{" "}&mdash; Remove a user account. You cannot delete yourself or the last admin. If you only want to stop someone signing in, disable the account instead &mdash; deleting is permanent and loses their history.</li>
         </ul>
 
         <h3>Columns</h3>
         <ul>
-          <li><strong>Username</strong> &mdash; Stored in lowercase. Login is case-insensitive (typing <code>Alice</code>, <code>alice</code>, or <code>ALICE</code> all match the same account).</li>
-          <li><strong>Role</strong> &mdash; The account&rsquo;s role, plus a grey <em>Disabled</em> badge if the account is suspended. Hover the badge to see who disabled it, when, and why. Disabled rows are greyed out.</li>
-          <li><strong>MFA</strong> &mdash; <em>Enabled</em> (green) when the user has set up an authenticator, <em>Required</em> (amber) when an admin has flagged the user with <strong>mustEnableMfa</strong> but they haven&apos;t enrolled yet, otherwise <em>Off</em>.</li>
-          <li><strong>Last login</strong> &mdash; Date and time of the most recent successful login (24-hour format).</li>
-          <li><strong>Last IP</strong> &mdash; Source IP of the most recent login, taken from the <code>X-Forwarded-For</code> header.</li>
+          <li><strong>Username</strong>{" "}&mdash; Stored in lowercase. Login is case-insensitive (typing <code>Alice</code>, <code>alice</code>, or <code>ALICE</code> all match the same account).</li>
+          <li><strong>Role</strong>{" "}&mdash; The account&rsquo;s role, plus a grey <em>Disabled</em> badge if the account is suspended. Hover the badge to see who disabled it, when, and why. Disabled rows are greyed out.</li>
+          <li><strong>MFA</strong>{" "}&mdash; <em>Enabled</em> (green) when the user has set up an authenticator, <em>Required</em> (amber) when an admin has flagged the user with <strong>mustEnableMfa</strong>{" "}but they haven&apos;t enrolled yet, otherwise <em>Off</em>.</li>
+          <li><strong>Last login</strong>{" "}&mdash; Date and time of the most recent successful login (24-hour format).</li>
+          <li><strong>Last IP</strong>{" "}&mdash; Source IP of the most recent login, taken from the <code>X-Forwarded-For</code> header.</li>
         </ul>
 
         <h3>Password Requirements</h3>
@@ -1256,9 +1256,9 @@ const helpSections: Record<string, HelpSection> = {
 
         <h3>Brute-force protection</h3>
         <p>
-          Login is defended on two levels. A <strong>per-IP limit</strong> caps
+          Login is defended on two levels. A <strong>per-IP limit</strong>{" "}caps
           attempts (10 per 15 minutes) so a single machine can&rsquo;t hammer the
-          login form. On top of that, a <strong>per-account lockout</strong> kicks
+          login form. On top of that, a <strong>per-account lockout</strong>{" "}kicks
           in after 5 consecutive failed attempts (wrong password or wrong MFA code)
           for the same account: the account is temporarily locked, and the lock
           window grows with each further failure (1 &rarr; 2 &rarr; 5 &rarr; 15
@@ -1269,7 +1269,7 @@ const helpSections: Record<string, HelpSection> = {
           in the database, so they are not reset by a server restart.
         </p>
         <p>
-          The <strong>Failed login attempts</strong> panel below the user table shows
+          The <strong>Failed login attempts</strong>{" "}panel below the user table shows
           recent rejected logins (the username tried &mdash; including made-up ones
           from spray attacks &mdash; the source IP, the reason, and the time). A
           currently <strong>locked</strong> account shows a red <em>Locked</em> badge
@@ -1278,7 +1278,7 @@ const helpSections: Record<string, HelpSection> = {
           again straight away; the log is kept for 30 days.
         </p>
         <p>
-          A <strong>disabled</strong> account is refused with the same
+          A <strong>disabled</strong>{" "}account is refused with the same
           &ldquo;Invalid username or password&rdquo; message as a wrong password.
           That is deliberate &mdash; a distinct message would tell an attacker
           that the username is real. The attempt is recorded in the panel above
@@ -1349,13 +1349,13 @@ const helpSections: Record<string, HelpSection> = {
         </p>
         <ul>
           <li>
-            <strong>Imports</strong> &mdash; CSV / Excel uploads parse Completed Date cells
+            <strong>Imports</strong>{" "}&mdash; CSV / Excel uploads parse Completed Date cells
             against this format. If the file&apos;s dates clearly use the other format (e.g.
             month=15 in a system set to <code>DD/MM/YYYY</code>), the import pauses and
             asks before continuing &mdash; see <strong>Import &gt; Date Format Detection</strong>.
           </li>
           <li>
-            <strong>Display</strong> &mdash; dates throughout the app render in this format
+            <strong>Display</strong>{" "}&mdash; dates throughout the app render in this format
             for any user who hasn&apos;t set their own preference.
           </li>
         </ul>
@@ -1393,7 +1393,7 @@ const helpSections: Record<string, HelpSection> = {
 
         <h3>Branding</h3>
         <p>
-          The <strong>Branding</strong> tab white-labels the app for your
+          The <strong>Branding</strong>{" "}tab white-labels the app for your
           organisation. Everything here applies instance-wide and takes effect
           immediately &mdash; there is no reinstall, rebuild or restart.
         </p>
@@ -1455,7 +1455,7 @@ const helpSections: Record<string, HelpSection> = {
           </tbody>
         </table>
         <p>
-          <strong>Notes.</strong> Charts and PDF exports keep their own colour
+          <strong>Notes.</strong>{" "}Charts and PDF exports keep their own colour
           palette and are not re-tinted. If you pick a light brand colour the app
           warns you, because buttons use white text on that colour. SVG uploads
           are refused for security reasons &mdash; an SVG can carry scripts.
@@ -1463,7 +1463,7 @@ const helpSections: Record<string, HelpSection> = {
           <strong>Wipe</strong> from Data Clean-Up resets it to the defaults.
         </p>
         <p>
-          Use <strong>Reset to defaults</strong> to clear the name, colour, logo
+          Use <strong>Reset to defaults</strong>{" "}to clear the name, colour, logo
           and favicon in one step. It doesn&apos;t touch any of your data.
         </p>
       </>
@@ -1738,7 +1738,7 @@ const helpSections: Record<string, HelpSection> = {
         <p>
           Click <strong>Upload Backup File</strong> and select a previously
           created backup file. For a <strong>portable</strong> backup, enter its
-          passphrase in the <strong>Portable backup passphrase</strong> field
+          passphrase in the <strong>Portable backup passphrase</strong>{" "}field
           (leave it blank for a standard backup). A confirmation dialog will
           appear &mdash; type <code>RESTORE</code> to proceed.
         </p>
@@ -1764,7 +1764,7 @@ const helpSections: Record<string, HelpSection> = {
         <ul>
           <li>
             <strong>Accounts are only replaced when the archive can actually
-            restore them</strong> &mdash; i.e. when it was created with{" "}
+            restore them</strong>{" "}&mdash; i.e. when it was created with{" "}
             <strong>Include user credentials</strong>. Otherwise the existing
             accounts are left exactly as they are, and the result banner says
             how many the archive held and that none could be restored. An
@@ -1772,7 +1772,7 @@ const helpSections: Record<string, HelpSection> = {
             nobody can sign in to.
           </li>
           <li>
-            <strong>Companies are matched by name and never deleted.</strong> A
+            <strong>Companies are matched by name and never deleted.</strong>{" "}A
             company already present here is reused; one that isn&apos;t is
             created. Students are re-pointed at the right company by name even
             when the two systems number them differently, and nothing else that
@@ -1801,24 +1801,24 @@ const helpSections: Record<string, HelpSection> = {
           Enable automatic backups to have the system save a backup to a local
           directory on a schedule. Configure the backup location, retention
           count, frequency (daily or weekly), and time. <strong>Include user
-          credentials</strong> is off by default &mdash; turn it on if you want
+          credentials</strong>{" "}is off by default &mdash; turn it on if you want
           a scheduled backup to be able to restore user accounts (it needs{" "}
           <code>ENCRYPTION_KEY</code> to be set, since scheduled backups are
           otherwise written unencrypted).
         </p>
         <ul>
           <li>
-            <strong>Location</strong> &mdash; The directory where backups are
+            <strong>Location</strong>{" "}&mdash; The directory where backups are
             saved. Click <strong>Browse</strong> to open a folder picker. You
             can also create new folders from the browser.
           </li>
           <li>
-            <strong>Keep last N backups</strong> &mdash; When the number of
+            <strong>Keep last N backups</strong>{" "}&mdash; When the number of
             saved backups exceeds this count, the oldest are automatically
             deleted.
           </li>
           <li>
-            <strong>Run Backup Now</strong> &mdash; Immediately saves a backup
+            <strong>Run Backup Now</strong>{" "}&mdash; Immediately saves a backup
             to the configured location without waiting for the schedule.
           </li>
         </ul>
@@ -1884,7 +1884,7 @@ const helpSections: Record<string, HelpSection> = {
           that opens a guided OAuth wizard. The wizard:
         </p>
         <ol>
-          <li>Shows the exact <strong>redirect URI</strong> to register in the provider&rsquo;s developer console (with a Copy button).</li>
+          <li>Shows the exact <strong>redirect URI</strong>{" "}to register in the provider&rsquo;s developer console (with a Copy button).</li>
           <li>Walks you through registering an OAuth app and grabbing the Client ID and Secret.</li>
           <li>Opens a popup to the provider&rsquo;s consent screen — sign in and approve.</li>
           <li>Captures the refresh token automatically and runs a Test Connection so you can see who you&rsquo;re connected as.</li>
@@ -1966,7 +1966,7 @@ const helpSections: Record<string, HelpSection> = {
           re-importing an edited export never duplicates rows (programs not in the file are
           left untouched). The preview warns you which programs will be replaced and asks
           you to tick a confirmation before importing. Export and import round-trip the full
-          program structure — the program-level <strong>Deployment Handling</strong> and,
+          program structure — the program-level <strong>Deployment Handling</strong>{" "}and,
           for tiered programs, each tier&apos;s <strong>Tier Order</strong> and{" "}
           <strong>Tier Specialisations Required</strong> — so a program exported and
           re-imported unchanged is restored exactly (tiers with no requirements of their own
@@ -1978,7 +1978,7 @@ const helpSections: Record<string, HelpSection> = {
         <p>
           Tick <strong>Tiered program</strong> when creating a program to unlock{" "}
           <strong>tiers</strong> (e.g. Tier A, B, C) that a partner reaches based on how
-          many <strong>specialisations</strong> they have achieved. A specialisation is
+          many <strong>specialisations</strong>{" "}they have achieved. A specialisation is
           achieved when all of its qualifying (Sales/Pre-Sales) cert requirements are met
           by enough distinct people. On a tiered program&apos;s page a <strong>Tiers</strong>{" "}
           section lets you add tiers (name, ladder order, and how many specialisations each
@@ -1986,14 +1986,14 @@ const helpSections: Record<string, HelpSection> = {
         </p>
         <ul>
           <li><strong>Flat</strong> — each tier lists its own deployment cert requirements.</li>
-          <li><strong>Per achieved specialisation</strong> — each achieved specialisation&apos;s
+          <li><strong>Per achieved specialisation</strong>{" "}— each achieved specialisation&apos;s
             own deployment cert requirements must be met (add these as requirements with
             purpose <em>Deployment</em>). The same set applies to every tier.</li>
           <li><strong>Per tier, per achieved specialisation</strong> — each tier lists its own
             deployment cert requirements <em>for each specialisation</em>, so they scale up the
             ladder. When adding a tier&apos;s deployment requirement you pick which specialisation
             it applies to. The tier is reached when <em>at least the required number of</em>{" "}
-            specialisations each meet all of that tier&apos;s criteria — achieved <em>and</em> all
+            specialisations each meet all of that tier&apos;s criteria — achieved <em>and</em>{" "}all
             of that tier&apos;s deployment certs for that specialisation (a specialisation with no
             deployment certs for the tier counts on qualification alone). Specialisations that
             aren&apos;t fully met don&apos;t count toward the total, so they don&apos;t block the
@@ -2050,7 +2050,7 @@ const helpSections: Record<string, HelpSection> = {
 
         <h3>Adding Requirements</h3>
         <p>
-          Open a program&apos;s box, then use <strong>Add Requirement</strong> to create a
+          Open a program&apos;s box, then use <strong>Add Requirement</strong>{" "}to create a
           single entry — the requirement is automatically attached to the program whose
           page you&apos;re on. For Global-level requirements, check <strong>No specific
           training</strong> if the entry counts compliant theatres, or leave unchecked to
@@ -2126,7 +2126,7 @@ const helpSections: Record<string, HelpSection> = {
         <p>
           The headline metric is <strong>People to certify</strong>: how many
           people still need to earn a certification to close the plan&apos;s gaps.
-          It&apos;s <em>deduplicated</em> — if one person&apos;s single exam
+          It&apos;s <em>deduplicated</em>{" "}— if one person&apos;s single exam
           satisfies several requirements at once, they count once.
         </p>
 
@@ -2141,7 +2141,7 @@ const helpSections: Record<string, HelpSection> = {
             <strong>Tiered programs</strong> — target a <strong>tier</strong> (the
             tool picks the cheapest specialisations to get you there — reaching a
             tier only needs as many specialisations as the tier requires, and any{" "}
-            <em>equally-cheap</em> alternatives are flagged &ldquo;Recommended&rdquo;
+            <em>equally-cheap</em>{" "}alternatives are flagged &ldquo;Recommended&rdquo;
             so you can choose), or specific specialisation(s).
           </li>
           <li>
@@ -2175,7 +2175,7 @@ const helpSections: Record<string, HelpSection> = {
             is the required cert.
           </li>
           <li>
-            <strong>Net-new</strong> — needs the full ILT/OLX &rarr; cert path.
+            <strong>Net-new</strong>{" "}— needs the full ILT/OLX &rarr; cert path.
             Reported as a remaining count rather than named people.
           </li>
         </ul>
@@ -2187,9 +2187,9 @@ const helpSections: Record<string, HelpSection> = {
           single exam closes the same cert in several places appears once. Two
           at-a-glance columns show <strong>which specialisation(s)</strong> that
           person would help fulfil and the <strong>relevant training they already
-          hold</strong> (the ILT/OLX behind an easy win, or the legacy cert behind a
+          hold</strong>{" "}(the ILT/OLX behind an easy win, or the legacy cert behind a
           legacy upgrade) — so it&apos;s obvious why they&apos;re a cheap candidate.
-          Expanding a row spells each gap out in <strong>plain language</strong> —
+          Expanding a row spells each gap out in <strong>plain language</strong>{" "}—
           e.g. &ldquo;They have taken <em>Training A</em>. Passing the <em>Cert
           A</em> certification exam will contribute to the <em>Specialisation Y</em>{" "}
           specialisation.&rdquo; — worded to match their situation (training already
@@ -2197,7 +2197,7 @@ const helpSections: Record<string, HelpSection> = {
         </p>
         <p>
           Below &ldquo;Who to certify&rdquo;, an <strong>&ldquo;All eligible
-          candidates&rdquo;</strong> section lists the <strong>full pool</strong> —
+          candidates&rdquo;</strong> section lists the <strong>full pool</strong>{" "}—
           everyone who already holds qualifying training and could be certified, not
           just the cheapest subset the plan nominates. Use it to pick alternatives
           (e.g. someone in a particular country) when the recommended person
@@ -2207,7 +2207,7 @@ const helpSections: Record<string, HelpSection> = {
         <h3>Scope &amp; renewals</h3>
         <p>
           Each scope plans against <strong>only its own-level requirements</strong>,
-          exactly like the program dashboards: choosing a <em>country</em> shows
+          exactly like the program dashboards: choosing a <em>country</em>{" "}shows
           that country&apos;s Country-level requirements — not the theatre-wide
           requirement above it. Select the <em>theatre</em> if you want to plan
           against theatre-level requirements.
@@ -2220,7 +2220,7 @@ const helpSections: Record<string, HelpSection> = {
           anything that is met <em>today</em> but falls below its requirement by the end
           of the window is shaded <strong>amber</strong> and badged{" "}
           <strong>&ldquo;At risk in Nmo&rdquo;</strong> alongside its green{" "}
-          <strong>Achieved</strong> badge — it is compliant now and won&apos;t be then.
+          <strong>Achieved</strong>{" "}badge — it is compliant now and won&apos;t be then.
           The <strong>Renewals at risk</strong> section lists the holders whose training
           expires, led by a summary of exactly which requirements their expiry breaks.
         </p>
@@ -2228,7 +2228,7 @@ const helpSections: Record<string, HelpSection> = {
           By default the window is <em>informational</em>: the KPIs and
           &ldquo;Who to certify&rdquo; still answer &ldquo;what is broken today?&rdquo;.
           Tick <strong>Plan for this window</strong> to fold it in — gaps are then sized
-          from the projected figure, <strong>People to certify</strong> includes the
+          from the projected figure, <strong>People to certify</strong>{" "}includes the
           renewals needed to hold compliance through the window, and those people appear
           in &ldquo;Who to certify&rdquo; as <strong>Renewal (expiring)</strong>{" "}
           candidates. For a tiered program this can change which specialisations are
@@ -2239,7 +2239,7 @@ const helpSections: Record<string, HelpSection> = {
         <h3>Export</h3>
         <p>
           Use <strong>Export report</strong> in the page header to download the{" "}
-          <em>whole plan</em> as one file — a summary of the KPI totals, the
+          <em>whole plan</em>{" "}as one file — a summary of the KPI totals, the
           aggregate roadmap (every requirement gap), the &ldquo;Who to
           certify&rdquo; candidate list, and the renewals-at-risk list — in CSV,
           Excel, or PDF. In Excel each section becomes its own sheet; the PDF
@@ -2264,7 +2264,7 @@ const helpSections: Record<string, HelpSection> = {
         </p>
         <p>
           A single <strong>View</strong> selector at the top drives the whole
-          page: a <strong>Level</strong> dropdown (Global / By Theatre / By Region
+          page: a <strong>Level</strong>{" "}dropdown (Global / By Theatre / By Region
           / By Country, limited to the program&apos;s configured levels) plus a{" "}
           <strong>Value</strong> dropdown for the chosen level (which theatre /
           region / country; hidden for Global). Picking a scope shows the{" "}
@@ -2275,11 +2275,11 @@ const helpSections: Record<string, HelpSection> = {
         <h3>Tier Status</h3>
         <p>
           Shown for <strong>tiered</strong> programs, above the report and
-          following the page <strong>View</strong> scope (including By Region,
+          following the page <strong>View</strong>{" "}scope (including By Region,
           aggregated across the region&apos;s countries). It shows the
           partner&apos;s <strong>highest tier achieved</strong> and progress toward
           the next one. Each tier card shows how many specialisations are achieved
-          versus required (and <strong>lists which specialisations</strong> are
+          versus required (and <strong>lists which specialisations</strong>{" "}are
           currently achieved at that scope), plus any Deployment cert requirements
           with their distinct-holder counts (expand a requirement to see the
           per-theatre breakdown). With a &ldquo;Compliance as of&rdquo; horizon
@@ -2298,7 +2298,7 @@ const helpSections: Record<string, HelpSection> = {
         </p>
         <p>
           Where a specialisation has <strong>Deployment requirements</strong> (tiered
-          programs in <em>per-achieved-specialisation</em> mode), they appear in their own
+          programs in <em>per-achieved-specialisation</em>{" "}mode), they appear in their own
           sub-section below the qualifying rows. A specialisation is still achieved on its
           qualifying requirements alone, but a tier that uses it also needs these
           deployment requirements — so they&apos;re shown here (with their own met/not-met
@@ -2321,7 +2321,7 @@ const helpSections: Record<string, HelpSection> = {
         </p>
         <ul>
           <li>
-            <strong>Compliant-theatre count</strong> — when global rows have no
+            <strong>Compliant-theatre count</strong>{" "}— when global rows have no
             specific training, the report shows how many theatres meet all of a
             specialisation&apos;s theatre-level requirements, against a target
             number of compliant theatres.
@@ -2509,7 +2509,7 @@ const helpSections: Record<string, HelpSection> = {
         </p>
         <ul>
           <li>Use it as a <strong>kill switch</strong> — turning the API off stops all external access at once, without touching your keys, so switching it back on restores access with no re-issuing.</li>
-          <li>The switch always wins: while the API is off, a key showing <em>Active</em> in the table below still can&rsquo;t be used.</li>
+          <li>The switch always wins: while the API is off, a key showing <em>Active</em>{" "}in the table below still can&rsquo;t be used.</li>
           <li>Changes take up to <strong>30 seconds</strong> to take effect, because the setting is briefly cached.</li>
         </ul>
 
@@ -2550,7 +2550,7 @@ const helpSections: Record<string, HelpSection> = {
           <li><strong>Edit</strong> renames a key, changes its companies, or adjusts its expiry. <strong>Delete</strong> removes it entirely.</li>
           <li>The <strong>Last used</strong> column shows when the key last made a request, so unused keys are easy to spot and clean up. The <strong>Last IP</strong> column shows the source IP of that request (from the <code>X-Forwarded-For</code> header), so you can confirm traffic is coming from where you expect.</li>
           <li>Each key is rate-limited (120 requests per minute); excess requests receive an HTTP 429. Requests made with an invalid or unknown key are separately throttled per IP (20 failures per 5 minutes), so the API can&rsquo;t be sprayed with key guesses.</li>
-          <li>The <strong>Failed API attempts</strong> panel below the table shows recent rejected requests &mdash; a masked prefix of the key that was tried (plus its name if it matched a known disabled/revoked/expired key), the source IP, the reason, and the time. Use <strong>Unblock IP</strong> to lift the throttle on an address. The log is kept for 30 days.</li>
+          <li>The <strong>Failed API attempts</strong>{" "}panel below the table shows recent rejected requests &mdash; a masked prefix of the key that was tried (plus its name if it matched a known disabled/revoked/expired key), the source IP, the reason, and the time. Use <strong>Unblock IP</strong> to lift the throttle on an address. The log is kept for 30 days.</li>
           <li>Treat keys like passwords: only stored as a hash, never logged, and best sent server-to-server rather than from a browser.</li>
         </ul>
       </>

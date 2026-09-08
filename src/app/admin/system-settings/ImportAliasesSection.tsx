@@ -367,7 +367,7 @@ export default function ImportAliasesSection() {
         {importStep === "mapping" && (
           <div className="space-y-4">
             <div className="text-sm text-gray-600">
-              File: <strong>{fileName}</strong> &mdash; {fileRows.length} rows.
+              File: <strong>{fileName}</strong>{" "}&mdash; {fileRows.length} rows.
             </div>
             <div className="space-y-2">
               {IMPORT_TARGET_FIELDS_FOR_FILE.map((field) => (

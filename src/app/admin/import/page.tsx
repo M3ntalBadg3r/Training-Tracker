@@ -444,7 +444,7 @@ export default function ImportPage() {
             <p className="text-sm text-gray-600 mb-4">
               Map the columns from your file to the required fields. For the name,
               map either a <strong>Full Name</strong> column, or both{" "}
-              <strong>First Name</strong> and <strong>Last Name</strong> (they&apos;ll
+              <strong>First Name</strong> and <strong>Last Name</strong>{" "}(they&apos;ll
               be merged). The Company column is optional — if a row has no value, the
               default company below will be used.
             </p>
@@ -757,7 +757,7 @@ export default function ImportPage() {
               <ul className="text-xs bg-gray-50 border border-gray-200 rounded-lg p-2 max-h-32 overflow-y-auto">
                 {swapPrompt.samples.map((s) => (
                   <li key={s.stored} className="text-gray-700">
-                    <span className="font-mono">{s.stored}</span> &rarr;{" "}
+                    <span className="font-mono">{s.stored}</span>{" "}&rarr;{" "}
                     <span className="font-mono">{s.corrected}</span>
                   </li>
                 ))}
