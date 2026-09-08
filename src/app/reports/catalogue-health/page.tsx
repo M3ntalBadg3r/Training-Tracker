@@ -7,10 +7,13 @@ import KpiStrip from "@/components/ui/KpiStrip";
 import { useChartTheme, tooltipStyle } from "@/lib/chart-theme";
 import { useProductTypeColors } from "@/hooks/useProductTypeColors";
 import { useTableSort, SortAccessor } from "@/hooks/useTableSort";
-import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
+import { exportToCsv, exportToExcel } from "@/lib/export";
+import { exportReportTablePdf } from "@/lib/report-export";
+import ExportMenu, { type ExportFormat } from "@/components/ui/ExportMenu";
+import { ExportableChart, useChartCapture } from "@/components/reports/ChartCaptureProvider";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
 import { useFetchJson } from "@/hooks/useFetchJson";
-import { ArrowLeft, Download, BookOpen, AlertOctagon, AlertTriangle, TrendingDown } from "lucide-react";
+import { ArrowLeft, BookOpen, AlertOctagon, AlertTriangle, TrendingDown } from "lucide-react";
 import {
   BarChart,
   Bar,
@@ -48,24 +51,6 @@ function TitleYAxisTick(props: { x?: number; y?: number; payload?: { value?: str
       <title>{value}</title>
       {truncateLabel(value, 48)}
     </text>
-  );
-}
-
-function ExportMenu({ data, columns, filename }: { data: Record<string, unknown>[]; columns: { key: string; header: string }[]; filename: string }) {
-  const [show, setShow] = useState(false);
-  return (
-    <div className="relative">
-      <button onClick={() => setShow((p) => !p)} className="flex items-center gap-2 px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300">
-        <Download size={16} /> Export
-      </button>
-      {show && (
-        <div className="absolute right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[140px]">
-          <button onClick={() => { exportToCsv(data, columns as never, filename); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-t-lg">Export as CSV</button>
-          <button onClick={() => { exportToExcel(data, columns as never, filename); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100">Export as Excel</button>
-          <button onClick={() => { exportToPdf(data, columns as never, filename); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-b-lg">Export as PDF</button>
-        </div>
-      )}
-    </div>
   );
 }
 
@@ -121,6 +106,9 @@ export default function CatalogueHealthPage() {
   const topUptake = useMemo(() => filtered.slice().sort((a, b) => b.activeStudents - a.activeStudents).slice(0, 10), [filtered]);
   const topExpiring = useMemo(() => filtered.slice().filter((r) => r.expiring90d > 0).sort((a, b) => b.expiring90d - a.expiring90d).slice(0, 10), [filtered]);
 
+  const { captureAllCharts } = useChartCapture();
+  const [exporting, setExporting] = useState(false);
+
   const exportColumns = [
     { key: "fullTitle", header: "Training" },
     { key: "productType", header: "Product" },
@@ -134,6 +122,23 @@ export default function CatalogueHealthPage() {
     { key: "zeroUptake", header: "Zero Uptake" },
   ];
   const exportRows = filtered.map((r) => ({ ...r, uptakePct: r.uptakePct.toFixed(1), zeroUptake: r.zeroUptake ? "Yes" : "No" }));
+
+  const handleExport = async (fmt: ExportFormat, { includeCharts }: { includeCharts: boolean }) => {
+    if (fmt === "csv") return exportToCsv(exportRows as never, exportColumns as never, "catalogue-health");
+    if (fmt === "excel") return exportToExcel(exportRows as never, exportColumns as never, "catalogue-health");
+    setExporting(true);
+    try {
+      exportReportTablePdf({
+        title: "Training Catalogue Health",
+        filename: "catalogue-health",
+        columns: exportColumns,
+        rows: exportRows as never,
+        charts: includeCharts ? await captureAllCharts() : [],
+      });
+    } finally {
+      setExporting(false);
+    }
+  };
 
   if (loading) {
     return <div className="flex items-center justify-center h-64"><div className="text-gray-500">Loading report...</div></div>;
@@ -158,7 +163,7 @@ export default function CatalogueHealthPage() {
       />
 
       <section className="grid grid-cols-1 gap-6 mb-6">
-        <div className="bg-white rounded-lg border border-gray-200 p-5">
+        <ExportableChart className="bg-white rounded-lg border border-gray-200 p-5">
           <h3 className="text-base font-semibold text-gray-900 mb-4">Top 10 by Active Students</h3>
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={topUptake} layout="vertical" margin={{ left: 8 }}>
@@ -173,8 +178,8 @@ export default function CatalogueHealthPage() {
               </Bar>
             </BarChart>
           </ResponsiveContainer>
-        </div>
-        <div className="bg-white rounded-lg border border-gray-200 p-5">
+        </ExportableChart>
+        <ExportableChart className="bg-white rounded-lg border border-gray-200 p-5">
           <h3 className="text-base font-semibold text-gray-900 mb-4">Mass-Expiry Risk (90 days)</h3>
           {topExpiring.length === 0 ? (
             <div className="text-sm text-gray-500 py-8 text-center">No titles with active records expiring in the next 90 days.</div>
@@ -193,7 +198,7 @@ export default function CatalogueHealthPage() {
               </BarChart>
             </ResponsiveContainer>
           )}
-        </div>
+        </ExportableChart>
       </section>
 
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
@@ -216,7 +221,7 @@ export default function CatalogueHealthPage() {
               <option value="zero">Zero Completions Only</option>
               <option value="expiring">With 90-day Expiries</option>
             </select>
-            <ExportMenu data={exportRows as never} columns={exportColumns} filename="catalogue-health" />
+            <ExportMenu onExport={handleExport} busy={exporting} />
           </div>
 
           <div className="overflow-x-auto">

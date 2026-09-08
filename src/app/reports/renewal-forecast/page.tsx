@@ -6,11 +6,14 @@ import PageHeader from "@/components/layout/PageHeader";
 import KpiStrip from "@/components/ui/KpiStrip";
 import { useChartTheme, tooltipStyle } from "@/lib/chart-theme";
 import { useTableSort, SortAccessor } from "@/hooks/useTableSort";
-import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
+import { exportToCsv, exportToExcel } from "@/lib/export";
+import { exportReportTablePdf } from "@/lib/report-export";
+import ExportMenu, { type ExportFormat } from "@/components/ui/ExportMenu";
+import { ExportableChart, useChartCapture } from "@/components/reports/ChartCaptureProvider";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
 import { useFetchJson } from "@/hooks/useFetchJson";
 import { useRegionData } from "@/hooks/useRegionData";
-import { ArrowLeft, Download, RefreshCw, AlertTriangle, TrendingUp, RotateCcw } from "lucide-react";
+import { ArrowLeft, RefreshCw, AlertTriangle, TrendingUp, RotateCcw } from "lucide-react";
 import {
   BarChart,
   Bar,
@@ -48,24 +51,6 @@ interface ForecastResponse {
   scopeLabel: string;
 }
 
-
-function ExportMenu({ data, columns, filename }: { data: Record<string, unknown>[]; columns: { key: string; header: string }[]; filename: string }) {
-  const [show, setShow] = useState(false);
-  return (
-    <div className="relative">
-      <button onClick={() => setShow((p) => !p)} className="flex items-center gap-2 px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300">
-        <Download size={16} /> Export
-      </button>
-      {show && (
-        <div className="absolute right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[140px]">
-          <button onClick={() => { exportToCsv(data, columns as never, filename); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-t-lg">Export as CSV</button>
-          <button onClick={() => { exportToExcel(data, columns as never, filename); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100">Export as Excel</button>
-          <button onClick={() => { exportToPdf(data, columns as never, filename); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-b-lg">Export as PDF</button>
-        </div>
-      )}
-    </div>
-  );
-}
 
 export default function RenewalForecastPage() {
   const chart = useChartTheme();
@@ -142,6 +127,9 @@ export default function RenewalForecastPage() {
     descFirstKeys: ["expiringCount", "rate", "projectedLapsed"],
   });
 
+  const { captureAllCharts } = useChartCapture();
+  const [exporting, setExporting] = useState(false);
+
   const exportColumns = [
     { key: "fullTitle", header: "Training" },
     { key: "productType", header: "Product" },
@@ -151,6 +139,23 @@ export default function RenewalForecastPage() {
     { key: "projectedLapsed", header: "Projected Lapses" },
   ];
   const exportRows = filteredTitleRows.map((r) => ({ ...r, rate: r.rate.toFixed(1) }));
+
+  const handleExport = async (fmt: ExportFormat, { includeCharts }: { includeCharts: boolean }) => {
+    if (fmt === "csv") return exportToCsv(exportRows as never, exportColumns as never, "renewal-forecast");
+    if (fmt === "excel") return exportToExcel(exportRows as never, exportColumns as never, "renewal-forecast");
+    setExporting(true);
+    try {
+      exportReportTablePdf({
+        title: "Renewal Forecast",
+        filename: "renewal-forecast",
+        columns: exportColumns,
+        rows: exportRows as never,
+        charts: includeCharts ? await captureAllCharts() : [],
+      });
+    } finally {
+      setExporting(false);
+    }
+  };
 
   if (loading || !data) {
     return <div className="flex items-center justify-center h-64"><div className="text-gray-500">Loading report...</div></div>;
@@ -192,7 +197,7 @@ export default function RenewalForecastPage() {
         ]}
       />
 
-      <section className="bg-white rounded-lg border border-gray-200 p-5 mb-6">
+      <ExportableChart as="section" className="bg-white rounded-lg border border-gray-200 p-5 mb-6">
         <h3 className="text-base font-semibold text-gray-900 mb-4">Forecast: Projected Renewals vs Lapses by Month</h3>
         <ResponsiveContainer width="100%" height={300}>
           <BarChart data={data.monthly}>
@@ -209,7 +214,7 @@ export default function RenewalForecastPage() {
           Renewal rates are computed per training (≥5 historical expiries), then per product as fallback, then global ({data.globalRate}%).
           A renewal counts when a learner later re-completes the same training; an expired record with no later re-completion counts as a lapse.
         </p>
-      </section>
+      </ExportableChart>
 
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-wrap gap-2">
@@ -222,7 +227,7 @@ export default function RenewalForecastPage() {
               <option value="">All Products</option>
               {products.map((p) => <option key={p} value={p}>{p}</option>)}
             </select>
-            <ExportMenu data={exportRows as never} columns={exportColumns} filename="renewal-forecast" />
+            <ExportMenu onExport={handleExport} busy={exporting} />
           </div>
 
           <div className="overflow-x-auto">

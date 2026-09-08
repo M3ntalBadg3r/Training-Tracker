@@ -6,11 +6,14 @@ import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import PageHeader from "@/components/layout/PageHeader";
 import KpiStrip from "@/components/ui/KpiStrip";
 import { useChartTheme, tooltipStyle } from "@/lib/chart-theme";
-import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
+import { exportToCsv, exportToExcel } from "@/lib/export";
+import { exportReportTablePdf } from "@/lib/report-export";
+import ExportMenu, { type ExportFormat } from "@/components/ui/ExportMenu";
+import { ExportableChart, useChartCapture } from "@/components/reports/ChartCaptureProvider";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
 import { useDebounce } from "@/hooks/useDebounce";
 import { useDateFormat } from "@/components/date-format/DateFormatProvider";
-import { ArrowLeft, Download, Users, Award, AlertTriangle, Clock } from "lucide-react";
+import { ArrowLeft, Users, Award, AlertTriangle, Clock } from "lucide-react";
 import Pagination from "@/components/data-table/Pagination";
 import {
   BarChart,
@@ -60,24 +63,6 @@ const WINDOW_OPTIONS: { value: number; label: string }[] = [
 ];
 
 const PAGE_SIZE_OPTIONS = [25, 50, 100, 200];
-
-function ExportMenu({ onExport, busy }: { onExport: (fmt: "csv" | "excel" | "pdf") => void; busy: boolean }) {
-  const [show, setShow] = useState(false);
-  return (
-    <div className="relative">
-      <button onClick={() => setShow((p) => !p)} disabled={busy} className="flex items-center gap-2 px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300 disabled:opacity-50">
-        <Download size={16} /> {busy ? "Exporting…" : "Export"}
-      </button>
-      {show && !busy && (
-        <div className="absolute right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[140px]">
-          <button onClick={() => { onExport("csv"); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-t-lg">Export as CSV</button>
-          <button onClick={() => { onExport("excel"); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100">Export as Excel</button>
-          <button onClick={() => { onExport("pdf"); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-b-lg">Export as PDF</button>
-        </div>
-      )}
-    </div>
-  );
-}
 
 function LearnerScorecardPageInner() {
   const router = useRouter();
@@ -208,7 +193,9 @@ function LearnerScorecardPageInner() {
     { key: "lastDate", header: "Last Achievement" },
   ];
 
-  const handleExport = async (fmt: "csv" | "excel" | "pdf") => {
+  const { captureAllCharts } = useChartCapture();
+
+  const handleExport = async (fmt: ExportFormat, { includeCharts }: { includeCharts: boolean }) => {
     setExporting(true);
     try {
       const url = withCompany(`/api/reports/learner-scorecard?${buildParams({ all: true }).toString()}`, companyScope.selected);
@@ -217,7 +204,15 @@ function LearnerScorecardPageInner() {
       const exportRows = d.rows.map((l) => ({ ...l, lastDate: l.lastDate ? formatDate(l.lastDate) : "" }));
       if (fmt === "csv") exportToCsv(exportRows as never, exportColumns as never, "learner-scorecard");
       else if (fmt === "excel") exportToExcel(exportRows as never, exportColumns as never, "learner-scorecard");
-      else exportToPdf(exportRows as never, exportColumns as never, "learner-scorecard");
+      else {
+        exportReportTablePdf({
+          title: "Learner Achievement Scorecard",
+          filename: "learner-scorecard",
+          columns: exportColumns,
+          rows: exportRows as never,
+          charts: includeCharts ? await captureAllCharts() : [],
+        });
+      }
     } finally {
       setExporting(false);
     }
@@ -274,7 +269,7 @@ function LearnerScorecardPageInner() {
         ]}
       />
 
-      <section className="bg-white rounded-lg border border-gray-200 p-5 mb-6">
+      <ExportableChart as="section" className="bg-white rounded-lg border border-gray-200 p-5 mb-6">
         <h3 className="text-base font-semibold text-gray-900 mb-4">
           Top Achievers — {includeExpired ? "total" : "active"} achievements
         </h3>
@@ -291,7 +286,7 @@ function LearnerScorecardPageInner() {
         ) : (
           <p className="text-sm text-gray-500 py-8 text-center">No achievements for the selected filters.</p>
         )}
-      </section>
+      </ExportableChart>
 
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-wrap gap-2">

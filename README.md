@@ -549,7 +549,7 @@ Rows that fail to parse against the chosen format are reported per-row with the 
 
 ## Reports
 
-Navigate to **Reports** in the sidebar. Each report follows the same shape: a four-card **KPI strip** at the top, a **chart row** above the table, then a **filtered, groupable table** with CSV / Excel / PDF export. Charts are interactive — clicking a bar, segment, or month drills the table down to that slice. PDF / Excel / CSV exports remain tabular (the original column shapes for the existing five reports are unchanged so scheduled exports keep working).
+Navigate to **Reports** in the sidebar. Each report follows the same shape: a four-card **KPI strip** at the top, a **chart row** above the table, then a **filtered, groupable table** with CSV / Excel / PDF export. Charts are interactive — clicking a bar, segment, or month drills the table down to that slice. **PDF exports can include the report's charts** (see [Exporting Data](#exporting-data)); CSV and Excel exports remain tabular (the original column shapes for the existing five reports are unchanged so scheduled exports keep working).
 
 ### Common Features
 
@@ -1334,3 +1334,23 @@ Each export supports three formats:
 - **PDF** — Formatted table document. Automatically switches to landscape orientation when there are more than 5 columns.
 
 Click the **Export** button and select the desired format. For reports, the export respects any active filters — only the currently displayed results are exported.
+
+### Including charts in a PDF
+
+On report pages the Export menu also offers **Include charts in PDF**. Leave it ticked
+(the default) and a PDF export leads with pictures of the report's charts, in the order
+they appear on the page, followed by the data table. Untick it for a data-only PDF; the
+choice is remembered on your device.
+
+A few things worth knowing:
+
+- **PDF only.** CSV is a plain-text format and cannot hold a picture, and the Excel
+  writer cannot embed one, so the option is named for the format it applies to — CSV and
+  Excel exports are unaffected either way.
+- **Charts always print on a light background**, whichever theme you are using, so a
+  report exported in dark mode looks the same as one exported in light mode. If you use
+  dark mode you will see the charts briefly turn light while the export is prepared.
+- **What you see is what you get** — the captured charts reflect the filters, grouping
+  and date range in force at the moment you export.
+- A chart that is not on screen — for example a panel showing "no data" for the current
+  filters — is simply left out of the PDF.

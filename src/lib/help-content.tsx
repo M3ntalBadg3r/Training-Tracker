@@ -503,7 +503,8 @@ const helpSections: Record<string, HelpSection> = {
           The Reports section contains nine report pages, each accessible from
           the sidebar or the Reports landing page. Dashboard chart cards link
           directly to the relevant report. Every report exports as CSV, Excel,
-          or PDF (tabular data only — charts are screen-only).
+          or PDF, and a PDF export can include the report&rsquo;s charts as well
+          as its data.
         </p>
 
         <h3>Common Features</h3>
@@ -517,7 +518,8 @@ const helpSections: Record<string, HelpSection> = {
           <li><strong>Date-range picker</strong> — limit results to a date window (where applicable). Includes presets for Last 30/90 days, Last 12 months, YTD, and All time.</li>
           <li><strong>Paginated tables</strong> — the detail-heavy reports (By Product Type, By Function, Expiring Soon, Achievement Over Time, Trained But Not Certified, Legacy Replacement Gap, Currently Expired, Learner Achievement Scorecard) are computed on the server and page through their rows one page at a time — use the <strong>Show N records</strong> selector and the numbered page buttons beneath the table. Charts, KPI cards and exports always cover the full filtered set, not just the visible page.</li>
           <li><strong>Back restores your view</strong> — your filters, search, grouping, sort, page number and page size are kept in the page address, so clicking into a record and pressing your browser&rsquo;s Back button returns you to the report exactly as you left it. This also applies to the Students and Training lists. The address can also be bookmarked or shared to reopen the same filtered view.</li>
-          <li><strong>Dark mode</strong> — chart axes, gridlines, and tooltips adapt automatically.</li>
+          <li><strong>Include charts in PDF</strong> — the Export menu carries an <strong>Include charts in PDF</strong> tickbox (on by default; your choice is remembered on this device). With it ticked a PDF export opens with pictures of the report&rsquo;s charts, in the order they appear on screen, followed by the data table. It applies to PDF only: CSV is plain text and cannot hold a picture, and the Excel writer cannot embed one, so those two exports are unaffected. The captured charts reflect whatever filters, grouping and dates are in force when you export, and a panel currently showing no data is simply left out.</li>
+          <li><strong>Dark mode</strong> — chart axes, gridlines, and tooltips adapt automatically. Charts in an exported PDF are always drawn on a light background so a report looks the same however it was exported; in dark mode you will see the charts flick to light for a moment while the file is prepared.</li>
         </ul>
 
         <h3>By Product Type</h3>
