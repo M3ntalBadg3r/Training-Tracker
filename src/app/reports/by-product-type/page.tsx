@@ -10,12 +10,15 @@ import DateRangePicker, { DateRangeValue } from "@/components/ui/DateRangePicker
 import { useChartTheme, tooltipStyle } from "@/lib/chart-theme";
 import { useProductTypeColors } from "@/hooks/useProductTypeColors";
 import { resolveBucket, GROUP_BY_LABEL, GroupByMode } from "@/lib/group-by";
-import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
+import { exportToCsv, exportToExcel } from "@/lib/export";
+import { exportReportTablePdf } from "@/lib/report-export";
+import ExportMenu, { type ExportFormat } from "@/components/ui/ExportMenu";
+import { ExportableChart, useChartCapture } from "@/components/reports/ChartCaptureProvider";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
 import { useDebounce } from "@/hooks/useDebounce";
 import GeoScopeFilter, { GeoScope } from "@/components/reports/GeoScopeFilter";
 import { useDateFormat } from "@/components/date-format/DateFormatProvider";
-import { Search, Download, ArrowLeft, Award, ShieldCheck, GraduationCap, CircleCheck } from "lucide-react";
+import { Search, ArrowLeft, Award, ShieldCheck, GraduationCap, CircleCheck } from "lucide-react";
 import Pagination from "@/components/data-table/Pagination";
 import {
   BarChart,
@@ -84,24 +87,6 @@ const exportColumns = [
   { key: "expiryDate", header: "Expiry Date" },
   { key: "active", header: "Active" },
 ];
-
-function ExportMenu({ onExport, busy }: { onExport: (fmt: "csv" | "excel" | "pdf") => void; busy: boolean }) {
-  const [show, setShow] = useState(false);
-  return (
-    <div className="relative">
-      <button onClick={() => setShow((p) => !p)} disabled={busy} className="flex items-center gap-2 px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300 disabled:opacity-50">
-        <Download size={16} /> {busy ? "Exporting…" : "Export"}
-      </button>
-      {show && !busy && (
-        <div className="absolute right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[140px]">
-          <button onClick={() => { onExport("csv"); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-t-lg">Export as CSV</button>
-          <button onClick={() => { onExport("excel"); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100">Export as Excel</button>
-          <button onClick={() => { onExport("pdf"); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-b-lg">Export as PDF</button>
-        </div>
-      )}
-    </div>
-  );
-}
 
 function parseGroupBy(v: string | null, fallback: GroupByMode | null): GroupByMode | null {
   if (v === "none") return null;
@@ -224,12 +209,16 @@ function ByProductTypePageInner() {
   const products = data?.filterOptions.products ?? [];
   const types = data?.filterOptions.types ?? [];
 
+  // The colour is deliberately NOT in this array: a theme-dependent value here
+  // changes the array's identity when the palette flips, which restarts the Pie
+  // sector animation — and chart capture flips the palette to light, so it would
+  // photograph a half-drawn pie. Resolve the colour in <Cell> instead.
   const statusSeries = useMemo(
     () => [
-      { name: "Active", value: kpis.active, color: chart.isDark ? "#34d399" : "#10b981" },
-      { name: "Expired", value: kpis.expired, color: chart.isDark ? "#f87171" : "#ef4444" },
+      { name: "Active", value: kpis.active, kind: "active" as const },
+      { name: "Expired", value: kpis.expired, kind: "expired" as const },
     ],
-    [kpis.active, kpis.expired, chart.isDark]
+    [kpis.active, kpis.expired]
   );
 
   const toggleSort = (key: string) => {
@@ -241,7 +230,9 @@ function ByProductTypePageInner() {
   };
   const sortIndicator = (key: string) => (sortColumn === key ? (sortDir === "asc" ? " ▲" : " ▼") : "");
 
-  const handleExport = async (fmt: "csv" | "excel" | "pdf") => {
+  const { captureAllCharts } = useChartCapture();
+
+  const handleExport = async (fmt: ExportFormat, { includeCharts }: { includeCharts: boolean }) => {
     setExporting(true);
     try {
       const url = withCompany(`/api/reports/by-product-type?${buildParams({ all: true }).toString()}`, companyScope.selected);
@@ -255,7 +246,15 @@ function ByProductTypePageInner() {
       }));
       if (fmt === "csv") exportToCsv(exportRows as never, exportColumns as never, "by-product-type");
       else if (fmt === "excel") exportToExcel(exportRows as never, exportColumns as never, "by-product-type");
-      else exportToPdf(exportRows as never, exportColumns as never, "by-product-type");
+      else {
+        exportReportTablePdf({
+          title: "By Product Type",
+          filename: "by-product-type",
+          columns: exportColumns,
+          rows: exportRows as never,
+          charts: includeCharts ? await captureAllCharts() : [],
+        });
+      }
     } finally {
       setExporting(false);
     }
@@ -363,7 +362,7 @@ function ByProductTypePageInner() {
       />
 
       <section className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-        <div className="lg:col-span-2 bg-white rounded-lg border border-gray-200 p-5">
+        <ExportableChart className="lg:col-span-2 bg-white rounded-lg border border-gray-200 p-5">
           <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
             <h3 className="text-base font-semibold text-gray-900">{countPeople ? "People by Product Type" : "Records by Product Type"}</h3>
             <div className="flex items-center gap-3">
@@ -402,19 +401,19 @@ function ByProductTypePageInner() {
             </BarChart>
           </ResponsiveContainer>
           <p className="text-xs text-gray-400 mt-2">Click a bar to filter the table by that product</p>
-        </div>
-        <div className="bg-white rounded-lg border border-gray-200 p-5">
+        </ExportableChart>
+        <ExportableChart className="bg-white rounded-lg border border-gray-200 p-5">
           <h3 className="text-base font-semibold text-gray-900 mb-4">Active vs Expired</h3>
           <ResponsiveContainer width="100%" height={300}>
             <PieChart>
               <Pie data={statusSeries} dataKey="value" nameKey="name" innerRadius={50} outerRadius={90} paddingAngle={2}>
-                {statusSeries.map((s) => <Cell key={s.name} fill={s.color} />)}
+                {statusSeries.map((s) => <Cell key={s.name} fill={chart.statusColor(s.kind)} />)}
               </Pie>
               <Tooltip contentStyle={tooltipStyle(chart)} />
               <Legend />
             </PieChart>
           </ResponsiveContainer>
-        </div>
+        </ExportableChart>
       </section>
 
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">

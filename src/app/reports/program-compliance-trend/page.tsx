@@ -6,11 +6,14 @@ import PageHeader from "@/components/layout/PageHeader";
 import KpiStrip from "@/components/ui/KpiStrip";
 import { useChartTheme, tooltipStyle } from "@/lib/chart-theme";
 import { useTableSort, SortAccessor } from "@/hooks/useTableSort";
-import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
+import { exportToCsv, exportToExcel } from "@/lib/export";
+import { exportReportTablePdf } from "@/lib/report-export";
+import ExportMenu, { type ExportFormat } from "@/components/ui/ExportMenu";
+import { ExportableChart, useChartCapture } from "@/components/reports/ChartCaptureProvider";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
 import { useFetchJson } from "@/hooks/useFetchJson";
 import { useRegionData } from "@/hooks/useRegionData";
-import { ArrowLeft, Download, TrendingUp, ShieldCheck, Award, BarChart3 } from "lucide-react";
+import { ArrowLeft, TrendingUp, ShieldCheck, Award, BarChart3 } from "lucide-react";
 import {
   LineChart,
   Line,
@@ -41,24 +44,6 @@ interface TrendResponse {
   scopeLabel: string;
 }
 
-
-function ExportMenu({ data, columns, filename }: { data: Record<string, unknown>[]; columns: { key: string; header: string }[]; filename: string }) {
-  const [show, setShow] = useState(false);
-  return (
-    <div className="relative">
-      <button onClick={() => setShow((p) => !p)} className="flex items-center gap-2 px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300">
-        <Download size={16} /> Export
-      </button>
-      {show && (
-        <div className="absolute right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[140px]">
-          <button onClick={() => { exportToCsv(data, columns as never, filename); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-t-lg">Export as CSV</button>
-          <button onClick={() => { exportToExcel(data, columns as never, filename); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100">Export as Excel</button>
-          <button onClick={() => { exportToPdf(data, columns as never, filename); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-b-lg">Export as PDF</button>
-        </div>
-      )}
-    </div>
-  );
-}
 
 export default function ProgramComplianceTrendPage() {
   const chart = useChartTheme();
@@ -174,6 +159,9 @@ export default function ProgramComplianceTrendPage() {
     { defaultKey: "monthKey", tiebreakKey: "specialisation", descFirstKeys: ["attained", "required", "compliancePct"] },
   );
 
+  const { captureAllCharts } = useChartCapture();
+  const [exporting, setExporting] = useState(false);
+
   const exportColumns = [
     { key: "program", header: "Program" },
     { key: "specialisation", header: "Specialisation" },
@@ -184,6 +172,23 @@ export default function ProgramComplianceTrendPage() {
     { key: "projected", header: "Projected" },
   ];
   const exportRows = (data?.snapshots ?? []).map((s) => ({ ...s, compliancePct: s.compliancePct.toFixed(1), projected: s.projected ? "Yes" : "No" }));
+
+  const handleExport = async (fmt: ExportFormat, { includeCharts }: { includeCharts: boolean }) => {
+    if (fmt === "csv") return exportToCsv(exportRows as never, exportColumns as never, "program-compliance-trend");
+    if (fmt === "excel") return exportToExcel(exportRows as never, exportColumns as never, "program-compliance-trend");
+    setExporting(true);
+    try {
+      exportReportTablePdf({
+        title: "Program Compliance Trend",
+        filename: "program-compliance-trend",
+        columns: exportColumns,
+        rows: exportRows as never,
+        charts: includeCharts ? await captureAllCharts() : [],
+      });
+    } finally {
+      setExporting(false);
+    }
+  };
 
   if (loading || !data) {
     return <div className="flex items-center justify-center h-64"><div className="text-gray-500">Loading report...</div></div>;
@@ -227,30 +232,32 @@ export default function ProgramComplianceTrendPage() {
               <option value="">All Countries</option>
               {countryOptions.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
-            <ExportMenu data={exportRows as never} columns={exportColumns} filename="program-compliance-trend" />
+            <ExportMenu onExport={handleExport} busy={exporting} />
           </div>
         </div>
         <p className="text-xs text-gray-500 mb-4">
           Showing: <span className="font-medium text-gray-700">{data.scopeLabel}</span> · scoped to the company selected above. Solid = history, dashed = forecast (assumes no new completions — only existing certifications expiring).
         </p>
-        <ResponsiveContainer width="100%" height={350}>
-          <LineChart data={chartData}>
-            <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
-            <XAxis dataKey="monthLabel" tick={{ fontSize: 11, fill: chart.axis }} stroke={chart.axis} angle={-35} textAnchor="end" height={50} />
-            <YAxis allowDecimals={false} domain={[0, 100]} unit="%" tick={{ fontSize: 12, fill: chart.axis }} stroke={chart.axis} />
-            <Tooltip contentStyle={tooltipStyle(chart)} />
-            <Legend />
-            {nowMonthLabel && (
-              <ReferenceLine x={nowMonthLabel} stroke={chart.axis} strokeDasharray="4 4" label={{ value: "Forecast →", position: "top", fill: chart.axis, fontSize: 11 }} />
-            )}
-            {seriesKeys.map((k, i) => (
-              <Line key={k} name={k} type="monotone" dataKey={k} stroke={chart.series(i)} strokeWidth={2} dot={{ r: 2 }} connectNulls={false} />
-            ))}
-            {seriesKeys.map((k, i) => (
-              <Line key={`${k}__forecast`} name={`${k} (forecast)`} legendType="none" type="monotone" dataKey={`${k}__forecast`} stroke={chart.series(i)} strokeWidth={2} strokeDasharray="6 4" dot={{ r: 2 }} connectNulls={false} />
-            ))}
-          </LineChart>
-        </ResponsiveContainer>
+        <ExportableChart title="Compliance Trend">
+          <ResponsiveContainer width="100%" height={350}>
+            <LineChart data={chartData}>
+              <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
+              <XAxis dataKey="monthLabel" tick={{ fontSize: 11, fill: chart.axis }} stroke={chart.axis} angle={-35} textAnchor="end" height={50} />
+              <YAxis allowDecimals={false} domain={[0, 100]} unit="%" tick={{ fontSize: 12, fill: chart.axis }} stroke={chart.axis} />
+              <Tooltip contentStyle={tooltipStyle(chart)} />
+              <Legend />
+              {nowMonthLabel && (
+                <ReferenceLine x={nowMonthLabel} stroke={chart.axis} strokeDasharray="4 4" label={{ value: "Forecast →", position: "top", fill: chart.axis, fontSize: 11 }} />
+              )}
+              {seriesKeys.map((k, i) => (
+                <Line key={k} name={k} type="monotone" dataKey={k} stroke={chart.series(i)} strokeWidth={2} dot={{ r: 2 }} connectNulls={false} />
+              ))}
+              {seriesKeys.map((k, i) => (
+                <Line key={`${k}__forecast`} name={`${k} (forecast)`} legendType="none" type="monotone" dataKey={`${k}__forecast`} stroke={chart.series(i)} strokeWidth={2} strokeDasharray="6 4" dot={{ r: 2 }} connectNulls={false} />
+              ))}
+            </LineChart>
+          </ResponsiveContainer>
+        </ExportableChart>
         {seriesKeys.length === 0 && (
           <div className="text-sm text-gray-500 mt-4 text-center">No program compliance data — set up specialisations and program data in Admin first.</div>
         )}

@@ -20,9 +20,11 @@ export async function POST(request: NextRequest) {
   }
 
   let passphrase = "";
+  let includeCredentials = false;
   try {
     const body = await request.json();
     passphrase = typeof body?.passphrase === "string" ? body.passphrase : "";
+    includeCredentials = body?.includeCredentials === true;
   } catch {
     // fall through to validation below
   }
@@ -34,7 +36,10 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { buffer, timestamp } = await generateBackupZip();
+  // A portable archive is passphrase-encrypted by construction, so unlike the
+  // ENCRYPTION_KEY-based path there is no case where credentials would land in
+  // a plaintext zip — the opt-in is honoured as given.
+  const { buffer, timestamp } = await generateBackupZip({ includeCredentials });
   const encrypted = encryptBufferWithPassphrase(Buffer.from(buffer), passphrase);
   const filename = `training-tracker-backup-${timestamp}.portable.zip.enc`;
 

@@ -1,5 +1,6 @@
 "use client";
 
+import { createContext, useContext } from "react";
 import { useTheme } from "@/components/theme/ThemeProvider";
 
 export const TYPE_COLORS = {
@@ -56,11 +57,28 @@ export interface ChartTheme {
   series: (i: number) => string;
   /** Look up a configured product-type colour, falling back to neutral grey. */
   productColor: (name: string | null | undefined, map: Record<string, string | null>) => string;
+  /**
+   * The active/expired colour pair used by the "Active vs Expired" donuts.
+   * Read it inside `<Cell fill>` rather than baking it into the chart's data
+   * array — a colour that lives in the data changes the array's identity when
+   * the theme flips, which restarts the Recharts sector animation and would
+   * make `chart-capture.ts` photograph a half-drawn pie.
+   */
+  statusColor: (kind: "active" | "expired") => string;
 }
+
+/**
+ * While true, `useChartTheme()` reports the light palette no matter what the
+ * user's theme is. Set only by `ChartCaptureProvider` for the few frames it
+ * takes to capture charts for a PDF, so an exported report looks the same for
+ * a dark-mode user as a light-mode one.
+ */
+export const ForceLightChartsContext = createContext(false);
 
 export function useChartTheme(): ChartTheme {
   const { theme } = useTheme();
-  const isDark = theme === "dark";
+  const forceLight = useContext(ForceLightChartsContext);
+  const isDark = theme === "dark" && !forceLight;
   const neutral = isDark ? NEUTRAL_GREY_DARK : NEUTRAL_GREY;
   return {
     isDark,
@@ -77,6 +95,10 @@ export function useChartTheme(): ChartTheme {
       const v = map[name];
       return v && HEX_RE.test(v) ? v : neutral;
     },
+    statusColor: (kind) =>
+      kind === "active"
+        ? (isDark ? "#34d399" : "#10b981")
+        : (isDark ? "#f87171" : "#ef4444"),
   };
 }
 

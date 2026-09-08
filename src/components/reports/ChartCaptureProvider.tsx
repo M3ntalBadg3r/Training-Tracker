@@ -1,0 +1,159 @@
+"use client";
+
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
+import { flushSync } from "react-dom";
+import { ForceLightChartsContext } from "@/lib/chart-theme";
+import { captureCharts, type CapturedChart } from "@/lib/chart-capture";
+
+/**
+ * Lets an export menu anywhere on the page capture the charts above it.
+ *
+ * Mounted once in `AppShell`, so any report page's charts are visible to any
+ * export button without either side knowing about the other.
+ */
+interface ChartCaptureValue {
+  /** Charts currently mounted. Zero hides the "include charts" option. */
+  chartCount: number;
+  /** Called by `ExportableChart` on mount; returns its unregister. */
+  registerChart: () => () => void;
+  /** Force the light palette, wait for the charts to settle, capture, restore. Never throws. */
+  captureAllCharts: () => Promise<CapturedChart[]>;
+}
+
+const ChartCaptureContext = createContext<ChartCaptureValue>({
+  chartCount: 0,
+  registerChart: () => () => {},
+  captureAllCharts: async () => [],
+});
+
+export function useChartCapture(): ChartCaptureValue {
+  return useContext(ChartCaptureContext);
+}
+
+/**
+ * The mounted chart cards, in document order.
+ *
+ * `querySelectorAll` returns nodes in document order by specification, so the
+ * marker attribute gives ordered discovery for free — no registry to keep in
+ * sync and no stale nodes to sort. The filter covers the brief window where the
+ * App Router has two page trees mounted during a navigation.
+ */
+function findChartCards(): HTMLElement[] {
+  return Array.from(document.querySelectorAll<HTMLElement>("[data-exportable-chart]")).filter(
+    (node) => node.isConnected && node.getBoundingClientRect().width > 0
+  );
+}
+
+function nextFrame(): Promise<void> {
+  return new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+}
+
+/**
+ * Resolve once the charts stop moving, or give up after `cap` ms.
+ *
+ * A fixed frame count is the wrong tool: the right answer is ~2 frames when
+ * only colours changed, but ~90 if a Recharts animation restarted. Polling for
+ * geometric stability is fast in the common case and still correct in the slow
+ * one.
+ */
+async function settle(cards: HTMLElement[], cap = 2000): Promise<void> {
+  const signature = () =>
+    cards
+      .map((card) =>
+        Array.from(card.querySelectorAll("path,rect,circle,line"))
+          .map((el) => el.getAttribute("d") ?? `${el.getAttribute("width")}x${el.getAttribute("height")}`)
+          .join(",")
+      )
+      .join(";");
+
+  const deadline = performance.now() + cap;
+  let previous = "";
+  let stableFrames = 0;
+  while (performance.now() < deadline) {
+    await nextFrame();
+    const current = signature();
+    stableFrames = current === previous ? stableFrames + 1 : 0;
+    previous = current;
+    if (stableFrames >= 3) return;
+  }
+}
+
+export default function ChartCaptureProvider({ children }: { children: ReactNode }) {
+  const [chartCount, setChartCount] = useState(0);
+  const [forceLight, setForceLight] = useState(false);
+
+  const registerChart = useCallback(() => {
+    setChartCount((n) => n + 1);
+    return () => setChartCount((n) => n - 1);
+  }, []);
+
+  const captureAllCharts = useCallback(async (): Promise<CapturedChart[]> => {
+    const cards = findChartCards();
+    if (cards.length === 0) return [];
+    try {
+      // Commit the palette switch before we start polling for stability, so the
+      // first frames we measure are already the light ones.
+      flushSync(() => setForceLight(true));
+      await settle(cards);
+      return await captureCharts(cards);
+    } catch {
+      return [];
+    } finally {
+      setForceLight(false);
+    }
+  }, []);
+
+  const value = useMemo(
+    () => ({ chartCount, registerChart, captureAllCharts }),
+    [chartCount, registerChart, captureAllCharts]
+  );
+
+  return (
+    <ChartCaptureContext.Provider value={value}>
+      <ForceLightChartsContext.Provider value={forceLight}>
+        {children}
+      </ForceLightChartsContext.Provider>
+    </ChartCaptureContext.Provider>
+  );
+}
+
+/**
+ * Marks a chart card as exportable. Drop-in replacement for the card's own
+ * wrapper element — pass the existing `className` through unchanged.
+ *
+ * Wrap the *card*, not the `ResponsiveContainer`: several reports swap the
+ * chart for an empty state, and one renders either a line or a bar chart in a
+ * single container. Asking "is there a chart in this card right now?" at
+ * capture time handles all of those with no per-page special casing, and it
+ * keeps the card's `<h3>` inside the wrapper so the section title can be read
+ * from the DOM (some titles are built from the current filters).
+ */
+export function ExportableChart({
+  className,
+  title,
+  as: Tag = "div",
+  children,
+}: {
+  className?: string;
+  /** Overrides the title; by default the card's `<h3>` is read at capture time. */
+  title?: string;
+  as?: "div" | "section";
+  children: ReactNode;
+}) {
+  const { registerChart } = useChartCapture();
+  useEffect(() => registerChart(), [registerChart]);
+
+  return (
+    <Tag className={className} data-exportable-chart="" {...(title ? { "data-chart-title": title } : {})}>
+      {children}
+    </Tag>
+  );
+}

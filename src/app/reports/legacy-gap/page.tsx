@@ -9,12 +9,15 @@ import KpiStrip from "@/components/ui/KpiStrip";
 import { useChartTheme, tooltipStyle } from "@/lib/chart-theme";
 import { useProductTypeColors } from "@/hooks/useProductTypeColors";
 import { resolveBucket, GROUP_BY_LABEL, GroupByMode } from "@/lib/group-by";
-import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
+import { exportToCsv, exportToExcel } from "@/lib/export";
+import { exportReportTablePdf } from "@/lib/report-export";
+import ExportMenu, { type ExportFormat } from "@/components/ui/ExportMenu";
+import { ExportableChart, useChartCapture } from "@/components/reports/ChartCaptureProvider";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
 import { useDebounce } from "@/hooks/useDebounce";
 import { useDateFormat } from "@/components/date-format/DateFormatProvider";
 import GeoScopeFilter, { GeoScope } from "@/components/reports/GeoScopeFilter";
-import { Search, Download, ArrowLeft, History, AlertCircle, AlertTriangle, Ban } from "lucide-react";
+import { Search, ArrowLeft, History, AlertCircle, AlertTriangle, Ban } from "lucide-react";
 import Pagination from "@/components/data-table/Pagination";
 import {
   BarChart,
@@ -86,24 +89,6 @@ const exportColumns = [
   { key: "legacyExpiryDate", header: "Expires" },
   { key: "legacyActive", header: "Active" },
 ];
-
-function ExportMenu({ onExport, busy }: { onExport: (fmt: "csv" | "excel" | "pdf") => void; busy: boolean }) {
-  const [show, setShow] = useState(false);
-  return (
-    <div className="relative">
-      <button onClick={() => setShow((p) => !p)} disabled={busy} className="flex items-center gap-2 px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300 disabled:opacity-50">
-        <Download size={16} /> {busy ? "Exporting…" : "Export"}
-      </button>
-      {show && !busy && (
-        <div className="absolute right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[140px]">
-          <button onClick={() => { onExport("csv"); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-t-lg">Export as CSV</button>
-          <button onClick={() => { onExport("excel"); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100">Export as Excel</button>
-          <button onClick={() => { onExport("pdf"); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-b-lg">Export as PDF</button>
-        </div>
-      )}
-    </div>
-  );
-}
 
 function parseGroupBy(v: string | null, fallback: GroupByMode | null): GroupByMode | null {
   if (v === "none") return null;
@@ -230,7 +215,9 @@ function LegacyGapPageInner() {
   };
   const sortIndicator = (key: string) => (sortColumn === key ? (sortDir === "asc" ? " ▲" : " ▼") : "");
 
-  const handleExport = async (fmt: "csv" | "excel" | "pdf") => {
+  const { captureAllCharts } = useChartCapture();
+
+  const handleExport = async (fmt: ExportFormat, { includeCharts }: { includeCharts: boolean }) => {
     setExporting(true);
     try {
       const url = withCompany(`/api/reports/legacy-gap?${buildParams({ all: true }).toString()}`, companyScope.selected);
@@ -246,7 +233,15 @@ function LegacyGapPageInner() {
       }));
       if (fmt === "csv") exportToCsv(exportRows as never, exportColumns as never, "legacy-replacement-gap");
       else if (fmt === "excel") exportToExcel(exportRows as never, exportColumns as never, "legacy-replacement-gap");
-      else exportToPdf(exportRows as never, exportColumns as never, "legacy-replacement-gap");
+      else {
+        exportReportTablePdf({
+          title: "Legacy Replacement Gap",
+          filename: "legacy-replacement-gap",
+          columns: exportColumns,
+          rows: exportRows as never,
+          charts: includeCharts ? await captureAllCharts() : [],
+        });
+      }
     } finally {
       setExporting(false);
     }
@@ -362,7 +357,7 @@ function LegacyGapPageInner() {
       />
 
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        <div className="bg-white rounded-lg border border-gray-200 p-5">
+        <ExportableChart className="bg-white rounded-lg border border-gray-200 p-5">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-base font-semibold text-gray-900">Legacy Expiry Horizon</h3>
             {filterHorizon && (
@@ -381,8 +376,8 @@ function LegacyGapPageInner() {
             </BarChart>
           </ResponsiveContainer>
           <p className="text-xs text-gray-400 mt-2">Buckets use the learner&apos;s legacy training expiry. Click a band to filter the table.</p>
-        </div>
-        <div className="bg-white rounded-lg border border-gray-200 p-5">
+        </ExportableChart>
+        <ExportableChart className="bg-white rounded-lg border border-gray-200 p-5">
           <h3 className="text-base font-semibold text-gray-900 mb-4">Gaps by Product</h3>
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={charts.productSeries} layout="vertical" margin={{ left: 20 }}>
@@ -397,7 +392,7 @@ function LegacyGapPageInner() {
               </Bar>
             </BarChart>
           </ResponsiveContainer>
-        </div>
+        </ExportableChart>
       </section>
 
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">

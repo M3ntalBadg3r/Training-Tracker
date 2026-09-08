@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { handleAuthError, requireSuperAdmin } from "@/lib/auth";
-import { invalidateUserStatusCache } from "@/lib/user-status";
+import {
+  countUsableSuperAdmins,
+  invalidateUserStatusCache,
+} from "@/lib/user-status";
 
 const VALID_ROLES = new Set(["SuperAdmin", "Admin", "User"]);
 
@@ -24,14 +27,11 @@ const USER_SELECT = {
 
 /**
  * How many *other* SuperAdmins could still sign in if this one were demoted,
- * deleted or disabled. Disabled accounts are excluded deliberately: a suspended
- * SuperAdmin can't administer anything, so counting them would let the last
- * usable SuperAdmin be removed and lock everyone out of admin.
+ * deleted or disabled. The "usable" predicate (enabled, not suspended) lives in
+ * lib/user-status.ts so this guard and the backup restore share one definition.
  */
 async function countOtherUsableSuperAdmins(userId: number): Promise<number> {
-  return prisma.user.count({
-    where: { role: "SuperAdmin", disabledAt: null, id: { not: userId } },
-  });
+  return countUsableSuperAdmins(userId);
 }
 
 // PUT: update display name, role, and (optionally) company assignments

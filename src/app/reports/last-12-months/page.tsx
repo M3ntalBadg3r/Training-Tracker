@@ -10,12 +10,15 @@ import DateRangePicker, { DateRangeValue } from "@/components/ui/DateRangePicker
 import { useChartTheme, tooltipStyle } from "@/lib/chart-theme";
 import { useProductTypeColors } from "@/hooks/useProductTypeColors";
 import { resolveBucket, GROUP_BY_LABEL, GroupByMode } from "@/lib/group-by";
-import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
+import { exportToCsv, exportToExcel } from "@/lib/export";
+import { exportReportTablePdf } from "@/lib/report-export";
+import ExportMenu, { type ExportFormat } from "@/components/ui/ExportMenu";
+import { ExportableChart, useChartCapture } from "@/components/reports/ChartCaptureProvider";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
 import { useDebounce } from "@/hooks/useDebounce";
 import { useDateFormat } from "@/components/date-format/DateFormatProvider";
 import GeoScopeFilter, { GeoScope } from "@/components/reports/GeoScopeFilter";
-import { Search, Download, ArrowLeft, Award, ShieldCheck, GraduationCap, TrendingUp } from "lucide-react";
+import { Search, ArrowLeft, Award, ShieldCheck, GraduationCap, TrendingUp } from "lucide-react";
 import Pagination from "@/components/data-table/Pagination";
 import {
   Area,
@@ -93,24 +96,6 @@ const exportColumns = [
   { key: "expiryDate", header: "Expiry Date" },
   { key: "active", header: "Active" },
 ];
-
-function ExportMenu({ onExport, busy }: { onExport: (fmt: "csv" | "excel" | "pdf") => void; busy: boolean }) {
-  const [show, setShow] = useState(false);
-  return (
-    <div className="relative">
-      <button onClick={() => setShow((p) => !p)} disabled={busy} className="flex items-center gap-2 px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300 disabled:opacity-50">
-        <Download size={16} /> {busy ? "Exporting…" : "Export"}
-      </button>
-      {show && !busy && (
-        <div className="absolute right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[140px]">
-          <button onClick={() => { onExport("csv"); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-t-lg">Export as CSV</button>
-          <button onClick={() => { onExport("excel"); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100">Export as Excel</button>
-          <button onClick={() => { onExport("pdf"); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-b-lg">Export as PDF</button>
-        </div>
-      )}
-    </div>
-  );
-}
 
 function parseGroupBy(v: string | null, fallback: GroupByMode | null): GroupByMode | null {
   if (v === "none") return null;
@@ -257,7 +242,9 @@ function AchievementOverTimePageInner() {
   };
   const sortIndicator = (key: string) => (sortColumn === key ? (sortDir === "asc" ? " ▲" : " ▼") : "");
 
-  const handleExport = async (fmt: "csv" | "excel" | "pdf") => {
+  const { captureAllCharts } = useChartCapture();
+
+  const handleExport = async (fmt: ExportFormat, { includeCharts }: { includeCharts: boolean }) => {
     setExporting(true);
     try {
       const url = withCompany(`/api/reports/last-12-months?${buildParams({ all: true }).toString()}`, companyScope.selected);
@@ -271,7 +258,15 @@ function AchievementOverTimePageInner() {
       }));
       if (fmt === "csv") exportToCsv(exportRows as never, exportColumns as never, "achievement-over-time");
       else if (fmt === "excel") exportToExcel(exportRows as never, exportColumns as never, "achievement-over-time");
-      else exportToPdf(exportRows as never, exportColumns as never, "achievement-over-time");
+      else {
+        exportReportTablePdf({
+          title: "Achievement Over Time",
+          filename: "achievement-over-time",
+          columns: exportColumns,
+          rows: exportRows as never,
+          charts: includeCharts ? await captureAllCharts() : [],
+        });
+      }
     } finally {
       setExporting(false);
     }
@@ -404,7 +399,7 @@ function AchievementOverTimePageInner() {
       />
 
       <section className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-        <div className="lg:col-span-2 bg-white rounded-lg border border-gray-200 p-5">
+        <ExportableChart className="lg:col-span-2 bg-white rounded-lg border border-gray-200 p-5">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-base font-semibold text-gray-900">{granularityLabel} Completions vs Prior Period</h3>
             {filterBucket && (
@@ -454,7 +449,7 @@ function AchievementOverTimePageInner() {
             </ComposedChart>
           </ResponsiveContainer>
           <p className="text-xs text-gray-400 mt-2">Click a point to filter the table to that {bucketLabel}</p>
-        </div>
+        </ExportableChart>
         <div className="bg-white rounded-lg border border-gray-200 p-5">
           <h3 className="text-base font-semibold text-gray-900 mb-4">Top 10 Trainings</h3>
           <div className="space-y-2">

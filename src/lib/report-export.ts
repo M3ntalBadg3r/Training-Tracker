@@ -15,10 +15,11 @@ import { downloadBlob } from "@/lib/export";
  * (stacked with section titles), Excel (one sheet per section) and PDF (stacked
  * headed tables).
  *
- * The `ReportImageSection` variant is an intentional, not-yet-emitted hook for
- * embedding captured charts. The PDF generator already places image sections via
- * `doc.addImage`, so a future "export charts too" change only has to produce the
- * PNG data URLs and push image sections into the document.
+ * `ReportImageSection` carries a captured chart. `lib/chart-capture.ts` produces
+ * the PNG data URLs and `exportReportTablePdf` (below) assembles them, so a
+ * report page's PDF can lead with its charts. Only the PDF renderer draws them:
+ * CSV has nowhere to put an image, and Excel is written with SheetJS's community
+ * build, which cannot embed one.
  */
 
 export interface ReportTableSection {
@@ -31,9 +32,8 @@ export interface ReportTableSection {
 }
 
 /**
- * FUTURE: a rendered chart embedded as an image. No caller emits these yet, but
- * the document model + PDF generator support them so charts can be added later
- * without touching this contract.
+ * A rendered chart embedded as an image. Produced by `lib/chart-capture.ts`;
+ * drawn only by the PDF renderer (CSV and Excel skip it).
  */
 export interface ReportImageSection {
   kind: "image";
@@ -135,7 +135,13 @@ export function exportReportToPdf(doc: ReportDocument, filename: string): void {
     (max, s) => (isTableSection(s) ? Math.max(max, s.columns.length) : max),
     0
   );
-  const pdf = new jsPDF({ orientation: widestCols > 6 ? "landscape" : "portrait" });
+  // Captured charts are wide (~2-3:1). At the portrait content width one is only
+  // ~70mm tall, so images alone need not force a flip — but a document that is
+  // *only* charts should still get the wider page, which the column count alone
+  // could never tell us.
+  const hasWideImage = doc.sections.some((s) => !isTableSection(s) && (s.aspectRatio ?? 2) >= 2.2);
+  const landscape = widestCols > 6 || (widestCols === 0 && hasWideImage);
+  const pdf = new jsPDF({ orientation: landscape ? "landscape" : "portrait" });
   const pageWidth = pdf.internal.pageSize.getWidth();
   const pageHeight = pdf.internal.pageSize.getHeight();
   const margin = 14;
@@ -162,8 +168,9 @@ export function exportReportToPdf(doc: ReportDocument, filename: string): void {
     }
   };
 
-  for (const section of doc.sections) {
-    ensureSpace(16);
+  const contentWidth = pageWidth - margin * 2;
+
+  const drawHeading = (section: ReportSection) => {
     pdf.setFontSize(12);
     pdf.text(section.title, margin, y);
     y += 5;
@@ -174,8 +181,14 @@ export function exportReportToPdf(doc: ReportDocument, filename: string): void {
       pdf.setTextColor(0);
       y += 5;
     }
+  };
+
+  for (const section of doc.sections) {
+    const headingHeight = 5 + (section.subtitle ? 5 : 0);
 
     if (isTableSection(section)) {
+      ensureSpace(16);
+      drawHeading(section);
       autoTable(pdf, {
         head: [section.columns.map((c) => c.header)],
         body: section.rows.map((row) =>
@@ -190,15 +203,65 @@ export function exportReportToPdf(doc: ReportDocument, filename: string): void {
       y = (pdf as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? y;
       y += 8;
     } else {
-      // Future chart hook: place the captured image scaled to the content width.
       const ratio = section.aspectRatio && section.aspectRatio > 0 ? section.aspectRatio : 2;
-      const imgWidth = pageWidth - margin * 2;
-      const imgHeight = imgWidth / ratio;
-      ensureSpace(imgHeight + 4);
-      pdf.addImage(section.dataUrl, "PNG", margin, y, imgWidth, imgHeight);
+      let imgWidth = contentWidth;
+      let imgHeight = imgWidth / ratio;
+
+      // A tall image must be scaled to fit. Reserving space for it instead would
+      // just add a blank page and overflow that one too.
+      const maxHeight = pageHeight - margin * 2 - headingHeight - 8;
+      if (imgHeight > maxHeight) {
+        imgHeight = maxHeight;
+        imgWidth = imgHeight * ratio;
+      }
+
+      // One reservation covering heading *and* image, so a section title can
+      // never be left stranded at the foot of a page with its chart overleaf.
+      ensureSpace(headingHeight + imgHeight + 8);
+      drawHeading(section);
+      pdf.addImage(section.dataUrl, "PNG", margin + (contentWidth - imgWidth) / 2, y, imgWidth, imgHeight);
       y += imgHeight + 8;
     }
   }
 
   pdf.save(`${filename}.pdf`);
+}
+
+/**
+ * Export one report page — a single data table, optionally led by its charts —
+ * as a PDF.
+ *
+ * Report pages route *all* their PDF exports through here, whether or not
+ * charts were requested. Falling back to `lib/export.ts`'s `exportToPdf` when
+ * the box is unticked would make the same report produce a visibly different
+ * document depending on a checkbox: that one titles the page from the filename
+ * at 14pt with no section heading, and picks its orientation on a different
+ * threshold (`columns.length > 5` here vs `widestCols > 6`), so a six-column
+ * report would silently flip between portrait and landscape.
+ *
+ * CSV and Excel deliberately stay on the `lib/export.ts` helpers — routing them
+ * here would change file *contents* (an extra Overview sheet, a renamed data
+ * sheet) that the server-side scheduled exports do not mirror.
+ */
+export function exportReportTablePdf(opts: {
+  title: string;
+  filename: string;
+  columns: { key: string; header: string }[];
+  rows: Record<string, string | number>[];
+  meta?: { label: string; value: string }[];
+  /** Heading above the data table. Defaults to "Data". */
+  tableTitle?: string;
+  /** Captured charts, drawn above the table in the order they appear on the page. */
+  charts?: { title: string; dataUrl: string; aspectRatio: number }[];
+}): void {
+  const sections: ReportSection[] = [
+    ...(opts.charts ?? []).map((chart) => ({
+      kind: "image" as const,
+      title: chart.title,
+      dataUrl: chart.dataUrl,
+      aspectRatio: chart.aspectRatio,
+    })),
+    { title: opts.tableTitle ?? "Data", columns: opts.columns, rows: opts.rows },
+  ];
+  exportReportToPdf({ title: opts.title, meta: opts.meta, sections }, opts.filename);
 }

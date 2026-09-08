@@ -6,6 +6,7 @@ import { Menu } from "lucide-react";
 import Sidebar from "@/components/layout/Sidebar";
 import CompanySwitcher from "@/components/company/CompanySwitcher";
 import IdleTimeoutManager from "@/components/auth/IdleTimeoutManager";
+import ChartCaptureProvider from "@/components/reports/ChartCaptureProvider";
 
 const NO_SHELL_PATHS = ["/login", "/setup", "/setup-mfa"];
 
@@ -70,7 +71,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             <CompanySwitcher />
           </div>
         </header>
-        <main className="flex-1 overflow-auto bg-gray-50 p-4 sm:p-6">{children}</main>
+        <main className="flex-1 overflow-auto bg-gray-50 p-4 sm:p-6">
+          <ChartCaptureProvider>{children}</ChartCaptureProvider>
+        </main>
       </div>
     </div>
   );

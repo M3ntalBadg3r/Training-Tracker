@@ -8,9 +8,12 @@ import DateRangePicker, { DateRangeValue } from "@/components/ui/DateRangePicker
 import { useChartTheme, tooltipStyle } from "@/lib/chart-theme";
 import { useProductTypeColors } from "@/hooks/useProductTypeColors";
 import { GroupByMode, GROUP_BY_LABEL } from "@/lib/group-by";
-import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
+import { exportToCsv, exportToExcel } from "@/lib/export";
+import { exportReportTablePdf } from "@/lib/report-export";
+import ExportMenu, { type ExportFormat } from "@/components/ui/ExportMenu";
+import { ExportableChart, useChartCapture } from "@/components/reports/ChartCaptureProvider";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
-import { ArrowLeft, Download, Users, GraduationCap, Map as MapIcon, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Users, GraduationCap, Map as MapIcon, AlertTriangle } from "lucide-react";
 import {
   BarChart,
   Bar,
@@ -69,24 +72,6 @@ interface ComparisonResponse {
 
 function localYmd(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-function ExportMenu({ onExport, busy }: { onExport: (fmt: "csv" | "excel" | "pdf") => void; busy: boolean }) {
-  const [show, setShow] = useState(false);
-  return (
-    <div className="relative">
-      <button onClick={() => setShow((p) => !p)} disabled={busy} className="flex items-center gap-2 px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300 disabled:opacity-50">
-        <Download size={16} /> {busy ? "Exporting…" : "Export"}
-      </button>
-      {show && !busy && (
-        <div className="absolute right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[140px]">
-          <button onClick={() => { onExport("csv"); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-t-lg">Export as CSV</button>
-          <button onClick={() => { onExport("excel"); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100">Export as Excel</button>
-          <button onClick={() => { onExport("pdf"); setShow(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-b-lg">Export as PDF</button>
-        </div>
-      )}
-    </div>
-  );
 }
 
 export default function ComparisonPage() {
@@ -180,12 +165,30 @@ export default function ComparisonPage() {
     { key: "exp6", header: "Expiring 6mo" },
   ];
 
-  const handleExport = (fmt: "csv" | "excel" | "pdf") => {
+  const { captureAllCharts } = useChartCapture();
+  const [exporting, setExporting] = useState(false);
+
+  const handleExport = async (fmt: ExportFormat, { includeCharts }: { includeCharts: boolean }) => {
     const exportRows = sortedMetrics.map((r) => ({ ...r, perStudent: r.perStudent.toFixed(1) }));
     const filename = `comparison-by-${geoMode}`;
     if (fmt === "csv") exportToCsv(exportRows as never, exportColumns as never, filename);
     else if (fmt === "excel") exportToExcel(exportRows as never, exportColumns as never, filename);
-    else exportToPdf(exportRows as never, exportColumns as never, filename);
+    else {
+      // Capturing the chart is async, so the PDF branch needs a busy state the
+      // other two formats never did.
+      setExporting(true);
+      try {
+        exportReportTablePdf({
+          title: "Theatre / Region / Country Comparison",
+          filename,
+          columns: exportColumns,
+          rows: exportRows as never,
+          charts: includeCharts ? await captureAllCharts() : [],
+        });
+      } finally {
+        setExporting(false);
+      }
+    }
   };
 
   function toggleSort(key: SortKey) {
@@ -251,7 +254,7 @@ export default function ComparisonPage() {
         ]}
       />
 
-      <section className="bg-white rounded-lg border border-gray-200 p-5 mb-6">
+      <ExportableChart as="section" className="bg-white rounded-lg border border-gray-200 p-5 mb-6">
         <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
           <h3 className="text-base font-semibold text-gray-900">{geoLabel} Comparison — {COMPARE_MODES.find((m) => m.value === compareMode)?.label}</h3>
           <select value={compareMode} onChange={(e) => setCompareMode(e.target.value as CompareMode)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
@@ -290,12 +293,12 @@ export default function ComparisonPage() {
         {chartData.mode === "time" && chartData.series.length === 8 && (
           <p className="text-xs text-gray-400 mt-2">Showing the top 8 {geoLabel.toLowerCase()}s by total completions.</p>
         )}
-      </section>
+      </ExportableChart>
 
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-wrap gap-2">
           <p className="text-sm text-gray-500">Counts reflect the selected time range and filters; expiring counts look forward from today.</p>
-          <ExportMenu onExport={handleExport} busy={false} />
+          <ExportMenu onExport={handleExport} busy={exporting} />
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">

@@ -1,7 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma, { type PrismaTransactionClient } from "@/lib/prisma";
 import JSZip from "jszip";
-import { requireSuperAdmin, handleAuthError } from "@/lib/auth";
+import {
+  requireSuperAdmin,
+  handleAuthError,
+  openMfaSecret,
+  sealMfaSecret,
+  clearAuthCookie,
+  isRequestSecure,
+} from "@/lib/auth";
+import { invalidateUserStatusCache } from "@/lib/user-status";
 import {
   encryptBuffer,
   decryptBuffer,
@@ -21,22 +29,43 @@ import { invalidateSystemSettingsCache } from "@/lib/system-settings";
 export type BackupKind = "full" | "config";
 
 /**
+ * Options shared by the backup writers.
+ *
+ * `includeCredentials` opts the archive in to carrying `passwordHash` and
+ * `mfaSecret`. It is off by default and is only ever honoured for an archive
+ * that will actually be encrypted — see {@link generateBackupArchive}, which
+ * drops the request rather than trusting its caller. Without it a restore
+ * cannot recreate user accounts at all (that is the whole point of the flag),
+ * but with it the archive is equivalent to the password database.
+ */
+export interface BackupOptions {
+  includeCredentials?: boolean;
+}
+
+/**
  * Wraps generateBackupZip with envelope encryption (AES-256-GCM, keyed by
  * ENCRYPTION_KEY) when configured. Returns the bytes ready to write to disk
  * or stream to the client, plus the filename that should be used (the
  * ".zip.enc" suffix is the on-disk discriminator; isEncryptedBuffer() is the
  * authoritative check during restore).
+ *
+ * Credentials are gated *here* rather than at each call site: this is the one
+ * function that knows whether the output ends up encrypted, so no caller can
+ * accidentally produce a plaintext zip full of password hashes.
  */
-export async function generateBackupArchive(): Promise<{
+export async function generateBackupArchive(opts: BackupOptions = {}): Promise<{
   buffer: Buffer;
   timestamp: string;
   filename: string;
   encrypted: boolean;
   contentType: string;
+  includedCredentials: boolean;
 }> {
-  const { buffer, timestamp } = await generateBackupZip();
+  const encrypting = isEncryptionConfigured();
+  const includeCredentials = !!opts.includeCredentials && encrypting;
+  const { buffer, timestamp } = await generateBackupZip({ includeCredentials });
   const zipBuf = Buffer.from(buffer);
-  if (isEncryptionConfigured()) {
+  if (encrypting) {
     const enc = encryptBuffer(zipBuf);
     return {
       buffer: enc,
@@ -44,6 +73,7 @@ export async function generateBackupArchive(): Promise<{
       filename: `training-tracker-backup-${timestamp}.zip.enc`,
       encrypted: true,
       contentType: "application/octet-stream",
+      includedCredentials: includeCredentials,
     };
   }
   return {
@@ -52,6 +82,7 @@ export async function generateBackupArchive(): Promise<{
     filename: `training-tracker-backup-${timestamp}.zip`,
     encrypted: false,
     contentType: "application/zip",
+    includedCredentials: false,
   };
 }
 
@@ -88,10 +119,11 @@ export async function loadBackupArchive(
   return buf;
 }
 
-export async function generateBackupZip(): Promise<{
+export async function generateBackupZip(opts: BackupOptions = {}): Promise<{
   buffer: ArrayBuffer;
   timestamp: string;
 }> {
+  const includeCredentials = !!opts.includeCredentials;
   const [
     productTypes,
     regionData,
@@ -111,6 +143,8 @@ export async function generateBackupZip(): Promise<{
     offeringSpecialisations,
     offeringData,
     offeringDataAlternatives,
+    companies,
+    userCompanies,
   ] = await Promise.all([
     prisma.productType.findMany({ orderBy: { id: "asc" } }),
     prisma.regionData.findMany({ orderBy: { country: "asc" } }),
@@ -130,6 +164,8 @@ export async function generateBackupZip(): Promise<{
     prisma.offeringSpecialisation.findMany({ orderBy: [{ offeringId: "asc" }, { specialisationId: "asc" }] }),
     prisma.offeringData.findMany({ orderBy: { id: "asc" } }),
     prisma.offeringDataAlternative.findMany({ orderBy: { id: "asc" } }),
+    prisma.company.findMany({ orderBy: { id: "asc" } }),
+    prisma.userCompany.findMany({ orderBy: [{ userId: "asc" }, { companyId: "asc" }] }),
   ]);
 
   const zip = new JSZip();
@@ -140,6 +176,10 @@ export async function generateBackupZip(): Promise<{
         version: process.env.APP_VERSION || "0.0.0",
         kind: "full" satisfies BackupKind,
         createdAt: new Date().toISOString(),
+        // Authoritative signal for the restore side. Archives written before
+        // this field existed omit it, which reads back as false — exactly the
+        // truth for them, since they were always credential-stripped.
+        includesCredentials: includeCredentials,
       },
       null,
       2
@@ -164,9 +204,28 @@ export async function generateBackupZip(): Promise<{
   zip.file("offering_specialisations.json", JSON.stringify(offeringSpecialisations, null, 2));
   zip.file("offering_data.json", JSON.stringify(offeringData, null, 2));
   zip.file("offering_data_alternatives.json", JSON.stringify(offeringDataAlternatives, null, 2));
-  // Exclude sensitive fields (password hashes, MFA secrets) from backup
-  const safeUsers = users.map(({ passwordHash: _ph, mfaSecret: _ms, ...rest }: typeof users[number]) => rest);
-  zip.file("users.json", JSON.stringify(safeUsers, null, 2));
+  // Companies and the user->company access lists. Both are required for a
+  // restore to rebuild company scoping: students.json carries a companyId FK,
+  // and deleting users cascades user_companies away.
+  zip.file("companies.json", JSON.stringify(companies, null, 2));
+  zip.file("user_companies.json", JSON.stringify(userCompanies, null, 2));
+  // Credentials (password hashes, MFA secrets) are stripped unless the caller
+  // explicitly opted in — and generateBackupArchive only honours that opt-in
+  // for an encrypted archive. Without them a restore cannot recreate accounts,
+  // so it deliberately leaves the existing ones alone instead.
+  // users.mfa_secret is sealed with *this* install's ENCRYPTION_KEY. Copying the
+  // sealed blob verbatim would restore an undecryptable secret onto any system
+  // with a different key — locking every MFA user out permanently, which is
+  // precisely what a portable backup is for. Unseal on the way out and re-seal
+  // to the target's key on restore. Both helpers are no-ops without a key, so
+  // this round-trips in all four key/no-key combinations.
+  const usersOut = includeCredentials
+    ? users.map((u: typeof users[number]) => ({
+        ...u,
+        mfaSecret: u.mfaSecret ? openMfaSecret(u.mfaSecret) : null,
+      }))
+    : users.map(({ passwordHash: _ph, mfaSecret: _ms, ...rest }: typeof users[number]) => rest);
+  zip.file("users.json", JSON.stringify(usersOut, null, 2));
 
   const buffer = await zip.generateAsync({ type: "arraybuffer" });
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
@@ -292,12 +351,20 @@ export async function GET(request: NextRequest) {
     return handleAuthError(error);
   }
 
-  const { buffer, filename, contentType } = await generateBackupArchive();
+  // ?credentials=1 opts the archive in to carrying password hashes / MFA
+  // secrets. generateBackupArchive ignores it unless the output is encrypted.
+  const includeCredentials =
+    request.nextUrl.searchParams.get("credentials") === "1";
+  const { buffer, filename, contentType, includedCredentials } =
+    await generateBackupArchive({ includeCredentials });
 
   return new NextResponse(new Blob([new Uint8Array(buffer)]), {
     headers: {
       "Content-Type": contentType,
       "Content-Disposition": `attachment; filename="${filename}"`,
+      // Lets the client tell the operator what it actually got, rather than
+      // what it asked for, when ENCRYPTION_KEY is not configured.
+      "X-Backup-Credentials": includedCredentials ? "included" : "excluded",
     },
   });
 }
@@ -346,6 +413,56 @@ export async function POST(request: NextRequest) {
     return restoreConfigArchive(zip);
   }
 
+  return restoreFullArchive(zip, request);
+}
+
+/** Per-table outcome of a full restore. */
+export interface RestoreCounts {
+  regionData: number;
+  trainingData: number;
+  students: number;
+  trainingTaken: number;
+  importMetadata: number;
+  importAliases: number;
+  programData: number;
+  offerings: number;
+  offeringData: number;
+  /**
+   * Split rather than a bare number: reporting the archive's row count as
+   * "restored" is what let a restore that deleted every account and recreated
+   * none be reported as a success.
+   */
+  users: { inArchive: number; restored: number; skipped: number };
+  companies: { inArchive: number; restored: number };
+  userCompanies: { inArchive: number; restored: number };
+}
+
+/**
+ * Restore a full backup archive: wipe and re-insert in FK order.
+ *
+ * Shared by the upload route (POST, above) and the server-side restore of a
+ * saved backup (backup/restore-file). Those two used to carry byte-identical
+ * copies of this transaction, and the copies drifted — one grew a guard the
+ * other never got, which is precisely how a restore came to delete every user
+ * account and recreate none. There is one implementation now.
+ *
+ * Two identity rules matter here:
+ *
+ *  - **Users are matched by username, companies by name.** Archived
+ *    autoincrement ids cannot be trusted on a populated target: an archived
+ *    company id can belong to a different company locally. Rows are therefore
+ *    inserted without their archived ids and the assigned ids read back, so
+ *    user_companies can be rebuilt against ids that exist on *this* instance.
+ *  - **No credentials means users are left alone.** An archive written without
+ *    the credentials opt-in cannot recreate a working account, so deleting the
+ *    live ones would be pure loss. The archive's own metadata is authoritative;
+ *    archives predating that flag omit it, which reads as false — correct for
+ *    them, since they were always stripped.
+ */
+export async function restoreFullArchive(
+  zip: JSZip,
+  request?: NextRequest
+): Promise<NextResponse> {
   // Validate required files exist (full restore)
   const requiredFiles = [
     "backup_metadata.json",
@@ -367,6 +484,8 @@ export async function POST(request: NextRequest) {
     const content = await zip.file(name)!.async("string");
     return JSON.parse(content);
   };
+  const readOptional = async (name: string) =>
+    zip.file(name) ? await readJson(name) : [];
 
   const productTypesFile = zip.file("product_types.json");
   const productTypesJson = productTypesFile ? await readJson("product_types.json") : null;
@@ -382,24 +501,81 @@ export async function POST(request: NextRequest) {
     trainingDataJson
   );
 
-  const importMetadataFile = zip.file("import_metadata.json");
-  const importMetadata = importMetadataFile
-    ? await readJson("import_metadata.json")
-    : [];
-
-  const usersFile = zip.file("users.json");
-  const users = usersFile ? await readJson("users.json") : [];
-
-  const importAliasesFile = zip.file("import_aliases.json");
-  const importAliases = importAliasesFile
-    ? await readJson("import_aliases.json")
-    : [];
+  const importMetadata = await readOptional("import_metadata.json");
+  const users = await readOptional("users.json");
+  const importAliases = await readOptional("import_aliases.json");
+  // Companies and access lists — present in archives written from v2.81 on.
+  const companies = await readOptional("companies.json");
+  const userCompanies = await readOptional("user_companies.json");
 
   // Reference/config tables (Programs + Offerings) — present in newer full
   // backups only; older archives leave these untouched.
   const referenceArchive = await readReferenceArchive(zip);
 
-  // Restore inside a transaction: wipe then re-insert in FK order
+  // Does this archive actually carry credentials? The metadata flag is the
+  // authoritative answer; the per-row check is the belt-and-braces fallback,
+  // since a row without a passwordHash cannot be inserted at all (the column is
+  // required) and would abort the whole transaction.
+  let includesCredentials = false;
+  const metaFile = zip.file("backup_metadata.json");
+  if (metaFile) {
+    try {
+      const meta = JSON.parse(await metaFile.async("string"));
+      includesCredentials = meta?.includesCredentials === true;
+    } catch {
+      // Unparseable metadata: treat as credential-free, i.e. preserve users.
+    }
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const restorableUsers: any[] = includesCredentials
+    ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      users.filter((u: any) => typeof u?.passwordHash === "string" && u.passwordHash)
+    : [];
+  const replacingUsers = restorableUsers.length > 0;
+
+  // The metadata claims credentials but no row carries one: the archive is
+  // damaged or was edited. Preserving silently would be the same invisible
+  // no-op this whole change exists to remove, so say so instead.
+  if (includesCredentials && !replacingUsers && users.length > 0) {
+    return NextResponse.json(
+      {
+        error:
+          "This archive says it includes user credentials, but none of its user records have one. The archive is damaged or was modified; restore a different backup.",
+      },
+      { status: 400 }
+    );
+  }
+
+  // Replacing the user table with one that has no usable SuperAdmin would lock
+  // everyone out of admin, so refuse before touching anything. The preserve
+  // branch needs no such guard: it leaves the existing accounts exactly as they
+  // are, so it cannot make administration any less reachable than it already is
+  // — and refusing there would block a legitimate recovery.
+  if (replacingUsers) {
+    const archiveSuperAdmins = restorableUsers.filter(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (u: any) => u.role === "SuperAdmin" && !u.disabledAt
+    ).length;
+    if (archiveSuperAdmins === 0) {
+      return NextResponse.json(
+        {
+          error:
+            "Refusing to restore: this archive contains no enabled SuperAdmin, so restoring its user accounts would leave nobody able to administer this system.",
+        },
+        { status: 400 }
+      );
+    }
+  }
+
+  let usersRestored = 0;
+  let companiesRestored = 0;
+  let userCompaniesRestored = 0;
+  let studentsReassigned = 0;
+
+  // Restore inside a transaction: wipe then re-insert in FK order.
+  // Prisma's default interactive-transaction timeout is 5s, which a restore of
+  // any real dataset can exceed — and a P2028 here would surface as the same
+  // opaque failure this change is meant to eliminate.
   await prisma.$transaction(async (tx: PrismaTransactionClient) => {
     await tx.trainingTaken.deleteMany({});
     await tx.student.deleteMany({});
@@ -408,7 +584,39 @@ export async function POST(request: NextRequest) {
     await tx.regionData.deleteMany({});
     await tx.importMetadata.deleteMany({});
     await tx.importAlias.deleteMany({});
-    await tx.user.deleteMany({});
+    if (replacingUsers) {
+      // Cascades user_companies; only done when we can actually put accounts
+      // back (see the doc comment).
+      await tx.user.deleteMany({});
+    }
+
+    // Companies first: students, offerings and the access lists all FK to them.
+    // Upsert by the unique name rather than deleting the table — Company is
+    // RESTRICT-referenced by scheduled exports, offerings and students, so a
+    // deleteMany would throw against any row we are not restoring.
+    const companyIdMap = new Map<number, number>();
+    for (const c of companies) {
+      const row = await tx.company.upsert({
+        where: { name: c.name },
+        update: {},
+        create: { name: c.name },
+        select: { id: true },
+      });
+      companyIdMap.set(c.id, row.id);
+      companiesRestored++;
+    }
+    const localCompanies = await tx.company.findMany({ select: { id: true } });
+    const localCompanyIds = new Set(localCompanies.map((c) => c.id));
+    const oldestCompanyId =
+      localCompanies.length > 0 ? Math.min(...localCompanyIds) : null;
+    // An archived id maps through the name table when we have one; otherwise
+    // (an archive predating companies.json) it can only be taken at face value.
+    const mapCompanyId = (cid: number | null | undefined): number | null => {
+      if (cid == null) return null;
+      const mapped = companyIdMap.get(cid);
+      if (mapped !== undefined) return mapped;
+      return localCompanyIds.has(cid) ? cid : null;
+    };
 
     if (productTypeRows.length > 0) {
       await tx.productType.createMany({ data: productTypeRows });
@@ -421,9 +629,21 @@ export async function POST(request: NextRequest) {
     }
     // Rebuild Programs + Offerings reference data (after TrainingData exists as
     // an FK target). No-op for older archives that predate these files.
-    await restoreReferenceData(tx, referenceArchive);
+    await restoreReferenceData(tx, referenceArchive, companyIdMap);
     if (students.length > 0) {
-      await tx.student.createMany({ data: students });
+      const studentRows = students.map(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (st: any) => {
+          const companyId = mapCompanyId(st.companyId);
+          if (companyId == null) studentsReassigned++;
+          // An old archive carries no companies, so its ids may name nothing
+          // here. Falling back to the oldest company (the same convention the
+          // offering restore already uses) keeps the restore working instead of
+          // failing the whole transaction on a foreign-key violation.
+          return { ...st, companyId: companyId ?? oldestCompanyId };
+        }
+      );
+      await tx.student.createMany({ data: studentRows });
     }
     if (trainingTaken.length > 0) {
       // Strip auto-increment ids so the DB assigns new ones
@@ -472,39 +692,111 @@ export async function POST(request: NextRequest) {
       );
       await tx.importAlias.createMany({ data: aliasRows });
     }
-    // Only restore users that have passwordHash (security-sanitized backups omit it)
-    const usersWithCredentials = users.filter(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (u: any) => u.passwordHash
-    );
-    if (usersWithCredentials.length > 0) {
-      const userRows = usersWithCredentials.map(
+
+    if (replacingUsers) {
+      const userRows = restorableUsers.map(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         ({ id: _id, ...rest }: any) => ({
           ...rest,
           createdAt: new Date(rest.createdAt),
           updatedAt: new Date(rest.updatedAt),
+          lockedUntil: rest.lockedUntil ? new Date(rest.lockedUntil) : null,
+          lastLoginAt: rest.lastLoginAt ? new Date(rest.lastLoginAt) : null,
+          disabledAt: rest.disabledAt ? new Date(rest.disabledAt) : null,
+          // Re-seal to *this* install's key (see the unseal on the write side).
+          mfaSecret: rest.mfaSecret ? sealMfaSecret(rest.mfaSecret) : null,
         })
       );
       await tx.user.createMany({ data: userRows });
-    }
-  });
+      usersRestored = userRows.length;
 
-  return NextResponse.json({
-    success: true,
-    counts: {
-      regionData: regionData.length,
-      trainingData: trainingData.length,
-      students: students.length,
-      trainingTaken: trainingTaken.length,
-      importMetadata: importMetadata.length,
-      users: users.length,
-      importAliases: importAliases.length,
-      programData: referenceArchive.programData.length,
-      offerings: referenceArchive.offerings.length,
-      offeringData: referenceArchive.offeringData.length,
+      // createMany returns no rows, and the ids it assigned are not the
+      // archived ones (those are stripped above, which keeps the sequence
+      // authoritative and needs no setval). Read them back and key on the
+      // unique username so the access lists point at real local users.
+      const created = await tx.user.findMany({
+        select: { id: true, username: true },
+      });
+      const idByUsername = new Map(created.map((u) => [u.username, u.id]));
+      const userIdMap = new Map<number, number>();
+      for (const u of restorableUsers) {
+        const newId = idByUsername.get(u.username);
+        if (newId !== undefined) userIdMap.set(u.id, newId);
+      }
+
+      const linkRows = userCompanies
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .map((l: any) => {
+          const userId = userIdMap.get(l.userId);
+          const companyId = mapCompanyId(l.companyId);
+          return userId === undefined || companyId == null
+            ? null
+            : { userId, companyId };
+        })
+        .filter((x: { userId: number; companyId: number } | null): x is { userId: number; companyId: number } => x !== null);
+      if (linkRows.length > 0) {
+        await tx.userCompany.createMany({ data: linkRows, skipDuplicates: true });
+        userCompaniesRestored = linkRows.length;
+      }
+    }
+  }, { maxWait: 10_000, timeout: 120_000 });
+
+  // A restored account's disabled state must take effect now, not up to 15s
+  // later when the cached snapshot expires.
+  if (usersRestored > 0) invalidateUserStatusCache();
+
+  const counts: RestoreCounts = {
+    regionData: regionData.length,
+    trainingData: trainingData.length,
+    students: students.length,
+    trainingTaken: trainingTaken.length,
+    importMetadata: importMetadata.length,
+    importAliases: importAliases.length,
+    programData: referenceArchive.programData.length,
+    offerings: referenceArchive.offerings.length,
+    offeringData: referenceArchive.offeringData.length,
+    users: {
+      inArchive: users.length,
+      restored: usersRestored,
+      skipped: users.length - usersRestored,
     },
+    companies: { inArchive: companies.length, restored: companiesRestored },
+    userCompanies: {
+      inArchive: userCompanies.length,
+      restored: userCompaniesRestored,
+    },
+  };
+
+  // Say plainly when the restore could not put accounts back. This used to be
+  // reported as an unqualified success, which is how the data loss stayed
+  // invisible.
+  const warnings: string[] = [];
+  if (!replacingUsers && users.length > 0) {
+    warnings.push(
+      `This archive was created without user credentials, so its ${users.length} user account(s) could not be restored. Existing accounts were left untouched. To carry accounts across, take a backup with "Include user credentials" enabled.`
+    );
+  }
+  if (studentsReassigned > 0) {
+    warnings.push(
+      `${studentsReassigned} student(s) referenced a company that does not exist here and were assigned to the oldest company. Review their company on the Students page.`
+    );
+  }
+
+  // Replacing the user table reassigns ids, so the caller's session token now
+  // names whichever account inherited its id — and requireSuperAdmin reads the
+  // role from the token, not the database. Drop the cookie and make them sign
+  // in again rather than leaving a session pointing at the wrong identity.
+  const sessionInvalidated = usersRestored > 0;
+  const response = NextResponse.json({
+    success: true,
+    counts,
+    sessionInvalidated,
+    ...(warnings.length > 0 ? { warnings } : {}),
   });
+  if (sessionInvalidated && request) {
+    clearAuthCookie(response, isRequestSecure(request));
+  }
+  return response;
 }
 
 /**
@@ -1071,7 +1363,15 @@ function prepareOfferingInserts(
  */
 export async function restoreReferenceData(
   tx: PrismaTransactionClient,
-  a: ReferenceArchive
+  a: ReferenceArchive,
+  /**
+   * archived company id -> local company id, from the full restore. Offerings
+   * are company-scoped, so without this an archived id that was renumbered on
+   * this instance would fall back to the oldest company and silently move the
+   * offering to the wrong tenant. Absent for the config path, which carries no
+   * companies at all.
+   */
+  companyIdMap?: Map<number, number>
 ): Promise<void> {
   if (!a.present) return;
 
@@ -1152,14 +1452,23 @@ export async function restoreReferenceData(
     });
   }
   if (a.offerings.length > 0) {
-    // Full restore re-inserts companies from the archive, so archived
-    // companyIds line up; the oldest company is the fallback for any offering
-    // whose company is missing (e.g. an old archive without companyId).
+    // A full restore has already reconciled companies by name (companies are
+    // matched, never renumbered blindly), so translate archived ids through
+    // that map first. The oldest company remains the fallback for an offering
+    // whose company is missing entirely — e.g. an old archive with no companyId.
     const companyRows = await tx.company.findMany({ select: { id: true } });
     const existingCompanyIds = new Set(companyRows.map((c) => c.id));
     const fallbackCompanyId = companyRows.length > 0 ? Math.min(...existingCompanyIds) : null;
+    const mappedOfferings = companyIdMap
+      ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        a.offerings.map((o: any) => ({
+          ...o,
+          companyId:
+            o.companyId != null ? companyIdMap.get(o.companyId) ?? o.companyId : o.companyId,
+        }))
+      : a.offerings;
     const prepared = prepareOfferingInserts(
-      a.offerings,
+      mappedOfferings,
       a.offeringSpecialisations,
       a.offeringData,
       a.offeringDataAlternatives,

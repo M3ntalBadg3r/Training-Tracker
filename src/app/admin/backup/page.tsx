@@ -52,6 +52,7 @@ interface ScheduleConfig {
   dayOfWeek?: number;
   backupPath: string;
   retentionCount: number;
+  includeCredentials: boolean;
 }
 
 interface BackupFile {
@@ -78,6 +79,57 @@ const DAYS_OF_WEEK = [
   "Saturday",
 ];
 
+/**
+ * Turn a restore response into the banner to show.
+ *
+ * Shared by the upload and saved-backup handlers, which previously carried two
+ * copies of this string — and had already drifted (only one branched on a
+ * config archive). The API's two restore paths had the same problem; see
+ * restoreFullArchive.
+ *
+ * The "warning" outcome matters: a restore that could not put user accounts
+ * back is not a plain success, and rendering it green is how that stayed
+ * invisible.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function restoreSummary(data: any): {
+  type: "success" | "warning";
+  message: string;
+} {
+  const c = data.counts;
+  if (data.kind === "config") {
+    return {
+      type: "success",
+      message: `Config restore complete — ${c.trainingData} trainings, ${c.regionData} regions, ${c.programData} program rules, ${c.importAliases} import aliases. Student data was not touched.`,
+    };
+  }
+
+  const parts = [
+    `Restore complete — ${c.regionData} regions, ${c.trainingData} trainings, ${c.students} students, ${c.trainingTaken} training records restored.`,
+  ];
+  if (c.companies?.restored > 0) {
+    parts.push(`${c.companies.restored} companies matched or created.`);
+  }
+  if (c.users?.restored > 0) {
+    parts.push(
+      `${c.users.restored} user accounts restored${
+        c.userCompanies?.restored > 0
+          ? ` with ${c.userCompanies.restored} company assignments`
+          : ""
+      }.`
+    );
+  }
+  const warnings: string[] = Array.isArray(data.warnings) ? data.warnings : [];
+  if (data.sessionInvalidated) {
+    parts.push("You have been signed out because the user accounts changed.");
+  }
+
+  return {
+    type: warnings.length > 0 ? "warning" : "success",
+    message: [...parts, ...warnings].join(" "),
+  };
+}
+
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -102,10 +154,18 @@ export default function BackupPage() {
   // Passphrase entered when restoring a portable backup.
   const [restorePassphrase, setRestorePassphrase] = useState("");
   const [result, setResult] = useState<{
-    type: "success" | "error";
+    type: "success" | "warning" | "error";
     message: string;
   } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Credentials opt-in for the two manual download paths. Deliberately not
+  // persisted and reset after each download, so a tick can never carry silently
+  // into a later backup.
+  const [includeCredentials, setIncludeCredentials] = useState(false);
+  const [portableCredentials, setPortableCredentials] = useState(false);
+  // Whether ENCRYPTION_KEY is set on the server; without it a standard backup
+  // is a plaintext zip and the server refuses to put credentials in one.
+  const [encryptionConfigured, setEncryptionConfigured] = useState(false);
 
   // Auto-backup schedule state
   const [schedule, setSchedule] = useState<ScheduleConfig>({
@@ -115,6 +175,7 @@ export default function BackupPage() {
     dayOfWeek: 0,
     backupPath: "/opt/training-tracker/backups",
     retentionCount: 5,
+    includeCredentials: false,
   });
   const [savingSchedule, setSavingSchedule] = useState(false);
   const [scheduleResult, setScheduleResult] = useState<{
@@ -157,8 +218,12 @@ export default function BackupPage() {
     fetch("/api/admin/backup/schedule")
       .then((r) => r.json())
       .then((data) => {
-        if (data.enabled !== undefined) {
-          setSchedule({ ...data, time: utcToLocal(data.time) });
+        // encryptionConfigured is a server capability, not part of the stored
+        // schedule — keep it out of the object we POST back.
+        const { encryptionConfigured: enc, ...cfg } = data;
+        setEncryptionConfigured(!!enc);
+        if (cfg.enabled !== undefined) {
+          setSchedule({ ...cfg, time: utcToLocal(cfg.time) });
         }
       })
       .catch(() => {});
@@ -171,8 +236,13 @@ export default function BackupPage() {
     setCreating(true);
     setResult(null);
     try {
-      const res = await fetch("/api/admin/backup");
+      const wantCredentials = includeCredentials && encryptionConfigured;
+      const res = await fetch(
+        `/api/admin/backup${wantCredentials ? "?credentials=1" : ""}`
+      );
       if (!res.ok) throw new Error("Backup failed");
+      const gotCredentials =
+        res.headers.get("X-Backup-Credentials") === "included";
       const blob = await res.blob();
       const disposition = res.headers.get("Content-Disposition") ?? "";
       const match = disposition.match(/filename="(.+)"/);
@@ -183,11 +253,17 @@ export default function BackupPage() {
       a.download = filename;
       a.click();
       URL.revokeObjectURL(url);
-      setResult({ type: "success", message: "Backup downloaded successfully." });
+      setResult({
+        type: "success",
+        message: gotCredentials
+          ? "Backup downloaded, including user credentials. Treat this file like the password database — anyone with it and this server's encryption key can restore these accounts."
+          : "Backup downloaded successfully. It does not include user credentials, so restoring it will leave existing accounts untouched rather than replacing them.",
+      });
     } catch {
       setResult({ type: "error", message: "Failed to create backup." });
     } finally {
       setCreating(false);
+      setIncludeCredentials(false);
     }
   };
 
@@ -231,7 +307,12 @@ export default function BackupPage() {
       const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ passphrase: portablePass }),
+        body: JSON.stringify({
+          passphrase: portablePass,
+          // Config archives contain no users at all, so the flag is only
+          // meaningful for a full portable backup.
+          includeCredentials: portableKind === "full" && portableCredentials,
+        }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -247,15 +328,19 @@ export default function BackupPage() {
       a.download = filename;
       a.click();
       URL.revokeObjectURL(url);
+      const withCredentials = portableKind === "full" && portableCredentials;
       setShowPortableModal(false);
       setPortablePass("");
       setPortablePass2("");
+      setPortableCredentials(false);
       setResult({
         type: "success",
         message:
           portableKind === "config"
             ? "Portable config backup downloaded. Keep the passphrase safe — it's required to restore this file on any system."
-            : "Portable backup downloaded. Keep the passphrase safe — it's required to restore this file on any system.",
+            : withCredentials
+              ? "Portable backup downloaded, including user credentials. Keep the passphrase safe — it's required to restore this file, and anyone with both can restore these accounts."
+              : "Portable backup downloaded. Keep the passphrase safe — it's required to restore this file on any system.",
       });
     } catch (err) {
       setResult({
@@ -294,18 +379,7 @@ export default function BackupPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Restore failed");
-      const c = data.counts;
-      if (data.kind === "config") {
-        setResult({
-          type: "success",
-          message: `Config restore complete — ${c.trainingData} trainings, ${c.regionData} regions, ${c.programData} program rules, ${c.importAliases} import aliases. Student data was not touched.`,
-        });
-      } else {
-        setResult({
-          type: "success",
-          message: `Restore complete — ${c.regionData} regions, ${c.trainingData} trainings, ${c.students} students, ${c.trainingTaken} training records restored.`,
-        });
-      }
+      setResult(restoreSummary(data));
     } catch (err) {
       setResult({
         type: "error",
@@ -443,11 +517,7 @@ export default function BackupPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Restore failed");
-      const c = data.counts;
-      setResult({
-        type: "success",
-        message: `Restore complete — ${c.regionData} regions, ${c.trainingData} trainings, ${c.students} students, ${c.trainingTaken} training records restored.`,
-      });
+      setResult(restoreSummary(data));
     } catch (err) {
       setResult({
         type: "error",
@@ -490,16 +560,18 @@ export default function BackupPage() {
       {/* Status message */}
       {result && (
         <div
-          className={`mb-6 flex items-center gap-2 p-4 rounded-lg border ${
+          className={`mb-6 flex items-start gap-2 p-4 rounded-lg border ${
             result.type === "success"
               ? "bg-green-50 border-green-200 text-green-800"
-              : "bg-red-50 border-red-200 text-red-800"
+              : result.type === "warning"
+                ? "bg-amber-50 border-amber-200 text-amber-800"
+                : "bg-red-50 border-red-200 text-red-800"
           }`}
         >
           {result.type === "success" ? (
-            <CheckCircle size={18} />
+            <CheckCircle size={18} className="shrink-0 mt-0.5" />
           ) : (
-            <AlertTriangle size={18} />
+            <AlertTriangle size={18} className="shrink-0 mt-0.5" />
           )}
           <span className="text-sm">{result.message}</span>
         </div>
@@ -517,7 +589,7 @@ export default function BackupPage() {
           <p className="text-sm text-gray-500 mb-4">
             Download a zip file containing all system data: regions, training
             programs, students, and training records. A standard backup is tied
-            to <strong>this</strong> server&apos;s encryption key — to restore on
+            to <strong>this</strong>{" "}server&apos;s encryption key — to restore on
             a <strong>different</strong> system, use a portable backup and
             remember its passphrase.
           </p>
@@ -535,6 +607,7 @@ export default function BackupPage() {
                 setPortableKind("full");
                 setPortablePass("");
                 setPortablePass2("");
+                setPortableCredentials(false);
                 setShowPortableModal(true);
               }}
               disabled={portableCreating}
@@ -543,6 +616,53 @@ export default function BackupPage() {
               <Download size={16} />
               Portable backup…
             </button>
+          </div>
+          {/* Credentials opt-in. Without it a restore cannot recreate accounts
+              (it preserves the existing ones instead); with it the archive is
+              as sensitive as the password database, so it is only offered for
+              an archive that will actually be encrypted. */}
+          <div className="mb-4 p-3 rounded-lg bg-gray-50 border border-gray-200">
+            <label
+              className={`flex items-start gap-2 text-sm ${
+                encryptionConfigured
+                  ? "text-gray-700 cursor-pointer"
+                  : "text-gray-400 cursor-not-allowed"
+              }`}
+            >
+              <input
+                type="checkbox"
+                checked={includeCredentials && encryptionConfigured}
+                disabled={!encryptionConfigured}
+                onChange={(e) => setIncludeCredentials(e.target.checked)}
+                className="mt-0.5"
+              />
+              <span>
+                Include user credentials (password hashes and MFA secrets)
+              </span>
+            </label>
+            <p className="mt-2 text-xs text-gray-500">
+              {encryptionConfigured ? (
+                includeCredentials ? (
+                  <span className="text-amber-700">
+                    This archive will let anyone who also has this server&apos;s
+                    encryption key restore every user account. Store it
+                    accordingly.
+                  </span>
+                ) : (
+                  <>
+                    Without this, restoring the backup leaves the existing user
+                    accounts untouched instead of replacing them — it cannot
+                    bring accounts back to a rebuilt system.
+                  </>
+                )
+              ) : (
+                <>
+                  Unavailable: <code>ENCRYPTION_KEY</code> is not set on this
+                  server, so a standard backup is an unencrypted zip. Use a
+                  portable backup to carry credentials across.
+                </>
+              )}
+            </p>
           </div>
           <div className="pt-4 border-t border-gray-100">
             <p className="text-sm text-gray-500 mb-3">
@@ -690,6 +810,45 @@ export default function BackupPage() {
                     className="w-20 px-3 py-1.5 border border-gray-300 rounded-lg text-sm"
                   />
                   <span className="text-sm text-gray-500">backups</span>
+                </div>
+              </div>
+
+              {/* Credentials opt-in for scheduled archives. This is the file the
+                  server-side restore reads, so without the option here a
+                  disaster-recovery restore from a scheduled backup could never
+                  bring accounts back. It is a per-schedule setting rather than a
+                  per-download click because cron has no UI moment. */}
+              <div className="flex items-start gap-3">
+                <label className="text-sm text-gray-600 w-24 shrink-0 pt-0.5">
+                  Credentials:
+                </label>
+                <div>
+                  <label
+                    className={`flex items-start gap-2 text-sm ${
+                      encryptionConfigured
+                        ? "text-gray-700 cursor-pointer"
+                        : "text-gray-400 cursor-not-allowed"
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={schedule.includeCredentials && encryptionConfigured}
+                      disabled={!encryptionConfigured}
+                      onChange={(e) =>
+                        setSchedule((s) => ({
+                          ...s,
+                          includeCredentials: e.target.checked,
+                        }))
+                      }
+                      className="mt-0.5"
+                    />
+                    <span>Include user credentials in scheduled backups</span>
+                  </label>
+                  <p className="mt-1 text-xs text-gray-500">
+                    {encryptionConfigured
+                      ? "Needed for a scheduled backup to restore user accounts. Without it, restoring one leaves the existing accounts untouched."
+                      : "Unavailable: ENCRYPTION_KEY is not set, so scheduled backups are written unencrypted."}
+                  </p>
                 </div>
               </div>
 
@@ -991,6 +1150,7 @@ export default function BackupPage() {
                 setShowPortableModal(false);
                 setPortablePass("");
                 setPortablePass2("");
+                setPortableCredentials(false);
               }}
               className="px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300"
             >
@@ -1013,7 +1173,7 @@ export default function BackupPage() {
         <p className="text-gray-600 mb-3">
           {portableKind === "config" ? (
             <>
-              A portable <strong>config</strong> backup excludes students and
+              A portable <strong>config</strong>{" "}backup excludes students and
               training records and is encrypted with a passphrase instead of
               this server&apos;s key, so it can seed a fresh system regardless
               of its encryption key.
@@ -1050,6 +1210,40 @@ export default function BackupPage() {
         />
         {portablePass2.length > 0 && portablePass !== portablePass2 && (
           <p className="text-xs text-red-600 mt-2">Passphrases do not match.</p>
+        )}
+        {/* Always available here, unlike the standard download: a portable
+            archive is passphrase-encrypted by construction, so there is no case
+            where credentials could land in a plaintext file. Config archives
+            hold no users, so the option is meaningless for them. */}
+        {portableKind === "full" && (
+          <div className="mt-4 pt-4 border-t border-gray-100">
+            <label className="flex items-start gap-2 text-sm text-gray-700 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={portableCredentials}
+                onChange={(e) => setPortableCredentials(e.target.checked)}
+                className="mt-0.5"
+              />
+              <span>
+                Include user credentials (password hashes and MFA secrets)
+              </span>
+            </label>
+            <p className="mt-2 text-xs text-gray-500">
+              {portableCredentials ? (
+                <span className="text-amber-700">
+                  Required to bring user accounts back on the target system.
+                  Anyone with this file and the passphrase can restore every
+                  account, so treat both as secrets. MFA secrets are
+                  re-encrypted with the target system&apos;s key on restore.
+                </span>
+              ) : (
+                <>
+                  Without this, restoring on the target system leaves its
+                  existing user accounts untouched rather than replacing them.
+                </>
+              )}
+            </p>
+          </div>
         )}
       </Modal>
 

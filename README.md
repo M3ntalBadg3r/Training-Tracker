@@ -549,7 +549,7 @@ Rows that fail to parse against the chosen format are reported per-row with the 
 
 ## Reports
 
-Navigate to **Reports** in the sidebar. Each report follows the same shape: a four-card **KPI strip** at the top, a **chart row** above the table, then a **filtered, groupable table** with CSV / Excel / PDF export. Charts are interactive — clicking a bar, segment, or month drills the table down to that slice. PDF / Excel / CSV exports remain tabular (the original column shapes for the existing five reports are unchanged so scheduled exports keep working).
+Navigate to **Reports** in the sidebar. Each report follows the same shape: a four-card **KPI strip** at the top, a **chart row** above the table, then a **filtered, groupable table** with CSV / Excel / PDF export. Charts are interactive — clicking a bar, segment, or month drills the table down to that slice. **PDF exports can include the report's charts** (see [Exporting Data](#exporting-data)); CSV and Excel exports remain tabular (the original column shapes for the existing five reports are unchanged so scheduled exports keep working).
 
 ### Common Features
 
@@ -784,15 +784,44 @@ Click **Download Backup** to generate and download a `.zip` file containing all 
 
 | File | Contents |
 |------|----------|
+| `product_types.json` | Product type catalogue (names and colours) |
 | `region_data.json` | All country/region mappings |
 | `training_data.json` | All training program definitions |
+| `olx_sub_item_relations.json` | OLX parent/sub-item membership |
 | `students.json` | All student records |
 | `training_taken.json` | All training completion records |
+| `companies.json` | Companies (tenants) |
+| `user_companies.json` | Which companies each user may access |
+| `users.json` | User accounts. Password hashes and MFA secrets are included **only** when "Include user credentials" is ticked — see below |
 | `import_metadata.json` | Import timestamps |
-| `users.json` | User accounts (with hashed passwords) |
-| `backup_metadata.json` | Backup version and creation timestamp |
+| `import_aliases.json` | Import column aliases |
+| `programs.json`, `program_tiers.json`, `specialisations.json`, `program_data.json`, `program_data_alternatives.json` | Partner program definitions |
+| `offerings.json`, `offering_specialisations.json`, `offering_data.json`, `offering_data_alternatives.json` | Offering definitions |
+| `backup_metadata.json` | Backup version, kind, creation timestamp, and whether credentials are included |
 
 The downloaded file is named `training-tracker-backup-<timestamp>.zip`. When an `ENCRYPTION_KEY` is configured, the archive is encrypted with **this server's** key and saved as `.zip.enc`. A key-encrypted backup can **only** be restored on the same system (or another system configured with the identical `ENCRYPTION_KEY`).
+
+#### Including user credentials
+
+By default a backup **excludes** password hashes and MFA secrets. That keeps the
+archive far less sensitive, but it also means the archive cannot recreate user
+accounts: restoring it leaves the accounts already on the system untouched
+rather than replacing them.
+
+To carry accounts across — to a rebuilt server, say — tick **Include user
+credentials** before downloading. This is only offered for an archive that will
+actually be encrypted: the standard download requires `ENCRYPTION_KEY` to be
+set, and the portable backup is always passphrase-encrypted. A
+credential-bearing archive is equivalent to the password database, so store it
+accordingly.
+
+Scheduled automatic backups have the same option in the **Automatic Backups**
+panel; it is off by default, so enable it if you intend to recover accounts
+from a scheduled backup.
+
+MFA secrets are re-encrypted with the target system's key during a restore, so
+a portable backup restored onto a machine with a different `ENCRYPTION_KEY`
+still leaves MFA working.
 
 #### Portable Backup (restore on a different system)
 
@@ -818,7 +847,14 @@ Click **Upload Backup File** and select a previously created backup file. If it 
 2. Data from the backup is inserted in the correct order to satisfy foreign key constraints.
 3. All operations run inside a single database transaction — if any step fails, no changes are made.
 
-**Important:** Restoring a backup **replaces all existing data**. Create a backup of the current system first if you need to preserve it.
+**User accounts and companies are handled differently from everything else:**
+
+- **User accounts are only replaced when the archive can actually restore them** — that is, when it was created with "Include user credentials". Otherwise the existing accounts are left exactly as they are, and the result banner tells you how many accounts the archive held and that none could be restored. An archive with no credentials can never leave you with an instance nobody can log in to.
+- **Companies are matched by name, never deleted.** A company in the archive that already exists here is reused; one that does not is created. Nothing that references a company (students, offerings, scheduled exports, API-key grants) is disturbed, and student records are re-pointed at the right company by name even if the ids differ between the two systems.
+- A restore that *would* leave the system with no enabled SuperAdmin is **refused** before anything is changed.
+- Restoring accounts signs you out, because the restored accounts are not the ones your current session was issued for. Sign in again with an account from the archive.
+
+**Important:** Restoring a backup **replaces all existing data** other than the user accounts described above. Create a backup of the current system first if you need to preserve it.
 
 #### Automatic Backups
 
@@ -826,6 +862,7 @@ Enable automatic backups to save backups to a local directory on a schedule:
 
 - **Backup Location** — Configurable directory path with a folder browser GUI. Click **Browse** to navigate the filesystem and select or create a folder.
 - **Retention** — Set how many backup copies to keep. When the count is exceeded, the oldest backups are automatically deleted.
+- **Include user credentials** — Off by default. Turn it on if you want a scheduled backup to be able to restore user accounts; it requires `ENCRYPTION_KEY` to be set, since scheduled backups are otherwise written unencrypted.
 - **Schedule** — Daily or weekly, at a configurable time.
 - **Run Backup Now** — Immediately saves a backup without waiting for the schedule.
 
@@ -1297,3 +1334,23 @@ Each export supports three formats:
 - **PDF** — Formatted table document. Automatically switches to landscape orientation when there are more than 5 columns.
 
 Click the **Export** button and select the desired format. For reports, the export respects any active filters — only the currently displayed results are exported.
+
+### Including charts in a PDF
+
+On report pages the Export menu also offers **Include charts in PDF**. Leave it ticked
+(the default) and a PDF export leads with pictures of the report's charts, in the order
+they appear on the page, followed by the data table. Untick it for a data-only PDF; the
+choice is remembered on your device.
+
+A few things worth knowing:
+
+- **PDF only.** CSV is a plain-text format and cannot hold a picture, and the Excel
+  writer cannot embed one, so the option is named for the format it applies to — CSV and
+  Excel exports are unaffected either way.
+- **Charts always print on a light background**, whichever theme you are using, so a
+  report exported in dark mode looks the same as one exported in light mode. If you use
+  dark mode you will see the charts briefly turn light while the export is prepared.
+- **What you see is what you get** — the captured charts reflect the filters, grouping
+  and date range in force at the moment you export.
+- A chart that is not on screen — for example a panel showing "no data" for the current
+  filters — is simply left out of the PDF.

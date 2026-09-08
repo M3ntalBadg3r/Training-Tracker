@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSuperAdmin, handleAuthError } from "@/lib/auth";
+import { isEncryptionConfigured } from "@/lib/crypto";
 import path from "path";
 import fs from "fs";
 import { execSync } from "child_process";
@@ -11,6 +12,10 @@ interface AutoBackupConfig {
   dayOfWeek?: number;
   backupPath: string;
   retentionCount: number;
+  // Whether scheduled archives carry password hashes / MFA secrets. Only
+  // honoured when ENCRYPTION_KEY is set (see backup/save); without it a
+  // restore of a scheduled backup cannot recreate user accounts.
+  includeCredentials: boolean;
 }
 
 const CONFIG_FILENAME = ".auto-backup.json";
@@ -23,7 +28,10 @@ function getConfigPath(): string {
 function readConfig(): AutoBackupConfig {
   const configPath = getConfigPath();
   if (fs.existsSync(configPath)) {
-    return JSON.parse(fs.readFileSync(configPath, "utf-8"));
+    const stored = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+    // A config written before includeCredentials existed has no such key, and
+    // an absent opt-in must read as "off" rather than undefined.
+    return { ...stored, includeCredentials: stored.includeCredentials === true };
   }
   return {
     enabled: false,
@@ -31,6 +39,7 @@ function readConfig(): AutoBackupConfig {
     time: "02:00",
     backupPath: "/opt/training-tracker/backups",
     retentionCount: 5,
+    includeCredentials: false,
   };
 }
 
@@ -49,7 +58,13 @@ export async function GET(request: NextRequest) {
     return handleAuthError(error);
   }
 
-  return NextResponse.json(readConfig());
+  // encryptionConfigured is derived, not stored: the UI needs it to explain why
+  // the credentials checkboxes are unavailable on an install with no
+  // ENCRYPTION_KEY, and this is the request the backup page already makes.
+  return NextResponse.json({
+    ...readConfig(),
+    encryptionConfigured: isEncryptionConfigured(),
+  });
 }
 
 export async function POST(request: NextRequest) {
@@ -89,6 +104,7 @@ export async function POST(request: NextRequest) {
       dayOfWeek: body.dayOfWeek !== undefined ? Number(body.dayOfWeek) : 0,
       backupPath: resolvedPath,
       retentionCount: Math.max(1, Number(body.retentionCount) || 5),
+      includeCredentials: body.includeCredentials === true,
     };
 
     // Ensure backup directory exists
