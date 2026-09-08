@@ -20,7 +20,7 @@ const helpSections: Record<string, HelpSection> = {
           Five summary cards are displayed at the top. The four &quot;earned&quot;
           cards (Certifications, Accreditations, Instructor-Led Trainings, OLX
           Completed) show the total number of completions of that type as the
-          headline figure, with a smaller <strong>&quot;Held by N students&quot;</strong>
+          headline figure, with a smaller <strong>&quot;Held by N students&quot;</strong>{" "}
           sub-metric underneath — the number of distinct students who have at
           least one completion of that type. The two lines together give a
           quick read of both depth (records) and breadth (reach).
@@ -64,9 +64,9 @@ const helpSections: Record<string, HelpSection> = {
 
         <h3>Update Notifications</h3>
         <p>
-          When a newer release of Training Tracker is available, <strong>SuperAdmins</strong>
-          see a blue banner at the top of the Dashboard with a link to the
-          <strong> Updates</strong> page. The banner can be dismissed for the current
+          When a newer release of Training Tracker is available, <strong>SuperAdmins</strong>{" "}
+          see a blue banner at the top of the Dashboard with a link to the{" "}
+          <strong>Updates</strong> page. The banner can be dismissed for the current
           browser session; it returns next session, or sooner if an even newer release
           appears. Admins and Users never see it.
         </p>
@@ -80,8 +80,8 @@ const helpSections: Record<string, HelpSection> = {
 
         <h3>Mobile &amp; Small Screens</h3>
         <p>
-          On phones and other narrow screens the sidebar is hidden and replaced by a
-          <strong> &#9776; menu button</strong> in the top bar &mdash; tap it to slide
+          On phones and other narrow screens the sidebar is hidden and replaced by a{" "}
+          <strong>&#9776; menu button</strong> in the top bar &mdash; tap it to slide
           the navigation in over a dimmed backdrop, and tap a link, the &times;, or the
           backdrop to close it. On tablets and desktops the sidebar stays docked. Wide
           tables scroll sideways so nothing is cut off, and pop-up dialogs fit the
@@ -165,7 +165,7 @@ const helpSections: Record<string, HelpSection> = {
         <p>
           Click <strong>View</strong> on any row to open the student&apos;s
           detailed record. Your search, column filters, and sort order are kept
-          in the page URL, so opening a student and pressing <strong>Back</strong>
+          in the page URL, so opening a student and pressing <strong>Back</strong>{" "}
           restores the list exactly as you left it.
         </p>
         <p>
@@ -180,8 +180,8 @@ const helpSections: Record<string, HelpSection> = {
           pick a Country from the dropdown &mdash; the Theatre and Region are
           auto-derived from the country&apos;s entry in Region Data and shown
           read-only. The dropdown only lists countries that have a theatre
-          assigned. To add a new country, ask a SuperAdmin to create it on the
-          <strong> Region Data</strong> page first.
+          assigned. To add a new country, ask a SuperAdmin to create it on the{" "}
+          <strong>Region Data</strong> page first.
         </p>
       </>
     ),
@@ -195,8 +195,8 @@ const helpSections: Record<string, HelpSection> = {
         <ul>
           <li>
             <strong>Contact Information</strong> &mdash; Full Name, Email,
-            Theatre, Country, Region, and the student&apos;s <strong>Company</strong>
-            (shown in the sub-line under their name). Click <strong>Edit</strong>
+            Theatre, Country, Region, and the student&apos;s <strong>Company</strong>{" "}
+            (shown in the sub-line under their name). Click <strong>Edit</strong>{" "}
             to modify Full Name, Email, Country, or Company. Theatre and Region
             are auto-derived from the chosen country (read-only); the Company
             dropdown lists the companies you have access to. If the student&apos;s current
@@ -428,14 +428,14 @@ const helpSections: Record<string, HelpSection> = {
           format prompt above only applies to genuine text dates and CSV cells.
         </p>
         <p>
-          <strong>Day/month-swapped Excel dates</strong> &mdash; re-saving an
+          <strong>Day/month-swapped Excel dates</strong> &mdash; re-saving an{" "}
           <code>MM/DD</code> file in a <code>DD/MM</code>-locale Excel can
-          silently transpose the day and month of its native date cells (a true
+          silently transpose the day and month of its native date cells (a true{" "}
           <code>2026-01-12</code> becomes a stored <code>2026-12-01</code>,
           landing in the future). When a native date cell in the Completed Date
           column decodes to a future date that swapping would fix, the import
-          pauses and shows a confirmation modal with sample corrections. Choose
-          <strong>Yes, correct them</strong> to repair the transposed dates, or
+          pauses and shows a confirmation modal with sample corrections. Choose{" "}
+          <strong>Yes, correct them</strong> to repair the transposed dates, or{" "}
           <strong>Import as-is</strong> if the dates are genuinely correct. Each
           cell is only swapped when the corrected value isn&apos;t in the future,
           so genuinely-correct recent dates (and any day above 12) are left
@@ -821,8 +821,8 @@ const helpSections: Record<string, HelpSection> = {
           intact.
         </p>
         <p>
-          Results are shown in a table with the issues highlighted inline. The
-          <strong> Suggested Fix</strong> for each row is shown in an editable
+          Results are shown in a table with the issues highlighted inline. The{" "}
+          <strong>Suggested Fix</strong> for each row is shown in an editable
           field, so you can override the suggested name before applying it. Where
           no safe automatic fix exists the field is left blank with a prompt to
           enter one, and the row cannot be selected until you do. By default no
@@ -1250,7 +1250,7 @@ const helpSections: Record<string, HelpSection> = {
         <p>
           Users can enable TOTP-based MFA using an authenticator app (Google Authenticator, Authy, etc.).
           When enabled, a 6-digit code is required after entering the password during login.
-          Admins can disable MFA for any user from this page, or force enrolment with the
+          Admins can disable MFA for any user from this page, or force enrolment with the{" "}
           <strong>Require MFA</strong> checkboxes in the Add and Edit User modals.
         </p>
 
@@ -1297,8 +1297,8 @@ const helpSections: Record<string, HelpSection> = {
         <h3>Display Date Format</h3>
         <p>
           Choose how dates are shown to you across the app &mdash; pick{" "}
-          <code>DD/MM/YYYY</code>, <code>MM/DD/YYYY</code>, or leave it set to
-          <strong> Use system default</strong> to follow whatever the SuperAdmin has
+          <code>DD/MM/YYYY</code>, <code>MM/DD/YYYY</code>, or leave it set to{" "}
+          <strong>Use system default</strong> to follow whatever the SuperAdmin has
           configured for the instance. Your choice only affects your view; the data
           itself is stored format-neutrally and other users keep their own preference.
         </p>
@@ -1367,9 +1367,9 @@ const helpSections: Record<string, HelpSection> = {
 
         <h3>Session Timeout</h3>
         <p>
-          On the <strong>Session</strong> tab, set how long a signed-in user can be
-          <strong> inactive</strong> before they are automatically signed out (default
-          <strong> 30 minutes</strong>, adjustable between 5 minutes and 24 hours).
+          On the <strong>Session</strong> tab, set how long a signed-in user can be{" "}
+          <strong>inactive</strong> before they are automatically signed out (default{" "}
+          <strong>30 minutes</strong>, adjustable between 5 minutes and 24 hours).
         </p>
         <ul>
           <li>
@@ -1890,7 +1890,7 @@ const helpSections: Record<string, HelpSection> = {
           <li>Captures the refresh token automatically and runs a Test Connection so you can see who you&rsquo;re connected as.</li>
         </ol>
         <p>
-          If your install is behind a reverse proxy, make sure
+          If your install is behind a reverse proxy, make sure{" "}
           <code>X-Forwarded-Proto</code> and <code>X-Forwarded-Host</code> are
           forwarded — the wizard derives the redirect URI from those headers.
         </p>
@@ -1898,7 +1898,7 @@ const helpSections: Record<string, HelpSection> = {
         <h3>Provider credentials section</h3>
         <p>
           The <strong>Provider Credentials</strong> section lists every
-          provider with a status badge: <em>Healthy</em>,
+          provider with a status badge: <em>Healthy</em>,{" "}
           <em>Expires in N days</em>, <em>Expired</em>, <em>Auth failed</em>,
           or <em>Not configured</em>. Cloud cards offer{" "}
           <strong>Connect/Reconnect</strong>, <strong>Test Connection</strong>,
@@ -1967,8 +1967,8 @@ const helpSections: Record<string, HelpSection> = {
           left untouched). The preview warns you which programs will be replaced and asks
           you to tick a confirmation before importing. Export and import round-trip the full
           program structure — the program-level <strong>Deployment Handling</strong> and,
-          for tiered programs, each tier&apos;s <strong>Tier Order</strong> and
-          <strong> Tier Specialisations Required</strong> — so a program exported and
+          for tiered programs, each tier&apos;s <strong>Tier Order</strong> and{" "}
+          <strong>Tier Specialisations Required</strong> — so a program exported and
           re-imported unchanged is restored exactly (tiers with no requirements of their own
           travel as blank tier-definition rows). After a successful import the page header
           shows a <strong>Last imported</strong> date/time.
@@ -1976,11 +1976,11 @@ const helpSections: Record<string, HelpSection> = {
 
         <h3>Tiered programs</h3>
         <p>
-          Tick <strong>Tiered program</strong> when creating a program to unlock
-          <strong> tiers</strong> (e.g. Tier A, B, C) that a partner reaches based on how
+          Tick <strong>Tiered program</strong> when creating a program to unlock{" "}
+          <strong>tiers</strong> (e.g. Tier A, B, C) that a partner reaches based on how
           many <strong>specialisations</strong> they have achieved. A specialisation is
           achieved when all of its qualifying (Sales/Pre-Sales) cert requirements are met
-          by enough distinct people. On a tiered program&apos;s page a <strong>Tiers</strong>
+          by enough distinct people. On a tiered program&apos;s page a <strong>Tiers</strong>{" "}
           section lets you add tiers (name, ladder order, and how many specialisations each
           requires) and choose how <strong>Deployment</strong> cert requirements are handled:
         </p>
@@ -1992,7 +1992,7 @@ const helpSections: Record<string, HelpSection> = {
           <li><strong>Per tier, per achieved specialisation</strong> — each tier lists its own
             deployment cert requirements <em>for each specialisation</em>, so they scale up the
             ladder. When adding a tier&apos;s deployment requirement you pick which specialisation
-            it applies to. The tier is reached when <em>at least the required number of</em>
+            it applies to. The tier is reached when <em>at least the required number of</em>{" "}
             specialisations each meet all of that tier&apos;s criteria — achieved <em>and</em> all
             of that tier&apos;s deployment certs for that specialisation (a specialisation with no
             deployment certs for the tier counts on qualification alone). Specialisations that
@@ -2059,8 +2059,8 @@ const helpSections: Record<string, HelpSection> = {
           the <strong>+</strong> next to the Specialisation dropdown in the requirement form.
         </p>
         <p>
-          A program&apos;s requirements table can be narrowed with the
-          <strong> Specialisation</strong>, <strong>Level</strong>, and <strong>Type</strong>
+          A program&apos;s requirements table can be narrowed with the{" "}
+          <strong>Specialisation</strong>, <strong>Level</strong>, and <strong>Type</strong>{" "}
           filters in the column headers; use <strong>Clear Filters</strong> to reset them.
         </p>
 
@@ -2116,7 +2116,7 @@ const helpSections: Record<string, HelpSection> = {
           effort</em> — floating the easy wins to the top.
         </p>
         <p>
-          Program requirements are <strong>counts, not per-person mandates</strong>
+          Program requirements are <strong>counts, not per-person mandates</strong>{" "}
           (&ldquo;3 people in the UK hold Cert A&rdquo;), so a plan computes the
           shortfall per requirement and then nominates the cheapest specific people
           to close it. It uses exactly the same distinct-holder counting — and the
@@ -2140,7 +2140,7 @@ const helpSections: Record<string, HelpSection> = {
           <li>
             <strong>Tiered programs</strong> — target a <strong>tier</strong> (the
             tool picks the cheapest specialisations to get you there — reaching a
-            tier only needs as many specialisations as the tier requires, and any
+            tier only needs as many specialisations as the tier requires, and any{" "}
             <em>equally-cheap</em> alternatives are flagged &ldquo;Recommended&rdquo;
             so you can choose), or specific specialisation(s).
           </li>
@@ -2191,7 +2191,7 @@ const helpSections: Record<string, HelpSection> = {
           legacy upgrade) — so it&apos;s obvious why they&apos;re a cheap candidate.
           Expanding a row spells each gap out in <strong>plain language</strong> —
           e.g. &ldquo;They have taken <em>Training A</em>. Passing the <em>Cert
-          A</em> certification exam will contribute to the <em>Specialisation Y</em>
+          A</em> certification exam will contribute to the <em>Specialisation Y</em>{" "}
           specialisation.&rdquo; — worded to match their situation (training already
           taken, a lapsed renewal, or a legacy upgrade).
         </p>
@@ -2265,8 +2265,8 @@ const helpSections: Record<string, HelpSection> = {
         <p>
           A single <strong>View</strong> selector at the top drives the whole
           page: a <strong>Level</strong> dropdown (Global / By Theatre / By Region
-          / By Country, limited to the program&apos;s configured levels) plus a
-          <strong> Value</strong> dropdown for the chosen level (which theatre /
+          / By Country, limited to the program&apos;s configured levels) plus a{" "}
+          <strong>Value</strong> dropdown for the chosen level (which theatre /
           region / country; hidden for Global). Picking a scope shows the{" "}
           <strong>Tier Status</strong> (for tiered programs) and the one matching
           report for that scope.
@@ -2421,8 +2421,8 @@ const helpSections: Record<string, HelpSection> = {
         <h3>Import &amp; Export</h3>
         <p>
           Use <strong>Import Product Types</strong> to bulk-create entries from a
-          CSV or Excel file with a <code>Name</code> column and an optional
-          <code> Color</code> column (hex value like <code>#1a2b3c</code>). The
+          CSV or Excel file with a <code>Name</code> column and an optional{" "}
+          <code>Color</code> column (hex value like <code>#1a2b3c</code>). The
           wizard auto-maps the columns, shows a preview, and reports how many
           were created, updated (existing row given a new colour), or skipped.
           Invalid colour cells are reported and the row is imported without a
@@ -2493,8 +2493,8 @@ const helpSections: Record<string, HelpSection> = {
     content: (
       <>
         <p>
-          API keys let trusted third-party systems read your data through the
-          <strong> read-only public API</strong>. Each key is scoped to one or more
+          API keys let trusted third-party systems read your data through the{" "}
+          <strong>read-only public API</strong>. Each key is scoped to one or more
           companies and can only <em>read</em> — there is no way to create, change,
           or delete data with a key. This page is SuperAdmin-only.
         </p>
@@ -2502,10 +2502,10 @@ const helpSections: Record<string, HelpSection> = {
         <h3>Turning the API on and off</h3>
         <p>
           The banner at the top of this page is a <strong>single switch for the whole
-          public API</strong>, separate from the individual keys below. It ships
-          <strong> switched off</strong>: until you click <strong>Enable API</strong>,
-          every request to <code>/api/public/v1</code> is refused with an HTTP
-          <strong> 503</strong>, no matter how many valid, active keys exist.
+          public API</strong>, separate from the individual keys below. It ships{" "}
+          <strong>switched off</strong>: until you click <strong>Enable API</strong>,
+          every request to <code>/api/public/v1</code> is refused with an HTTP{" "}
+          <strong>503</strong>, no matter how many valid, active keys exist.
         </p>
         <ul>
           <li>Use it as a <strong>kill switch</strong> — turning the API off stops all external access at once, without touching your keys, so switching it back on restores access with no re-issuing.</li>
@@ -2522,7 +2522,7 @@ const helpSections: Record<string, HelpSection> = {
 
         <h3>Using a key</h3>
         <p>
-          The calling system sends the key in an <code>Authorization: Bearer &lt;key&gt;</code>
+          The calling system sends the key in an <code>Authorization: Bearer &lt;key&gt;</code>{" "}
           header (an <code>X-API-Key</code> header is also accepted) over HTTPS. Available
           endpoints:
         </p>
