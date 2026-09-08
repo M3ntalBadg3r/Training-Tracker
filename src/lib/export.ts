@@ -35,22 +35,54 @@ export function exportToExcel<T extends object>(
   XLSX.writeFile(wb, `${filename}.xlsx`);
 }
 
+/**
+ * Make a string safe for jsPDF's built-in fonts.
+ *
+ * The standard PDF fonts are WinAnsi-encoded: a character outside Latin-1 is
+ * emitted as raw UTF-16 bytes and comes out as mojibake with the wrong advance
+ * widths — "Lapsed ≤ 1 month" prints as `Lapsed "d 1 month`. Report text is full
+ * of such characters (≤ in the expiry buckets, → in "ILT → Cert", en and em
+ * dashes throughout the chart titles), so they are transliterated to their
+ * ASCII equivalents. Anything Latin-1 already covers is left exactly as it is —
+ * accented names above all, but also × and · — and embedding a Unicode font to
+ * keep the real glyphs would cost hundreds of kilobytes in the client bundle.
+ */
+const PDF_TRANSLITERATIONS: [RegExp, string][] = [
+  [/[\u2018\u2019\u201b]/g, "'"],
+  [/[\u201c\u201d\u201e]/g, '"'],
+  [/[\u2010-\u2015\u2212]/g, "-"],
+  [/\u2026/g, "..."],
+  [/\u2264/g, "<="],
+  [/\u2265/g, ">="],
+  [/\u2260/g, "!="],
+  [/\u2192/g, "->"],
+  [/\u2190/g, "<-"],
+  [/\u25b2/g, "^"],
+  [/\u25bc/g, "v"],
+  [/\u2022/g, "-"],
+  [/[\u2009\u202f]/g, " "],
+];
+
+export function pdfSafe(text: string): string {
+  return PDF_TRANSLITERATIONS.reduce((acc, [re, to]) => acc.replace(re, to), text);
+}
+
 export function exportToPdf<T extends object>(
   data: T[],
   columns: { key: keyof T; header: string }[],
   filename: string
 ) {
-  const headers = columns.map((col) => col.header);
+  const headers = columns.map((col) => pdfSafe(col.header));
   const rows = data.map((row) =>
     columns.map((col) => {
       const val = row[col.key];
-      return Array.isArray(val) ? val.join(", ") : String(val ?? "");
+      return pdfSafe(Array.isArray(val) ? val.join(", ") : String(val ?? ""));
     })
   );
 
   const doc = new jsPDF({ orientation: columns.length > 5 ? "landscape" : "portrait" });
   doc.setFontSize(14);
-  doc.text(filename.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()), 14, 15);
+  doc.text(pdfSafe(filename.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())), 14, 15);
 
   autoTable(doc, {
     head: [headers],

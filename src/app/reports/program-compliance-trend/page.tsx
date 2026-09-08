@@ -159,7 +159,7 @@ export default function ProgramComplianceTrendPage() {
     { defaultKey: "monthKey", tiebreakKey: "specialisation", descFirstKeys: ["attained", "required", "compliancePct"] },
   );
 
-  const { captureAllCharts } = useChartCapture();
+  const { capturePageVisuals } = useChartCapture();
   const [exporting, setExporting] = useState(false);
 
   const exportColumns = [
@@ -183,7 +183,8 @@ export default function ProgramComplianceTrendPage() {
         filename: "program-compliance-trend",
         columns: exportColumns,
         rows: exportRows as never,
-        charts: includeCharts ? await captureAllCharts() : [],
+        // Charts and the KPI strip travel together: one tickbox governs both.
+        ...(includeCharts ? await capturePageVisuals() : {}),
       });
     } finally {
       setExporting(false);

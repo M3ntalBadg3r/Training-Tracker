@@ -165,7 +165,7 @@ export default function ComparisonPage() {
     { key: "exp6", header: "Expiring 6mo" },
   ];
 
-  const { captureAllCharts } = useChartCapture();
+  const { capturePageVisuals } = useChartCapture();
   const [exporting, setExporting] = useState(false);
 
   const handleExport = async (fmt: ExportFormat, { includeCharts }: { includeCharts: boolean }) => {
@@ -183,7 +183,8 @@ export default function ComparisonPage() {
           filename,
           columns: exportColumns,
           rows: exportRows as never,
-          charts: includeCharts ? await captureAllCharts() : [],
+          // Charts and the KPI strip travel together: one tickbox governs both.
+          ...(includeCharts ? await capturePageVisuals() : {}),
         });
       } finally {
         setExporting(false);

@@ -193,7 +193,7 @@ function LearnerScorecardPageInner() {
     { key: "lastDate", header: "Last Achievement" },
   ];
 
-  const { captureAllCharts } = useChartCapture();
+  const { capturePageVisuals } = useChartCapture();
 
   const handleExport = async (fmt: ExportFormat, { includeCharts }: { includeCharts: boolean }) => {
     setExporting(true);
@@ -210,7 +210,8 @@ function LearnerScorecardPageInner() {
           filename: "learner-scorecard",
           columns: exportColumns,
           rows: exportRows as never,
-          charts: includeCharts ? await captureAllCharts() : [],
+          // Charts and the KPI strip travel together: one tickbox governs both.
+          ...(includeCharts ? await capturePageVisuals() : {}),
         });
       }
     } finally {

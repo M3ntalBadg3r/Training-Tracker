@@ -14,6 +14,7 @@ import { exportToCsv, exportToExcel } from "@/lib/export";
 import { exportReportTablePdf } from "@/lib/report-export";
 import ExportMenu, { type ExportFormat } from "@/components/ui/ExportMenu";
 import { ExportableChart, useChartCapture } from "@/components/reports/ChartCaptureProvider";
+import { TitleYAxisTick } from "@/components/reports/ChartTicks";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
 import { useDebounce } from "@/hooks/useDebounce";
 import { useDateFormat } from "@/components/date-format/DateFormatProvider";
@@ -22,6 +23,9 @@ import { Search, ArrowLeft, Award, ShieldCheck, GraduationCap, TrendingUp } from
 import Pagination from "@/components/data-table/Pagination";
 import {
   Area,
+  Bar,
+  BarChart,
+  Cell,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -242,7 +246,7 @@ function AchievementOverTimePageInner() {
   };
   const sortIndicator = (key: string) => (sortColumn === key ? (sortDir === "asc" ? " ▲" : " ▼") : "");
 
-  const { captureAllCharts } = useChartCapture();
+  const { capturePageVisuals } = useChartCapture();
 
   const handleExport = async (fmt: ExportFormat, { includeCharts }: { includeCharts: boolean }) => {
     setExporting(true);
@@ -264,7 +268,8 @@ function AchievementOverTimePageInner() {
           filename: "achievement-over-time",
           columns: exportColumns,
           rows: exportRows as never,
-          charts: includeCharts ? await captureAllCharts() : [],
+          // Charts and the KPI strip travel together: one tickbox governs both.
+          ...(includeCharts ? await capturePageVisuals() : {}),
         });
       }
     } finally {
@@ -398,8 +403,8 @@ function AchievementOverTimePageInner() {
         ]}
       />
 
-      <section className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-        <ExportableChart className="lg:col-span-2 bg-white rounded-lg border border-gray-200 p-5">
+      <section className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        <ExportableChart className="bg-white rounded-lg border border-gray-200 p-5">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-base font-semibold text-gray-900">{granularityLabel} Completions vs Prior Period</h3>
             {filterBucket && (
@@ -450,28 +455,26 @@ function AchievementOverTimePageInner() {
           </ResponsiveContainer>
           <p className="text-xs text-gray-400 mt-2">Click a point to filter the table to that {bucketLabel}</p>
         </ExportableChart>
-        <div className="bg-white rounded-lg border border-gray-200 p-5">
+        <ExportableChart className="bg-white rounded-lg border border-gray-200 p-5">
           <h3 className="text-base font-semibold text-gray-900 mb-4">Top 10 Trainings</h3>
-          <div className="space-y-2">
-            {topTitles.map((t, i) => {
-              const max = topTitles[0]?.count ?? 1;
-              const pct = (t.count / max) * 100;
-              const color = chart.productColor(t.productType, productColors);
-              return (
-                <div key={t.title}>
-                  <div className="flex justify-between text-xs mb-1">
-                    <span className="text-gray-700 truncate pr-2">{i + 1}. {t.title}</span>
-                    <span className="text-gray-500 font-medium">{t.count}</span>
-                  </div>
-                  <div className="h-2 bg-gray-100 rounded">
-                    <div className="h-2 rounded" style={{ width: `${pct}%`, backgroundColor: color }} />
-                  </div>
-                </div>
-              );
-            })}
-            {topTitles.length === 0 && <div className="text-sm text-gray-500">No completions in window.</div>}
-          </div>
-        </div>
+          {topTitles.length === 0 ? (
+            <div className="text-sm text-gray-500 py-8 text-center">No completions in window.</div>
+          ) : (
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={topTitles} layout="vertical" margin={{ left: 8 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
+                <XAxis type="number" allowDecimals={false} tick={{ fontSize: 12, fill: chart.axis }} stroke={chart.axis} />
+                <YAxis type="category" dataKey="title" tick={<TitleYAxisTick fill={chart.axis} max={34} />} interval={0} stroke={chart.axis} width={200} />
+                <Tooltip contentStyle={tooltipStyle(chart)} />
+                <Bar dataKey="count" name="Completions">
+                  {topTitles.map((t) => (
+                    <Cell key={t.title} fill={chart.productColor(t.productType, productColors)} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </ExportableChart>
       </section>
 
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">

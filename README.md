@@ -549,7 +549,7 @@ Rows that fail to parse against the chosen format are reported per-row with the 
 
 ## Reports
 
-Navigate to **Reports** in the sidebar. Each report follows the same shape: a four-card **KPI strip** at the top, a **chart row** above the table, then a **filtered, groupable table** with CSV / Excel / PDF export. Charts are interactive — clicking a bar, segment, or month drills the table down to that slice. **PDF exports can include the report's charts** (see [Exporting Data](#exporting-data)); CSV and Excel exports remain tabular (the original column shapes for the existing five reports are unchanged so scheduled exports keep working).
+Navigate to **Reports** in the sidebar. Each report follows the same shape: a four-card **KPI strip** at the top, a **chart row** above the table, then a **filtered, groupable table** with CSV / Excel / PDF export. Charts are interactive — clicking a bar, segment, or month drills the table down to that slice. **PDF exports can include the report's KPI cards and charts** (see [Exporting Data](#exporting-data)); CSV and Excel exports remain tabular (the original column shapes for the existing five reports are unchanged so scheduled exports keep working).
 
 ### Common Features
 
@@ -579,7 +579,7 @@ Every certification & training whose latest completion has *already* lapsed — 
 
 ### Achievement Over Time
 
-Area chart of completions with a dashed prior-period comparison line, plus a top-10 leaderboard of most-completed trainings. Pick a preset time range (12, 6, 3, or 1 month) or a custom date range; the chart automatically buckets by day, week, or month depending on the window length. Click a bucket to filter the table to that day/week/month. Type and theatre filters update the chart as well as the table. The report is computed on the server and the detail table is **paginated** — page through the results with the controls beneath the table, while the chart, KPI cards and exports always reflect the full filtered set.
+Area chart of completions with a dashed prior-period comparison line, beside a top-10 bar chart of the most-completed trainings (coloured by product type). Pick a preset time range (12, 6, 3, or 1 month) or a custom date range; the chart automatically buckets by day, week, or month depending on the window length. Click a bucket to filter the table to that day/week/month. Type and theatre filters update the chart as well as the table. The report is computed on the server and the detail table is **paginated** — page through the results with the controls beneath the table, while the chart, KPI cards and exports always reflect the full filtered set.
 
 ### Trained But Not Certified
 
@@ -1335,22 +1335,29 @@ Each export supports three formats:
 
 Click the **Export** button and select the desired format. For reports, the export respects any active filters — only the currently displayed results are exported.
 
-### Including charts in a PDF
+### Including charts and metrics in a PDF
 
-On report pages the Export menu also offers **Include charts in PDF**. Leave it ticked
-(the default) and a PDF export leads with pictures of the report's charts, in the order
-they appear on the page, followed by the data table. Untick it for a data-only PDF; the
-choice is remembered on your device.
+On report pages the Export menu also offers **Include charts & metrics in PDF**. Leave it
+ticked (the default) and a PDF export opens with the report's KPI metric cards, then
+pictures of its charts laid out as they are on the page, then the data table. Untick it
+for a data-only PDF; the choice is remembered on your device.
 
 A few things worth knowing:
 
+- **The charts keep the page's layout.** Charts that sit side by side on screen sit side
+  by side in the PDF, in the same proportions — a wide bar chart beside a smaller donut
+  prints 2:1, just as it looks in the browser — and a chart that spans the page keeps the
+  full width. If your browser window is narrow enough that the report stacks its charts,
+  the PDF stacks them too, so the file always matches what you were looking at.
+- **The metric cards are drawn, not photographed**, so the numbers stay sharp at any zoom
+  and can be selected and searched in a PDF reader.
 - **PDF only.** CSV is a plain-text format and cannot hold a picture, and the Excel
   writer cannot embed one, so the option is named for the format it applies to — CSV and
   Excel exports are unaffected either way.
 - **Charts always print on a light background**, whichever theme you are using, so a
   report exported in dark mode looks the same as one exported in light mode. If you use
   dark mode you will see the charts briefly turn light while the export is prepared.
-- **What you see is what you get** — the captured charts reflect the filters, grouping
-  and date range in force at the moment you export.
+- **What you see is what you get** — the captured charts and metrics reflect the filters,
+  grouping and date range in force at the moment you export.
 - A chart that is not on screen — for example a panel showing "no data" for the current
   filters — is simply left out of the PDF.

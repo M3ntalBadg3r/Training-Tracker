@@ -26,6 +26,10 @@ export interface CapturedChart {
   dataUrl: string;
   /** Measured width / height of the finished canvas, used to size the PDF image. */
   aspectRatio: number;
+  /** Index of the on-screen row this card sits in; charts sharing one are drawn side by side. */
+  row: number;
+  /** This card's share of its row's width, so a 2:1 pair stays 2:1 in the PDF. */
+  widthFraction: number;
 }
 
 /**
@@ -233,7 +237,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 export async function captureChartCard(
   card: HTMLElement,
   opts?: { title?: string; scale?: number }
-): Promise<CapturedChart | null> {
+): Promise<Omit<CapturedChart, "row" | "widthFraction"> | null> {
   if (typeof window === "undefined") return null;
   try {
     const svg = findSurface(card);
@@ -320,6 +324,43 @@ export async function captureChartCard(
 }
 
 /**
+ * Which cards share a row on screen, and how wide each is within it.
+ *
+ * This is what lets a PDF reproduce the page's chart layout: two cards side by
+ * side stay side by side, a card that spans the width keeps it, and a 2:1 pair
+ * (a wide chart beside a donut) keeps its proportions. Deriving it from the
+ * rendered geometry rather than from per-page configuration means a report only
+ * has to lay its charts out once, in CSS.
+ *
+ * Two cards are on the same row when their vertical extents overlap by more
+ * than half the shorter one — tolerant of the few pixels' difference between
+ * cards of unequal height in one grid row, and never true of stacked cards.
+ * A narrow window in which the grid has collapsed to one column therefore
+ * reports one card per row, which is exactly what the exporter should draw:
+ * the PDF matches whatever the person exporting it is looking at.
+ */
+function layoutRows(cards: HTMLElement[]): { row: number; widthFraction: number }[] {
+  const rects = cards.map((card) => card.getBoundingClientRect());
+  const rows: number[] = [];
+  let row = 0;
+  rects.forEach((rect, i) => {
+    if (i > 0) {
+      const previous = rects[i - 1];
+      const overlap = Math.min(previous.bottom, rect.bottom) - Math.max(previous.top, rect.top);
+      if (overlap < Math.min(previous.height, rect.height) / 2) row += 1;
+    }
+    rows.push(row);
+  });
+
+  const rowWidth = new Map<number, number>();
+  rows.forEach((r, i) => rowWidth.set(r, (rowWidth.get(r) ?? 0) + rects[i].width));
+  return rows.map((r, i) => ({
+    row: r,
+    widthFraction: rects[i].width / (rowWidth.get(r) || rects[i].width || 1),
+  }));
+}
+
+/**
  * Capture several cards, skipping any that fail.
  *
  * Sequential rather than `Promise.all` on purpose: each capture allocates a
@@ -330,10 +371,12 @@ export async function captureCharts(
   cards: HTMLElement[],
   opts?: { scale?: number }
 ): Promise<CapturedChart[]> {
+  // Measured up front, in one pass, before any canvas work perturbs layout.
+  const layout = layoutRows(cards);
   const captured: CapturedChart[] = [];
-  for (const card of cards) {
-    const shot = await captureChartCard(card, opts);
-    if (shot) captured.push(shot);
+  for (let i = 0; i < cards.length; i++) {
+    const shot = await captureChartCard(cards[i], opts);
+    if (shot) captured.push({ ...shot, ...layout[i] });
   }
   return captured;
 }
