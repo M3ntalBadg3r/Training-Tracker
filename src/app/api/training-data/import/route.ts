@@ -4,6 +4,7 @@ import { TrainingType, FunctionType } from "@prisma/client";
 import { handleAuthError, requireSuperAdmin } from "@/lib/auth";
 import { recomputeAllStudentsForParent } from "@/lib/olx";
 import { invalidateReportCache } from "@/lib/report-cache";
+import { readJsonBody } from "@/lib/request-body";
 
 const VALID_TRAINING_TYPES = new Set(Object.values(TrainingType));
 const VALID_FUNCTION_TYPES = new Set(Object.values(FunctionType));
@@ -66,7 +67,9 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     return handleAuthError(error);
   }
-  const body = await request.json();
+  const parsed = await readJsonBody(request);
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.body;
   const { rows, columnMapping, defaults } = body as {
     rows: Record<string, string>[];
     columnMapping: ColumnMapping;

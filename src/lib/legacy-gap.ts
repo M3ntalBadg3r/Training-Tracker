@@ -34,6 +34,13 @@ export interface LegacyGapRecord {
 export async function computeLegacyGaps(
   companyFilter?: number[] | null,
 ): Promise<LegacyGapRecord[]> {
+  // An *empty* array means "scoped to no companies", which must return nothing.
+  // Falling through to `{}` here would drop the filter and return every
+  // company's data — the opposite of what the caller asked for. `null`/undefined
+  // is the separate, deliberate "unrestricted" case. Same fail-closed shape as
+  // program-compliance.ts; the callers happen to early-return on an empty scope
+  // today, so this is not reachable, but the next caller would not know that.
+  if (Array.isArray(companyFilter) && companyFilter.length === 0) return [];
   const companyWhere = companyFilter && companyFilter.length > 0
     ? { student: { companyId: { in: companyFilter } } }
     : {};

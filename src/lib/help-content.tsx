@@ -341,6 +341,11 @@ const helpSections: Record<string, HelpSection> = {
         <p>
           Bulk-import student training records from CSV or Excel files.
         </p>
+        <p>
+          A single import is limited to 32 MB of data (and to its existing row
+          limit). A larger file is rejected with a message asking you to split
+          it, rather than being partly processed.
+        </p>
 
         <h3>Import Workflow</h3>
         <ol>
@@ -1957,6 +1962,13 @@ const helpSections: Record<string, HelpSection> = {
           stays accurate even when no schedule runs that day. The installer sets
           this up for you in <code>/etc/cron.d/training-tracker</code>; it runs
           as the unprivileged service account.
+        </p>
+        <p>
+          <strong>Fixed in 2.92:</strong>{" "}this daily check was previously
+          rejected before it reached the application, so health status only ever
+          refreshed when someone pressed <strong>Test Connection</strong> or a
+          scheduled export ran. It now runs as intended; no setting needs
+          changing.
         </p>
 
         <h3>Actions</h3>

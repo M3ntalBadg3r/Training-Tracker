@@ -371,7 +371,7 @@ The `.env` file requires:
 | `REPORT_CACHE_TTL_MS` | *(Optional)* Lifetime, in milliseconds, of the short in-memory cache in front of the expensive dashboard/report/program-compliance pages. Defaults to `30000` (30 s). While an entry is fresh, concurrent viewers of the same page share one computation instead of each re-querying the database; the cache is also cleared immediately whenever the underlying data is edited or imported, so results stay current after a change. Set to `0` to disable caching entirely. |
 | `JWT_SECRET` | Secret key for JWT token signing (minimum 32 characters required) |
 | `ENCRYPTION_KEY` | 64-character hex string (32 bytes) used to encrypt secrets at rest — TOTP shared secrets and OAuth/SMTP credentials. Generate with `openssl rand -hex 32`. **After enabling**, a SuperAdmin must POST `/api/admin/security/encrypt-secrets` once to seal any pre-existing rows. |
-| `CRON_SECRET` | *(Optional)* Required only when using the auto-backup / auto-export shell scripts. Generate with `openssl rand -hex 32`. |
+| `CRON_SECRET` | *(Optional)* Required only when using the auto-backup / auto-export / credential-check shell scripts. Generate with `openssl rand -hex 32`. Each scheduled request is signed for one endpoint, with a timestamp and a one-time value, so a signature cannot be captured and reused. |
 | `APP_BASE_URL` | *(Recommended in production)* Canonical externally-resolvable origin (e.g. `https://tracker.example.com`). Used to build OAuth redirect URIs without trusting `X-Forwarded-Host` headers, and to decide whether the auth cookie is marked `Secure` (an `https://` value marks it Secure; otherwise the cookie's Secure flag follows the request protocol, so plain-HTTP LAN access still works). |
 | `TRUSTED_PROXIES` | *(Recommended in production)* Comma-separated list of trusted reverse-proxy IPs whose `X-Forwarded-For` entries are stripped when extracting the real client IP for rate limiting. Defaults to `127.0.0.1,::1`. |
 | `NODE_EXTRA_CA_CERTS` | *(Optional)* Path to a CA bundle Node should trust in addition to its built-ins — set this when running behind an SSL-inspecting proxy/firewall so Prisma engine downloads and outbound HTTPS succeed. The installer sets it to `/etc/ssl/certs/ca-certificates.crt` automatically on Debian. |
@@ -649,6 +649,10 @@ Manage the mapping between countries, regions, and theatres. This page is the so
 - **Delete** — Remove a country/region mapping.
 - **Import** — Upload a CSV or Excel file with `Country`, `Region`, and (optionally) `Theatre` columns. The system auto-maps columns and shows a preview before importing.
 - **Export** — Download all region data (including theatre) as CSV, Excel, or PDF.
+
+#### Import size limits
+
+Every import endpoint accepts a JSON body of up to **32 MB** (override with `IMPORT_MAX_BODY_MB` in `.env`), on top of the existing per-import row limits. A file over the limit is rejected with a clear message rather than being read into memory, and a malformed or wrongly-typed request now returns a proper error instead of a generic server failure. If you hit the limit, split the file and import it in parts.
 
 #### Student import behaviour
 
@@ -1011,6 +1015,8 @@ A daily cron script keeps health status fresh:
 ```
 
 The script reads `CRON_SECRET` from `.env` and POSTs an HMAC-signed request to the credentials/check endpoint. Without it, health updates only happen when admins click Test Connection or when scheduled exports run.
+
+> **Fixed in 2.92:** this daily check was being rejected before it reached the application, so credential health was only ever refreshed by the manual **Test Connection** button or by a scheduled export running. No configuration change is needed — it starts working on update.
 
 #### Schedule Actions
 

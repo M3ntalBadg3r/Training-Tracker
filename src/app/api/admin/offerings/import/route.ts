@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { requireAuth, handleAuthError } from "@/lib/auth";
 import { canAccessCompany } from "@/lib/company-scope";
+import { readJsonBody } from "@/lib/request-body";
 
 interface RawRow {
   offeringName?: string;
@@ -72,7 +73,9 @@ export async function POST(request: NextRequest) {
   }
 
   const dryRun = request.nextUrl.searchParams.get("dryRun") === "true";
-  const body = await request.json();
+  const parsed = await readJsonBody(request);
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.body;
   const rows: RawRow[] = body.rows ?? [];
 
   // Names are unique per company, so an import targets a single company.

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { requireSuperAdmin, handleAuthError } from "@/lib/auth";
 import { invalidateReportCache } from "@/lib/report-cache";
+import { readJsonBody } from "@/lib/request-body";
 
 interface RawRow {
   programName?: string;
@@ -112,7 +113,9 @@ export async function POST(request: NextRequest) {
   }
 
   const dryRun = request.nextUrl.searchParams.get("dryRun") === "true";
-  const body = await request.json();
+  const parsed = await readJsonBody(request);
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.body;
   const rows: RawRow[] = body.rows ?? [];
 
   if (!Array.isArray(rows) || rows.length === 0) {

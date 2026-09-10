@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jwtVerify, SignJWT } from "jose";
-import { verifyCronSignature } from "@/lib/cron-auth";
+import { verifyCronRequest } from "@/lib/cron-auth";
 
 const COOKIE_NAME = "tt-auth";
 
@@ -178,16 +178,27 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Allow cron-triggered endpoints with valid HMAC signature
+  // Allow cron-triggered endpoints with a valid HMAC signature.
+  //
+  // Every endpoint whose handler accepts cron auth must appear here, or the
+  // proxy rejects the request before the handler ever sees it and the job fails
+  // with a 401 that looks like a credentials problem. `credentials/check` was
+  // missing from this list, so the daily credential health check never ran.
+  //
+  // This is only a "let it through" gate: the signature is re-checked in the
+  // handler via authorizeCronRequest, which additionally enforces single use of
+  // the nonce. The replay guard cannot live here because it needs the database
+  // and the proxy has no access to it.
   const isCronRequest =
     (pathname === "/api/admin/backup/save" &&
       request.headers.get("x-auto-backup") === "true") ||
     (pathname === "/api/admin/scheduled-exports/execute" &&
-      request.headers.get("x-auto-export") === "true");
+      request.headers.get("x-auto-export") === "true") ||
+    (pathname === "/api/admin/scheduled-exports/credentials/check" &&
+      request.headers.get("x-auto-credential-check") === "true");
 
   if (isCronRequest) {
-    const signature = request.headers.get("x-cron-signature");
-    if (verifyCronSignature(signature)) {
+    if (verifyCronRequest(request).ok) {
       return NextResponse.next();
     }
     // Fall through to normal JWT auth if signature is invalid

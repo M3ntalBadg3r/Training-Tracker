@@ -8,6 +8,7 @@ import { detectFormat, isDateFormat, parseDateWith, type DateFormat } from "@/li
 import { getSystemDateFormat } from "@/lib/system-settings";
 import { ensureDefaultProductTypeId } from "@/lib/product-types";
 import { invalidateReportCache } from "@/lib/report-cache";
+import { readJsonBody } from "@/lib/request-body";
 
 interface ImportRow {
   fullName: string;
@@ -26,7 +27,9 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     return handleAuthError(error);
   }
-  const body = await request.json();
+  const parsed = await readJsonBody(request);
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.body;
   const { rows, columnMapping, defaultCompanyId, dateFormatOverride } = body as {
     rows: Record<string, string>[];
     columnMapping: Record<string, string>;

@@ -18,26 +18,24 @@ log() {
 
 log "Auto-export check started"
 
-# Load CRON_SECRET from .env for HMAC signature
-ENV_FILE="${APP_DIR}/.env"
-CRON_SECRET=""
-if [ -f "$ENV_FILE" ]; then
-    CRON_SECRET=$(grep -oP '^CRON_SECRET=["'"'"']?\K[^"'"'"']*' "$ENV_FILE" 2>/dev/null || true)
-fi
+# Load CRON_SECRET and sign this specific request. The signature covers the
+# method, path, a timestamp and a single-use nonce — see deploy/lib/cron-sign.sh.
+# shellcheck source=lib/cron-sign.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/cron-sign.sh"
 
-if [ -z "$CRON_SECRET" ]; then
+if ! load_cron_secret "${APP_DIR}/.env"; then
     log "CRON_SECRET not set in .env. Aborting (required for cron authentication)."
     exit 1
 fi
 
-# Compute HMAC-SHA256 signature of today's date (UTC)
-TODAY=$(date -u '+%Y-%m-%d')
-CRON_SIGNATURE=$(echo -n "$TODAY" | openssl dgst -sha256 -hmac "$CRON_SECRET" | awk '{print $NF}')
+cron_sign_request POST "/api/admin/scheduled-exports/execute"
 
 # Call the execute endpoint
 RESPONSE=$(curl -s -X POST "http://localhost:3000/api/admin/scheduled-exports/execute" \
     -H "X-Auto-Export: true" \
     -H "X-Cron-Signature: ${CRON_SIGNATURE}" \
+    -H "X-Cron-Timestamp: ${CRON_TIMESTAMP}" \
+    -H "X-Cron-Nonce: ${CRON_NONCE}" \
     -H "Content-Type: application/json" \
     2>&1)
 

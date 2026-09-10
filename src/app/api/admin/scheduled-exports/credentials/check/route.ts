@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, handleAuthError, AuthError } from "@/lib/auth";
 import prisma from "@/lib/prisma";
-import { verifyCronSignature } from "@/lib/cron-auth";
+import { authorizeCronRequest } from "@/lib/cron-nonce";
 import { checkCredential, getCredentialHealthSummary } from "@/lib/credential-health";
 
 interface CheckBody {
@@ -15,8 +15,9 @@ interface CheckBody {
  * Body: optional `{provider}` to check just one provider; omitted = all configured.
  */
 export async function POST(request: NextRequest) {
-  const cronSignature = request.headers.get("x-cron-signature");
-  const cronAuthorised = verifyCronSignature(cronSignature);
+  const cronAuthorised =
+    request.headers.get("x-auto-credential-check") === "true" &&
+    (await authorizeCronRequest(request));
 
   if (!cronAuthorised) {
     try {
