@@ -22,6 +22,7 @@ import {
 } from "@/lib/crypto";
 import { prepareBackupRestore } from "@/lib/product-types";
 import { invalidateSystemSettingsCache } from "@/lib/system-settings";
+import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 
 // Backup archive variants. A "full" backup is the historical shape (everything,
 // including students and training records). A "config" backup is the reference
@@ -106,6 +107,7 @@ export async function generateBackupArchive(opts: BackupOptions = {}): Promise<{
  * Returns a ready error response, or null when the challenge passes.
  */
 export async function requireRestoreStepUp(
+  request: NextRequest,
   userId: number,
   password: string | undefined,
   mfaCode: string | undefined
@@ -114,6 +116,22 @@ export async function requireRestoreStepUp(
     return NextResponse.json(
       { error: "Your current password is required to restore a backup" },
       { status: 400 }
+    );
+  }
+
+  // Rate-limited here rather than in the two callers, so a third restore path
+  // cannot be added without one. A step-up prompt is a password-guessing
+  // surface like any other; every other route that verifies a password is
+  // limited, and this one was not.
+  const ip = getClientIp(request);
+  const limit = await checkRateLimit(`restore-stepup:${userId}:${ip}`, 5, 15 * 60 * 1000);
+  if (!limit.allowed) {
+    return NextResponse.json(
+      { error: "Too many attempts. Please try again later." },
+      {
+        status: 429,
+        headers: { "Retry-After": String(Math.ceil(limit.retryAfterMs / 1000)) },
+      }
     );
   }
   const me = await prisma.user.findUnique({ where: { id: userId } });
@@ -438,7 +456,7 @@ export async function POST(request: NextRequest) {
 
   // Step-up before any destructive read of the archive: a stolen cookie alone
   // must not be able to overwrite the dataset.
-  const stepUpError = await requireRestoreStepUp(auth.sub, password, mfaCode);
+  const stepUpError = await requireRestoreStepUp(request, auth.sub, password, mfaCode);
   if (stepUpError) return stepUpError;
 
   if (!file) {

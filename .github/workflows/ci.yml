@@ -40,3 +40,11 @@ jobs:
 
       - name: Typecheck
         run: npx tsc --noEmit
+
+      # Round 1 of the security review added an auth guard to every handler.
+      # That is a per-route obligation every new handler inherits, not a fix
+      # that stays fixed, and it decayed: handlers written afterwards were
+      # never held to it, which is how an unguarded route and an implicitly
+      # public one both shipped. This is the enforcement point.
+      - name: Route guards
+        run: npm run check:routes

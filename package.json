@@ -1,12 +1,14 @@
 {
   "name": "training-tracker-temp",
-  "version": "2.92",
+  "version": "2.93",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "check:routes": "node scripts/check-route-guards.mjs",
+    "routes:inventory": "node scripts/check-route-guards.mjs --inventory"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.5.0",

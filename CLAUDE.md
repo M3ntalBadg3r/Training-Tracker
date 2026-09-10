@@ -124,6 +124,7 @@ prisma/
   schema.prisma   # Data model
   migrations/     # Migration history
 deploy/           # install.sh, update.sh, install-remote.sh, perform-update.sh, check-update.sh, auto-update.sh, auto-backup.sh, auto-export.sh, auto-credential-check.sh, update-agent.sh (root side of the update boundary), lib/common.sh (shared idempotent privilege/ownership primitives), lib/cron-sign.sh (the single definition of the cron signing string, sourced by the three auto-*.sh cron scripts — mirrors `src/lib/cron-auth.ts:cronSigningString` and must stay byte-identical to it), and three systemd units: training-tracker.service (the app, unprivileged + sandboxed), training-tracker-update.path + training-tracker-update.service (root-owned update helper)
+scripts/          # check-route-guards.mjs — the CI-enforced per-handler auth-guard inventory (see "Writing a route handler" below). `npm run check:routes` to check, `npm run routes:inventory` for the full table
 ```
 
 ## Data Model
@@ -205,6 +206,53 @@ The configurable brand colour re-tints the whole app by **overriding Tailwind v4
 4. **`brandColor` is validated strictly** (`isBrandColor`, `/^#[0-9a-f]{6}$/i`) and the inline style is omitted entirely when null. An invalid value makes every `color-mix()` invalid-at-computed-value-time, unsetting the whole blue palette.
 
 Not covered by the ramp (they use hardcoded hex, not `blue-*` classes): `lib/chart-theme.ts` Recharts colours and the jsPDF export palette. Both intentionally keep the stock palette.
+
+## Writing a route handler
+
+Round 1 of the security review added an auth guard to every handler, generic
+error messages to six routes, and input validation across several more. Those
+are **per-route obligations that every new handler inherits**, not fixes that
+stay fixed — and they decayed, because they were recorded as completed work
+rather than as rules. Roughly 110 handlers were written afterwards and never
+held to them. Treat the list below as the rule, and note that the first item is
+now enforced mechanically.
+
+1. **Every handler authenticates.** Call `requireAuth` / `requireAuth("Admin")` /
+   `requireSuperAdmin` / `requireFullSession`, or `authorizePublicRequest` /
+   `requireApiKey` for the public API, or `authorizeCronRequest` for a cron
+   endpoint. **`npm run check:routes` fails CI otherwise** (`scripts/check-route-guards.mjs`).
+   The check is **per exported handler, not per file**: a `GET` once shipped
+   unguarded beside `PUT`/`PATCH`/`DELETE` siblings that were all guarded.
+   - A genuinely public handler goes in that script's `PUBLIC_HANDLERS` with a
+     written reason. Adding an entry is a security decision — it asserts the
+     handler is safe to expose to the internet with no credentials. The list is
+     currently **6** handlers (login, logout, setup GET/POST, the two branding
+     images). An implicitly-public route is exactly how the reflected-XSS
+     finding happened: nobody decided it was public, it just was.
+   - A handler that uses `getAuthFromRequest` instead of a guard (because it must
+     stay reachable during pending-MFA enrolment, or it re-issues the cookie)
+     goes in `SELF_GUARDED_HANDLERS` — **not an exemption**: the script asserts it
+     also calls `isUserDisabled` *and* `isSessionEpochStale`, because those are
+     what `requireAuth` would have contributed. `mfa/setup` and `mfa/verify` were
+     missing both, so a suspended account could still complete enrolment.
+   - A **cron** endpoint must appear in `proxy.ts`'s `isCronRequest` list **and**
+     call `authorizeCronRequest`. The script cross-checks the two lists; with
+     only one the job fails with a 401 that reads like a credentials problem,
+     which is how the daily credential check silently never ran.
+2. **Errors are generic.** Never return `err.message` to the client. Classify on
+   `err.code` into a small fixed set and `console.warn` the detail — message text
+   from a network or filesystem error is an oracle (see `describeProbeError`).
+3. **Validate every input that reaches a sink.** Anything reaching the
+   filesystem goes through `lib/safe-path.ts:resolveWithin`; any JSON body on a
+   bulk endpoint goes through `lib/request-body.ts:readJsonBody` (content-type,
+   size cap, 400-on-malformed); ids are intersected with the caller's company
+   scope via `lib/company-scope.ts`.
+4. **Anything accepting a credential is rate-limited.** Password, MFA code,
+   passphrase or API key — `lib/rate-limit.ts:checkRateLimit`. Prefer putting the
+   limiter beside the verification (as `requireRestoreStepUp` does) rather than
+   in each caller, so a new caller inherits it.
+5. **Cache keys encode the company scope** and every result-affecting query
+   param — see `lib/report-cache.ts`.
 
 ## Coding Conventions
 

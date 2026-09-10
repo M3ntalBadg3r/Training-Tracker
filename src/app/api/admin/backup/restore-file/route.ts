@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
     const { filename, password, mfaCode } = await request.json();
 
     // Step-up first: a server-side restore is as destructive as an uploaded one.
-    const stepUpError = await requireRestoreStepUp(auth.sub, password, mfaCode);
+    const stepUpError = await requireRestoreStepUp(request, auth.sub, password, mfaCode);
     if (stepUpError) return stepUpError;
 
     if (!filename) {
