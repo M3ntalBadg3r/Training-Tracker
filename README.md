@@ -326,6 +326,15 @@ throttle. The attempt log is kept for 30 days and pruned automatically.
 
 Click **My Account** in the sidebar to view your profile and manage MFA settings.
 
+#### Changing your password
+
+Changing your password **signs you out everywhere else**. The browser you make
+the change in stays signed in; every other session on that account — another
+computer, a phone, a browser you forgot to sign out of — is ended the next time
+it makes a request. That is deliberate: if you are changing your password
+because you think someone else has it, the change now ends their session too
+rather than leaving it valid until it happens to time out.
+
 ### About page
 
 Click **About** in the sidebar footer (between Night Mode and Sign out) to open the **About** page (titled with your configured application name). It shows a short description of the application, the **current version** you're running, the developer credit, and quick links to the **release notes** and the **GitHub repository** (both open in a new tab).
@@ -742,7 +751,7 @@ Navigate to **Admin > Users** to manage user accounts.
 
 - **Add User** — Create a new account with username, display name, password, and role (Admin or User).
 - **Edit User** — Change display name or role. Cannot demote the last admin.
-- **Reset Password** — Set a new password for any user.
+- **Reset Password** — Set a new password for any user. This also **signs that user out of every session they have open**, so resetting the password of a compromised account evicts whoever is using it. Requires you to re-enter your own password (and MFA code, if you have MFA enabled).
 - **Disable MFA** — Turn off multi-factor authentication for a user.
 - **Disable / Enable Account** — Suspend an account without deleting it (the power icon in the Actions column). A disabled user cannot sign in, and any session they already have open is signed out on their very next request. Their role, company access, MFA setup and login history are all preserved, so enabling the account restores it exactly as it was. An optional reason can be recorded and is shown to other admins in the tooltip on the grey **Disabled** badge. You cannot disable your own account or the last SuperAdmin.
 - **Delete User** — Remove a user account. Cannot delete yourself or the last admin. To simply stop someone signing in, disable the account instead — deletion is permanent and discards their history.
@@ -756,7 +765,7 @@ A disabled account is refused at login with the same generic "Invalid username o
 - **Default Date Format** — `DD/MM/YYYY` or `MM/DD/YYYY`. Used for:
   - Parsing dates during CSV / Excel imports (the import flow detects format mismatches and prompts before committing — see **Import Data → Date Format Detection**).
   - Displaying dates throughout the app for users who haven't picked a personal preference.
-- **Session Timeout** — How long a signed-in user can be **inactive** before being automatically signed out (default **30 minutes**, adjustable 5–1440 minutes). A warning dialog with a countdown appears shortly before the timeout so an active user can choose **Stay signed in**. Ongoing activity keeps the session alive; a change takes effect the next time a user signs in. A fixed **absolute cap** (8 hours, overridable with the `SESSION_ABSOLUTE_HOURS` environment variable) also applies — a session is ended once it reaches the cap regardless of activity.
+- **Session Timeout** — How long a signed-in user can be **inactive** before being automatically signed out (default **30 minutes**, adjustable 5–1440 minutes). A warning dialog with a countdown appears shortly before the timeout so an active user can choose **Stay signed in**. Ongoing activity keeps the session alive; a change takes effect the next time a user signs in. A fixed **absolute cap** (8 hours, overridable with the `SESSION_ABSOLUTE_HOURS` environment variable) also applies — a session is ended once it reaches the cap regardless of activity. Separately from any timeout, a session is ended immediately when the account is disabled, or when its password is changed from somewhere else (see **Changing your password**).
 - **Import Aliases** — The per-field header alias list used by the student import's column auto-mapper.
 - **Branding** — White-labelling; see below.
 

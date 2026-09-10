@@ -1224,7 +1224,13 @@ const helpSections: Record<string, HelpSection> = {
         <ul>
           <li><strong>Add User</strong>{" "}&mdash; Create a new account with username, display name, password, role, and (for non-SuperAdmin roles) the companies they can see. The <strong>Require MFA at first login</strong> checkbox is on by default; the new user will be locked to the MFA enrolment page until they set up an authenticator.</li>
           <li><strong>Edit User</strong>{" "}&mdash; Change display name, role, or company assignments. Tick <strong>Require MFA at next login</strong> to force an existing user to enrol in MFA on their next session.</li>
-          <li><strong>Reset Password</strong>{" "}&mdash; Set a new password for any user.</li>
+          <li>
+            <strong>Reset Password</strong>{" "}&mdash; Set a new password for any
+            user. This also signs that user out of every session they have open,
+            so resetting a compromised account&apos;s password evicts whoever is
+            using it. You must re-enter your own password (and MFA code, if you
+            have MFA enabled) to confirm.
+          </li>
           <li><strong>Disable MFA</strong>{" "}&mdash; Turn off multi-factor authentication for a user.</li>
           <li><strong>Disable / Enable Account</strong>{" "}&mdash; Suspend an account without deleting it &mdash; the power icon in the Actions column. A disabled user cannot sign in, and any session they already have open is signed out on their very next click. Nothing is lost: their role, company access, MFA setup and login history are all kept, so enabling the account restores it exactly as it was. You can record an optional reason, shown to other admins in the tooltip on the <em>Disabled</em> badge. You cannot disable your own account or the last SuperAdmin.</li>
           <li><strong>Delete User</strong>{" "}&mdash; Remove a user account. You cannot delete yourself or the last admin. If you only want to stop someone signing in, disable the account instead &mdash; deleting is permanent and loses their history.</li>
@@ -1308,6 +1314,14 @@ const helpSections: Record<string, HelpSection> = {
           Click <strong>Change Password</strong> to update your password. You
           must enter your current password for verification, then provide a new
           password that meets the complexity requirements.
+        </p>
+        <p>
+          Changing your password <strong>signs you out everywhere else</strong>.
+          This browser stays signed in, but every other session on your account
+          &mdash; another computer, a phone, a browser you forgot to sign out of
+          &mdash; is ended the next time it does anything. So if you are changing
+          your password because you think someone else has it, the change ends
+          their session too rather than leaving it valid until it times out.
         </p>
 
         <h3>Multi-Factor Authentication (MFA)</h3>

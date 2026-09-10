@@ -34,12 +34,11 @@ TOTAL_STEPS=8
 # Ensure system binaries are on PATH
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${PATH}"
 
-# Source .env so DATABASE_URL (and other vars) are available to all child processes
-if [ -f "${APP_DIR}/.env" ]; then
-    set -a
-    source "${APP_DIR}/.env"
-    set +a
-fi
+# Load the allow-listed keys from .env (DATABASE_URL and friends) so they reach
+# the child processes below. Parsed, never sourced: .env is writable by the
+# unprivileged service account, so executing it here would be root code
+# execution on demand. See load_env_allowlist in lib/common.sh.
+load_env_allowlist
 
 # Make Node trust the system CA bundle (covers SSL-inspecting proxies). New
 # installs persist NODE_EXTRA_CA_CERTS in .env; this self-heals older installs

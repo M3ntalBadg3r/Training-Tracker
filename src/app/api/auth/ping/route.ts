@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthFromRequest, accountDisabledResponse } from "@/lib/auth";
-import { isUserDisabled } from "@/lib/user-status";
+import { isUserDisabled, isSessionEpochStale } from "@/lib/user-status";
 
 // Keep-alive endpoint for the client idle-timeout manager. It does no work of
 // its own — simply reaching an authenticated route lets proxy.ts slide the
@@ -15,5 +15,9 @@ export async function POST(request: NextRequest) {
   // suspension check has to be explicit. It is what signs out a tab that is
   // sitting idle: the keep-alive ping is the only request such a tab makes.
   if (await isUserDisabled(authUser.sub)) return accountDisabledResponse();
+  // Same reasoning for a session revoked by a password change elsewhere.
+  if (await isSessionEpochStale(authUser.sub, authUser.sessionEpoch)) {
+    return accountDisabledResponse();
+  }
   return NextResponse.json({ ok: true });
 }

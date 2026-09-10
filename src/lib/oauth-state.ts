@@ -32,7 +32,9 @@ export async function verifyOAuthState(
   expectedProvider: string,
 ): Promise<OAuthStatePayload | null> {
   try {
-    const { payload } = await jwtVerify(token, getJwtSecret());
+    const { payload } = await jwtVerify(token, getJwtSecret(), {
+      algorithms: ["HS256"],
+    });
     if (payload.provider !== expectedProvider) return null;
     return {
       provider: payload.provider as string,

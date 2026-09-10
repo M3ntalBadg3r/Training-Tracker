@@ -75,7 +75,9 @@ export const PROVIDER_CONFIG: Record<CloudProvider, ProviderConfig> = {
 };
 
 export function isCloudProvider(provider: string): provider is CloudProvider {
-  return provider in PROVIDER_CONFIG;
+  // Object.hasOwn, not `in`: `in` walks the prototype chain, so "constructor",
+  // "toString" and "__proto__" would all pass this allowlist.
+  return Object.hasOwn(PROVIDER_CONFIG, provider);
 }
 
 interface BuildAuthUrlOptions {

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma, { type PrismaTransactionClient } from "@/lib/prisma";
 import { TrainingType, FunctionType } from "@prisma/client";
-import { handleAuthError, requireSuperAdmin } from "@/lib/auth";
+import { handleAuthError, requireAuth, requireSuperAdmin } from "@/lib/auth";
 import { recomputeAllStudentsForParent } from "@/lib/olx";
 import { safeDecodeParam } from "@/lib/utils";
 import { resolveProductTypeId } from "@/lib/product-types";
@@ -9,9 +9,17 @@ import { sanitizeLegacyFields, isLegacyEligible } from "@/lib/legacy-training";
 import { invalidateReportCache } from "@/lib/report-cache";
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ title: string }> }
 ) {
+  // Every sibling method on this route guards; this one did not (Round 1
+  // item 3: the guard is a per-handler obligation, not a one-time fix).
+  try {
+    await requireAuth(request);
+  } catch (error) {
+    return handleAuthError(error);
+  }
+
   const { title } = await params;
   const decodedTitleMaybe = safeDecodeParam(title);
   if (decodedTitleMaybe === null) {

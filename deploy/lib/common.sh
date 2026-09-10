@@ -25,6 +25,62 @@ APP_DIR="${APP_DIR:-/opt/training-tracker}"
 LOG_DIR="${LOG_DIR:-/var/log/training-tracker}"
 UPDATE_REQUEST_FILE="${APP_DIR}/.update-request"
 
+# --- Configuration -----------------------------------------------------------
+
+# Keys that root legitimately needs out of .env. Nothing outside this list is
+# read, so adding a variable here is a deliberate act.
+ENV_ALLOWED_KEYS="DATABASE_URL GITHUB_TOKEN NODE_EXTRA_CA_CERTS UPDATE_CHANNEL TT_BUILD_MIN_MB npm_config_cache"
+
+# Read the allow-listed keys out of ${APP_DIR}/.env and export them.
+#
+# This deliberately does NOT `source` the file. .env is group-writable by the
+# service user (see ensure_ownership) because the app rewrites UPDATE_CHANNEL
+# when the operator switches release channels — so `source` would hand the
+# unprivileged service arbitrary code execution as root at the next update,
+# which is exactly the escalation the request-file design exists to prevent.
+# Here the file is only ever *parsed*: values are assigned, never evaluated, so
+# `FOO=$(...)`, backticks and bare commands are inert text.
+load_env_allowlist() {
+    local env_file="${APP_DIR}/.env"
+    [ -f "${env_file}" ] || return 0
+
+    local line key value
+    while IFS= read -r line || [ -n "${line}" ]; do
+        # Tolerate `export KEY=...`, leading whitespace, comments and blanks.
+        line="${line#"${line%%[![:space:]]*}"}"
+        case "${line}" in
+            ''|'#'*) continue ;;
+            'export '*) line="${line#export }" ;;
+        esac
+
+        key="${line%%=*}"
+        # Not a KEY=VALUE line at all, or not a valid shell identifier.
+        [ "${key}" != "${line}" ] || continue
+        case "${key}" in
+            ''|*[!A-Za-z0-9_]*|[0-9]*) continue ;;
+        esac
+
+        # Only the keys we asked for.
+        case " ${ENV_ALLOWED_KEYS} " in
+            *" ${key} "*) ;;
+            *) continue ;;
+        esac
+
+        value="${line#*=}"
+        # Strip one matching layer of surrounding quotes, then trailing CR from
+        # a file that has been through a Windows editor.
+        case "${value}" in
+            \"*\") value="${value#\"}"; value="${value%\"}" ;;
+            "'"*"'") value="${value#\'}"; value="${value%\'}" ;;
+        esac
+        value="${value%$'\r'}"
+
+        # printf -v assigns; it does not evaluate the value.
+        printf -v "${key}" '%s' "${value}"
+        export "${key?}"
+    done < "${env_file}"
+}
+
 # --- Privilege ---------------------------------------------------------------
 
 # Ensure we are root. On an LXC the operator is normally root already; on a VM
@@ -162,7 +218,11 @@ ensure_ownership() {
 
     # Must come last: the blanket chown above would otherwise hand these to the
     # service user, which is exactly what breaks root's writes to them.
-    ensure_state_file "${APP_DIR}/.update-status" "${APP_DIR}/.update-log"
+    # .auto-update-last-run is written by root from auto-update.sh, so it gets
+    # the same treatment: pre-created root-owned, never adopted from a symlink
+    # the service account could have planted first.
+    ensure_state_file "${APP_DIR}/.update-status" "${APP_DIR}/.update-log" \
+        "${APP_DIR}/.auto-update-last-run"
 }
 
 # Files that BOTH root and the app write: update progress and the update log.
@@ -183,6 +243,11 @@ ensure_ownership() {
 ensure_state_file() {
     local f
     for f in "$@"; do
+        # Never adopt a symlink: these files live in directories the service
+        # account can create entries in, and root writes to them afterwards.
+        if [ -L "${f}" ]; then
+            rm -f "${f}"
+        fi
         [ -e "${f}" ] || : > "${f}"
         chown "root:${SVC_GROUP}" "${f}" 2>/dev/null || true
         chmod 0664 "${f}" 2>/dev/null || true
@@ -190,10 +255,27 @@ ensure_state_file() {
 }
 
 ensure_log_dir() {
-    install -d -o "${SVC_USER}" -g "${SVC_GROUP}" -m 0755 "${LOG_DIR}" 2>/dev/null || {
+    # Root-owned directory, group-readable/traversable by the service account,
+    # with the individual log files pre-created root:group 0664 — the same split
+    # as .update-status/.update-log and for the same reason. The service user
+    # must not own the *directory*: root appends to updates.log and
+    # update-agent.log, so owning the directory would let the unprivileged
+    # account replace either with a symlink and have root append wherever it
+    # pointed. Owning neither the directory nor the files, but holding group
+    # write on the files, it can still write its own logs.
+    # Sticky (1775), like APP_DIR: the service account can add its own files but
+    # cannot unlink root's, so the pre-created logs below cannot be swapped out.
+    install -d -o root -g "${SVC_GROUP}" -m 1775 "${LOG_DIR}" 2>/dev/null || {
         mkdir -p "${LOG_DIR}"
-        chown "${SVC_USER}:${SVC_GROUP}" "${LOG_DIR}" 2>/dev/null || true
+        chown "root:${SVC_GROUP}" "${LOG_DIR}" 2>/dev/null || true
+        chmod 1775 "${LOG_DIR}" 2>/dev/null || true
     }
+    ensure_state_file \
+        "${LOG_DIR}/updates.log" \
+        "${LOG_DIR}/update-agent.log" \
+        "${LOG_DIR}/exports.log" \
+        "${LOG_DIR}/backups.log" \
+        "${LOG_DIR}/credential-check.log"
 }
 
 # When /etc/cron.allow exists, cron becomes an allow-list and the service user
@@ -211,11 +293,21 @@ ensure_cron_allow() {
 # would break `npx` and send npm's cache somewhere unwritable — hence the
 # explicit `env` prefix rather than relying on inheritance.
 run_as_service_user() {
-    if [ "$(id -u)" -ne 0 ] || ! id -u "${SVC_USER}" >/dev/null 2>&1; then
-        # Already unprivileged, or the account does not exist yet (an old
-        # install part-way through migrating). Run as-is.
+    if [ "$(id -u)" -ne 0 ]; then
+        # Already unprivileged — nothing to drop.
         "$@"
         return $?
+    fi
+
+    # Fail closed. Running the command as root because the service account is
+    # missing would silently void the entire privilege drop — including the
+    # `npm install` this exists to keep away from root — and do so on precisely
+    # the misconfigured host where that matters most. ensure_service_user runs
+    # before any caller gets here, so reaching this is a real fault.
+    if ! id -u "${SVC_USER}" >/dev/null 2>&1; then
+        echo "ERROR: service account '${SVC_USER}' does not exist; refusing to run '$1' as root." >&2
+        echo "       Run 'bash deploy/install.sh' as root to create it." >&2
+        return 1
     fi
 
     local envs=("HOME=${APP_DIR}" "PATH=${PATH}")
@@ -453,6 +545,12 @@ capture_panic_logs() {
     [ -d /tmp ] || return 0
 
     while IFS= read -r f; do
+        # Skip symlinks. training-tracker-update.service sets PrivateTmp=yes so
+        # the app cannot plant one there, but update.sh runs outside that unit
+        # (and the init.d fallback has no unit at all), and `[ -f ]` follows
+        # links — which would copy the target's first 8 KB into a log the
+        # service account can read.
+        [ -L "${f}" ] && continue
         [ -f "${f}" ] || continue
         {
             echo "--- begin ${f} ---"

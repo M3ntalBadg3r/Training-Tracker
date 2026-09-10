@@ -41,7 +41,9 @@ if [ ! -f "$CONFIG_FILE" ]; then
     exit 1
 fi
 
-ENABLED=$(node -e "console.log(JSON.parse(require('fs').readFileSync('${CONFIG_FILE}','utf8')).enabled)" 2>/dev/null)
+# Path passed as an argument, not spliced into the program text — the same rule
+# the rest of the deploy scripts follow (see check-update.sh).
+ENABLED=$(node -e 'try{console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).enabled)}catch{console.log("false")}' "${CONFIG_FILE}" 2>/dev/null)
 if [ "$ENABLED" != "true" ]; then
     log "Auto-backup is disabled. Skipping."
     exit 0

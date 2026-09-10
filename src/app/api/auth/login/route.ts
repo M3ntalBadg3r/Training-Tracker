@@ -131,6 +131,7 @@ export async function POST(request: NextRequest) {
         role: user.role,
         displayName: user.displayName,
         pendingMfaEnrollment,
+        sessionEpoch: user.sessionEpoch,
       },
       { idleMs, sessionStart: Date.now() }
     );

@@ -12,3 +12,13 @@ Type=oneshot
 ExecStart=/opt/training-tracker/deploy/update-agent.sh /opt/training-tracker
 # Updates run npm install and a Next.js production build.
 TimeoutStartSec=3600
+
+# Private /tmp for the whole update.
+#
+# This unit runs as root and, on a failed build, copies /tmp/next-panic-*.log
+# into the update log so the operator can see why. /tmp is world-writable, so
+# without this the unprivileged app could pre-create a file (or a symlink)
+# matching that glob and have root read it for them. The build itself runs
+# inside this unit, so its own panic dumps are still found — they are written
+# into the same private namespace.
+PrivateTmp=yes
