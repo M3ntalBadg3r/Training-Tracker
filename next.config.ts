@@ -2,6 +2,21 @@ import type { NextConfig } from "next";
 import pkg from "./package.json" with { type: "json" };
 
 const nextConfig: NextConfig = {
+  // Stop `next dev` appending its own block to CLAUDE.md on every start.
+  //
+  // Next 16.3 added a feature that writes a "nextjs-agent-rules" section into
+  // CLAUDE.md / AGENTS.md each time the dev server boots (the guard on their
+  // side is `agentRules !== false`, so this is the documented opt-out). It
+  // arrived here as a side effect of the 16.2.1 -> 16.3.4 dependency upgrade,
+  // not as a choice.
+  //
+  // Two reasons to turn it off. CLAUDE.md is a hand-maintained document, and a
+  // file that silently re-modifies itself shows up as an unexplained dirty file
+  // in every `git status` — which invites someone to "clean it up" with
+  // `git checkout CLAUDE.md`, discarding whatever real edits were in flight.
+  // And the text it inserts asks to be committed, which is not a decision a
+  // build tool gets to make about this project's documentation.
+  agentRules: false,
   env: {
     APP_VERSION: pkg.version,
     UPDATE_CHANNEL: process.env.UPDATE_CHANNEL || "stable",
