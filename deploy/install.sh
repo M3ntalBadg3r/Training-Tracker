@@ -334,15 +334,16 @@ fi
 echo "[9/10] Installing scheduled jobs..."
 if command -v crontab &> /dev/null || [ -d /etc/cron.d ]; then
     # Fixed entries, owned by root, so the app never edits a crontab it would
-    # need privilege to write. auto-update.sh decides for itself whether an
-    # update is due by reading .auto-update.json (which the app does own);
-    # auto-export.sh runs every minute regardless and exits immediately when
-    # nothing is scheduled. Defined once in lib/common.sh so an update applies
-    # the same entries.
+    # need privilege to write — under the sandboxed unit it could not anyway.
+    # auto-update.sh and auto-backup.sh each decide for themselves whether they
+    # are due by reading .auto-update.json / .auto-backup.json (which the app
+    # does own); auto-export.sh runs every minute regardless and exits
+    # immediately when nothing is scheduled. Defined once in lib/common.sh so an
+    # update applies the same entries.
     ensure_cron_jobs
     echo "Installed /etc/cron.d/training-tracker"
 else
-    echo "cron not available — scheduled updates, exports and credential checks will not run."
+    echo "cron not available — scheduled updates, backups, exports and credential checks will not run."
 fi
 
 # 10. Done

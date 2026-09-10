@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSuperAdmin, handleAuthError } from "@/lib/auth";
 import { isEncryptionConfigured } from "@/lib/crypto";
-import path from "path";
 import fs from "fs";
 import {
   type AutoBackupConfig,
@@ -9,17 +8,7 @@ import {
   readAutoBackupConfig,
 } from "@/lib/backup-config";
 import { backupRoot, resolveWithin } from "@/lib/safe-path";
-import { execSync } from "child_process";
-
-const CRON_MARKER = "# training-tracker-auto-backup";
-
-function buildCronExpression(config: AutoBackupConfig): string {
-  const [hour, minute] = config.time.split(":").map(Number);
-  if (config.frequency === "weekly" && config.dayOfWeek !== undefined) {
-    return `${minute} ${hour} * * ${config.dayOfWeek}`;
-  }
-  return `${minute} ${hour} * * *`;
-}
+import { cronJobsInstalled } from "@/lib/update-request";
 
 export async function GET(request: NextRequest) {
   try {
@@ -34,6 +23,9 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     ...readAutoBackupConfig(),
     encryptionConfigured: isEncryptionConfigured(),
+    // Whether anything is actually installed to run the schedule. Reported on
+    // the read too, not just after a save, so a reload still tells the truth.
+    schedulerInstalled: cronJobsInstalled(),
   });
 }
 
@@ -89,44 +81,24 @@ export async function POST(request: NextRequest) {
       fs.mkdirSync(config.backupPath, { recursive: true });
     }
 
-    // Save config
+    // Save config. That is the whole job: the schedule is *read* by
+    // deploy/auto-backup.sh, which the fixed /etc/cron.d/training-tracker entry
+    // runs every five minutes and which decides for itself whether a backup is
+    // due — exactly like auto-update.sh.
+    //
+    // This route used to write the service user's crontab instead, and could
+    // not: the unit sets ProtectSystem=strict (spool read-only) and
+    // NoNewPrivileges=yes (crontab's setgid bit ignored), so the write failed on
+    // every install from v2.70 and automatic backups never ran. The warning it
+    // produced blamed /etc/cron.allow, which was never the cause. Do not
+    // reintroduce a crontab call here; there is no version of it that works.
     fs.writeFileSync(backupConfigPath(), JSON.stringify(config, null, 2));
 
-    // Update cron. The backup schedule is user-configurable, so unlike the
-    // fixed auto-update/auto-export entries this one stays a crontab edit — but
-    // it lands in the *service user's* own crontab and needs no privilege.
-    const appDir = process.cwd();
-    const scriptPath = path.join(appDir, "deploy", "auto-backup.sh");
-
-    // A failure here used to be swallowed. Silently doing nothing is how you
-    // end up believing a schedule is active when it never was, so report it.
-    let cronWarning: string | undefined;
-    try {
-      const currentCron = execSync("crontab -l 2>/dev/null || true", {
-        encoding: "utf-8",
-      });
-      const filteredLines = currentCron
-        .split("\n")
-        .filter((line) => !line.includes(CRON_MARKER) && line.trim() !== "");
-
-      if (config.enabled) {
-        const cronExpr = buildCronExpression(config);
-        filteredLines.push(
-          `${cronExpr} bash ${scriptPath} ${appDir} ${CRON_MARKER}`
-        );
-      }
-
-      const newCron = filteredLines.join("\n") + "\n";
-      execSync("crontab -", { input: newCron, encoding: "utf-8" });
-    } catch {
-      cronWarning =
-        "The schedule was saved, but the cron entry could not be installed. " +
-        "Check that cron is installed and that the service user is permitted " +
-        "to use it (see /etc/cron.allow). Backups will not run automatically " +
-        "until this is resolved.";
-    }
-
-    return NextResponse.json({ success: true, config, warning: cronWarning });
+    return NextResponse.json({
+      success: true,
+      config,
+      schedulerInstalled: cronJobsInstalled(),
+    });
   } catch {
     return NextResponse.json(
       { error: "Failed to save schedule" },

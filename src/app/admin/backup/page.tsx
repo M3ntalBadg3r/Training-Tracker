@@ -168,6 +168,9 @@ export default function BackupPage() {
   // Whether ENCRYPTION_KEY is set on the server; without it a standard backup
   // is a plaintext zip and the server refuses to put credentials in one.
   const [encryptionConfigured, setEncryptionConfigured] = useState(false);
+  // Whether anything is installed to actually run the schedule. Assume yes
+  // until the server says otherwise, so a slow load does not flash a warning.
+  const [schedulerInstalled, setSchedulerInstalled] = useState(true);
 
   // Auto-backup schedule state
   const [schedule, setSchedule] = useState<ScheduleConfig>({
@@ -215,10 +218,11 @@ export default function BackupPage() {
     fetch("/api/admin/backup/schedule")
       .then((r) => r.json())
       .then((data) => {
-        // encryptionConfigured is a server capability, not part of the stored
-        // schedule — keep it out of the object we POST back.
-        const { encryptionConfigured: enc, ...cfg } = data;
+        // encryptionConfigured and schedulerInstalled are server capabilities,
+        // not part of the stored schedule — keep them out of what we POST back.
+        const { encryptionConfigured: enc, schedulerInstalled: sched, ...cfg } = data;
         setEncryptionConfigured(!!enc);
+        setSchedulerInstalled(sched !== false);
         if (cfg.enabled !== undefined) {
           setSchedule({ ...cfg, time: utcToLocal(cfg.time) });
         }
@@ -402,14 +406,12 @@ export default function BackupPage() {
         body: JSON.stringify({ ...schedule, time: localToUtc(schedule.time) }),
       });
       if (res.ok) {
-        // The settings save and the cron install can succeed independently —
-        // show the warning rather than a bare "saved" if cron did not take.
         const data = await res.json().catch(() => ({}));
-        setScheduleResult(
-          data?.warning
-            ? { type: "error", message: data.warning }
-            : { type: "success", message: "Settings saved successfully" }
-        );
+        // Saving only stores the schedule; deploy/auto-backup.sh is what runs
+        // it. Re-read whether that is installed so the notice below stays
+        // accurate without a reload.
+        setSchedulerInstalled(data?.schedulerInstalled !== false);
+        setScheduleResult({ type: "success", message: "Settings saved successfully" });
       } else {
         setScheduleResult({ type: "error", message: "Failed to save settings" });
       }
@@ -749,6 +751,30 @@ export default function BackupPage() {
         </div>
 
         <div className="space-y-4">
+          {/*
+            The schedule is stored here but run by deploy/auto-backup.sh from
+            /etc/cron.d/training-tracker. If that is missing, saving a schedule
+            is just recording a preference nothing acts on — say so rather than
+            implying a backup is coming.
+          */}
+          {!schedulerInstalled && (
+            <div className="flex items-start gap-2 p-3 rounded-lg border bg-amber-50 border-amber-200 text-amber-800 text-sm">
+              <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+              <div>
+                <p className="font-semibold">
+                  Scheduled jobs are not installed on this server.
+                </p>
+                <p className="mt-1">
+                  A schedule set here will be saved but never run. Check that
+                  cron is installed, then run this once as root:
+                </p>
+                <p className="mt-1 font-mono text-xs">
+                  bash /opt/training-tracker/deploy/install.sh
+                </p>
+              </div>
+            </div>
+          )}
+
           <label className="flex items-center gap-3 cursor-pointer">
             <input
               type="checkbox"

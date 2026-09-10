@@ -884,7 +884,7 @@ Enable automatic backups to save backups to a local directory on a schedule:
 - **Backup Location** — Configurable directory path with a folder browser GUI. Click **Browse** to navigate and select or create a folder. The picker is confined to the backups folder — `<app dir>/backups` by default, or whatever `BACKUP_ROOT` is set to in `.env` — and paths outside it are refused.
 - **Retention** — Set how many backup copies to keep. When the count is exceeded, the oldest backups are automatically deleted.
 - **Include user credentials** — Off by default. Turn it on if you want a scheduled backup to be able to restore user accounts; it requires `ENCRYPTION_KEY` to be set, since scheduled backups are otherwise written unencrypted.
-- **Schedule** — Daily or weekly, at a configurable time.
+- **Schedule** — Daily or weekly, at a configurable time. The schedule is stored by the app and run by the server's scheduled jobs (`/etc/cron.d/training-tracker`, installed by `deploy/install.sh`); `deploy/auto-backup.sh` wakes every five minutes and takes the backup when one is due, running late the same day if the machine was off at the scheduled time. If those jobs are not installed the page says so, because a schedule saved without them would never run.
 - **Run Backup Now** — Immediately saves a backup without waiting for the schedule.
 
 #### Saved Backups

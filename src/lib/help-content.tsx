@@ -1839,6 +1839,15 @@ const helpSections: Record<string, HelpSection> = {
             to the configured location without waiting for the schedule.
           </li>
         </ul>
+        <p>
+          The schedule is stored by the app but carried out by the
+          server&rsquo;s scheduled jobs, which check every five minutes whether a
+          backup is due. If the machine was switched off at the scheduled time
+          the backup runs later the same day rather than being skipped. Should
+          those jobs not be installed, this page shows a warning naming the
+          command to run &mdash; a schedule saved without them would never
+          actually run.
+        </p>
 
         <h3>Saved Backups</h3>
         <p>

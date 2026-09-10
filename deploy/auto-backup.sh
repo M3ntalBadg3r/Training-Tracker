@@ -1,8 +1,23 @@
 #!/bin/bash
 # Training Tracker - Automatic Backup
 # Saves a backup to the configured directory.
-# Designed to be called from cron as the unprivileged service user: it only
-# reads .env and POSTs to localhost, so it needs no privilege of any kind.
+#
+# Installed by install.sh as a fixed entry in /etc/cron.d/training-tracker that
+# fires every 5 minutes as the unprivileged service user. The schedule itself
+# lives in .auto-backup.json, which the app rewrites when an admin changes it —
+# so the app never has to manipulate a crontab.
+#
+# That indirection is not cosmetic. From v2.70 the service runs under
+# ProtectSystem=strict with only APP_DIR writable, and NoNewPrivileges=yes,
+# which between them make the crontab spool unwritable and neuter crontab's
+# setgid bit. An app-written crontab entry cannot work under this unit at all,
+# so the decision of whether a backup is due is made here instead.
+#
+# Because the trigger is fixed and the decision is made here, a missed window
+# (host suspended, machine off overnight) runs late the same day rather than
+# being skipped.
+#
+# It only reads .env and POSTs to localhost, so it needs no privilege.
 
 # Ensure node/npm are on PATH (cron uses minimal PATH)
 export PATH="/usr/local/bin:/usr/bin:/bin:$PATH"
@@ -10,11 +25,68 @@ export PATH="/usr/local/bin:/usr/bin:/bin:$PATH"
 [ -s "$HOME/.nvm/nvm.sh" ] && . "$HOME/.nvm/nvm.sh"
 
 APP_DIR="${1:-/opt/training-tracker}"
+CONFIG_FILE="${APP_DIR}/.auto-backup.json"
+LAST_RUN_FILE="${APP_DIR}/.auto-backup-last-run"
 LOG_FILE="/var/log/training-tracker/backups.log"
 
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "${LOG_FILE}"
 }
+
+# --- Is a backup due right now? ----------------------------------------------
+#
+# Nothing below this block logs until a backup is actually due: this runs every
+# five minutes, so an unconditional "started" line would bury the log.
+
+[ -f "${CONFIG_FILE}" ] || exit 0
+
+# One node call for the whole config; prints "enabled frequency hour minute dow".
+# The path is passed as an argument rather than spliced into the program text —
+# the same rule the rest of the deploy scripts follow (see check-update.sh).
+CONFIG=$(node -e '
+  const fs = require("fs");
+  try {
+    const c = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    const [h, m] = String(c.time || "02:00").split(":").map(Number);
+    process.stdout.write([
+      c.enabled === true ? "1" : "0",
+      c.frequency === "weekly" ? "weekly" : "daily",
+      Number.isFinite(h) ? h : 2,
+      Number.isFinite(m) ? m : 0,
+      Number.isFinite(Number(c.dayOfWeek)) ? Number(c.dayOfWeek) : 0,
+    ].join(" "));
+  } catch { process.stdout.write("0 daily 2 0 0"); }
+' "${CONFIG_FILE}" 2>/dev/null) || exit 0
+
+read -r ENABLED FREQUENCY SCHED_HOUR SCHED_MIN SCHED_DOW <<< "${CONFIG}"
+
+[ "${ENABLED}" = "1" ] || exit 0
+
+# Local time, matching the schedule the admin set in the UI. (The HMAC below
+# needs the UTC date instead — they are deliberately different clocks.)
+LOCAL_TODAY=$(date '+%Y-%m-%d')
+NOW_DOW=$(date '+%w')
+NOW_MINUTES=$(( 10#$(date '+%H') * 60 + 10#$(date '+%M') ))
+SCHED_MINUTES=$(( SCHED_HOUR * 60 + SCHED_MIN ))
+
+if [ "${FREQUENCY}" = "weekly" ] && [ "${NOW_DOW}" -ne "${SCHED_DOW}" ]; then
+    exit 0
+fi
+
+# Not yet time today. `-ge` rather than `-eq` is what makes a missed tick run
+# late instead of being skipped for the day.
+[ "${NOW_MINUTES}" -ge "${SCHED_MINUTES}" ] || exit 0
+
+# Already ran today.
+if [ -f "${LAST_RUN_FILE}" ] && [ "$(cat "${LAST_RUN_FILE}" 2>/dev/null)" = "${LOCAL_TODAY}" ]; then
+    exit 0
+fi
+
+# Stamped before the work, not after, so a crash cannot retry every five
+# minutes for the rest of the day.
+echo "${LOCAL_TODAY}" > "${LAST_RUN_FILE}"
+
+# --- Take the backup ---------------------------------------------------------
 
 log "Auto-backup started"
 
@@ -33,21 +105,6 @@ fi
 # Compute HMAC-SHA256 signature of today's date (UTC)
 TODAY=$(date -u '+%Y-%m-%d')
 CRON_SIGNATURE=$(echo -n "$TODAY" | openssl dgst -sha256 -hmac "$CRON_SECRET" | awk '{print $NF}')
-
-# Check config
-CONFIG_FILE="${APP_DIR}/.auto-backup.json"
-if [ ! -f "$CONFIG_FILE" ]; then
-    log "No config file found at ${CONFIG_FILE}. Aborting."
-    exit 1
-fi
-
-# Path passed as an argument, not spliced into the program text — the same rule
-# the rest of the deploy scripts follow (see check-update.sh).
-ENABLED=$(node -e 'try{console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).enabled)}catch{console.log("false")}' "${CONFIG_FILE}" 2>/dev/null)
-if [ "$ENABLED" != "true" ]; then
-    log "Auto-backup is disabled. Skipping."
-    exit 0
-fi
 
 # Call the save-to-disk API endpoint
 RESPONSE=$(curl -s -X POST "http://localhost:3000/api/admin/backup/save" \

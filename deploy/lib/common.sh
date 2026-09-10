@@ -125,7 +125,7 @@ check_dependencies() {
 
     # Optional: the app degrades rather than fails without these.
     command -v systemctl >/dev/null 2>&1 || warn+=("systemctl — falling back to the init.d service")
-    command -v crontab   >/dev/null 2>&1 || warn+=("crontab — scheduled backups will not run")
+    command -v crontab   >/dev/null 2>&1 || warn+=("crontab — only needed to clear pre-2.70 root cron entries")
     command -v git       >/dev/null 2>&1 || warn+=("git — in-app updates will not work")
 
     if [ ${#missing[@]} -gt 0 ]; then
@@ -387,25 +387,33 @@ SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 */5 * * * * root bash ${APP_DIR}/deploy/auto-update.sh ${APP_DIR}
+*/5 * * * * ${SVC_USER} bash ${APP_DIR}/deploy/auto-backup.sh ${APP_DIR}
 * * * * * ${SVC_USER} bash ${APP_DIR}/deploy/auto-export.sh ${APP_DIR}
 0 6 * * * ${SVC_USER} bash ${APP_DIR}/deploy/auto-credential-check.sh ${APP_DIR}
 CRONEOF
     chmod 0644 /etc/cron.d/training-tracker
 
-    # Pre-2.70 installs had the app (running as root) write these two entries
-    # into root's crontab. The cron.d file above now covers both, so leaving
+    # Pre-2.70 installs had the app (running as root) write these entries into
+    # root's crontab. The cron.d file above now covers all of them, so leaving
     # them would double up — auto-export in particular would fire twice a
-    # minute. The auto-backup entry is deliberately left alone: its schedule is
-    # still app-managed and removing it here would silently stop backups.
+    # minute.
+    #
+    # auto-backup used to be excluded here, on the grounds that its schedule was
+    # still app-managed. It no longer is: from v2.90 auto-backup.sh reads
+    # .auto-backup.json and decides for itself, exactly like auto-update.sh, so
+    # the stale root entry is now a genuine duplicate. Stripping it is only safe
+    # because the replacement line is written above in this same function —
+    # there is no window in which neither exists.
     command -v crontab >/dev/null 2>&1 || return 0
     local current
     current="$(crontab -l 2>/dev/null || true)"
     case "${current}" in
-        *training-tracker-auto-update*|*training-tracker-auto-export*)
+        *training-tracker-auto-update*|*training-tracker-auto-export*|*training-tracker-auto-backup*)
             echo "Removing superseded root crontab entries (now in /etc/cron.d)..."
             printf '%s\n' "${current}" \
                 | grep -v 'training-tracker-auto-update' \
                 | grep -v 'training-tracker-auto-export' \
+                | grep -v 'training-tracker-auto-backup' \
                 | crontab - 2>/dev/null || true
             ;;
     esac

@@ -45,8 +45,13 @@ export function writeUpdateRequest(appDir: string, payload: UpdateRequest): void
 
 /** systemd path unit that watches for the request file. */
 const HELPER_UNIT = "/etc/systemd/system/training-tracker-update.path";
-/** Fallback for hosts without systemd: auto-update.sh drains the request from cron. */
-const HELPER_CRON = "/etc/cron.d/training-tracker";
+/**
+ * The fixed, root-owned cron file `deploy/lib/common.sh:ensure_cron_jobs`
+ * writes. It is the fallback consumer for the request file on hosts without
+ * systemd, and it is also what actually runs the scheduled backups, exports and
+ * credential checks — see `cronJobsInstalled` below.
+ */
+export const CRON_JOBS_FILE = "/etc/cron.d/training-tracker";
 
 /**
  * True when something is actually watching for the request file.
@@ -60,7 +65,21 @@ const HELPER_CRON = "/etc/cron.d/training-tracker";
  */
 export function updateHelperInstalled(appDir: string): boolean {
   if (!fs.existsSync(path.join(appDir, "deploy", "update-agent.sh"))) return false;
-  return fs.existsSync(HELPER_UNIT) || fs.existsSync(HELPER_CRON);
+  return fs.existsSync(HELPER_UNIT) || fs.existsSync(CRON_JOBS_FILE);
+}
+
+/**
+ * True when the scheduled-jobs cron file is installed.
+ *
+ * The app cannot run its own schedules: from v2.70 the service unit sets
+ * `ProtectSystem=strict` (so the crontab spool is read-only) and
+ * `NoNewPrivileges=yes` (so `crontab`'s setgid bit is ignored), which is why
+ * every recurring job runs from this root-owned file instead. Without it the
+ * schedules an admin sets are just stored preferences that nothing acts on, so
+ * the UI needs to be able to say so rather than imply a backup is coming.
+ */
+export function cronJobsInstalled(): boolean {
+  return fs.existsSync(CRON_JOBS_FILE);
 }
 
 /** Actionable message for the case above. */
@@ -70,3 +89,9 @@ export const UPDATE_HELPER_MISSING =
   "the upgrade to the unprivileged service model:\n\n" +
   "    bash /opt/training-tracker/deploy/install.sh\n\n" +
   "(On an LXC you are usually root already. On a VM, prefix it with sudo.)";
+
+/** Actionable message when nothing is installed to run the app's schedules. */
+export const CRON_JOBS_MISSING =
+  "Scheduled jobs are not installed on this server, so this schedule will be " +
+  "saved but never run. Check that cron is installed, then run this once as " +
+  "root:\n\n    bash /opt/training-tracker/deploy/install.sh";
