@@ -7,7 +7,9 @@ import {
   verifyMfaToken,
   isRequestSecure,
   DEFAULT_IDLE_MS,
+  accountDisabledResponse,
 } from "@/lib/auth";
+import { isUserDisabled, isSessionEpochStale } from "@/lib/user-status";
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 
 // POST: Verify a TOTP code and enable MFA
@@ -15,6 +17,17 @@ export async function POST(request: NextRequest) {
   const authUser = await getAuthFromRequest(request);
   if (!authUser) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // These enrolment routes use `getAuthFromRequest` rather than `requireAuth`,
+  // because they must stay reachable while the session is pending MFA
+  // enrolment. That means the checks `requireAuth` performs are not inherited
+  // and have to be explicit — without them a *suspended* account could still
+  // rewrite its own MFA secret and complete enrolment, and on the
+  // `mustEnableMfa` path be handed a fresh, unlocked session cookie.
+  if (await isUserDisabled(authUser.sub)) return accountDisabledResponse();
+  if (await isSessionEpochStale(authUser.sub, authUser.sessionEpoch)) {
+    return accountDisabledResponse();
   }
 
   // Rate limit: 5 MFA attempts per 15 minutes per user+IP

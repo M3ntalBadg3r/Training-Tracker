@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { runExport } from "@/lib/run-export";
-import { verifyCronSignature } from "@/lib/cron-auth";
+import { authorizeCronRequest } from "@/lib/cron-nonce";
 
 function isDue(schedule: {
   frequency: string;
@@ -36,8 +36,7 @@ function isDue(schedule: {
 export async function POST(request: NextRequest) {
   // This endpoint is called by the cron script. Verify HMAC signature.
   const xHeader = request.headers.get("x-auto-export");
-  const cronSignature = request.headers.get("x-cron-signature");
-  if (xHeader !== "true" || !verifyCronSignature(cronSignature)) {
+  if (xHeader !== "true" || !(await authorizeCronRequest(request))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

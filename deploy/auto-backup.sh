@@ -63,7 +63,7 @@ read -r ENABLED FREQUENCY SCHED_HOUR SCHED_MIN SCHED_DOW <<< "${CONFIG}"
 [ "${ENABLED}" = "1" ] || exit 0
 
 # Local time, matching the schedule the admin set in the UI. (The HMAC below
-# needs the UTC date instead — they are deliberately different clocks.)
+# uses a UTC unix timestamp instead — they are deliberately different clocks.)
 LOCAL_TODAY=$(date '+%Y-%m-%d')
 NOW_DOW=$(date '+%w')
 NOW_MINUTES=$(( 10#$(date '+%H') * 60 + 10#$(date '+%M') ))
@@ -90,26 +90,24 @@ echo "${LOCAL_TODAY}" > "${LAST_RUN_FILE}"
 
 log "Auto-backup started"
 
-# Load CRON_SECRET from .env for HMAC signature
-ENV_FILE="${APP_DIR}/.env"
-CRON_SECRET=""
-if [ -f "$ENV_FILE" ]; then
-    CRON_SECRET=$(grep -oP '^CRON_SECRET=["'"'"']?\K[^"'"'"']*' "$ENV_FILE" 2>/dev/null || true)
-fi
+# Load CRON_SECRET and sign this specific request. The signature covers the
+# method, path, a timestamp and a single-use nonce — see deploy/lib/cron-sign.sh.
+# shellcheck source=lib/cron-sign.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/cron-sign.sh"
 
-if [ -z "$CRON_SECRET" ]; then
+if ! load_cron_secret "${APP_DIR}/.env"; then
     log "CRON_SECRET not set in .env. Aborting (required for cron authentication)."
     exit 1
 fi
 
-# Compute HMAC-SHA256 signature of today's date (UTC)
-TODAY=$(date -u '+%Y-%m-%d')
-CRON_SIGNATURE=$(echo -n "$TODAY" | openssl dgst -sha256 -hmac "$CRON_SECRET" | awk '{print $NF}')
+cron_sign_request POST "/api/admin/backup/save"
 
 # Call the save-to-disk API endpoint
 RESPONSE=$(curl -s -X POST "http://localhost:3000/api/admin/backup/save" \
     -H "X-Auto-Backup: true" \
     -H "X-Cron-Signature: ${CRON_SIGNATURE}" \
+    -H "X-Cron-Timestamp: ${CRON_TIMESTAMP}" \
+    -H "X-Cron-Nonce: ${CRON_NONCE}" \
     -H "Content-Type: application/json" \
     2>&1)
 

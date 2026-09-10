@@ -371,7 +371,7 @@ The `.env` file requires:
 | `REPORT_CACHE_TTL_MS` | *(Optional)* Lifetime, in milliseconds, of the short in-memory cache in front of the expensive dashboard/report/program-compliance pages. Defaults to `30000` (30 s). While an entry is fresh, concurrent viewers of the same page share one computation instead of each re-querying the database; the cache is also cleared immediately whenever the underlying data is edited or imported, so results stay current after a change. Set to `0` to disable caching entirely. |
 | `JWT_SECRET` | Secret key for JWT token signing (minimum 32 characters required) |
 | `ENCRYPTION_KEY` | 64-character hex string (32 bytes) used to encrypt secrets at rest — TOTP shared secrets and OAuth/SMTP credentials. Generate with `openssl rand -hex 32`. **After enabling**, a SuperAdmin must POST `/api/admin/security/encrypt-secrets` once to seal any pre-existing rows. |
-| `CRON_SECRET` | *(Optional)* Required only when using the auto-backup / auto-export shell scripts. Generate with `openssl rand -hex 32`. |
+| `CRON_SECRET` | *(Optional)* Required only when using the auto-backup / auto-export / credential-check shell scripts. Generate with `openssl rand -hex 32`. Each scheduled request is signed for one endpoint, with a timestamp and a one-time value, so a signature cannot be captured and reused. |
 | `APP_BASE_URL` | *(Recommended in production)* Canonical externally-resolvable origin (e.g. `https://tracker.example.com`). Used to build OAuth redirect URIs without trusting `X-Forwarded-Host` headers, and to decide whether the auth cookie is marked `Secure` (an `https://` value marks it Secure; otherwise the cookie's Secure flag follows the request protocol, so plain-HTTP LAN access still works). |
 | `TRUSTED_PROXIES` | *(Recommended in production)* Comma-separated list of trusted reverse-proxy IPs whose `X-Forwarded-For` entries are stripped when extracting the real client IP for rate limiting. Defaults to `127.0.0.1,::1`. |
 | `NODE_EXTRA_CA_CERTS` | *(Optional)* Path to a CA bundle Node should trust in addition to its built-ins — set this when running behind an SSL-inspecting proxy/firewall so Prisma engine downloads and outbound HTTPS succeed. The installer sets it to `/etc/ssl/certs/ca-certificates.crt` automatically on Debian. |
@@ -650,6 +650,10 @@ Manage the mapping between countries, regions, and theatres. This page is the so
 - **Import** — Upload a CSV or Excel file with `Country`, `Region`, and (optionally) `Theatre` columns. The system auto-maps columns and shows a preview before importing.
 - **Export** — Download all region data (including theatre) as CSV, Excel, or PDF.
 
+#### Import size limits
+
+Every import endpoint accepts a JSON body of up to **32 MB** (override with `IMPORT_MAX_BODY_MB` in `.env`), on top of the existing per-import row limits. A file over the limit is rejected with a clear message rather than being read into memory, and a malformed or wrongly-typed request now returns a proper error instead of a generic server failure. If you hit the limit, split the file and import it in parts.
+
 #### Student import behaviour
 
 When importing student data (the **Admin → Import** page), each row's theatre is reconciled against Region Data:
@@ -755,7 +759,7 @@ Navigate to **Admin > Users** to manage user accounts.
 - **Edit User** — Change display name or role. Cannot demote the last admin.
 - **Reset Password** — Set a new password for any user. This also **signs that user out of every session they have open**, so resetting the password of a compromised account evicts whoever is using it. Requires you to re-enter your own password (and MFA code, if you have MFA enabled).
 - **Disable MFA** — Turn off multi-factor authentication for a user.
-- **Disable / Enable Account** — Suspend an account without deleting it (the power icon in the Actions column). A disabled user cannot sign in, and any session they already have open is signed out on their very next request. Their role, company access, MFA setup and login history are all preserved, so enabling the account restores it exactly as it was. An optional reason can be recorded and is shown to other admins in the tooltip on the grey **Disabled** badge. You cannot disable your own account or the last SuperAdmin.
+- **Disable / Enable Account** — Suspend an account without deleting it (the power icon in the Actions column). A disabled user cannot sign in, and any session they already have open is signed out on their very next request. Their role, company access, MFA setup and login history are all preserved, so enabling the account restores it exactly as it was. An optional reason can be recorded and is shown to other admins in the tooltip on the grey **Disabled** badge. You cannot disable your own account or the last SuperAdmin. A disabled account also cannot set up or confirm two-factor authentication, so suspension closes every route into the account rather than sign-in alone.
 - **Delete User** — Remove a user account. Cannot delete yourself or the last admin. To simply stop someone signing in, disable the account instead — deletion is permanent and discards their history.
 
 A disabled account is refused at login with the same generic "Invalid username or password" message as a wrong password, so a disabled username can't be distinguished from a nonexistent one. The attempt is still recorded in the **Failed login attempts** panel with the reason *Account disabled*.
@@ -860,7 +864,7 @@ Restoring a config backup wipes and replaces only the included reference tables 
 
 #### Restore from Backup
 
-Click **Upload Backup File** and select a previously created backup file. If it is a **portable** backup, enter the passphrase it was created with in the **Portable backup passphrase** field (leave it blank for a standard backup). A confirmation dialog will appear — type `RESTORE` to proceed.
+Click **Upload Backup File** and select a previously created backup file. If it is a **portable** backup, enter the passphrase it was created with in the **Portable backup passphrase** field (leave it blank for a standard backup). Because a restore replaces the whole dataset, you must also **re-enter your own account password** (and a current MFA code if your account uses MFA) to confirm it is really you — a valid session alone is not enough. A confirmation dialog will appear — type `RESTORE` to proceed.
 
 **What happens during restore:**
 
@@ -871,11 +875,12 @@ Click **Upload Backup File** and select a previously created backup file. If it 
 **User accounts and companies are handled differently from everything else:**
 
 - **User accounts are only replaced when the archive can actually restore them** — that is, when it was created with "Include user credentials". Otherwise the existing accounts are left exactly as they are, and the result banner tells you how many accounts the archive held and that none could be restored. An archive with no credentials can never leave you with an instance nobody can log in to.
+- **A credential-bearing archive is only honoured when it is encrypted.** Because user credentials are only ever written into an *encrypted* archive, a plaintext archive that claims to carry them is corrupt or was tampered with, and the restore is refused rather than trusting attacker-supplied account data.
 - **Companies are matched by name, never deleted.** A company in the archive that already exists here is reused; one that does not is created. Nothing that references a company (students, offerings, scheduled exports, API-key grants) is disturbed, and student records are re-pointed at the right company by name even if the ids differ between the two systems.
 - A restore that *would* leave the system with no enabled SuperAdmin is **refused** before anything is changed.
 - Restoring accounts signs you out, because the restored accounts are not the ones your current session was issued for. Sign in again with an account from the archive.
 
-**Important:** Restoring a backup **replaces all existing data** other than the user accounts described above. Create a backup of the current system first if you need to preserve it.
+**Important:** Restoring a backup **replaces all existing data** other than the user accounts described above. Create a backup of the current system first if you need to preserve it. Uploaded archives are capped at 512 MB by default (override with `BACKUP_MAX_RESTORE_MB` in `.env`) so an oversized or malformed upload cannot exhaust server memory.
 
 #### Automatic Backups
 
@@ -1010,6 +1015,8 @@ A daily cron script keeps health status fresh:
 ```
 
 The script reads `CRON_SECRET` from `.env` and POSTs an HMAC-signed request to the credentials/check endpoint. Without it, health updates only happen when admins click Test Connection or when scheduled exports run.
+
+> **Fixed in 2.92:** this daily check was being rejected before it reached the application, so credential health was only ever refreshed by the manual **Test Connection** button or by a scheduled export running. No configuration change is needed — it starts working on update.
 
 #### Schedule Actions
 

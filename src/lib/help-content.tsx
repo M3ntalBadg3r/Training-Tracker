@@ -341,6 +341,11 @@ const helpSections: Record<string, HelpSection> = {
         <p>
           Bulk-import student training records from CSV or Excel files.
         </p>
+        <p>
+          A single import is limited to 32 MB of data (and to its existing row
+          limit). A larger file is rejected with a message asking you to split
+          it, rather than being partly processed.
+        </p>
 
         <h3>Import Workflow</h3>
         <ol>
@@ -1232,7 +1237,7 @@ const helpSections: Record<string, HelpSection> = {
             have MFA enabled) to confirm.
           </li>
           <li><strong>Disable MFA</strong>{" "}&mdash; Turn off multi-factor authentication for a user.</li>
-          <li><strong>Disable / Enable Account</strong>{" "}&mdash; Suspend an account without deleting it &mdash; the power icon in the Actions column. A disabled user cannot sign in, and any session they already have open is signed out on their very next click. Nothing is lost: their role, company access, MFA setup and login history are all kept, so enabling the account restores it exactly as it was. You can record an optional reason, shown to other admins in the tooltip on the <em>Disabled</em> badge. You cannot disable your own account or the last SuperAdmin.</li>
+          <li><strong>Disable / Enable Account</strong>{" "}&mdash; Suspend an account without deleting it &mdash; the power icon in the Actions column. A disabled user cannot sign in, and any session they already have open is signed out on their very next click. Nothing is lost: their role, company access, MFA setup and login history are all kept, so enabling the account restores it exactly as it was. You can record an optional reason, shown to other admins in the tooltip on the <em>Disabled</em> badge. You cannot disable your own account or the last SuperAdmin. A disabled account also cannot set up or confirm two-factor authentication, so suspending someone stops every route into their account, not just sign-in.</li>
           <li><strong>Delete User</strong>{" "}&mdash; Remove a user account. You cannot delete yourself or the last admin. If you only want to stop someone signing in, disable the account instead &mdash; deleting is permanent and loses their history.</li>
         </ul>
 
@@ -1753,8 +1758,12 @@ const helpSections: Record<string, HelpSection> = {
           Click <strong>Upload Backup File</strong> and select a previously
           created backup file. For a <strong>portable</strong> backup, enter its
           passphrase in the <strong>Portable backup passphrase</strong>{" "}field
-          (leave it blank for a standard backup). A confirmation dialog will
-          appear &mdash; type <code>RESTORE</code> to proceed.
+          (leave it blank for a standard backup). Because a restore replaces the
+          whole dataset, you also <strong>re-enter your own account
+          password</strong>{" "}(and a current MFA code if your account uses MFA)
+          to confirm it&apos;s really you &mdash; a signed-in session on its own
+          is not enough. A confirmation dialog will appear &mdash; type{" "}
+          <code>RESTORE</code> to proceed.
         </p>
         <p><strong>What happens during restore:</strong></p>
         <ol>
@@ -1801,6 +1810,13 @@ const helpSections: Record<string, HelpSection> = {
             Restoring accounts signs you out, since the restored accounts
             aren&apos;t the ones your session was issued for. Sign in again with
             an account from the archive.
+          </li>
+          <li>
+            <strong>A credential-bearing archive is only accepted when it is
+            encrypted.</strong>{" "}User credentials are only ever written into an
+            encrypted backup, so an unencrypted archive that claims to include
+            them is corrupt or was modified &mdash; the restore is refused rather
+            than trusting the account data inside it.
           </li>
         </ul>
         <p>
@@ -1946,6 +1962,13 @@ const helpSections: Record<string, HelpSection> = {
           stays accurate even when no schedule runs that day. The installer sets
           this up for you in <code>/etc/cron.d/training-tracker</code>; it runs
           as the unprivileged service account.
+        </p>
+        <p>
+          <strong>Fixed in 2.92:</strong>{" "}this daily check was previously
+          rejected before it reached the application, so health status only ever
+          refreshed when someone pressed <strong>Test Connection</strong> or a
+          scheduled export ran. It now runs as intended; no setting needs
+          changing.
         </p>
 
         <h3>Actions</h3>

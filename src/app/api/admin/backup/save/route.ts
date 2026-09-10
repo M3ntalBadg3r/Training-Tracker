@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSuperAdmin, handleAuthError } from "@/lib/auth";
-import { verifyCronSignature } from "@/lib/cron-auth";
+import { authorizeCronRequest } from "@/lib/cron-nonce";
 import { generateBackupArchive } from "../route";
 import path from "path";
 import fs from "fs";
@@ -27,8 +27,7 @@ function enforceRetention(backupPath: string, retentionCount: number) {
 export async function POST(request: NextRequest) {
   // Allow cron calls with valid HMAC signature, otherwise require Admin JWT
   const isAutoCron = request.headers.get("x-auto-backup") === "true";
-  const cronSignature = request.headers.get("x-cron-signature");
-  const isCronAuthed = isAutoCron && verifyCronSignature(cronSignature);
+  const isCronAuthed = isAutoCron && (await authorizeCronRequest(request));
 
   if (!isCronAuthed) {
     try {

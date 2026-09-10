@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { handleAuthError, requireSuperAdmin } from "@/lib/auth";
+import { readJsonBody } from "@/lib/request-body";
 
 const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 
@@ -11,7 +12,9 @@ export async function POST(request: NextRequest) {
     return handleAuthError(error);
   }
 
-  const body = await request.json();
+  const parsed = await readJsonBody(request);
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.body;
   const { rows, columnMapping } = body as {
     rows: Record<string, string>[];
     columnMapping: { name: string; color?: string };
