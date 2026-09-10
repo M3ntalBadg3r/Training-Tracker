@@ -359,6 +359,13 @@ model User {
   disabledAt          DateTime?     @map("disabled_at")
   disabledBy          String?       @map("disabled_by")
   disabledReason      String?       @map("disabled_reason")
+  // Session revocation counter. Every token carries the value this column had
+  // when it was minted; bumping the column invalidates every older token, which
+  // is how a password change ends the account's *other* sessions. Checked at
+  // the same guard chokepoint as `disabledAt` (see lib/user-status.ts) — the
+  // edge proxy re-signs tokens preserving every claim, so nothing else can
+  // revoke one before it expires.
+  sessionEpoch        Int           @default(0) @map("session_epoch")
   dateFormat          String?       @map("date_format")
   createdAt           DateTime      @default(now()) @map("created_at")
   updatedAt           DateTime      @updatedAt @map("updated_at")

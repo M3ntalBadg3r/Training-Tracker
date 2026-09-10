@@ -8,15 +8,57 @@ import {
   OAUTH_STATE_COOKIE_OPTIONS,
 } from "@/lib/oauth-state";
 import { sealConfig, openConfig } from "@/lib/crypto";
+import { requireAuth } from "@/lib/auth";
+
+/**
+ * Escape text for interpolation into HTML element content.
+ *
+ * This is the only hand-built HTML in the app — everywhere else React escapes
+ * for us — so the usual safety net does not apply here.
+ */
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/**
+ * Serialise a value for embedding in an inline <script> block.
+ *
+ * JSON.stringify alone is NOT safe here: it leaves `<` untouched, so a string
+ * containing `</script>` closes the block and everything after it is parsed as
+ * markup. U+2028/U+2029 are valid in JSON strings but are line terminators in
+ * JavaScript source, so they are escaped too.
+ */
+function scriptSafeJson(value: unknown): string {
+  return JSON.stringify(value)
+    .replace(/</g, "\\u003c")
+    .replace(/>/g, "\\u003e")
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029");
+}
+
+// The provider never gets to choose the words we render. Its own
+// `error_description` is logged server-side and replaced with one of these, so
+// no provider- or attacker-supplied text ever reaches the page (Round 1 item 7:
+// generic error messages).
+const GENERIC_PROVIDER_ERROR =
+  "The provider refused the connection. Check the Client ID and Secret, then retry from Training Tracker.";
+const GENERIC_EXCHANGE_ERROR =
+  "Could not complete the connection with the provider. Please retry from Training Tracker.";
 
 function htmlPage(opts: { provider: string; status: "ok" | "error"; message: string }): string {
-  const payload = JSON.stringify({
+  const payload = scriptSafeJson({
     type: "tt-oauth",
     provider: opts.provider,
     status: opts.status,
     message: opts.message,
   });
   const heading = opts.status === "ok" ? "Connected" : "Connection failed";
+  const safeMessage = escapeHtml(opts.message);
   const colour = opts.status === "ok" ? "#16a34a" : "#dc2626";
   return `<!doctype html>
 <html lang="en">
@@ -31,7 +73,7 @@ function htmlPage(opts: { provider: string; status: "ok" | "error"; message: str
 </head>
 <body>
   <h1>${heading}</h1>
-  <p>${opts.message}</p>
+  <p>${safeMessage}</p>
   <p>You can close this window.</p>
   <button onclick="window.close()">Close window</button>
   <script>
@@ -64,6 +106,22 @@ export async function GET(
 ) {
   const { provider } = await params;
 
+  // Guard in the handler, not just at the edge (Round 1 item 3: every handler
+  // carries its own guard). This route renders HTML and the auth cookie is
+  // SameSite=Lax, so it is reachable by a cross-site top-level navigation —
+  // the proxy's role check alone is a single point of failure, and it cannot
+  // see a since-disabled account. requireAuth covers both.
+  try {
+    await requireAuth(request, "Admin");
+  } catch {
+    return htmlResponse(
+      provider,
+      "error",
+      "You need to be signed in to Training Tracker to finish connecting.",
+      401,
+    );
+  }
+
   if (!isCloudProvider(provider)) {
     return htmlResponse(provider, "error", "Unknown provider.", 400);
   }
@@ -75,7 +133,13 @@ export async function GET(
   const errorDesc = url.searchParams.get("error_description");
 
   if (errorParam) {
-    return htmlResponse(provider, "error", errorDesc || errorParam, 400);
+    // Never echo the provider's text back into the page — it is fully
+    // attacker-controlled and this branch runs before any state validation.
+    console.warn(
+      `[oauth] ${provider} returned an error: ${errorParam}` +
+        (errorDesc ? ` (${errorDesc})` : ""),
+    );
+    return htmlResponse(provider, "error", GENERIC_PROVIDER_ERROR, 400);
   }
   if (!code || !state) {
     return htmlResponse(provider, "error", "Missing 'code' or 'state' from provider.", 400);
@@ -142,7 +206,9 @@ export async function GET(
 
     return htmlResponse(provider, "ok", "Training Tracker is now connected.");
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Token exchange failed";
-    return htmlResponse(provider, "error", message, 400);
+    // The upstream failure text can carry internal hostnames and token-endpoint
+    // responses; keep it in the server log and show the operator a fixed string.
+    console.warn(`[oauth] ${provider} token exchange failed:`, err);
+    return htmlResponse(provider, "error", GENERIC_EXCHANGE_ERROR, 400);
   }
 }

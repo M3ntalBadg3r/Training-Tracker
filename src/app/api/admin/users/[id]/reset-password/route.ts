@@ -8,6 +8,7 @@ import {
   verifyPassword,
   verifyMfaToken,
 } from "@/lib/auth";
+import { invalidateUserStatusCache } from "@/lib/user-status";
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 
 // POST: Reset another user's password.
@@ -86,11 +87,23 @@ export async function POST(
     }
   }
 
+  const target = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true },
+  });
+  if (!target) {
+    return NextResponse.json({ error: "User not found" }, { status: 404 });
+  }
+
   const passwordHash = await hashPassword(password);
+  // Bump the *target's* session epoch so the reset actually evicts whoever is
+  // holding that account's sessions — the usual reason for an admin reset. The
+  // acting admin's own session is untouched.
   await prisma.user.update({
     where: { id: userId },
-    data: { passwordHash },
+    data: { passwordHash, sessionEpoch: { increment: 1 } },
   });
+  invalidateUserStatusCache();
 
   return NextResponse.json({ success: true });
 }

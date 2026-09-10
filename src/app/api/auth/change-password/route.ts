@@ -5,13 +5,32 @@ import {
   verifyPassword,
   hashPassword,
   validatePassword,
+  createToken,
+  setAuthCookie,
+  isRequestSecure,
+  accountDisabledResponse,
+  DEFAULT_IDLE_MS,
 } from "@/lib/auth";
+import {
+  isUserDisabled,
+  isSessionEpochStale,
+  invalidateUserStatusCache,
+} from "@/lib/user-status";
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 
 export async function POST(request: NextRequest) {
   const authUser = await getAuthFromRequest(request);
   if (!authUser) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // This route uses `getAuthFromRequest` rather than `requireAuth`, so the
+  // revocation checks have to be spelled out — a suspended account must not be
+  // able to change its own password, and neither must a session that a password
+  // change elsewhere has already ended.
+  if (await isUserDisabled(authUser.sub)) return accountDisabledResponse();
+  if (await isSessionEpochStale(authUser.sub, authUser.sessionEpoch)) {
+    return accountDisabledResponse();
   }
 
   // Throttle so a stolen cookie can't brute-force the current password.
@@ -53,10 +72,34 @@ export async function POST(request: NextRequest) {
   }
 
   const newHash = await hashPassword(newPassword);
-  await prisma.user.update({
+  // Bumping sessionEpoch strands every token minted before now — including the
+  // stolen cookie that may be the reason for this change. Without it the old
+  // password's sessions stay valid to the absolute session cap.
+  const updated = await prisma.user.update({
     where: { id: user.id },
-    data: { passwordHash: newHash },
+    data: { passwordHash: newHash, sessionEpoch: { increment: 1 } },
   });
+  invalidateUserStatusCache();
 
-  return NextResponse.json({ success: true });
+  const response = NextResponse.json({ success: true });
+
+  // ...except this one. Re-issue the cookie with the new epoch so the browser
+  // that just changed its own password isn't signed out by its own action. The
+  // original login's absolute-cap anchor and idle window are preserved, so this
+  // does not extend the session (same pattern as /api/auth/mfa/verify).
+  const idleMs = authUser.idleMs ?? DEFAULT_IDLE_MS;
+  const token = await createToken(
+    {
+      sub: updated.id,
+      username: updated.username,
+      role: updated.role,
+      displayName: updated.displayName,
+      pendingMfaEnrollment: authUser.pendingMfaEnrollment,
+      sessionEpoch: updated.sessionEpoch,
+    },
+    { idleMs, sessionStart: authUser.sessionStart }
+  );
+  setAuthCookie(response, token, isRequestSecure(request), idleMs / 1000);
+
+  return response;
 }

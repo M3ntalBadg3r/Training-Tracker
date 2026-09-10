@@ -65,6 +65,7 @@ export async function POST(request: NextRequest) {
         username: updated.username,
         role: updated.role,
         displayName: updated.displayName,
+        sessionEpoch: updated.sessionEpoch,
       },
       { idleMs, sessionStart: authUser.sessionStart }
     );

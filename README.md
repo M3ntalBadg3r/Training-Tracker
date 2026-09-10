@@ -326,6 +326,15 @@ throttle. The attempt log is kept for 30 days and pruned automatically.
 
 Click **My Account** in the sidebar to view your profile and manage MFA settings.
 
+#### Changing your password
+
+Changing your password **signs you out everywhere else**. The browser you make
+the change in stays signed in; every other session on that account — another
+computer, a phone, a browser you forgot to sign out of — is ended the next time
+it makes a request. That is deliberate: if you are changing your password
+because you think someone else has it, the change now ends their session too
+rather than leaving it valid until it happens to time out.
+
 ### About page
 
 Click **About** in the sidebar footer (between Night Mode and Sign out) to open the **About** page (titled with your configured application name). It shows a short description of the application, the **current version** you're running, the developer credit, and quick links to the **release notes** and the **GitHub repository** (both open in a new tab).
@@ -366,6 +375,8 @@ The `.env` file requires:
 | `APP_BASE_URL` | *(Recommended in production)* Canonical externally-resolvable origin (e.g. `https://tracker.example.com`). Used to build OAuth redirect URIs without trusting `X-Forwarded-Host` headers, and to decide whether the auth cookie is marked `Secure` (an `https://` value marks it Secure; otherwise the cookie's Secure flag follows the request protocol, so plain-HTTP LAN access still works). |
 | `TRUSTED_PROXIES` | *(Recommended in production)* Comma-separated list of trusted reverse-proxy IPs whose `X-Forwarded-For` entries are stripped when extracting the real client IP for rate limiting. Defaults to `127.0.0.1,::1`. |
 | `NODE_EXTRA_CA_CERTS` | *(Optional)* Path to a CA bundle Node should trust in addition to its built-ins — set this when running behind an SSL-inspecting proxy/firewall so Prisma engine downloads and outbound HTTPS succeed. The installer sets it to `/etc/ssl/certs/ca-certificates.crt` automatically on Debian. |
+| `EXPORT_ROOT` | *(Optional)* Folder that scheduled exports delivered to the local filesystem may write into. Defaults to `<app dir>/exports` (i.e. `/opt/training-tracker/exports` on a standard install). A schedule pointing anywhere else is refused. On a systemd host, a value outside `/opt/training-tracker` also needs a matching `ReadWritePaths=` drop-in. |
+| `BACKUP_ROOT` | *(Optional)* Folder that backup archives are written to, and the only tree the folder picker on the Backup page can browse. Defaults to `<app dir>/backups`, with the same `ReadWritePaths=` caveat as `EXPORT_ROOT`. |
 | `GITHUB_TOKEN` | *(Optional)* GitHub personal access token — required for update checks **and git pulls** on private repositories |
 
 #### Setting up GITHUB_TOKEN
@@ -742,7 +753,7 @@ Navigate to **Admin > Users** to manage user accounts.
 
 - **Add User** — Create a new account with username, display name, password, and role (Admin or User).
 - **Edit User** — Change display name or role. Cannot demote the last admin.
-- **Reset Password** — Set a new password for any user.
+- **Reset Password** — Set a new password for any user. This also **signs that user out of every session they have open**, so resetting the password of a compromised account evicts whoever is using it. Requires you to re-enter your own password (and MFA code, if you have MFA enabled).
 - **Disable MFA** — Turn off multi-factor authentication for a user.
 - **Disable / Enable Account** — Suspend an account without deleting it (the power icon in the Actions column). A disabled user cannot sign in, and any session they already have open is signed out on their very next request. Their role, company access, MFA setup and login history are all preserved, so enabling the account restores it exactly as it was. An optional reason can be recorded and is shown to other admins in the tooltip on the grey **Disabled** badge. You cannot disable your own account or the last SuperAdmin.
 - **Delete User** — Remove a user account. Cannot delete yourself or the last admin. To simply stop someone signing in, disable the account instead — deletion is permanent and discards their history.
@@ -756,7 +767,7 @@ A disabled account is refused at login with the same generic "Invalid username o
 - **Default Date Format** — `DD/MM/YYYY` or `MM/DD/YYYY`. Used for:
   - Parsing dates during CSV / Excel imports (the import flow detects format mismatches and prompts before committing — see **Import Data → Date Format Detection**).
   - Displaying dates throughout the app for users who haven't picked a personal preference.
-- **Session Timeout** — How long a signed-in user can be **inactive** before being automatically signed out (default **30 minutes**, adjustable 5–1440 minutes). A warning dialog with a countdown appears shortly before the timeout so an active user can choose **Stay signed in**. Ongoing activity keeps the session alive; a change takes effect the next time a user signs in. A fixed **absolute cap** (8 hours, overridable with the `SESSION_ABSOLUTE_HOURS` environment variable) also applies — a session is ended once it reaches the cap regardless of activity.
+- **Session Timeout** — How long a signed-in user can be **inactive** before being automatically signed out (default **30 minutes**, adjustable 5–1440 minutes). A warning dialog with a countdown appears shortly before the timeout so an active user can choose **Stay signed in**. Ongoing activity keeps the session alive; a change takes effect the next time a user signs in. A fixed **absolute cap** (8 hours, overridable with the `SESSION_ABSOLUTE_HOURS` environment variable) also applies — a session is ended once it reaches the cap regardless of activity. Separately from any timeout, a session is ended immediately when the account is disabled, or when its password is changed from somewhere else (see **Changing your password**).
 - **Import Aliases** — The per-field header alias list used by the student import's column auto-mapper.
 - **Branding** — White-labelling; see below.
 
@@ -870,10 +881,10 @@ Click **Upload Backup File** and select a previously created backup file. If it 
 
 Enable automatic backups to save backups to a local directory on a schedule:
 
-- **Backup Location** — Configurable directory path with a folder browser GUI. Click **Browse** to navigate the filesystem and select or create a folder.
+- **Backup Location** — Configurable directory path with a folder browser GUI. Click **Browse** to navigate and select or create a folder. The picker is confined to the backups folder — `<app dir>/backups` by default, or whatever `BACKUP_ROOT` is set to in `.env` — and paths outside it are refused.
 - **Retention** — Set how many backup copies to keep. When the count is exceeded, the oldest backups are automatically deleted.
 - **Include user credentials** — Off by default. Turn it on if you want a scheduled backup to be able to restore user accounts; it requires `ENCRYPTION_KEY` to be set, since scheduled backups are otherwise written unencrypted.
-- **Schedule** — Daily or weekly, at a configurable time.
+- **Schedule** — Daily or weekly, at a configurable time. The schedule is stored by the app and run by the server's scheduled jobs (`/etc/cron.d/training-tracker`, installed by `deploy/install.sh`); `deploy/auto-backup.sh` wakes every five minutes and takes the backup when one is due, running late the same day if the machine was off at the scheduled time. If those jobs are not installed the page says so, because a schedule saved without them would never run.
 - **Run Backup Now** — Immediately saves a backup without waiting for the schedule.
 
 #### Saved Backups
@@ -955,11 +966,18 @@ Click **Add Schedule** and configure:
 
 | Destination | Setup Required |
 |-------------|----------------|
-| **Local Filesystem** | Output path on the server; optional retention count |
+| **Local Filesystem** | Output path on the server, inside the exports folder; optional retention count |
 | **Email** | Recipient address; SMTP credentials in Provider Credentials |
 | **Google Drive** | Folder ID (optional); OAuth credentials connected via the wizard |
 | **Box** | Folder ID (optional); OAuth credentials connected via the wizard |
 | **OneDrive** | Folder path (optional); Azure app + delegated OAuth connected via the wizard |
+
+Exports written to the local filesystem must land inside the server's exports
+folder — `<app dir>/exports` by default, or whatever `EXPORT_ROOT` is set to in
+`.env`. Enter a name such as `monthly` for a sub-folder, or leave the path blank
+to use the folder itself. A schedule pointing outside it is refused when you save
+it, and reports an error rather than running if it was configured before this
+restriction existed.
 
 #### Provider Credentials
 

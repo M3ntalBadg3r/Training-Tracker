@@ -63,6 +63,7 @@ interface BackupFile {
 }
 
 interface BrowseResult {
+  basePath: string;
   currentPath: string;
   parentPath: string | null;
   directories: { name: string; path: string }[];
@@ -167,6 +168,9 @@ export default function BackupPage() {
   // Whether ENCRYPTION_KEY is set on the server; without it a standard backup
   // is a plaintext zip and the server refuses to put credentials in one.
   const [encryptionConfigured, setEncryptionConfigured] = useState(false);
+  // Whether anything is installed to actually run the schedule. Assume yes
+  // until the server says otherwise, so a slow load does not flash a warning.
+  const [schedulerInstalled, setSchedulerInstalled] = useState(true);
 
   // Auto-backup schedule state
   const [schedule, setSchedule] = useState<ScheduleConfig>({
@@ -174,7 +178,7 @@ export default function BackupPage() {
     frequency: "daily",
     time: "02:00",
     dayOfWeek: 0,
-    backupPath: "/opt/training-tracker/backups",
+    backupPath: "",
     retentionCount: 5,
     includeCredentials: false,
   });
@@ -214,10 +218,11 @@ export default function BackupPage() {
     fetch("/api/admin/backup/schedule")
       .then((r) => r.json())
       .then((data) => {
-        // encryptionConfigured is a server capability, not part of the stored
-        // schedule — keep it out of the object we POST back.
-        const { encryptionConfigured: enc, ...cfg } = data;
+        // encryptionConfigured and schedulerInstalled are server capabilities,
+        // not part of the stored schedule — keep them out of what we POST back.
+        const { encryptionConfigured: enc, schedulerInstalled: sched, ...cfg } = data;
         setEncryptionConfigured(!!enc);
+        setSchedulerInstalled(sched !== false);
         if (cfg.enabled !== undefined) {
           setSchedule({ ...cfg, time: utcToLocal(cfg.time) });
         }
@@ -401,14 +406,12 @@ export default function BackupPage() {
         body: JSON.stringify({ ...schedule, time: localToUtc(schedule.time) }),
       });
       if (res.ok) {
-        // The settings save and the cron install can succeed independently —
-        // show the warning rather than a bare "saved" if cron did not take.
         const data = await res.json().catch(() => ({}));
-        setScheduleResult(
-          data?.warning
-            ? { type: "error", message: data.warning }
-            : { type: "success", message: "Settings saved successfully" }
-        );
+        // Saving only stores the schedule; deploy/auto-backup.sh is what runs
+        // it. Re-read whether that is installed so the notice below stays
+        // accurate without a reload.
+        setSchedulerInstalled(data?.schedulerInstalled !== false);
+        setScheduleResult({ type: "success", message: "Settings saved successfully" });
       } else {
         setScheduleResult({ type: "error", message: "Failed to save settings" });
       }
@@ -449,9 +452,10 @@ export default function BackupPage() {
   const browsePath = async (dirPath: string) => {
     setBrowserLoading(true);
     try {
-      const res = await fetch(
-        `/api/admin/backup/browse?path=${encodeURIComponent(dirPath)}`
-      );
+      // No path means "wherever the server's backups root is" — the client no
+      // longer assumes it, since BACKUP_ROOT can move it.
+      const query = dirPath ? `?path=${encodeURIComponent(dirPath)}` : "";
+      const res = await fetch(`/api/admin/backup/browse${query}`);
       const data = await res.json();
       setBrowserData(data);
     } catch {
@@ -464,7 +468,7 @@ export default function BackupPage() {
   const openBrowser = () => {
     setShowBrowser(true);
     setNewFolderName("");
-    browsePath(schedule.backupPath || "/opt/training-tracker/backups");
+    browsePath(schedule.backupPath);
   };
 
   const createFolder = async () => {
@@ -544,8 +548,13 @@ export default function BackupPage() {
   };
 
   // --- Breadcrumb segments ---
+  // Relative to the base, so the trail offers no route above it. The picker is
+  // confined to the backups root server-side, and the crumbs should say so.
   const breadcrumbSegments = browserData
-    ? browserData.currentPath.split("/").filter(Boolean)
+    ? browserData.currentPath
+        .slice(browserData.basePath.length)
+        .split("/")
+        .filter(Boolean)
     : [];
 
   return (
@@ -742,6 +751,30 @@ export default function BackupPage() {
         </div>
 
         <div className="space-y-4">
+          {/*
+            The schedule is stored here but run by deploy/auto-backup.sh from
+            /etc/cron.d/training-tracker. If that is missing, saving a schedule
+            is just recording a preference nothing acts on — say so rather than
+            implying a backup is coming.
+          */}
+          {!schedulerInstalled && (
+            <div className="flex items-start gap-2 p-3 rounded-lg border bg-amber-50 border-amber-200 text-amber-800 text-sm">
+              <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+              <div>
+                <p className="font-semibold">
+                  Scheduled jobs are not installed on this server.
+                </p>
+                <p className="mt-1">
+                  A schedule set here will be saved but never run. Check that
+                  cron is installed, then run this once as root:
+                </p>
+                <p className="mt-1 font-mono text-xs">
+                  bash /opt/training-tracker/deploy/install.sh
+                </p>
+              </div>
+            </div>
+          )}
+
           <label className="flex items-center gap-3 cursor-pointer">
             <input
               type="checkbox"
@@ -1322,14 +1355,15 @@ export default function BackupPage() {
             {/* Breadcrumb */}
             <div className="flex items-center gap-1 text-sm mb-3 flex-wrap bg-gray-50 p-2 rounded-lg">
               <button
-                onClick={() => browsePath("/")}
+                onClick={() => browsePath(browserData.basePath)}
                 className="text-blue-600 hover:underline font-mono"
+                title={browserData.basePath}
               >
-                /
+                Backups
               </button>
               {breadcrumbSegments.map((seg, i) => {
                 const segPath =
-                  "/" + breadcrumbSegments.slice(0, i + 1).join("/");
+                  browserData.basePath + "/" + breadcrumbSegments.slice(0, i + 1).join("/");
                 return (
                   <span key={segPath} className="flex items-center gap-1">
                     <ChevronRight size={12} className="text-gray-400" />

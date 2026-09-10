@@ -9,7 +9,7 @@ import {
   isEncryptedBlob,
   isEncryptionConfigured,
 } from "@/lib/crypto";
-import { isUserDisabled } from "@/lib/user-status";
+import { isUserDisabled, isSessionEpochStale } from "@/lib/user-status";
 import {
   ACCOUNT_DISABLED_CODE,
   SESSION_TERMINATED_HEADER,
@@ -74,6 +74,11 @@ export interface TokenPayload {
   // expiry without a DB read. Defaults apply for legacy tokens minted before
   // this claim existed.
   idleMs?: number;
+  // The account's `sessionEpoch` at the moment this token was minted. A later
+  // password change or admin reset bumps the column, which strands every token
+  // still carrying the old value. Absent on legacy tokens; absent reads as 0,
+  // which is the column default, so those tokens keep working.
+  sessionEpoch?: number;
 }
 
 interface CreateTokenOptions {
@@ -106,7 +111,11 @@ export async function verifyToken(
   token: string
 ): Promise<TokenPayload | null> {
   try {
-    const { payload } = await jwtVerify(token, getJwtSecret());
+    // Pin the algorithm: never let the token's own header choose how it is
+    // verified.
+    const { payload } = await jwtVerify(token, getJwtSecret(), {
+      algorithms: ["HS256"],
+    });
     return {
       sub: Number(payload.sub),
       username: payload.username as string,
@@ -116,6 +125,8 @@ export async function verifyToken(
       sessionStart:
         typeof payload.sessionStart === "number" ? payload.sessionStart : undefined,
       idleMs: typeof payload.idleMs === "number" ? payload.idleMs : undefined,
+      sessionEpoch:
+        typeof payload.sessionEpoch === "number" ? payload.sessionEpoch : undefined,
     };
   } catch {
     return null;
@@ -157,6 +168,15 @@ export function setAuthCookie(
     // address-bar reloads / pull-to-refresh, which logged mobile users out on
     // every refresh. Lax still blocks cross-site POSTs, so CSRF protection for
     // the app's same-origin mutations is unaffected.
+    //
+    // What Lax gives up, and what therefore has to be covered elsewhere: Lax
+    // DOES send this cookie on cross-site *top-level GET navigations*. A link
+    // in an email or a chat message arrives at our origin already
+    // authenticated. So any GET handler that has side effects, or that renders
+    // anything derived from the request, must guard and escape on its own — it
+    // cannot assume the visitor meant to be here. (This was learned the hard
+    // way: the OAuth callback route rendered a query parameter into hand-built
+    // HTML and was reachable exactly this way.)
     sameSite: "lax",
     path: "/",
     // Cookie lifetime tracks the sliding idle window; re-set on every slide.
@@ -200,6 +220,21 @@ async function assertAccountActive(userId: number): Promise<void> {
   }
 }
 
+/**
+ * Reject a token that a later password change or admin reset has revoked.
+ *
+ * Sits beside `assertAccountActive` because it is the same kind of check for
+ * the same reason: the edge proxy re-signs tokens preserving every claim, so
+ * this is the only place a live session can be ended. Reuses the
+ * account-disabled response shape so the client's existing
+ * `X-Session-Terminated` handler performs a clean logout.
+ */
+async function assertSessionCurrent(user: TokenPayload): Promise<void> {
+  if (await isSessionEpochStale(user.sub, user.sessionEpoch)) {
+    throw new AuthError("Session ended", 401, ACCOUNT_DISABLED_CODE);
+  }
+}
+
 export async function requireAuth(
   request: NextRequest,
   requiredRole?: string
@@ -209,6 +244,7 @@ export async function requireAuth(
     throw new AuthError("Unauthorized", 401);
   }
   await assertAccountActive(user.sub);
+  await assertSessionCurrent(user);
   if (requiredRole) {
     // "Admin" should accept SuperAdmin too — SuperAdmin is a superset of Admin.
     if (requiredRole === "Admin") {
@@ -226,6 +262,7 @@ export async function requireSuperAdmin(request: NextRequest): Promise<TokenPayl
   const user = await getAuthFromRequest(request);
   if (!user) throw new AuthError("Unauthorized", 401);
   await assertAccountActive(user.sub);
+  await assertSessionCurrent(user);
   if (user.pendingMfaEnrollment) throw new AuthError("MFA enrollment required", 403);
   if (user.role !== "SuperAdmin") throw new AuthError("Forbidden", 403);
   return user;

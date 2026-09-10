@@ -183,11 +183,15 @@ function DestinationConfigFields({
             <label className="block text-sm text-gray-600 mb-1">Output Path</label>
             <input
               type="text"
-              value={String(config.path ?? "/opt/training-tracker/exports")}
+              value={String(config.path ?? "")}
               onChange={(e) => onChange("path", e.target.value)}
               className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm font-mono"
-              placeholder="/opt/training-tracker/exports"
+              placeholder="Leave blank for the default exports folder"
             />
+            <p className="text-xs text-gray-400 mt-1">
+              Must be inside the server&rsquo;s exports folder. Enter a name such as{" "}
+              <code>monthly</code> for a sub-folder, or leave blank to use the folder itself.
+            </p>
           </div>
           <div>
             <label className="block text-sm text-gray-600 mb-1">Keep last (0 = unlimited)</label>

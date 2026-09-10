@@ -42,7 +42,52 @@ function isPublicPath(pathname: string): boolean {
   );
 }
 
+/**
+ * The edge's copy of the JWT secret, with the same minimum-length guard
+ * `lib/auth.ts` applies. Without it, an unset JWT_SECRET would be encoded here
+ * as the literal string "undefined" — a 9-byte key — while the Node runtime
+ * refused to start, so the two halves of the app would disagree about what a
+ * valid token is.
+ */
+function getJwtSecret(): Uint8Array {
+  const secret = process.env.JWT_SECRET;
+  if (!secret || secret.length < 32) {
+    throw new Error("JWT_SECRET must be set and at least 32 characters");
+  }
+  return new TextEncoder().encode(secret);
+}
+
+/**
+ * Routes whose handler issues the auth cookie itself, so the proxy must not
+ * also slide it.
+ *
+ * Both sides write the same cookie name/path, so if the proxy's refresh lands
+ * on the same response the browser gets two Set-Cookie headers for `tt-auth`
+ * and whichever is processed last wins — which is not ours to decide. The
+ * handler is authoritative on these paths: change-password re-issues with a
+ * bumped session epoch, mfa/verify clears the pending-enrolment claim, and
+ * logout clears the cookie outright. A proxy refresh could resurrect any of
+ * those with the pre-change claims.
+ *
+ * The window is narrow (the proxy only slides past the halfway mark of the idle
+ * window), which is exactly what would make it an intermittent bug.
+ */
+const COOKIE_AUTHORITATIVE_PATHS = [
+  "/api/auth/change-password",
+  "/api/auth/mfa/verify",
+  "/api/auth/logout",
+];
+
+function issuesOwnAuthCookie(pathname: string): boolean {
+  return COOKIE_AUTHORITATIVE_PATHS.includes(pathname);
+}
+
 function isStaticAsset(pathname: string): boolean {
+  // API routes are never static assets. This matters because the check below
+  // is a *suffix* match and this function short-circuits the whole auth chain:
+  // without this line, any API route reachable at a URL ending in one of these
+  // extensions would skip authentication entirely.
+  if (pathname.startsWith("/api/")) return false;
   return (
     pathname.startsWith("/_next") ||
     pathname.startsWith("/favicon") ||
@@ -160,8 +205,10 @@ export async function proxy(request: NextRequest) {
 
   let payload;
   try {
-    const secret = new TextEncoder().encode(process.env.JWT_SECRET);
-    const result = await jwtVerify(token, secret);
+    const secret = getJwtSecret();
+    // Pin the algorithm: never let the token's own header choose how it is
+    // verified.
+    const result = await jwtVerify(token, secret, { algorithms: ["HS256"] });
     payload = result.payload;
   } catch {
     // Invalid or expired token
@@ -205,7 +252,7 @@ export async function proxy(request: NextRequest) {
   const expMs = typeof payload.exp === "number" ? payload.exp * 1000 : 0;
   const remaining = expMs - now;
   let refreshedToken: string | null = null;
-  if (remaining < idleMs / 2) {
+  if (remaining < idleMs / 2 && !issuesOwnAuthCookie(pathname)) {
     const newExpMs = Math.min(now + idleMs, absoluteDeadline);
     if (newExpMs > now) {
       // Preserve every claim; refresh only iat/exp and (re)assert the session
@@ -214,7 +261,7 @@ export async function proxy(request: NextRequest) {
       void _iat;
       void _exp;
       void _nbf;
-      const secret = new TextEncoder().encode(process.env.JWT_SECRET);
+      const secret = getJwtSecret();
       refreshedToken = await new SignJWT({ ...claims, sessionStart, idleMs })
         .setProtectedHeader({ alg: "HS256" })
         .setIssuedAt()

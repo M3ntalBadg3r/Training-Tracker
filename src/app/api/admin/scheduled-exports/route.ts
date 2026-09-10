@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, handleAuthError } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { canAccessCompany, getAuthorizedCompanyIds } from "@/lib/company-scope";
+import { normaliseLocalExportConfig } from "@/lib/export-destinations";
 
 export async function GET(request: NextRequest) {
   let auth;
@@ -49,6 +50,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "You do not have access to that company" }, { status: 403 });
     }
 
+    // `config` is untyped JSON supplied by any company Admin, and for a local
+    // destination it names a directory the server writes to and prunes. Confine
+    // it before it is stored, and store the resolved form.
+    let storedConfig: Record<string, unknown> = config ?? {};
+    if (destination === "local") {
+      const local = normaliseLocalExportConfig(storedConfig);
+      if ("error" in local) {
+        return NextResponse.json({ error: local.error }, { status: 400 });
+      }
+      storedConfig = { ...storedConfig, ...local };
+    }
+
     const record = await prisma.scheduledExport.create({
       data: {
         name,
@@ -56,7 +69,7 @@ export async function POST(request: NextRequest) {
         reportType,
         format,
         destination,
-        config: config ?? {},
+        config: storedConfig as object,
         enabled: enabled !== false,
         frequency,
         time,
