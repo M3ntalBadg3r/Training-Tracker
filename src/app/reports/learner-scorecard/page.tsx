@@ -12,6 +12,7 @@ import ExportMenu, { type ExportFormat } from "@/components/ui/ExportMenu";
 import { ExportableChart, useChartCapture } from "@/components/reports/ChartCaptureProvider";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
 import { useDebounce } from "@/hooks/useDebounce";
+import { useFetchJson } from "@/hooks/useFetchJson";
 import { useDateFormat } from "@/components/date-format/DateFormatProvider";
 import { ArrowLeft, Users, Award, AlertTriangle, Clock } from "lucide-react";
 import Pagination from "@/components/data-table/Pagination";
@@ -86,8 +87,6 @@ function LearnerScorecardPageInner() {
   const [page, setPage] = useState(() => Math.max(1, parseInt(searchParams.get("page") ?? "1", 10) || 1));
   const [pageSize, setPageSize] = useState(() => parseInt(searchParams.get("pageSize") ?? "25", 10) || 25);
 
-  const [data, setData] = useState<ScorecardResponse | null>(null);
-  const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
 
   const buildParams = useCallback(
@@ -135,23 +134,13 @@ function LearnerScorecardPageInner() {
     }
   }, [buildParams, search, pathname, router, searchParams]);
 
-  useEffect(() => {
-    if (companyScope.loading) return;
-    const url = withCompany(`/api/reports/learner-scorecard?${buildParams({}).toString()}`, companyScope.selected);
-    let cancelled = false;
-    setLoading(true);
-    fetch(url)
-      .then((r) => r.json())
-      .then((d: ScorecardResponse) => {
-        if (!cancelled) setData(d);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [buildParams, companyScope.loading, companyScope.selected]);
+  // `loading` is derived by useFetchJson (loadedKey !== requestKey), so the
+  // loading state still re-appears on every filter change without a
+  // synchronous setState inside an effect.
+  const dataUrl = companyScope.loading
+    ? null
+    : withCompany(`/api/reports/learner-scorecard?${buildParams({}).toString()}`, companyScope.selected);
+  const { data, loading } = useFetchJson<ScorecardResponse>(dataUrl);
 
   const kpis = data?.kpis ?? { learners: 0, achievements: 0, withGaps: 0, withExpiring: 0, zero: 0 };
   const leaderboard = data?.leaderboard ?? [];

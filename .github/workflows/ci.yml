@@ -1,0 +1,42 @@
+name: CI
+
+# Lint + typecheck on every push and pull request to the long-lived branches.
+#
+# This exists because nothing else runs them: release.yml only tags releases,
+# no deploy/ script calls eslint or tsc, and Next 16's `next build` no longer
+# runs ESLint. Without this, lint errors accumulate silently — which is exactly
+# how 44 of them built up before v2.87.
+
+on:
+  push:
+    branches: [dev, master]
+  pull_request:
+    branches: [dev, master]
+  workflow_dispatch: {}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The generated Prisma client is what gives tsc the model types. It does
+      # not connect to the database, so any syntactically valid URL will do.
+      - name: Generate Prisma client
+        run: npx prisma generate
+        env:
+          DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npx tsc --noEmit

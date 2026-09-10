@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import PageHeader from "@/components/layout/PageHeader";
 import DataTable, { type DataTableState } from "@/components/data-table/DataTable";
@@ -9,6 +9,7 @@ import { ColumnDef, StudentRow } from "@/types";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
 import { useRegionData } from "@/hooks/useRegionData";
+import { useFetchJson } from "@/hooks/useFetchJson";
 import { Plus } from "lucide-react";
 
 interface CompanyOption { id: number; name: string }
@@ -74,9 +75,27 @@ function StudentsPageInner() {
     },
     [searchParams, pathname, router]
   );
-  const [students, setStudents] = useState<(StudentRow & { companyName?: string | null })[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [lastImport, setLastImport] = useState<string | null>(null);
+  // Both loads go through useFetchJson, whose `loading` is derived
+  // (loadedKey !== requestKey) rather than written by a synchronous setState
+  // inside an effect. A null url parks the hook in its loading state while the
+  // company scope is still resolving, matching the old guard.
+  const studentsUrl = companyScope.loading
+    ? null
+    : withCompany("/api/students", companyScope.selected);
+  const {
+    data: studentsData,
+    loading,
+    reload: reloadStudents,
+  } = useFetchJson<(StudentRow & { companyName?: string | null })[]>(studentsUrl);
+  const students = useMemo(() => studentsData ?? [], [studentsData]);
+
+  // Show the last import for the selected company; system-wide under "All".
+  const importKey =
+    companyScope.selected === "all" ? "students" : `students:${companyScope.selected}`;
+  const { data: importMeta } = useFetchJson<{ timestamp?: string | null }>(
+    companyScope.loading ? null : `/api/import-metadata?key=${encodeURIComponent(importKey)}`
+  );
+  const lastImport = importMeta?.timestamp ?? null;
   const { rows: countries } = useRegionData();
 
   const [showAdd, setShowAdd] = useState(false);
@@ -124,24 +143,6 @@ function StudentsPageInner() {
     { key: "country", header: "Country" },
   ];
 
-  const fetchStudents = () =>
-    fetch(withCompany("/api/students", companyScope.selected))
-      .then((res) => res.json())
-      .then((data) => setStudents(data));
-
-  useEffect(() => {
-    if (companyScope.loading) return;
-    setLoading(true);
-    fetchStudents().finally(() => setLoading(false));
-    // Show the last import for the selected company; system-wide under "All".
-    const importKey =
-      companyScope.selected === "all" ? "students" : `students:${companyScope.selected}`;
-    fetch(`/api/import-metadata?key=${encodeURIComponent(importKey)}`)
-      .then((res) => res.json())
-      .then((data) => setLastImport(data?.timestamp ?? null))
-      .catch(() => setLastImport(null));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [companyScope.loading, companyScope.selected]);
 
   const handleAddStudent = async () => {
     setAddError("");
@@ -172,7 +173,7 @@ function StudentsPageInner() {
       }
       setShowAdd(false);
       setAddForm({ email: "", fullName: "", country: "", companyId: "" });
-      await fetchStudents();
+      reloadStudents();
     } finally {
       setSaving(false);
     }

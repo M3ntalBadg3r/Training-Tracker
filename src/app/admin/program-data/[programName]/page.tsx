@@ -64,45 +64,42 @@ export default function ProgramRequirementsPage() {
   const [tierEditTarget, setTierEditTarget] = useState<ProgramTierRow | null>(null);
   const [deleteTierTarget, setDeleteTierTarget] = useState<ProgramTierRow | null>(null);
 
-  const fetchData = async () => {
-    try {
-      const res = await fetch("/api/admin/program-data");
-      if (res.ok) {
-        const all: ProgramDataRow[] = await res.json();
-        setRows(all.filter((r) => r.programName === programName));
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Promise chains rather than async/await: an async function called from an
+  // effect is treated as writing state synchronously, whereas a chain provably
+  // defers every write to a later microtask.
+  const fetchData = () =>
+    fetch("/api/admin/program-data")
+      .then((res) => (res.ok ? (res.json() as Promise<ProgramDataRow[]>) : null))
+      .then((all) => { if (all) setRows(all.filter((r) => r.programName === programName)); })
+      .finally(() => setLoading(false));
 
-  const fetchSpecialisations = async () => {
-    try {
-      const res = await fetch("/api/admin/specialisations");
-      if (res.ok) setSpecialisations(await res.json());
-    } catch { /* ignore */ }
-  };
+  const fetchSpecialisations = () =>
+    fetch("/api/admin/specialisations")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((rows) => { if (rows) setSpecialisations(rows); })
+      .catch(() => { /* ignore */ });
 
-  const fetchTiers = async () => {
-    try {
-      const res = await fetch(`/api/admin/program-tiers?programName=${encodeURIComponent(programName)}`);
-      if (res.ok) setTiers(await res.json());
-    } catch { /* ignore */ }
-  };
+  const fetchTiers = () =>
+    fetch(`/api/admin/program-tiers?programName=${encodeURIComponent(programName)}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((rows) => { if (rows) setTiers(rows); })
+      .catch(() => { /* ignore */ });
 
-  const fetchProgram = async () => {
-    try {
-      const res = await fetch("/api/admin/program-data/program");
-      if (res.ok) {
-        const list: { name: string; isTiered: boolean; deploymentMode: string }[] = await res.json();
-        const me = list.find((p) => p.name === programName);
+  const fetchProgram = () =>
+    fetch("/api/admin/program-data/program")
+      .then((res) =>
+        res.ok
+          ? (res.json() as Promise<{ name: string; isTiered: boolean; deploymentMode: string }[]>)
+          : null
+      )
+      .then((list) => {
+        const me = list?.find((p) => p.name === programName);
         if (me) {
           setIsTiered(me.isTiered);
           setDeploymentMode(me.deploymentMode || "flat");
         }
-      }
-    } catch { /* ignore */ }
-  };
+      })
+      .catch(() => { /* ignore */ });
 
   useEffect(() => {
     fetchData();
@@ -138,7 +135,9 @@ export default function ProgramRequirementsPage() {
     }
   };
 
-  const SortIcon = ({ col }: { col: string }) =>
+  // A plain helper, not a component: a component declared during render is
+  // recreated every render (and would reset any state it held).
+  const sortIcon = (col: string) =>
     sortCol === col ? (sortDir === "asc" ? <ChevronUp size={14} /> : <ChevronDown size={14} />) : null;
 
   // Specialisation-scoped rows (no tier) drive the main requirements table;
@@ -384,7 +383,7 @@ export default function ProgramRequirementsPage() {
                 <th className="px-4 py-3 text-left">
                   <div className="space-y-1">
                     <button onClick={() => toggleSort("specialisationName")} className="flex items-center gap-1 font-semibold text-gray-700 hover:text-gray-900">
-                      Specialisation <SortIcon col="specialisationName" />
+                      Specialisation {sortIcon("specialisationName")}
                     </button>
                     <select value={filterSpec} onChange={(e) => setFilterSpec(e.target.value)} className="w-full text-xs border border-gray-200 rounded px-1 py-0.5 font-normal">
                       <option value="">All</option>
@@ -398,7 +397,7 @@ export default function ProgramRequirementsPage() {
                 <th className="px-4 py-3 text-left">
                   <div className="space-y-1">
                     <button onClick={() => toggleSort("level")} className="flex items-center gap-1 font-semibold text-gray-700 hover:text-gray-900">
-                      Level <SortIcon col="level" />
+                      Level {sortIcon("level")}
                     </button>
                     <select value={filterLevel} onChange={(e) => setFilterLevel(e.target.value)} className="w-full text-xs border border-gray-200 rounded px-1 py-0.5 font-normal">
                       <option value="">All</option>
@@ -409,7 +408,7 @@ export default function ProgramRequirementsPage() {
                 <th className="px-4 py-3 text-left">
                   <div className="space-y-1">
                     <button onClick={() => toggleSort("trainingType")} className="flex items-center gap-1 font-semibold text-gray-700 hover:text-gray-900">
-                      Type <SortIcon col="trainingType" />
+                      Type {sortIcon("trainingType")}
                     </button>
                     <select value={filterType} onChange={(e) => setFilterType(e.target.value)} className="w-full text-xs border border-gray-200 rounded px-1 py-0.5 font-normal">
                       <option value="">All</option>
@@ -419,12 +418,12 @@ export default function ProgramRequirementsPage() {
                 </th>
                 <th className="px-4 py-3 text-left">
                   <button onClick={() => toggleSort("trainingFullTitle")} className="flex items-center gap-1 font-semibold text-gray-700 hover:text-gray-900">
-                    Training <SortIcon col="trainingFullTitle" />
+                    Training {sortIcon("trainingFullTitle")}
                   </button>
                 </th>
                 <th className="px-4 py-3 text-left">
                   <button onClick={() => toggleSort("quantityRequired")} className="flex items-center gap-1 font-semibold text-gray-700 hover:text-gray-900">
-                    Qty Required <SortIcon col="quantityRequired" />
+                    Qty Required {sortIcon("quantityRequired")}
                   </button>
                 </th>
                 <th className="px-4 py-3 font-semibold text-gray-700">Min/Theatre</th>
@@ -483,9 +482,12 @@ export default function ProgramRequirementsPage() {
         </div>
       </div>
 
-      {/* Add / Edit Requirement */}
+      {/* Add / Edit Requirement — mounted only while open, and keyed on the row
+          being edited, so the form seeds itself from `initial` on mount. */}
+      {showRequirement && (
       <RequirementModal
-        open={showRequirement}
+        key={editTarget?.id ?? "new"}
+        open
         onClose={() => setShowRequirement(false)}
         programName={programName}
         specialisations={specialisations}
@@ -496,15 +498,19 @@ export default function ProgramRequirementsPage() {
         allowPurpose={allowPurpose}
         tierRequiresSpecialisation={tierRequiresSpecialisation}
       />
+      )}
 
-      {/* Add / Edit Tier */}
+      {/* Add / Edit Tier — same mount-on-open treatment as above. */}
+      {showTier && (
       <TierModal
-        open={showTier}
+        key={tierEditTarget?.id ?? "new"}
+        open
         onClose={() => setShowTier(false)}
         programName={programName}
         initial={tierEditTarget}
         onSaved={() => { fetchTiers(); fetchProgram(); }}
       />
+      )}
 
       {/* Delete Requirement */}
       <Modal open={deleteTarget !== null} onClose={() => setDeleteTarget(null)} title="Delete Requirement">

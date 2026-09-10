@@ -54,7 +54,10 @@ const PUBLIC_PATHS = ["/login", "/setup"];
 export default function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [session, setSession] = useState<SessionTiming | null>(null);
-  const [loading, setLoading] = useState(true);
+  // `loading` is derived rather than stored: on a public path there is nothing
+  // to fetch, so the old effect wrote setLoading(false) synchronously. `fetched`
+  // records that /api/auth/me has come back at least once.
+  const [fetched, setFetched] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
 
@@ -77,16 +80,14 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
         setSession(null);
       }
     } finally {
-      setLoading(false);
+      setFetched(true);
     }
   }, []);
 
+  const loading = isPublicPath ? false : !fetched;
+
   useEffect(() => {
-    if (!isPublicPath) {
-      fetchUser();
-    } else {
-      setLoading(false);
-    }
+    if (!isPublicPath) fetchUser();
   }, [isPublicPath, fetchUser]);
 
   const logout = useCallback(async () => {

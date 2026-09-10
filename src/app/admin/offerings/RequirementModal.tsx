@@ -63,61 +63,60 @@ export default function RequirementModal({
 }: Props) {
   const isEdit = initial !== null;
 
-  const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  // Seeded from `initial` at mount. The caller mounts this modal only while it
+  // is open and keys it on the row being edited, so mounting *is* opening —
+  // there is no reset-on-open effect.
+  const [form, setForm] = useState<FormState>(() =>
+    initial
+      ? {
+          trainingType: initial.trainingType ?? "",
+          trainingTitle: initial.trainingTitle ?? "",
+          trainingFullTitle: initial.trainingFullTitle ?? "",
+          quantityRequired: initial.quantityRequired,
+        }
+      : EMPTY_FORM
+  );
   const [formError, setFormError] = useState("");
   const [trainingOptions, setTrainingOptions] = useState<TrainingOption[]>([]);
-  const [alternatives, setAlternatives] = useState<AlternativeEntry[]>([]);
-  const [showAlts, setShowAlts] = useState(false);
+  const [alternatives, setAlternatives] = useState<AlternativeEntry[]>(() =>
+    (initial?.alternatives ?? []).map((a) => ({ ...a }))
+  );
+  const [showAlts, setShowAlts] = useState(() => (initial?.alternatives?.length ?? 0) > 0);
   const [altTrainingOptions, setAltTrainingOptions] = useState<Record<string, TrainingOption[]>>({});
   const [saving, setSaving] = useState(false);
 
-  const fetchTrainingsByType = async (type: string) => {
-    if (!type) {
-      setTrainingOptions([]);
-      return;
-    }
-    try {
-      const res = await fetch(`/api/training-data/by-type?type=${type}`);
-      if (res.ok) setTrainingOptions(await res.json());
-    } catch { /* ignore */ }
+  // Written as a promise chain rather than async/await so that every state
+  // write provably lands in a later microtask — which is what lets the mount
+  // effect below call it.
+  const fetchTrainingsByType = (type: string) => {
+    fetch(`/api/training-data/by-type?type=${type}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((options: TrainingOption[] | null) => {
+        if (options) setTrainingOptions(options);
+      })
+      .catch(() => { /* ignore */ });
   };
 
-  const fetchAltTrainingsByType = async (key: string, type: string) => {
+  const fetchAltTrainingsByType = (key: string, type: string) => {
     if (!type) return;
-    try {
-      const res = await fetch(`/api/training-data/by-type?type=${type}`);
-      if (res.ok) {
-        const options = await res.json();
-        setAltTrainingOptions((prev) => ({ ...prev, [key]: options }));
-      }
-    } catch { /* ignore */ }
+    fetch(`/api/training-data/by-type?type=${type}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((options: TrainingOption[] | null) => {
+        if (options) setAltTrainingOptions((prev) => ({ ...prev, [key]: options }));
+      })
+      .catch(() => { /* ignore */ });
   };
 
+  // Load the training pickers for whatever `initial` already selected.
   useEffect(() => {
-    if (!open) return;
-    setFormError("");
-    setAltTrainingOptions({});
-    if (initial) {
-      setForm({
-        trainingType: initial.trainingType ?? "",
-        trainingTitle: initial.trainingTitle ?? "",
-        trainingFullTitle: initial.trainingFullTitle ?? "",
-        quantityRequired: initial.quantityRequired,
-      });
-      if (initial.trainingType) fetchTrainingsByType(initial.trainingType);
-      const alts = initial.alternatives || [];
-      setAlternatives(alts.map((a) => ({ ...a })));
-      setShowAlts(alts.length > 0);
-      alts.forEach((a, i) => {
-        if (a.trainingType) fetchAltTrainingsByType(`${i}`, a.trainingType);
-      });
-    } else {
-      setForm(EMPTY_FORM);
-      setTrainingOptions([]);
-      setAlternatives([]);
-      setShowAlts(false);
-    }
-  }, [open, initial]);
+    if (!initial) return;
+    if (initial.trainingType) fetchTrainingsByType(initial.trainingType);
+    (initial.alternatives ?? []).forEach((a, i) => {
+      if (a.trainingType) fetchAltTrainingsByType(`${i}`, a.trainingType);
+    });
+    // Mount-only: the caller remounts this component for each open/target.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleSave = async () => {
     setFormError("");
@@ -167,7 +166,8 @@ export default function RequirementModal({
             onChange={(e) => {
               const type = e.target.value;
               setForm((f) => ({ ...f, trainingType: type, trainingTitle: "", trainingFullTitle: "" }));
-              fetchTrainingsByType(type);
+              if (type) fetchTrainingsByType(type);
+              else setTrainingOptions([]);
             }}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
           >

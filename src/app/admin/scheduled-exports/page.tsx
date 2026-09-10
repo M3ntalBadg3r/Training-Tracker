@@ -310,46 +310,62 @@ export default function ScheduledExportsPage() {
   const [healthByProvider, setHealthByProvider] = useState<Record<string, HealthEntry>>({});
   const [wizardProvider, setWizardProvider] = useState<WizardProvider | null>(null);
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [schedsRes, credsRes, healthRes, compsRes] = await Promise.all([
+  // The fetch half, written as a promise chain rather than async/await: an async
+  // function called from an effect is treated as writing state synchronously,
+  // whereas a chain provably defers every write to a later microtask. It still
+  // returns a promise, so the mutation handlers can await it.
+  const refreshData = useCallback(
+    () =>
+      Promise.all([
         fetch("/api/admin/scheduled-exports"),
         fetch("/api/admin/scheduled-exports/credentials"),
         fetch("/api/admin/scheduled-exports/credentials/health"),
         fetch("/api/companies"),
-      ]);
-      setSchedules(await schedsRes.json());
-      if (compsRes.ok) {
-        const cd = (await compsRes.json()) as { companies: CompanyOption[] };
-        setCompanies(cd.companies);
-      }
-      const credsData: Credential[] = await credsRes.json();
-      setCredentials(credsData);
-      // Repopulate form fields with saved non-sensitive values
-      setCredForms((prev) => {
-        const updated = { ...prev };
-        for (const cred of credsData) {
-          if (cred.config) {
-            updated[cred.provider] = { ...(prev[cred.provider] ?? {}), ...cred.config } as Record<string, string | boolean>;
+      ])
+        .then(([schedsRes, credsRes, healthRes, compsRes]) =>
+          Promise.all([
+            schedsRes.json(),
+            credsRes.json() as Promise<Credential[]>,
+            healthRes.ok ? (healthRes.json() as Promise<HealthEntry[]>) : null,
+            compsRes.ok ? (compsRes.json() as Promise<{ companies: CompanyOption[] }>) : null,
+          ])
+        )
+        .then(([scheds, credsData, healthData, compsData]) => {
+          setSchedules(scheds);
+          if (compsData) setCompanies(compsData.companies);
+          setCredentials(credsData);
+          // Repopulate form fields with saved non-sensitive values
+          setCredForms((prev) => {
+            const updated = { ...prev };
+            for (const cred of credsData) {
+              if (cred.config) {
+                updated[cred.provider] = { ...(prev[cred.provider] ?? {}), ...cred.config } as Record<string, string | boolean>;
+              }
+            }
+            return updated;
+          });
+          if (healthData) {
+            setHealthByProvider(Object.fromEntries(healthData.map((h) => [h.provider, h])));
           }
-        }
-        return updated;
-      });
-      if (healthRes.ok) {
-        const healthData = (await healthRes.json()) as HealthEntry[];
-        setHealthByProvider(Object.fromEntries(healthData.map((h) => [h.provider, h])));
-      }
-    } catch {
-      // ignore
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+        })
+        .catch(() => {
+          // ignore
+        })
+        .finally(() => setLoading(false)),
+    []
+  );
+
+  // What the mutation handlers call: re-enter the loading state, then refresh.
+  // `loading` already starts true, so the mount effect below needs only the
+  // fetch half.
+  const loadData = useCallback(() => {
+    setLoading(true);
+    return refreshData();
+  }, [refreshData]);
 
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    refreshData();
+  }, [refreshData]);
 
   // ─── Schedule CRUD ──────────────────────────────────────────────────────────
 

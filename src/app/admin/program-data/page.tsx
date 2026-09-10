@@ -88,31 +88,30 @@ export default function ProgramDataPage() {
 
   const [lastImport, setLastImport] = useState<string | null>(null);
 
-  const fetchPrograms = async () => {
-    try {
-      const res = await fetch("/api/admin/program-data/program");
-      if (res.ok) setPrograms(await res.json());
-      else setError("Failed to load programs");
-    } catch {
-      setError("Failed to load programs");
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Promise chains rather than async/await (matching fetchLastImport below): an
+  // async function called from an effect is treated as writing state
+  // synchronously, whereas a chain provably defers every write to a microtask.
+  const fetchPrograms = () =>
+    fetch("/api/admin/program-data/program")
+      .then((res) => {
+        if (!res.ok) throw new Error("failed");
+        return res.json();
+      })
+      .then((rows) => setPrograms(rows))
+      .catch(() => setError("Failed to load programs"))
+      .finally(() => setLoading(false));
 
-  const fetchRows = async () => {
-    try {
-      const res = await fetch("/api/admin/program-data");
-      if (res.ok) setAllRows(await res.json());
-    } catch { /* ignore */ }
-  };
+  const fetchRows = () =>
+    fetch("/api/admin/program-data")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((rows) => { if (rows) setAllRows(rows); })
+      .catch(() => { /* ignore */ });
 
-  const fetchTiers = async () => {
-    try {
-      const res = await fetch("/api/admin/program-tiers");
-      if (res.ok) setAllTiers(await res.json());
-    } catch { /* ignore */ }
-  };
+  const fetchTiers = () =>
+    fetch("/api/admin/program-tiers")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((rows) => { if (rows) setAllTiers(rows); })
+      .catch(() => { /* ignore */ });
 
   const fetchLastImport = () => {
     fetch("/api/import-metadata?key=program-data")

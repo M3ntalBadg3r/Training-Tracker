@@ -253,7 +253,7 @@ export default function StudentRecordPage({
       list.unshift({ id: student.companyId, name: student.companyName ?? "Current company" });
     }
     return list;
-  }, [scopeCompanies, student?.companyId, student?.companyName]);
+  }, [scopeCompanies, student]);
 
   const fullTitleOptions = useMemo(() => {
     const seen = new Set<string>();

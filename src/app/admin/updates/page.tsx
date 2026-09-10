@@ -95,7 +95,9 @@ const DAYS_OF_WEEK = [
 
 export default function UpdatesPage() {
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
-  const [checking, setChecking] = useState(false);
+  // Seeded true because the mount effect always runs a check — that keeps the
+  // "Checking..." state out of a synchronous setState inside that effect.
+  const [checking, setChecking] = useState(true);
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({
     status: "idle",
   });
@@ -115,7 +117,9 @@ export default function UpdatesPage() {
   const [loadingLog, setLoadingLog] = useState(false);
   const [recentReleases, setRecentReleases] = useState<ReleaseInfo[]>([]);
   const [releasesUrl, setReleasesUrl] = useState<string>("");
-  const [loadingReleases, setLoadingReleases] = useState(false);
+  // Seeded true because the mount effect is the only caller — same reason as
+  // `checking` above.
+  const [loadingReleases, setLoadingReleases] = useState(true);
   const [expandedRelease, setExpandedRelease] = useState<string | null>(null);
   const [showChannelSwitch, setShowChannelSwitch] = useState(false);
   const [switchingChannel, setSwitchingChannel] = useState(false);
@@ -127,34 +131,40 @@ export default function UpdatesPage() {
   const currentVersion = process.env.APP_VERSION || "0.0";
   const channel = process.env.UPDATE_CHANNEL || "stable";
 
-  // Load schedule, recent releases, and check for updates on mount
-  useEffect(() => {
-    fetch("/api/admin/updates/schedule")
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.enabled !== undefined) {
-          setSchedule({ ...data, time: utcToLocal(data.time) });
-        }
-      })
-      .catch(() => {});
-    fetchRecentReleases();
-    checkForUpdates();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Promise chains rather than async/await: an async function called from an
+  // effect is treated as writing state synchronously, whereas a chain provably
+  // defers every write to a later microtask.
+  const fetchRecentReleases = useCallback(
+    () =>
+      fetch("/api/admin/updates/releases")
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.releases) setRecentReleases(data.releases);
+          if (data.releasesUrl) setReleasesUrl(data.releasesUrl);
+        })
+        .catch(() => { /* Ignore */ })
+        .finally(() => setLoadingReleases(false)),
+    []
+  );
 
-  const fetchRecentReleases = async () => {
-    setLoadingReleases(true);
+  // Declared above startPolling, which captures it: a function referenced by a
+  // memoized callback must be declared before it, and memoized itself so the
+  // callback doesn't capture a new identity on every render.
+  const fetchUpdateLog = useCallback(async () => {
+    setLoadingLog(true);
     try {
-      const res = await fetch("/api/admin/updates/releases");
+      const res = await fetch("/api/admin/updates/log");
       const data = await res.json();
-      if (data.releases) setRecentReleases(data.releases);
-      if (data.releasesUrl) setReleasesUrl(data.releasesUrl);
+      if (data.log) {
+        setUpdateLog(data.log);
+        setLogOpen(true);
+      }
     } catch {
       // Ignore
     } finally {
-      setLoadingReleases(false);
+      setLoadingLog(false);
     }
-  };
+  }, []);
 
   // Poll update status
   const stopPolling = useCallback(() => {
@@ -210,30 +220,53 @@ export default function UpdatesPage() {
         }
       }
     }, 2000);
-  }, [stopPolling]);
+  }, [stopPolling, fetchUpdateLog]);
 
   useEffect(() => {
     return () => stopPolling();
   }, [stopPolling]);
 
-  const checkForUpdates = async () => {
+  // The fetch half, with no synchronous state write, so the mount effect can
+  // call it directly.
+  const runUpdateCheck = useCallback(
+    () =>
+      fetch("/api/admin/updates/check")
+        .then((res) => res.json())
+        .then((data) => setUpdateInfo(data))
+        .catch(() =>
+          setUpdateInfo({
+            currentVersion,
+            latestVersion: null,
+            updateAvailable: false,
+            error: "Failed to check for updates",
+          })
+        )
+        .finally(() => setChecking(false)),
+    [currentVersion]
+  );
+
+  // The button handler: clears the previous result and re-enters the checking
+  // state before running the same fetch.
+  const checkForUpdates = () => {
     setChecking(true);
     setUpdateInfo(null);
-    try {
-      const res = await fetch("/api/admin/updates/check");
-      const data = await res.json();
-      setUpdateInfo(data);
-    } catch {
-      setUpdateInfo({
-        currentVersion,
-        latestVersion: null,
-        updateAvailable: false,
-        error: "Failed to check for updates",
-      });
-    } finally {
-      setChecking(false);
-    }
+    runUpdateCheck();
   };
+
+  // Load schedule, recent releases, and check for updates on mount
+  useEffect(() => {
+    fetch("/api/admin/updates/schedule")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.enabled !== undefined) {
+          setSchedule({ ...data, time: utcToLocal(data.time) });
+        }
+      })
+      .catch(() => {});
+    fetchRecentReleases();
+    runUpdateCheck();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const applyUpdate = async () => {
     setUpdateStatus({
@@ -300,22 +333,6 @@ export default function UpdatesPage() {
       setChannelSwitchError("Could not connect to server");
     } finally {
       setSwitchingChannel(false);
-    }
-  };
-
-  const fetchUpdateLog = async () => {
-    setLoadingLog(true);
-    try {
-      const res = await fetch("/api/admin/updates/log");
-      const data = await res.json();
-      if (data.log) {
-        setUpdateLog(data.log);
-        setLogOpen(true);
-      }
-    } catch {
-      // Ignore
-    } finally {
-      setLoadingLog(false);
     }
   };
 

@@ -103,12 +103,32 @@ export default function RequirementModal({
   const isEdit = initial !== null;
   const isTierScope = scope.kind === "tier";
 
-  const [form, setForm] = useState<FormState>(EMPTY_FORM);
-  const [noTraining, setNoTraining] = useState(false);
+  // Seeded from `initial` at mount. The caller mounts this modal only while it
+  // is open and keys it on the row being edited, so mounting *is* opening —
+  // there is no reset-on-open effect.
+  const [form, setForm] = useState<FormState>(() =>
+    initial
+      ? {
+          specialisationId: initial.specialisationId ?? 0,
+          purpose: initial.purpose ?? "qualification",
+          level: initial.level,
+          trainingType: initial.trainingType ?? "",
+          trainingTitle: initial.trainingTitle ?? "",
+          trainingFullTitle: initial.trainingFullTitle ?? "",
+          quantityRequired: initial.quantityRequired,
+          minimumPerTheatre: initial.minimumPerTheatre ?? null,
+        }
+      : EMPTY_FORM
+  );
+  const [noTraining, setNoTraining] = useState(
+    () => initial !== null && initial.level === "Global" && initial.trainingTitle === null
+  );
   const [formError, setFormError] = useState("");
   const [trainingOptions, setTrainingOptions] = useState<TrainingOption[]>([]);
-  const [alternatives, setAlternatives] = useState<AlternativeEntry[]>([]);
-  const [showAlts, setShowAlts] = useState(false);
+  const [alternatives, setAlternatives] = useState<AlternativeEntry[]>(() =>
+    (initial?.alternatives ?? []).map((a) => ({ ...a }))
+  );
+  const [showAlts, setShowAlts] = useState(() => (initial?.alternatives?.length ?? 0) > 0);
   const [altTrainingOptions, setAltTrainingOptions] = useState<Record<string, TrainingOption[]>>({});
   const [saving, setSaving] = useState(false);
 
@@ -117,60 +137,39 @@ export default function RequirementModal({
   const [newSpecName, setNewSpecName] = useState("");
   const [addSpecError, setAddSpecError] = useState("");
 
-  const fetchTrainingsByType = async (type: string) => {
-    if (!type) {
-      setTrainingOptions([]);
-      return;
-    }
-    try {
-      const res = await fetch(`/api/training-data/by-type?type=${type}`);
-      if (res.ok) setTrainingOptions(await res.json());
-    } catch { /* ignore */ }
+  // Written as promise chains rather than async/await so that every state write
+  // provably lands in a later microtask — which is what lets the mount effect
+  // below call them. Callers handle the empty-type case themselves, so no
+  // synchronous setState is reachable from here either.
+  const fetchTrainingsByType = (type: string) => {
+    fetch(`/api/training-data/by-type?type=${type}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((options: TrainingOption[] | null) => {
+        if (options) setTrainingOptions(options);
+      })
+      .catch(() => { /* ignore */ });
   };
 
-  const fetchAltTrainingsByType = async (key: string, type: string) => {
+  const fetchAltTrainingsByType = (key: string, type: string) => {
     if (!type) return;
-    try {
-      const res = await fetch(`/api/training-data/by-type?type=${type}`);
-      if (res.ok) {
-        const options = await res.json();
-        setAltTrainingOptions((prev) => ({ ...prev, [key]: options }));
-      }
-    } catch { /* ignore */ }
+    fetch(`/api/training-data/by-type?type=${type}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((options: TrainingOption[] | null) => {
+        if (options) setAltTrainingOptions((prev) => ({ ...prev, [key]: options }));
+      })
+      .catch(() => { /* ignore */ });
   };
 
-  // Initialise form state whenever the modal opens (or the target row changes).
+  // Load the training pickers for whatever `initial` already selected.
   useEffect(() => {
-    if (!open) return;
-    setFormError("");
-    setAltTrainingOptions({});
-    if (initial) {
-      setForm({
-        specialisationId: initial.specialisationId ?? 0,
-        purpose: initial.purpose ?? "qualification",
-        level: initial.level,
-        trainingType: initial.trainingType ?? "",
-        trainingTitle: initial.trainingTitle ?? "",
-        trainingFullTitle: initial.trainingFullTitle ?? "",
-        quantityRequired: initial.quantityRequired,
-        minimumPerTheatre: initial.minimumPerTheatre ?? null,
-      });
-      setNoTraining(initial.level === "Global" && initial.trainingTitle === null);
-      if (initial.trainingType) fetchTrainingsByType(initial.trainingType);
-      const alts = initial.alternatives || [];
-      setAlternatives(alts.map((a) => ({ ...a })));
-      setShowAlts(alts.length > 0);
-      alts.forEach((a, i) => {
-        if (a.trainingType) fetchAltTrainingsByType(`${i}`, a.trainingType);
-      });
-    } else {
-      setForm(EMPTY_FORM);
-      setNoTraining(false);
-      setTrainingOptions([]);
-      setAlternatives([]);
-      setShowAlts(false);
-    }
-  }, [open, initial]);
+    if (!initial) return;
+    if (initial.trainingType) fetchTrainingsByType(initial.trainingType);
+    (initial.alternatives ?? []).forEach((a, i) => {
+      if (a.trainingType) fetchAltTrainingsByType(`${i}`, a.trainingType);
+    });
+    // Mount-only: the caller remounts this component for each open/target.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleSave = async () => {
     setFormError("");
@@ -362,7 +361,8 @@ export default function RequirementModal({
                   onChange={(e) => {
                     const type = e.target.value;
                     setForm((f) => ({ ...f, trainingType: type, trainingTitle: "", trainingFullTitle: "" }));
-                    fetchTrainingsByType(type);
+                    if (type) fetchTrainingsByType(type);
+                    else setTrainingOptions([]);
                   }}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
                 >

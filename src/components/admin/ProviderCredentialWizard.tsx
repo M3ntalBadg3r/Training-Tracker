@@ -102,34 +102,45 @@ export default function ProviderCredentialWizard({ open, provider, onClose, onSu
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [authUrl, setAuthUrl] = useState<string | null>(null);
-  const [redirectUri, setRedirectUri] = useState<string>("");
   const [copied, setCopied] = useState(false);
   const [connectedAs, setConnectedAs] = useState<string | null>(null);
   const popupRef = useRef<Window | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Compute the redirect URI client-side so it's visible on the registration step
-  // (matches the same derivation the server does at runtime).
-  useEffect(() => {
-    if (!open) return;
-    setRedirectUri(
-      `${window.location.origin}/api/admin/scheduled-exports/credentials/oauth/${provider}/callback`,
-    );
-  }, [open, provider]);
+  // Computed during render rather than stored in state: it is a pure function of
+  // `provider` and the page origin. The window guard is for the server pass —
+  // the caller mounts this wizard only after a click, so it never actually
+  // server-renders. (The old reset-on-open effect is gone for the same reason:
+  // the caller mounts the wizard only while it is open, so mounting *is*
+  // opening and every useState above already starts at its reset value.)
+  const redirectUri =
+    typeof window === "undefined"
+      ? ""
+      : `${window.location.origin}/api/admin/scheduled-exports/credentials/oauth/${provider}/callback`;
 
-  // Reset all state when the wizard is opened.
-  useEffect(() => {
-    if (!open) return;
-    setStep("intro");
-    setClientId("");
-    setClientSecret("");
-    setTenantId("");
-    setFolderValue("");
-    setErrorMessage(null);
-    setAuthUrl(null);
-    setConnectedAs(null);
-    setSubmitting(false);
-  }, [open]);
+  async function runTestConnection() {
+    try {
+      const res = await fetch("/api/admin/scheduled-exports/credentials/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setConnectedAs(data.info?.email ?? data.info?.user ?? null);
+        setStep("success");
+        onSuccess();
+      } else {
+        setErrorMessage(data.error ?? "Test Connection failed.");
+        setStep("error");
+      }
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : String(err));
+      setStep("error");
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   // Listen for the OAuth callback popup's postMessage.
   useEffect(() => {
@@ -159,30 +170,6 @@ export default function ProviderCredentialWizard({ open, provider, onClose, onSu
     return () => window.removeEventListener("message", handleMessage);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, provider]);
-
-  async function runTestConnection() {
-    try {
-      const res = await fetch("/api/admin/scheduled-exports/credentials/test", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        setConnectedAs(data.info?.email ?? data.info?.user ?? null);
-        setStep("success");
-        onSuccess();
-      } else {
-        setErrorMessage(data.error ?? "Test Connection failed.");
-        setStep("error");
-      }
-    } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : String(err));
-      setStep("error");
-    } finally {
-      setSubmitting(false);
-    }
-  }
 
   async function handleConnect() {
     if (!clientId.trim() || !clientSecret.trim()) {

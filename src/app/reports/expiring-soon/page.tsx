@@ -14,6 +14,7 @@ import ExportMenu, { type ExportFormat } from "@/components/ui/ExportMenu";
 import { ExportableChart, useChartCapture } from "@/components/reports/ChartCaptureProvider";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
 import { useDebounce } from "@/hooks/useDebounce";
+import { useFetchJson } from "@/hooks/useFetchJson";
 import { useDateFormat } from "@/components/date-format/DateFormatProvider";
 import GeoScopeFilter, { GeoScope } from "@/components/reports/GeoScopeFilter";
 import { Search, ArrowLeft, Clock, AlertTriangle, AlertCircle, CalendarClock } from "lucide-react";
@@ -118,8 +119,6 @@ function ExpiringSoonPageInner() {
   const [page, setPage] = useState(() => Math.max(1, parseInt(searchParams.get("page") ?? "1", 10) || 1));
   const [pageSize, setPageSize] = useState(() => parseInt(searchParams.get("pageSize") ?? "25", 10) || 25);
 
-  const [data, setData] = useState<ExpiringResponse | null>(null);
-  const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
 
   const buildParams = useCallback(
@@ -172,23 +171,13 @@ function ExpiringSoonPageInner() {
     }
   }, [buildParams, search, groupBy, pathname, router, searchParams]);
 
-  useEffect(() => {
-    if (companyScope.loading) return;
-    const url = withCompany(`/api/reports/expiring-soon?${buildParams({}).toString()}`, companyScope.selected);
-    let cancelled = false;
-    setLoading(true);
-    fetch(url)
-      .then((r) => r.json())
-      .then((d: ExpiringResponse) => {
-        if (!cancelled) setData(d);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [buildParams, companyScope.loading, companyScope.selected]);
+  // `loading` is derived by useFetchJson (loadedKey !== requestKey), so the
+  // loading state still re-appears on every filter change without a
+  // synchronous setState inside an effect.
+  const dataUrl = companyScope.loading
+    ? null
+    : withCompany(`/api/reports/expiring-soon?${buildParams({}).toString()}`, companyScope.selected);
+  const { data, loading } = useFetchJson<ExpiringResponse>(dataUrl);
 
   const charts = data?.charts ?? { horizonSeries: [], heatmap: { theatres: [], data: [] } };
   const kpis = data?.kpis ?? { total: 0, m1: 0, m3: 0, m6: 0 };
