@@ -155,6 +155,13 @@ export default function BackupPage() {
   const [portableCreating, setPortableCreating] = useState(false);
   // Passphrase entered when restoring a portable backup.
   const [restorePassphrase, setRestorePassphrase] = useState("");
+  // Step-up re-auth for a restore: the caller re-enters their own password
+  // (+ MFA code when their account uses it) so a stolen cookie alone can't
+  // trigger a dataset-replacing restore. Reused by both restore modals.
+  const [restorePassword, setRestorePassword] = useState("");
+  const [restoreMfaCode, setRestoreMfaCode] = useState("");
+  const [serverRestorePassword, setServerRestorePassword] = useState("");
+  const [serverRestoreMfaCode, setServerRestoreMfaCode] = useState("");
   const [result, setResult] = useState<{
     type: "success" | "warning" | "error";
     message: string;
@@ -373,6 +380,8 @@ export default function BackupPage() {
       const formData = new FormData();
       formData.append("file", selectedFile);
       if (restorePassphrase) formData.append("passphrase", restorePassphrase);
+      formData.append("password", restorePassword);
+      if (restoreMfaCode) formData.append("mfaCode", restoreMfaCode);
       const res = await fetch("/api/admin/backup", {
         method: "POST",
         body: formData,
@@ -390,6 +399,8 @@ export default function BackupPage() {
       setSelectedFile(null);
       setConfirmText("");
       setRestorePassphrase("");
+      setRestorePassword("");
+      setRestoreMfaCode("");
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
@@ -512,7 +523,11 @@ export default function BackupPage() {
       const res = await fetch("/api/admin/backup/restore-file", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filename: serverRestoreFile }),
+        body: JSON.stringify({
+          filename: serverRestoreFile,
+          password: serverRestorePassword,
+          mfaCode: serverRestoreMfaCode || undefined,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Restore failed");
@@ -526,6 +541,8 @@ export default function BackupPage() {
       setServerRestoring(false);
       setServerRestoreFile("");
       setServerRestoreConfirm("");
+      setServerRestorePassword("");
+      setServerRestoreMfaCode("");
     }
   };
 
@@ -1099,6 +1116,8 @@ export default function BackupPage() {
           setConfirmText("");
           setSelectedFile(null);
           setRestorePassphrase("");
+          setRestorePassword("");
+          setRestoreMfaCode("");
           if (fileInputRef.current) fileInputRef.current.value = "";
         }}
         title="Confirm Restore"
@@ -1110,6 +1129,8 @@ export default function BackupPage() {
                 setConfirmText("");
                 setSelectedFile(null);
                 setRestorePassphrase("");
+                setRestorePassword("");
+                setRestoreMfaCode("");
                 if (fileInputRef.current) fileInputRef.current.value = "";
               }}
               className="px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300"
@@ -1118,7 +1139,7 @@ export default function BackupPage() {
             </button>
             <button
               onClick={handleRestore}
-              disabled={confirmText !== "RESTORE" || restoring}
+              disabled={confirmText !== "RESTORE" || !restorePassword || restoring}
               className="px-4 py-2 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50"
             >
               {restoring ? "Restoring..." : "Confirm Restore"}
@@ -1143,6 +1164,34 @@ export default function BackupPage() {
             value={restorePassphrase}
             onChange={(e) => setRestorePassphrase(e.target.value)}
             placeholder="Passphrase used to create the portable backup"
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+          />
+        </div>
+        <div className="mb-3">
+          <label className="block text-sm text-gray-600 mb-1">
+            Your account password{" "}
+            <span className="text-gray-400">(required to confirm it&apos;s you)</span>
+          </label>
+          <input
+            type="password"
+            value={restorePassword}
+            onChange={(e) => setRestorePassword(e.target.value)}
+            placeholder="Your current password"
+            autoComplete="current-password"
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+          />
+        </div>
+        <div className="mb-3">
+          <label className="block text-sm text-gray-600 mb-1">
+            MFA code{" "}
+            <span className="text-gray-400">(only if your account uses MFA)</span>
+          </label>
+          <input
+            type="text"
+            inputMode="numeric"
+            value={restoreMfaCode}
+            onChange={(e) => setRestoreMfaCode(e.target.value)}
+            placeholder="6-digit code"
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
           />
         </div>
@@ -1282,6 +1331,8 @@ export default function BackupPage() {
           setShowServerRestore(false);
           setServerRestoreFile("");
           setServerRestoreConfirm("");
+          setServerRestorePassword("");
+          setServerRestoreMfaCode("");
         }}
         title="Confirm Restore"
         actions={
@@ -1291,6 +1342,8 @@ export default function BackupPage() {
                 setShowServerRestore(false);
                 setServerRestoreFile("");
                 setServerRestoreConfirm("");
+                setServerRestorePassword("");
+                setServerRestoreMfaCode("");
               }}
               className="px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300"
             >
@@ -1299,7 +1352,9 @@ export default function BackupPage() {
             <button
               onClick={handleServerRestore}
               disabled={
-                serverRestoreConfirm !== "RESTORE" || serverRestoring
+                serverRestoreConfirm !== "RESTORE" ||
+                !serverRestorePassword ||
+                serverRestoring
               }
               className="px-4 py-2 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50"
             >
@@ -1315,6 +1370,34 @@ export default function BackupPage() {
         <p className="text-sm font-mono bg-gray-100 px-3 py-2 rounded mb-3">
           {serverRestoreFile}
         </p>
+        <div className="mb-3">
+          <label className="block text-sm text-gray-600 mb-1">
+            Your account password{" "}
+            <span className="text-gray-400">(required to confirm it&apos;s you)</span>
+          </label>
+          <input
+            type="password"
+            value={serverRestorePassword}
+            onChange={(e) => setServerRestorePassword(e.target.value)}
+            placeholder="Your current password"
+            autoComplete="current-password"
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+          />
+        </div>
+        <div className="mb-3">
+          <label className="block text-sm text-gray-600 mb-1">
+            MFA code{" "}
+            <span className="text-gray-400">(only if your account uses MFA)</span>
+          </label>
+          <input
+            type="text"
+            inputMode="numeric"
+            value={serverRestoreMfaCode}
+            onChange={(e) => setServerRestoreMfaCode(e.target.value)}
+            placeholder="6-digit code"
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+          />
+        </div>
         <p className="text-gray-600 mb-3">
           Type <strong>RESTORE</strong> to confirm.
         </p>

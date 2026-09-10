@@ -1,20 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
 import JSZip from "jszip";
 import { requireSuperAdmin, handleAuthError } from "@/lib/auth";
-import { loadBackupArchive, restoreFullArchive } from "../route";
+import { loadBackupArchive, restoreFullArchive, requireRestoreStepUp } from "../route";
 import path from "path";
 import fs from "fs";
 import { getBackupPath } from "@/lib/backup-config";
 
 export async function POST(request: NextRequest) {
+  let auth;
   try {
-    await requireSuperAdmin(request);
+    auth = await requireSuperAdmin(request);
   } catch (error) {
     return handleAuthError(error);
   }
 
   try {
-    const { filename } = await request.json();
+    const { filename, password, mfaCode } = await request.json();
+
+    // Step-up first: a server-side restore is as destructive as an uploaded one.
+    const stepUpError = await requireRestoreStepUp(auth.sub, password, mfaCode);
+    if (stepUpError) return stepUpError;
+
     if (!filename) {
       return NextResponse.json({ error: "Filename is required" }, { status: 400 });
     }
@@ -34,8 +40,11 @@ export async function POST(request: NextRequest) {
 
     const fileBuffer = fs.readFileSync(filePath);
     let zipBytes: Buffer;
+    let archiveWasEncrypted = false;
     try {
-      zipBytes = await loadBackupArchive(fileBuffer);
+      const loaded = await loadBackupArchive(fileBuffer);
+      zipBytes = loaded.bytes;
+      archiveWasEncrypted = loaded.encrypted;
     } catch (err) {
       return NextResponse.json(
         { error: err instanceof Error ? err.message : "Failed to read archive" },
@@ -49,7 +58,7 @@ export async function POST(request: NextRequest) {
     // they drifted: the upload path grew a credentials guard this one never
     // got, so any saved backup containing a user aborted the whole restore with
     // an opaque 500. One implementation now — see restoreFullArchive.
-    return await restoreFullArchive(zip, request);
+    return await restoreFullArchive(zip, request, archiveWasEncrypted);
   } catch (err) {
     console.error("Backup restore failed:", err);
     return NextResponse.json(

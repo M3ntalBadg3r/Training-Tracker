@@ -8,6 +8,8 @@ import {
   sealMfaSecret,
   clearAuthCookie,
   isRequestSecure,
+  verifyPassword,
+  verifyMfaToken,
 } from "@/lib/auth";
 import { invalidateUserStatusCache } from "@/lib/user-status";
 import {
@@ -27,6 +29,14 @@ import { invalidateSystemSettingsCache } from "@/lib/system-settings";
 // system without copying learner data. The discriminator is `kind` inside
 // `backup_metadata.json`; older archives without the field are treated as full.
 export type BackupKind = "full" | "config";
+
+// Upper bound on an uploaded archive before it is buffered into memory and
+// expanded by JSZip. A real full backup of a large install is well under this;
+// the cap exists to stop an unbounded upload (or a zip-bomb's compressed
+// payload) from exhausting memory on the restore path. Override for unusually
+// large datasets via BACKUP_MAX_RESTORE_MB.
+export const MAX_RESTORE_UPLOAD_BYTES =
+  Math.max(1, Number(process.env.BACKUP_MAX_RESTORE_MB) || 512) * 1024 * 1024;
 
 /**
  * Options shared by the backup writers.
@@ -87,18 +97,62 @@ export async function generateBackupArchive(opts: BackupOptions = {}): Promise<{
 }
 
 /**
+ * Step-up re-authentication for a restore. A restore replaces the entire
+ * dataset — and a credential-bearing one replaces every account's password —
+ * so it must not be triggerable by a hijacked cookie alone (threat 1: a phished
+ * Admin). The caller has already passed `requireSuperAdmin`; this re-verifies
+ * their *own* password, plus a current TOTP code when their account has MFA,
+ * mirroring the step-up on the admin password-reset and MFA-disable routes.
+ * Returns a ready error response, or null when the challenge passes.
+ */
+export async function requireRestoreStepUp(
+  userId: number,
+  password: string | undefined,
+  mfaCode: string | undefined
+): Promise<NextResponse | null> {
+  if (!password) {
+    return NextResponse.json(
+      { error: "Your current password is required to restore a backup" },
+      { status: 400 }
+    );
+  }
+  const me = await prisma.user.findUnique({ where: { id: userId } });
+  if (!me) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const passwordValid = await verifyPassword(password, me.passwordHash);
+  if (!passwordValid) {
+    return NextResponse.json({ error: "Invalid password" }, { status: 401 });
+  }
+  if (me.mfaEnabled && me.mfaSecret) {
+    if (!mfaCode || !verifyMfaToken(me.mfaSecret, mfaCode)) {
+      return NextResponse.json({ error: "MFA code required" }, { status: 401 });
+    }
+  }
+  return null;
+}
+
+/**
  * Decrypt-if-needed loader for a backup archive. Accepts:
  *  - a raw ZIP buffer (legacy / unencrypted deployments),
  *  - a key-encrypted buffer (magic 'TT01' + IV + tag + ciphertext), keyed by
  *    this install's ENCRYPTION_KEY, or
  *  - a portable, passphrase-encrypted buffer (magic 'TT02' + salt + IV + tag +
  *    ciphertext) — restorable on any system given the original passphrase.
- * Returns the inner ZIP bytes ready for JSZip.loadAsync.
+ * Returns the inner ZIP bytes ready for JSZip.loadAsync, plus whether the
+ * input was actually encrypted (TT01 key-encrypted or TT02 passphrase). That
+ * flag is the authority for whether a credential-bearing restore may proceed:
+ * the write side only ever stamps `includesCredentials` on an archive it
+ * encrypted (see the contract on BackupOptions and generateBackupArchive), so
+ * a *plaintext* zip claiming to carry credentials is always crafted or
+ * corrupt. Honouring that flag off an unencrypted archive is a full
+ * instance-takeover primitive — an attacker's `users.json` with a chosen
+ * `passwordHash` would replace every account — so the restore paths refuse it.
  */
 export async function loadBackupArchive(
   input: ArrayBuffer | Buffer,
   passphrase?: string
-): Promise<Buffer> {
+): Promise<{ bytes: Buffer; encrypted: boolean }> {
   const buf = Buffer.isBuffer(input) ? input : Buffer.from(input);
   if (isPassphraseEncryptedBuffer(buf)) {
     if (!passphrase) {
@@ -106,7 +160,7 @@ export async function loadBackupArchive(
         "This is a portable backup. Enter the passphrase it was created with to restore it."
       );
     }
-    return decryptBufferWithPassphrase(buf, passphrase);
+    return { bytes: decryptBufferWithPassphrase(buf, passphrase), encrypted: true };
   }
   if (isEncryptedBuffer(buf)) {
     if (!isEncryptionConfigured()) {
@@ -114,9 +168,9 @@ export async function loadBackupArchive(
         "Archive is encrypted but ENCRYPTION_KEY is not configured. Set ENCRYPTION_KEY to the same value used when the backup was created, or restore a portable backup instead."
       );
     }
-    return decryptBuffer(buf);
+    return { bytes: decryptBuffer(buf), encrypted: true };
   }
-  return buf;
+  return { bytes: buf, encrypted: false };
 }
 
 export async function generateBackupZip(opts: BackupOptions = {}): Promise<{
@@ -370,23 +424,50 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  let auth;
   try {
-    await requireSuperAdmin(request);
+    auth = await requireSuperAdmin(request);
   } catch (error) {
     return handleAuthError(error);
   }
   const formData = await request.formData();
   const file = formData.get("file") as File | null;
   const passphrase = (formData.get("passphrase") as string | null) || undefined;
+  const password = (formData.get("password") as string | null) || undefined;
+  const mfaCode = (formData.get("mfaCode") as string | null) || undefined;
+
+  // Step-up before any destructive read of the archive: a stolen cookie alone
+  // must not be able to overwrite the dataset.
+  const stepUpError = await requireRestoreStepUp(auth.sub, password, mfaCode);
+  if (stepUpError) return stepUpError;
 
   if (!file) {
     return NextResponse.json({ error: "No file provided" }, { status: 400 });
   }
 
+  // Cap the body before arrayBuffer() buffers the whole thing into memory — a
+  // per-field check afterwards would be too late (mirrors the branding route).
+  const declaredLength = Number(request.headers.get("content-length") ?? 0);
+  if (declaredLength > MAX_RESTORE_UPLOAD_BYTES) {
+    return NextResponse.json(
+      { error: "Backup file is too large to restore." },
+      { status: 413 }
+    );
+  }
+
   const arrayBuffer = await file.arrayBuffer();
+  if (arrayBuffer.byteLength > MAX_RESTORE_UPLOAD_BYTES) {
+    return NextResponse.json(
+      { error: "Backup file is too large to restore." },
+      { status: 413 }
+    );
+  }
   let zipBytes: Buffer;
+  let archiveWasEncrypted = false;
   try {
-    zipBytes = await loadBackupArchive(arrayBuffer, passphrase);
+    const loaded = await loadBackupArchive(arrayBuffer, passphrase);
+    zipBytes = loaded.bytes;
+    archiveWasEncrypted = loaded.encrypted;
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Failed to read archive" },
@@ -413,7 +494,7 @@ export async function POST(request: NextRequest) {
     return restoreConfigArchive(zip);
   }
 
-  return restoreFullArchive(zip, request);
+  return restoreFullArchive(zip, request, archiveWasEncrypted);
 }
 
 /** Per-table outcome of a full restore. */
@@ -461,7 +542,8 @@ export interface RestoreCounts {
  */
 export async function restoreFullArchive(
   zip: JSZip,
-  request?: NextRequest
+  request?: NextRequest,
+  archiveWasEncrypted = false
 ): Promise<NextResponse> {
   // Validate required files exist (full restore)
   const requiredFiles = [
@@ -516,16 +598,35 @@ export async function restoreFullArchive(
   // authoritative answer; the per-row check is the belt-and-braces fallback,
   // since a row without a passwordHash cannot be inserted at all (the column is
   // required) and would abort the whole transaction.
-  let includesCredentials = false;
+  let metadataClaimsCredentials = false;
   const metaFile = zip.file("backup_metadata.json");
   if (metaFile) {
     try {
       const meta = JSON.parse(await metaFile.async("string"));
-      includesCredentials = meta?.includesCredentials === true;
+      metadataClaimsCredentials = meta?.includesCredentials === true;
     } catch {
       // Unparseable metadata: treat as credential-free, i.e. preserve users.
     }
   }
+
+  // The credential-carrying flag is only trustworthy on an encrypted archive.
+  // The write side never stamps it on a plaintext zip (see loadBackupArchive's
+  // contract), so a plaintext archive that claims credentials is crafted or
+  // corrupt — and honouring it would let anyone who can reach this route
+  // (a SuperAdmin, or a hijacked SuperAdmin session) replace every account's
+  // password hash from attacker-controlled JSON. Refuse it outright rather than
+  // silently dropping the flag, so tampering is visible instead of a quiet no-op.
+  if (metadataClaimsCredentials && !archiveWasEncrypted) {
+    return NextResponse.json(
+      {
+        error:
+          "This archive claims to include user credentials but is not encrypted. Credential-bearing backups are always encrypted; this archive is unencrypted, so it is corrupt or was modified. Restore will not proceed.",
+      },
+      { status: 400 }
+    );
+  }
+  const includesCredentials = metadataClaimsCredentials;
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const restorableUsers: any[] = includesCredentials
     ? // eslint-disable-next-line @typescript-eslint/no-explicit-any

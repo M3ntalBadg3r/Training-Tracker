@@ -860,7 +860,7 @@ Restoring a config backup wipes and replaces only the included reference tables 
 
 #### Restore from Backup
 
-Click **Upload Backup File** and select a previously created backup file. If it is a **portable** backup, enter the passphrase it was created with in the **Portable backup passphrase** field (leave it blank for a standard backup). A confirmation dialog will appear — type `RESTORE` to proceed.
+Click **Upload Backup File** and select a previously created backup file. If it is a **portable** backup, enter the passphrase it was created with in the **Portable backup passphrase** field (leave it blank for a standard backup). Because a restore replaces the whole dataset, you must also **re-enter your own account password** (and a current MFA code if your account uses MFA) to confirm it is really you — a valid session alone is not enough. A confirmation dialog will appear — type `RESTORE` to proceed.
 
 **What happens during restore:**
 
@@ -871,11 +871,12 @@ Click **Upload Backup File** and select a previously created backup file. If it 
 **User accounts and companies are handled differently from everything else:**
 
 - **User accounts are only replaced when the archive can actually restore them** — that is, when it was created with "Include user credentials". Otherwise the existing accounts are left exactly as they are, and the result banner tells you how many accounts the archive held and that none could be restored. An archive with no credentials can never leave you with an instance nobody can log in to.
+- **A credential-bearing archive is only honoured when it is encrypted.** Because user credentials are only ever written into an *encrypted* archive, a plaintext archive that claims to carry them is corrupt or was tampered with, and the restore is refused rather than trusting attacker-supplied account data.
 - **Companies are matched by name, never deleted.** A company in the archive that already exists here is reused; one that does not is created. Nothing that references a company (students, offerings, scheduled exports, API-key grants) is disturbed, and student records are re-pointed at the right company by name even if the ids differ between the two systems.
 - A restore that *would* leave the system with no enabled SuperAdmin is **refused** before anything is changed.
 - Restoring accounts signs you out, because the restored accounts are not the ones your current session was issued for. Sign in again with an account from the archive.
 
-**Important:** Restoring a backup **replaces all existing data** other than the user accounts described above. Create a backup of the current system first if you need to preserve it.
+**Important:** Restoring a backup **replaces all existing data** other than the user accounts described above. Create a backup of the current system first if you need to preserve it. Uploaded archives are capped at 512 MB by default (override with `BACKUP_MAX_RESTORE_MB` in `.env`) so an oversized or malformed upload cannot exhaust server memory.
 
 #### Automatic Backups
 

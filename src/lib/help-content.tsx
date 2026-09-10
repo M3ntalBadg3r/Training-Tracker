@@ -1753,8 +1753,12 @@ const helpSections: Record<string, HelpSection> = {
           Click <strong>Upload Backup File</strong> and select a previously
           created backup file. For a <strong>portable</strong> backup, enter its
           passphrase in the <strong>Portable backup passphrase</strong>{" "}field
-          (leave it blank for a standard backup). A confirmation dialog will
-          appear &mdash; type <code>RESTORE</code> to proceed.
+          (leave it blank for a standard backup). Because a restore replaces the
+          whole dataset, you also <strong>re-enter your own account
+          password</strong>{" "}(and a current MFA code if your account uses MFA)
+          to confirm it&apos;s really you &mdash; a signed-in session on its own
+          is not enough. A confirmation dialog will appear &mdash; type{" "}
+          <code>RESTORE</code> to proceed.
         </p>
         <p><strong>What happens during restore:</strong></p>
         <ol>
@@ -1801,6 +1805,13 @@ const helpSections: Record<string, HelpSection> = {
             Restoring accounts signs you out, since the restored accounts
             aren&apos;t the ones your session was issued for. Sign in again with
             an account from the archive.
+          </li>
+          <li>
+            <strong>A credential-bearing archive is only accepted when it is
+            encrypted.</strong>{" "}User credentials are only ever written into an
+            encrypted backup, so an unencrypted archive that claims to include
+            them is corrupt or was modified &mdash; the restore is refused rather
+            than trusting the account data inside it.
           </li>
         </ul>
         <p>
