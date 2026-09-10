@@ -3,45 +3,15 @@ import { requireSuperAdmin, handleAuthError } from "@/lib/auth";
 import { isEncryptionConfigured } from "@/lib/crypto";
 import path from "path";
 import fs from "fs";
+import {
+  type AutoBackupConfig,
+  backupConfigPath,
+  readAutoBackupConfig,
+} from "@/lib/backup-config";
+import { backupRoot, resolveWithin } from "@/lib/safe-path";
 import { execSync } from "child_process";
 
-interface AutoBackupConfig {
-  enabled: boolean;
-  frequency: "daily" | "weekly";
-  time: string;
-  dayOfWeek?: number;
-  backupPath: string;
-  retentionCount: number;
-  // Whether scheduled archives carry password hashes / MFA secrets. Only
-  // honoured when ENCRYPTION_KEY is set (see backup/save); without it a
-  // restore of a scheduled backup cannot recreate user accounts.
-  includeCredentials: boolean;
-}
-
-const CONFIG_FILENAME = ".auto-backup.json";
 const CRON_MARKER = "# training-tracker-auto-backup";
-
-function getConfigPath(): string {
-  return path.join(process.cwd(), CONFIG_FILENAME);
-}
-
-function readConfig(): AutoBackupConfig {
-  const configPath = getConfigPath();
-  if (fs.existsSync(configPath)) {
-    const stored = JSON.parse(fs.readFileSync(configPath, "utf-8"));
-    // A config written before includeCredentials existed has no such key, and
-    // an absent opt-in must read as "off" rather than undefined.
-    return { ...stored, includeCredentials: stored.includeCredentials === true };
-  }
-  return {
-    enabled: false,
-    frequency: "daily",
-    time: "02:00",
-    backupPath: "/opt/training-tracker/backups",
-    retentionCount: 5,
-    includeCredentials: false,
-  };
-}
 
 function buildCronExpression(config: AutoBackupConfig): string {
   const [hour, minute] = config.time.split(":").map(Number);
@@ -62,7 +32,7 @@ export async function GET(request: NextRequest) {
   // the credentials checkboxes are unavailable on an install with no
   // ENCRYPTION_KEY, and this is the request the backup page already makes.
   return NextResponse.json({
-    ...readConfig(),
+    ...readAutoBackupConfig(),
     encryptionConfigured: isEncryptionConfigured(),
   });
 }
@@ -87,12 +57,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid time value." }, { status: 400 });
     }
 
-    // Validate backupPath is under an allowed base directory
-    const backupPath = body.backupPath || "/opt/training-tracker/backups";
-    const resolvedPath = path.resolve(backupPath);
-    if (!resolvedPath.startsWith("/opt/training-tracker/")) {
+    // Confine the backup directory to the operator-controlled root. The old
+    // check hardcoded /opt/training-tracker/ and compared with a plain
+    // startsWith, which also accepted sibling paths such as
+    // /opt/training-tracker-elsewhere/.
+    const root = backupRoot();
+    const resolvedPath = resolveWithin(root, body.backupPath || root, { allowBase: true });
+    if (!resolvedPath) {
       return NextResponse.json(
-        { error: "Backup path must be under /opt/training-tracker/" },
+        {
+          error:
+            `Backup path must be inside the backups folder (${root}). ` +
+            `Set BACKUP_ROOT in .env to use a different location.`,
+        },
         { status: 400 }
       );
     }
@@ -113,7 +90,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Save config
-    fs.writeFileSync(getConfigPath(), JSON.stringify(config, null, 2));
+    fs.writeFileSync(backupConfigPath(), JSON.stringify(config, null, 2));
 
     // Update cron. The backup schedule is user-configurable, so unlike the
     // fixed auto-update/auto-export entries this one stays a crontab edit — but

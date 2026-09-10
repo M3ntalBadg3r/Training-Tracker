@@ -4,22 +4,7 @@ import { verifyCronSignature } from "@/lib/cron-auth";
 import { generateBackupArchive } from "../route";
 import path from "path";
 import fs from "fs";
-
-const CONFIG_FILENAME = ".auto-backup.json";
-
-interface AutoBackupConfig {
-  backupPath: string;
-  retentionCount: number;
-  includeCredentials?: boolean;
-}
-
-function readConfig(): AutoBackupConfig {
-  const configPath = path.join(process.cwd(), CONFIG_FILENAME);
-  if (fs.existsSync(configPath)) {
-    return JSON.parse(fs.readFileSync(configPath, "utf-8"));
-  }
-  return { backupPath: "/opt/training-tracker/backups", retentionCount: 5 };
-}
+import { readAutoBackupConfig } from "@/lib/backup-config";
 
 function enforceRetention(backupPath: string, retentionCount: number) {
   if (!fs.existsSync(backupPath)) return;
@@ -54,7 +39,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const config = readConfig();
+    const config = readAutoBackupConfig();
 
     // Ensure directory exists
     if (!fs.existsSync(config.backupPath)) {

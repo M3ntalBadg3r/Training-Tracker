@@ -47,10 +47,13 @@ export async function POST(request: NextRequest) {
       const result = await checkCredential(provider);
       results.push({ provider, status: result.status, error: result.error });
     } catch (err) {
+      // The probe already classifies its own transport failures; anything
+      // reaching here is unexpected, so log it and stay generic.
+      console.warn(`[credentials/check] ${provider} check threw:`, err);
       results.push({
         provider,
         status: "failed",
-        error: err instanceof Error ? err.message : String(err),
+        error: "The connection test failed. See the server log for details.",
       });
     }
   }

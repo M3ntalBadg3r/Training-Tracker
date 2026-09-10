@@ -375,6 +375,8 @@ The `.env` file requires:
 | `APP_BASE_URL` | *(Recommended in production)* Canonical externally-resolvable origin (e.g. `https://tracker.example.com`). Used to build OAuth redirect URIs without trusting `X-Forwarded-Host` headers, and to decide whether the auth cookie is marked `Secure` (an `https://` value marks it Secure; otherwise the cookie's Secure flag follows the request protocol, so plain-HTTP LAN access still works). |
 | `TRUSTED_PROXIES` | *(Recommended in production)* Comma-separated list of trusted reverse-proxy IPs whose `X-Forwarded-For` entries are stripped when extracting the real client IP for rate limiting. Defaults to `127.0.0.1,::1`. |
 | `NODE_EXTRA_CA_CERTS` | *(Optional)* Path to a CA bundle Node should trust in addition to its built-ins — set this when running behind an SSL-inspecting proxy/firewall so Prisma engine downloads and outbound HTTPS succeed. The installer sets it to `/etc/ssl/certs/ca-certificates.crt` automatically on Debian. |
+| `EXPORT_ROOT` | *(Optional)* Folder that scheduled exports delivered to the local filesystem may write into. Defaults to `<app dir>/exports` (i.e. `/opt/training-tracker/exports` on a standard install). A schedule pointing anywhere else is refused. On a systemd host, a value outside `/opt/training-tracker` also needs a matching `ReadWritePaths=` drop-in. |
+| `BACKUP_ROOT` | *(Optional)* Folder that backup archives are written to, and the only tree the folder picker on the Backup page can browse. Defaults to `<app dir>/backups`, with the same `ReadWritePaths=` caveat as `EXPORT_ROOT`. |
 | `GITHUB_TOKEN` | *(Optional)* GitHub personal access token — required for update checks **and git pulls** on private repositories |
 
 #### Setting up GITHUB_TOKEN
@@ -879,7 +881,7 @@ Click **Upload Backup File** and select a previously created backup file. If it 
 
 Enable automatic backups to save backups to a local directory on a schedule:
 
-- **Backup Location** — Configurable directory path with a folder browser GUI. Click **Browse** to navigate the filesystem and select or create a folder.
+- **Backup Location** — Configurable directory path with a folder browser GUI. Click **Browse** to navigate and select or create a folder. The picker is confined to the backups folder — `<app dir>/backups` by default, or whatever `BACKUP_ROOT` is set to in `.env` — and paths outside it are refused.
 - **Retention** — Set how many backup copies to keep. When the count is exceeded, the oldest backups are automatically deleted.
 - **Include user credentials** — Off by default. Turn it on if you want a scheduled backup to be able to restore user accounts; it requires `ENCRYPTION_KEY` to be set, since scheduled backups are otherwise written unencrypted.
 - **Schedule** — Daily or weekly, at a configurable time.
@@ -964,11 +966,18 @@ Click **Add Schedule** and configure:
 
 | Destination | Setup Required |
 |-------------|----------------|
-| **Local Filesystem** | Output path on the server; optional retention count |
+| **Local Filesystem** | Output path on the server, inside the exports folder; optional retention count |
 | **Email** | Recipient address; SMTP credentials in Provider Credentials |
 | **Google Drive** | Folder ID (optional); OAuth credentials connected via the wizard |
 | **Box** | Folder ID (optional); OAuth credentials connected via the wizard |
 | **OneDrive** | Folder path (optional); Azure app + delegated OAuth connected via the wizard |
+
+Exports written to the local filesystem must land inside the server's exports
+folder — `<app dir>/exports` by default, or whatever `EXPORT_ROOT` is set to in
+`.env`. Enter a name such as `monthly` for a sub-folder, or leave the path blank
+to use the folder itself. A schedule pointing outside it is refused when you save
+it, and reports an error rather than running if it was configured before this
+restriction existed.
 
 #### Provider Credentials
 

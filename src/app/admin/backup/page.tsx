@@ -63,6 +63,7 @@ interface BackupFile {
 }
 
 interface BrowseResult {
+  basePath: string;
   currentPath: string;
   parentPath: string | null;
   directories: { name: string; path: string }[];
@@ -174,7 +175,7 @@ export default function BackupPage() {
     frequency: "daily",
     time: "02:00",
     dayOfWeek: 0,
-    backupPath: "/opt/training-tracker/backups",
+    backupPath: "",
     retentionCount: 5,
     includeCredentials: false,
   });
@@ -449,9 +450,10 @@ export default function BackupPage() {
   const browsePath = async (dirPath: string) => {
     setBrowserLoading(true);
     try {
-      const res = await fetch(
-        `/api/admin/backup/browse?path=${encodeURIComponent(dirPath)}`
-      );
+      // No path means "wherever the server's backups root is" — the client no
+      // longer assumes it, since BACKUP_ROOT can move it.
+      const query = dirPath ? `?path=${encodeURIComponent(dirPath)}` : "";
+      const res = await fetch(`/api/admin/backup/browse${query}`);
       const data = await res.json();
       setBrowserData(data);
     } catch {
@@ -464,7 +466,7 @@ export default function BackupPage() {
   const openBrowser = () => {
     setShowBrowser(true);
     setNewFolderName("");
-    browsePath(schedule.backupPath || "/opt/training-tracker/backups");
+    browsePath(schedule.backupPath);
   };
 
   const createFolder = async () => {
@@ -544,8 +546,13 @@ export default function BackupPage() {
   };
 
   // --- Breadcrumb segments ---
+  // Relative to the base, so the trail offers no route above it. The picker is
+  // confined to the backups root server-side, and the crumbs should say so.
   const breadcrumbSegments = browserData
-    ? browserData.currentPath.split("/").filter(Boolean)
+    ? browserData.currentPath
+        .slice(browserData.basePath.length)
+        .split("/")
+        .filter(Boolean)
     : [];
 
   return (
@@ -1322,14 +1329,15 @@ export default function BackupPage() {
             {/* Breadcrumb */}
             <div className="flex items-center gap-1 text-sm mb-3 flex-wrap bg-gray-50 p-2 rounded-lg">
               <button
-                onClick={() => browsePath("/")}
+                onClick={() => browsePath(browserData.basePath)}
                 className="text-blue-600 hover:underline font-mono"
+                title={browserData.basePath}
               >
-                /
+                Backups
               </button>
               {breadcrumbSegments.map((seg, i) => {
                 const segPath =
-                  "/" + breadcrumbSegments.slice(0, i + 1).join("/");
+                  browserData.basePath + "/" + breadcrumbSegments.slice(0, i + 1).join("/");
                 return (
                   <span key={segPath} className="flex items-center gap-1">
                     <ChevronRight size={12} className="text-gray-400" />

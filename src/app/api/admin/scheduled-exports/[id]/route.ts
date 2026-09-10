@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, handleAuthError } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { canAccessCompany } from "@/lib/company-scope";
+import { normaliseLocalExportConfig } from "@/lib/export-destinations";
 
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   let auth;
@@ -35,6 +36,19 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       nextCompanyId = cid;
     }
 
+    // Validate against the destination this row will *end up* with: a PUT that
+    // only changes `config` still has to be checked against the stored one.
+    const effectiveDestination = destination ?? existing.destination;
+    let storedConfig: Record<string, unknown> | undefined =
+      config !== undefined ? (config ?? {}) : undefined;
+    if (effectiveDestination === "local" && storedConfig !== undefined) {
+      const local = normaliseLocalExportConfig(storedConfig);
+      if ("error" in local) {
+        return NextResponse.json({ error: local.error }, { status: 400 });
+      }
+      storedConfig = { ...storedConfig, ...local };
+    }
+
     const record = await prisma.scheduledExport.update({
       where: { id: numId },
       data: {
@@ -43,7 +57,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         ...(reportType !== undefined && { reportType }),
         ...(format !== undefined && { format }),
         ...(destination !== undefined && { destination }),
-        ...(config !== undefined && { config }),
+        ...(storedConfig !== undefined && { config: storedConfig as object }),
         ...(enabled !== undefined && { enabled }),
         ...(frequency !== undefined && { frequency }),
         ...(time !== undefined && { time }),

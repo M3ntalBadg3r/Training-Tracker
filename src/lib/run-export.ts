@@ -5,11 +5,20 @@
 import prisma from "@/lib/prisma";
 import { fetchReportData, type ReportType } from "@/lib/report-queries";
 import { generateExportBuffer, getFileExtension, getMimeType } from "@/lib/server-export";
-import { deliverLocal, deliverEmail, deliverGoogleDrive, deliverBox, deliverOneDrive } from "@/lib/export-destinations";
+import {
+  deliverLocal,
+  deliverEmail,
+  deliverGoogleDrive,
+  deliverBox,
+  deliverOneDrive,
+  normaliseLocalExportConfig,
+  ExportConfigError,
+} from "@/lib/export-destinations";
 import {
   markCredentialSuccess,
   markCredentialFailure,
   readCredentialConfig,
+  describeDeliveryError,
 } from "@/lib/credential-health";
 import type { ScheduledExport } from "@prisma/client";
 
@@ -44,10 +53,17 @@ export async function runExport(schedule: ScheduledExport): Promise<{ status: st
 
     switch (schedule.destination) {
       case "local": {
-        await deliverLocal(buffer, filename, {
-          path: String(config.path ?? "/opt/training-tracker/exports"),
-          retentionCount: config.retentionCount ? Number(config.retentionCount) : 0,
-        });
+        // Re-validate on every run, not just on save: `execute` replays rows
+        // persisted before this check existed, so a path stored earlier must
+        // still be rejected now.
+        const local = normaliseLocalExportConfig(config);
+        if ("error" in local) {
+          console.warn(
+            `[run-export] schedule ${schedule.id} ("${schedule.name}") has an out-of-root output path; refusing to deliver.`,
+          );
+          throw new ExportConfigError(local.error);
+        }
+        await deliverLocal(buffer, filename, local);
         break;
       }
 
@@ -122,14 +138,18 @@ export async function runExport(schedule: ScheduledExport): Promise<{ status: st
 
     return { status: "success" };
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown error";
+    // A delivery failure carries the remote host's own answer, which for a
+    // network destination describes what is reachable from this server. Our own
+    // messages pass through; anything else is classified. The raw text is
+    // logged, not stored.
+    const { message, status } = describeDeliveryError(err, credentialProvider);
     await prisma.scheduledExport.update({
       where: { id: schedule.id },
       data: { lastRunAt: new Date(), lastStatus: "error", lastError: message },
     });
 
     if (credentialProvider) {
-      await markCredentialFailure(credentialProvider, message);
+      await markCredentialFailure(credentialProvider, message, status);
     }
 
     return { status: "error", error: message };

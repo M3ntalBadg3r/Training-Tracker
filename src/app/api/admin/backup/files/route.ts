@@ -2,17 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireSuperAdmin, handleAuthError } from "@/lib/auth";
 import path from "path";
 import fs from "fs";
-
-const CONFIG_FILENAME = ".auto-backup.json";
-
-function getBackupPath(): string {
-  const configPath = path.join(process.cwd(), CONFIG_FILENAME);
-  if (fs.existsSync(configPath)) {
-    const config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
-    return config.backupPath || "/opt/training-tracker/backups";
-  }
-  return "/opt/training-tracker/backups";
-}
+import { getBackupPath } from "@/lib/backup-config";
 
 export async function GET(request: NextRequest) {
   try {

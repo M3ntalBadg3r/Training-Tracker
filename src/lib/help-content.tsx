@@ -1824,7 +1824,10 @@ const helpSections: Record<string, HelpSection> = {
           <li>
             <strong>Location</strong>{" "}&mdash; The directory where backups are
             saved. Click <strong>Browse</strong> to open a folder picker. You
-            can also create new folders from the browser.
+            can also create new folders from the browser. The picker stays
+            inside the server&rsquo;s backups folder &mdash; <code>backups</code>{" "}
+            in the application directory unless <code>BACKUP_ROOT</code> is set
+            in <code>.env</code> &mdash; and a location outside it is refused.
           </li>
           <li>
             <strong>Keep last N backups</strong>{" "}&mdash; When the number of
@@ -1878,7 +1881,7 @@ const helpSections: Record<string, HelpSection> = {
             <tr><th>Destination</th><th>What you need</th></tr>
           </thead>
           <tbody>
-            <tr><td><strong>Local Filesystem</strong></td><td>A writable path on the server</td></tr>
+            <tr><td><strong>Local Filesystem</strong></td><td>A folder inside the server&rsquo;s exports folder</td></tr>
             <tr><td><strong>Email</strong></td><td>SMTP credentials + recipient address</td></tr>
             <tr><td><strong>Google Drive</strong></td><td>An OAuth Client ID + Secret. Connect via the wizard — Training Tracker captures the refresh token automatically.</td></tr>
             <tr><td><strong>Box</strong></td><td>A Custom App Client ID + Secret (User Authentication OAuth 2.0). Connect via the wizard — Training Tracker captures the refresh token automatically.</td></tr>

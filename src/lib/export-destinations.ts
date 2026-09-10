@@ -12,6 +12,7 @@ import path from "path";
 import { Readable } from "stream";
 import { refreshTokens } from "@/lib/oauth-providers";
 import { persistRefreshToken } from "@/lib/credential-health";
+import { exportRoot, resolveWithin } from "@/lib/safe-path";
 
 // ─── Local filesystem ────────────────────────────────────────────────────────────
 
@@ -20,20 +21,75 @@ export interface LocalConfig {
   retentionCount?: number;
 }
 
+/**
+ * Thrown when a schedule's stored destination is not usable. The message is
+ * written by us and is safe to show an admin, unlike a raw delivery error —
+ * `run-export` uses this type to tell the two apart.
+ */
+export class ExportConfigError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ExportConfigError";
+  }
+}
+
+/**
+ * Coerce a stored `config` blob into a usable local destination.
+ *
+ * `config` is untyped JSON written by any company Admin, so nothing in it can be
+ * trusted. The directory must resolve inside `exportRoot()`; a relative value is
+ * treated as a sub-folder of it, and omitting it altogether means the root.
+ */
+export function normaliseLocalExportConfig(
+  config: Record<string, unknown>,
+): { path: string; retentionCount: number } | { error: string } {
+  const root = exportRoot();
+  const requested = config.path == null || config.path === "" ? root : config.path;
+  const resolved = resolveWithin(root, requested, { allowBase: true });
+
+  if (!resolved) {
+    return {
+      error:
+        `Output path must be inside the exports folder (${root}). ` +
+        `Choose a folder there, or set EXPORT_ROOT in .env to the folder you want to export to.`,
+    };
+  }
+
+  return { path: resolved, retentionCount: normaliseRetention(config.retentionCount) };
+}
+
+/**
+ * Retention must be a whole number of files to keep. A fractional value used to
+ * reach `Array.prototype.slice`, which truncates toward zero — so `0.5` passed
+ * the `> 0` guard and then sliced from index 0, deleting every file in the
+ * directory including the export just written.
+ */
+function normaliseRetention(value: unknown): number {
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.max(0, Math.trunc(n)) : 0;
+}
+
 export async function deliverLocal(buffer: Buffer, filename: string, config: LocalConfig): Promise<void> {
-  const dir = config.path;
+  // Re-assert containment here rather than trusting the caller: this function
+  // performs the mkdir, the write and the delete sweep, so the check belongs
+  // next to the syscalls it protects.
+  const dir = resolveWithin(exportRoot(), config.path, { allowBase: true });
+  if (!dir) {
+    throw new ExportConfigError("Output path is outside the exports folder.");
+  }
+
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
   fs.writeFileSync(path.join(dir, filename), buffer);
 
-  const retention = config.retentionCount ?? 0;
+  const retention = normaliseRetention(config.retentionCount);
   if (retention > 0) {
     const ext = path.extname(filename);
     const files = fs
-      .readdirSync(dir)
-      .filter((f) => f.endsWith(ext))
-      .map((f) => ({ name: f, mtime: fs.statSync(path.join(dir, f)).mtimeMs }))
+      .readdirSync(dir, { withFileTypes: true })
+      .filter((e) => e.isFile() && e.name.endsWith(ext))
+      .map((e) => ({ name: e.name, mtime: fs.statSync(path.join(dir, e.name)).mtimeMs }))
       .sort((a, b) => b.mtime - a.mtime);
     for (const file of files.slice(retention)) {
       fs.unlinkSync(path.join(dir, file.name));
