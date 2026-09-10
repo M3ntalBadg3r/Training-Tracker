@@ -254,6 +254,22 @@ now enforced mechanically.
 5. **Cache keys encode the company scope** and every result-affecting query
    param — see `lib/report-cache.ts`.
 
+## `next.config.ts` — `agentRules: false`
+
+`next dev` in Next 16.3+ appends a `nextjs-agent-rules` block to `CLAUDE.md` on
+every boot. `agentRules: false` turns that off (their guard is
+`agentRules !== false`). It arrived as a side effect of the 16.2.1 → 16.3.4
+upgrade in `ff59292`, not as a choice, and it only ever fired on `next dev` —
+production runs `next build` + `next start`, which is why it went unnoticed
+until someone ran the dev server.
+
+Keep it off. A hand-maintained document that silently re-modifies itself shows
+up as an unexplained dirty file in every `git status`, which invites a
+"cleanup" with `git checkout CLAUDE.md` — and that discards any real edits in
+flight, not just the generated block. That happened while writing this section.
+**If `CLAUDE.md` ever shows as modified unexpectedly, read the diff before
+discarding it; never `git checkout` it reflexively.**
+
 ## Coding Conventions
 
 - Enum values: PascalCase (`InstructorLedTraining`, `PreSales`)
