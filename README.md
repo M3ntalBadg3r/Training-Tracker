@@ -204,6 +204,16 @@ runuser -u training-tracker -- npm run build
 systemctl restart training-tracker
 ```
 
+**`npm install` fails to fetch the spreadsheet engine (`cdn.sheetjs.com`)** — The
+spreadsheet engine behind every Excel import and export is installed from the
+vendor's own CDN rather than the npm registry, because the registry copy is
+frozen on an old release with two known security advisories. Installs and
+updates therefore need outbound HTTPS to **`cdn.sheetjs.com`** as well as
+`registry.npmjs.org`. If your firewall or proxy allow-lists hosts, add it — the
+symptom is `npm install` failing on the `xlsx` package with a network or
+certificate error. This also applies whenever the lockfile is regenerated (see
+the previous entry), since that re-downloads the package.
+
 **Update fails at step 5 (Building application), with `Killed` or with a
 Turbopack panic** — Usually the Linux out-of-memory (OOM) killer terminating
 `next build`. Next.js 16's production build uses **Turbopack**, which allocates
