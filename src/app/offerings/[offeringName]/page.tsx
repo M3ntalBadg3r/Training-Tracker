@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import PageHeader from "@/components/layout/PageHeader";
@@ -8,6 +8,7 @@ import Modal from "@/components/ui/Modal";
 import { ExportMenu } from "@/components/programs/ProgramCompliance";
 import { useCompanyScope } from "@/components/company/CompanyScopeProvider";
 import { trainingTypeLabel } from "@/lib/utils";
+import { useFetchJson } from "@/hooks/useFetchJson";
 import { ExternalLink, Users, Ship, Anchor, Globe } from "lucide-react";
 
 interface AltOut {
@@ -79,8 +80,6 @@ function OfferingDashboardInner() {
   }, [urlCompanyId, scope.selected, scope.companies]);
   const companyQS = companyId != null ? `&companyId=${companyId}` : "";
 
-  const [data, setData] = useState<OfferingResponse | null>(null);
-  const [loading, setLoading] = useState(true);
   const [level, setLevel] = useState<"country" | "region">("country");
   const [value, setValue] = useState("");
   const [showExport, setShowExport] = useState(false);
@@ -92,22 +91,17 @@ function OfferingDashboardInner() {
 
   const apiBase = `/api/offerings/${encodeURIComponent(offeringName)}`;
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const qs = new URLSearchParams({ level });
-      if (value) qs.set(level, value);
-      const res = await fetch(`${apiBase}?${qs.toString()}${companyQS}`);
-      if (res.ok) setData(await res.json());
-    } finally {
-      setLoading(false);
-    }
-  }, [apiBase, level, value, companyQS]);
-
-  useEffect(() => {
-    if (scope.loading) return;
-    load();
-  }, [load, scope.loading]);
+  // `loading` is derived by useFetchJson (loadedKey !== requestKey), so it still
+  // re-appears on every scope change without a synchronous setState in an
+  // effect. This also adds the out-of-order-response guard the old effect
+  // lacked.
+  const dataUrl = (() => {
+    if (scope.loading) return null;
+    const qs = new URLSearchParams({ level });
+    if (value) qs.set(level, value);
+    return `${apiBase}?${qs.toString()}${companyQS}`;
+  })();
+  const { data, loading } = useFetchJson<OfferingResponse>(dataUrl);
 
   // Reset the selected value when switching level dimension.
   const changeLevel = (l: "country" | "region") => {

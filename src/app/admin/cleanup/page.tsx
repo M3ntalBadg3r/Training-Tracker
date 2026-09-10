@@ -310,6 +310,10 @@ export default function DataCleanUpPage() {
       });
       if (wipeScope === "all") {
         // Users are gone — send the operator to the first-run setup wizard.
+        // A hard navigation is required here, not router.push(): every account
+        // has just been deleted, and the auth / company-scope providers still
+        // hold stale state that a client-side transition would preserve.
+        // eslint-disable-next-line @next/next/no-location-assign-relative-destination
         window.location.href = "/setup";
         return;
       }

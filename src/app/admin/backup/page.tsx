@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
+import { useFetchJson } from "@/hooks/useFetchJson";
 import PageHeader from "@/components/layout/PageHeader";
 import Modal from "@/components/ui/Modal";
 import {
@@ -192,28 +193,23 @@ export default function BackupPage() {
   const [creatingFolder, setCreatingFolder] = useState(false);
 
   // Saved backups state
-  const [backupFiles, setBackupFiles] = useState<BackupFile[]>([]);
-  const [loadingFiles, setLoadingFiles] = useState(false);
+  // `loadingFiles` is derived by useFetchJson (loadedKey !== requestKey), and
+  // `loadBackupFiles` is its reload() — so the manual refresh button and the
+  // post-backup/restore refreshes still work, without a synchronous setState
+  // inside the mount effect.
+  const {
+    data: backupFilesData,
+    loading: loadingFiles,
+    reload: loadBackupFiles,
+  } = useFetchJson<{ files: BackupFile[] }>("/api/admin/backup/files");
+  const backupFiles = useMemo(() => backupFilesData?.files ?? [], [backupFilesData]);
   const [showServerRestore, setShowServerRestore] = useState(false);
   const [serverRestoreFile, setServerRestoreFile] = useState("");
   const [serverRestoreConfirm, setServerRestoreConfirm] = useState("");
   const [serverRestoring, setServerRestoring] = useState(false);
   const [deletingFile, setDeletingFile] = useState<string | null>(null);
 
-  const loadBackupFiles = useCallback(async () => {
-    setLoadingFiles(true);
-    try {
-      const res = await fetch("/api/admin/backup/files");
-      const data = await res.json();
-      setBackupFiles(data.files || []);
-    } catch {
-      // Ignore
-    } finally {
-      setLoadingFiles(false);
-    }
-  }, []);
-
-  // Load schedule and files on mount
+  // Load the backup schedule on mount (files are loaded by useFetchJson above)
   useEffect(() => {
     fetch("/api/admin/backup/schedule")
       .then((r) => r.json())
@@ -227,8 +223,7 @@ export default function BackupPage() {
         }
       })
       .catch(() => {});
-    loadBackupFiles();
-  }, [loadBackupFiles]);
+  }, []);
 
   // --- Manual backup handlers ---
 

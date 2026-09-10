@@ -23,6 +23,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Gate the release on the same checks CI runs, so a release can never be
+      # cut from a tree that does not lint or typecheck.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+        env:
+          DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
       - name: Create release from package.json + notes file
         env:
           GH_TOKEN: ${{ github.token }}

@@ -21,9 +21,14 @@ export default function AccountPage() {
   const [formatSaved, setFormatSaved] = useState(false);
   const [formatError, setFormatError] = useState<string | null>(null);
 
-  useEffect(() => {
+  // Re-sync the picker when the stored preference changes, using React's
+  // "adjust state while rendering" pattern rather than a setState-in-effect —
+  // pendingFormat is user-editable after seeding, so it can't just be derived.
+  const [prevUserFormat, setPrevUserFormat] = useState(userFormat);
+  if (prevUserFormat !== userFormat) {
+    setPrevUserFormat(userFormat);
     setPendingFormat(userFormat ?? "system");
-  }, [userFormat]);
+  }
 
   // MFA Setup state
   const [showMfaSetup, setShowMfaSetup] = useState(false);
@@ -47,20 +52,19 @@ export default function AccountPage() {
   const [disableError, setDisableError] = useState("");
 
   useEffect(() => {
+    const fetchMfaStatus = async () => {
+      try {
+        const res = await fetch("/api/auth/me");
+        if (res.ok) {
+          const data = await res.json();
+          setMfaEnabled(data.mfaEnabled ?? false);
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
     fetchMfaStatus();
   }, []);
-
-  const fetchMfaStatus = async () => {
-    try {
-      const res = await fetch("/api/auth/me");
-      if (res.ok) {
-        const data = await res.json();
-        setMfaEnabled(data.mfaEnabled ?? false);
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleStartMfaSetup = async () => {
     setSetupError("");

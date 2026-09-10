@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useFetchJson } from "@/hooks/useFetchJson";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import PageHeader from "@/components/layout/PageHeader";
@@ -59,15 +60,22 @@ export default function ProgramDetailPage() {
 
   const companyScope = useCompanyScope();
   // Compliance is per-company; force a single-company selection.
+  // Reconciled with React's "adjust state while rendering" pattern rather than a
+  // setState-in-effect. The "all companies" branch is deliberately sticky — it
+  // seeds the first company but must never clobber a later explicit pick.
   const [companyId, setCompanyId] = useState<number | null>(null);
-  useEffect(() => {
-    if (companyScope.loading) return;
+  const companyKey = companyScope.loading
+    ? null
+    : `${companyScope.selected}|${companyScope.companies.map((c) => c.id).join(",")}`;
+  const [prevCompanyKey, setPrevCompanyKey] = useState<string | null>(null);
+  if (companyKey !== null && companyKey !== prevCompanyKey) {
+    setPrevCompanyKey(companyKey);
     if (companyScope.selected !== "all") {
       setCompanyId(companyScope.selected);
     } else if (companyScope.companies.length > 0) {
       setCompanyId((prev) => prev ?? companyScope.companies[0].id);
     }
-  }, [companyScope.loading, companyScope.selected, companyScope.companies]);
+  }
   const companyQS = companyId !== null ? `&companyId=${companyId}` : "";
 
   // Forward-looking projection horizon (0 = today). When > 0 the dashboard shows
@@ -87,9 +95,6 @@ export default function ProgramDetailPage() {
   const [scopeValue, setScopeValue] = useState("");
   const [scopeInitialised, setScopeInitialised] = useState(false);
 
-  const [specs, setSpecs] = useState<Specialisation[]>([]);
-  const [tierBlock, setTierBlock] = useState<TierBlock | null>(null);
-  const [loading, setLoading] = useState(false);
 
   // Student modal
   const [showStudents, setShowStudents] = useState(false);
@@ -143,9 +148,10 @@ export default function ProgramDetailPage() {
   }, [companyId, companyQS, apiBase]);
 
   // Default the scope once we know which levels exist: pick the broadest
-  // configured level, and auto-select the first value for value-requiring levels.
-  useEffect(() => {
-    if (!meta || scopeInitialised || meta.levels.length === 0) return;
+  // configured level, and auto-select the first value for value-requiring
+  // levels. Done while rendering (the `scopeInitialised` latch makes it
+  // one-shot) rather than in an effect, since the user owns the scope after.
+  if (meta && !scopeInitialised && meta.levels.length > 0) {
     if (meta.levels.includes("Global")) {
       setScopeLevel("global");
       setScopeValue("");
@@ -157,7 +163,7 @@ export default function ProgramDetailPage() {
       setScopeValue(countries[0] ?? "");
     }
     setScopeInitialised(true);
-  }, [meta, scopeInitialised, theatres, countries]);
+  }
 
   const changeScopeLevel = (level: ScopeLevel) => {
     setScopeLevel(level);
@@ -168,28 +174,30 @@ export default function ProgramDetailPage() {
   };
 
   // Single scoped fetch — returns both the specialisations report and the tier
-  // block for the selected scope.
-  useEffect(() => {
-    if (companyId === null || !scopeInitialised) return;
-    if (needsValue && !scopeValue) {
-      setSpecs([]);
-      setTierBlock(null);
-      return;
-    }
-    setLoading(true);
+  // block for the selected scope. `loading` is derived by useFetchJson
+  // (loadedKey !== requestKey) rather than written by a synchronous setState in
+  // an effect; this also adds the out-of-order-response guard the old effect
+  // lacked. A null url parks the hook without fetching, which is why `loading`
+  // is masked by `scopeMissing` below — the render checks loading first, and an
+  // incomplete scope must show the "pick a value" state, not a spinner.
+  const reportUrl = (() => {
+    if (companyId === null || !scopeInitialised || scopeMissing) return null;
     const qs = new URLSearchParams({ level: scopeLevel });
     if (scopeLevel === "country") qs.set("country", scopeValue);
     else if (scopeLevel === "region") qs.set("region", scopeValue);
     else if (scopeLevel === "theatre") qs.set("theatre", scopeValue);
-    fetch(`${apiBase}?${qs.toString()}${companyQS}${horizonQS}`)
-      .then((r) => r.json())
-      .then((data) => {
-        setSpecs(data.specialisations || []);
-        setTierBlock(data.tiers ?? null);
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [scopeLevel, scopeValue, needsValue, scopeInitialised, companyId, companyQS, horizonQS, apiBase]);
+    return `${apiBase}?${qs.toString()}${companyQS}${horizonQS}`;
+  })();
+  const { data: reportData, loading: reportLoading } = useFetchJson<{
+    specialisations?: Specialisation[];
+    tiers?: TierBlock | null;
+  }>(reportUrl);
+  const loading = !scopeMissing && reportLoading;
+  const specs = useMemo(
+    () => (scopeMissing ? [] : reportData?.specialisations ?? []),
+    [scopeMissing, reportData]
+  );
+  const tierBlock = scopeMissing ? null : reportData?.tiers ?? null;
 
   const viewStudents = async (
     trainingTitle: string,

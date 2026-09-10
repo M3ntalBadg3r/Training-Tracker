@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Modal from "@/components/ui/Modal";
 import { ProgramTierRow } from "@/types";
 import { Save } from "lucide-react";
@@ -21,25 +21,17 @@ interface Props {
  */
 export default function TierModal({ open, onClose, programName, initial, onSaved }: Props) {
   const isEdit = initial !== null;
-  const [name, setName] = useState("");
-  const [sortOrder, setSortOrder] = useState<number | "">("");
-  const [specialisationsRequired, setSpecialisationsRequired] = useState(1);
+  // Seeded from `initial` at mount. The caller mounts this modal only while it
+  // is open, and keys it on the row being edited, so a fresh instance (and
+  // therefore fresh form state) is what "opening the modal" means — no
+  // reset-on-open effect is needed.
+  const [name, setName] = useState(initial?.name ?? "");
+  const [sortOrder, setSortOrder] = useState<number | "">(initial?.sortOrder ?? "");
+  const [specialisationsRequired, setSpecialisationsRequired] = useState(
+    initial?.specialisationsRequired ?? 1
+  );
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    if (!open) return;
-    setError("");
-    if (initial) {
-      setName(initial.name);
-      setSortOrder(initial.sortOrder);
-      setSpecialisationsRequired(initial.specialisationsRequired);
-    } else {
-      setName("");
-      setSortOrder("");
-      setSpecialisationsRequired(1);
-    }
-  }, [open, initial]);
 
   const handleSave = async () => {
     setError("");

@@ -48,34 +48,39 @@ function OfferingDetailInner() {
   const [removeSpec, setRemoveSpec] = useState<{ id: number; name: string } | null>(null);
   const [removeSpecError, setRemoveSpecError] = useState("");
 
-  const fetchOffering = useCallback(async () => {
-    try {
-      const res = await fetch(`/api/admin/offerings/${encodeURIComponent(offeringName)}${companyQS}`);
-      if (res.ok) setOffering(await res.json());
-      else setError("Failed to load offering");
-    } catch {
-      setError("Failed to load offering");
-    } finally {
-      setLoading(false);
-    }
-  }, [offeringName, companyQS]);
+  // Promise chains rather than async/await: an async function called from an
+  // effect is treated as writing state synchronously, whereas a chain provably
+  // defers every write to a later microtask.
+  const fetchOffering = useCallback(
+    () =>
+      fetch(`/api/admin/offerings/${encodeURIComponent(offeringName)}${companyQS}`)
+        .then((res) => {
+          if (!res.ok) throw new Error("failed");
+          return res.json();
+        })
+        .then((data) => setOffering(data))
+        .catch(() => setError("Failed to load offering"))
+        .finally(() => setLoading(false)),
+    [offeringName, companyQS]
+  );
 
-  const fetchRows = useCallback(async (offeringId: number) => {
-    try {
-      const res = await fetch(`/api/admin/offering-data${companyQS}`);
-      if (res.ok) {
-        const all: OfferingDataRow[] = await res.json();
-        setRows(all.filter((r) => r.offeringId === offeringId));
-      }
-    } catch { /* ignore */ }
-  }, [companyQS]);
+  const fetchRows = useCallback(
+    (offeringId: number) =>
+      fetch(`/api/admin/offering-data${companyQS}`)
+        .then((res) => (res.ok ? (res.json() as Promise<OfferingDataRow[]>) : null))
+        .then((all) => { if (all) setRows(all.filter((r) => r.offeringId === offeringId)); })
+        .catch(() => { /* ignore */ }),
+    [companyQS]
+  );
 
-  const fetchSpecs = useCallback(async () => {
-    try {
-      const res = await fetch("/api/admin/specialisations");
-      if (res.ok) setAllSpecs(await res.json());
-    } catch { /* ignore */ }
-  }, []);
+  const fetchSpecs = useCallback(
+    () =>
+      fetch("/api/admin/specialisations")
+        .then((res) => (res.ok ? res.json() : null))
+        .then((rows) => { if (rows) setAllSpecs(rows); })
+        .catch(() => { /* ignore */ }),
+    []
+  );
 
   useEffect(() => {
     fetchOffering();
@@ -298,7 +303,8 @@ function OfferingDetailInner() {
       {/* Add/Edit requirement */}
       {reqModal && (
         <RequirementModal
-          open={reqModal !== null}
+          key={reqModal.initial?.id ?? `new-${reqModal.specId}`}
+          open
           onClose={() => setReqModal(null)}
           offeringId={offering.id}
           specialisationId={reqModal.specId}

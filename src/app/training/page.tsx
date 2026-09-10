@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo, Suspense } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
+import { useFetchJson } from "@/hooks/useFetchJson";
 import { Download } from "lucide-react";
 import PageHeader from "@/components/layout/PageHeader";
 import DataTable, { DataTableState } from "@/components/data-table/DataTable";
@@ -60,9 +61,7 @@ function TrainingPageInner() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { selected, loading: scopeLoading } = useCompanyScope();
-  const [training, setTraining] = useState<TrainingAvailableRow[]>([]);
   const [visibleRows, setVisibleRows] = useState<TrainingAvailableRow[]>([]);
-  const [loading, setLoading] = useState(true);
   const [lastImport, setLastImport] = useState<string | null>(null);
   const [filterOptions, setFilterOptions] = useState<FilterOptions>({ theatres: [], regions: [], countries: [] });
 
@@ -110,27 +109,31 @@ function TrainingPageInner() {
     [searchParams, pathname, router]
   );
 
-  const fetchTraining = useCallback(() => {
-    if (scopeLoading) return;
+  // `loading` is derived by useFetchJson (loadedKey !== requestKey) rather than
+  // written by a synchronous setState inside an effect; a null url parks the
+  // hook in its loading state while the company scope resolves.
+  const trainingUrl = (() => {
+    if (scopeLoading) return null;
     const params = new URLSearchParams();
     if (theatre) params.set("theatre", theatre);
     if (region) params.set("region", region);
     if (country) params.set("country", country);
     if (activeOnly) params.set("active", "true");
     const qs = params.toString();
-    const base = `/api/training-data${qs ? `?${qs}` : ""}`;
-    setLoading(true);
-    fetch(withCompany(base, selected))
-      .then((res) => res.json())
-      .then((data) => {
-        setTraining(data);
-        // Reset the visible-rows snapshot used by Export. DataTable will
-        // re-emit a filtered slice on its next render via onStateChange.
-        setVisibleRows(data);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  }, [theatre, region, country, activeOnly, selected, scopeLoading]);
+    return withCompany(`/api/training-data${qs ? `?${qs}` : ""}`, selected);
+  })();
+  const { data: trainingData, loading } = useFetchJson<TrainingAvailableRow[]>(trainingUrl);
+  const training = useMemo(() => trainingData ?? [], [trainingData]);
+
+  // Reset the visible-rows snapshot used by Export whenever a new dataset
+  // lands. Done with React's "adjust state while rendering" pattern because
+  // visibleRows is also written by DataTable's onStateChange, so it is seeded
+  // here but owned by the table afterwards.
+  const [prevTraining, setPrevTraining] = useState(training);
+  if (prevTraining !== training) {
+    setPrevTraining(training);
+    setVisibleRows(training);
+  }
 
   const handleTableStateChange = useCallback(
     (state: DataTableState, rows: TrainingAvailableRow[]) => {
@@ -169,10 +172,6 @@ function TrainingPageInner() {
     },
     [searchParams, pathname, router]
   );
-
-  useEffect(() => {
-    fetchTraining();
-  }, [fetchTraining]);
 
   useEffect(() => {
     fetch("/api/training-data/filters")

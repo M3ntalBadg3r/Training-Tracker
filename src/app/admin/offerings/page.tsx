@@ -144,23 +144,30 @@ export default function OfferingsAdminPage() {
     [selectedCompany, setSelectedCompany]
   );
 
-  const fetchOfferings = useCallback(async () => {
-    try {
-      const res = await fetch(withCompany("/api/admin/offerings", companyScope.selected));
-      if (res.ok) setOfferings(await res.json());
-      else setError("Failed to load offerings");
-    } catch {
-      setError("Failed to load offerings");
-    } finally {
-      setLoading(false);
-    }
-  }, [companyScope.selected]);
-  const fetchRows = useCallback(async () => {
-    try {
-      const res = await fetch(withCompany("/api/admin/offering-data", companyScope.selected));
-      if (res.ok) setAllRows(await res.json());
-    } catch { /* ignore */ }
-  }, [companyScope.selected]);
+  // These loaders are written as promise chains (matching fetchLastImport
+  // below) rather than async/await: an async function called from an effect is
+  // treated as writing state synchronously, whereas a chain provably defers
+  // every write to a later microtask.
+  const fetchOfferings = useCallback(
+    () =>
+      fetch(withCompany("/api/admin/offerings", companyScope.selected))
+        .then((res) => {
+          if (!res.ok) throw new Error("failed");
+          return res.json();
+        })
+        .then((rows) => setOfferings(rows))
+        .catch(() => setError("Failed to load offerings"))
+        .finally(() => setLoading(false)),
+    [companyScope.selected]
+  );
+  const fetchRows = useCallback(
+    () =>
+      fetch(withCompany("/api/admin/offering-data", companyScope.selected))
+        .then((res) => (res.ok ? res.json() : null))
+        .then((rows) => { if (rows) setAllRows(rows); })
+        .catch(() => { /* ignore */ }),
+    [companyScope.selected]
+  );
   const fetchLastImport = useCallback(() => {
     // Show the last import for the selected company; system-wide under "All".
     const key = companyScope.selected === "all" ? "offerings" : `offerings:${companyScope.selected}`;
@@ -169,18 +176,16 @@ export default function OfferingsAdminPage() {
       .then((d) => setLastImport(d?.timestamp ?? null))
       .catch(() => setLastImport(null));
   }, [companyScope.selected]);
-  const fetchSpecialisations = async () => {
-    try {
-      const res = await fetch("/api/admin/specialisations");
-      if (res.ok) setSpecialisations(await res.json());
-    } catch { /* ignore */ }
-  };
-  const fetchCompanies = async () => {
-    try {
-      const res = await fetch("/api/companies");
-      if (res.ok) setCompanies((await res.json()).companies ?? []);
-    } catch { /* ignore */ }
-  };
+  const fetchSpecialisations = () =>
+    fetch("/api/admin/specialisations")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((rows) => { if (rows) setSpecialisations(rows); })
+      .catch(() => { /* ignore */ });
+  const fetchCompanies = () =>
+    fetch("/api/companies")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => { if (data) setCompanies(data.companies ?? []); })
+      .catch(() => { /* ignore */ });
 
   useEffect(() => {
     fetchSpecialisations();

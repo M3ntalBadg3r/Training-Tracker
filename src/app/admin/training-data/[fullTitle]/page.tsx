@@ -141,34 +141,46 @@ export default function FullTitleDetailPage() {
       .map((t) => t.trainingTitle);
   };
 
-  const fetchAll = async () => {
-    const [groupRes, allRes, ptRes] = await Promise.all([
+  // Written as a promise chain rather than async/await: an async function called
+  // from an effect is treated as writing state synchronously, whereas a chain
+  // provably defers every write to a later microtask.
+  const fetchAll = () =>
+    Promise.all([
       fetch(`/api/training-data/full-title/${encodeURIComponent(fullTitle)}`),
       fetch("/api/training-data/all"),
       fetch("/api/admin/product-types"),
-    ]);
-    if (groupRes.status === 404) {
-      setNotFound(true);
-      setLoading(false);
-      return;
-    }
-    if (groupRes.ok) {
-      const data = await groupRes.json();
-      setMembers(data.members);
-      setMeta(data.meta);
-      setRenameValue(data.fullTitle);
-      // Seed the bulk legacy controls from the current eligible members.
-      const eligible = (data.members as TrainingDataRow[]).filter((m) => LEGACY_ELIGIBLE.includes(m.trainingType));
-      const allLegacy = eligible.length > 0 && eligible.every((m) => m.isLegacy);
-      setBulkLegacy(allLegacy);
-    }
-    if (allRes.ok) setAllRows(await allRes.json());
-    if (ptRes.ok) {
-      const pts: { name: string }[] = await ptRes.json();
-      setProductTypes(pts.map((p) => p.name));
-    }
-    setLoading(false);
-  };
+    ])
+      .then(([groupRes, allRes, ptRes]) =>
+        Promise.all([
+          groupRes.ok ? groupRes.json() : null,
+          allRes.ok ? allRes.json() : null,
+          ptRes.ok ? (ptRes.json() as Promise<{ name: string }[]>) : null,
+        ]).then(([group, all, pts]) => ({
+          notFound: groupRes.status === 404,
+          group,
+          all,
+          pts,
+        }))
+      )
+      .then(({ notFound: missing, group, all, pts }) => {
+        if (missing) {
+          setNotFound(true);
+          return;
+        }
+        if (group) {
+          setMembers(group.members);
+          setMeta(group.meta);
+          setRenameValue(group.fullTitle);
+          // Seed the bulk legacy controls from the current eligible members.
+          const eligible = (group.members as TrainingDataRow[]).filter((m) =>
+            LEGACY_ELIGIBLE.includes(m.trainingType)
+          );
+          setBulkLegacy(eligible.length > 0 && eligible.every((m) => m.isLegacy));
+        }
+        if (all) setAllRows(all);
+        if (pts) setProductTypes(pts.map((pt) => pt.name));
+      })
+      .finally(() => setLoading(false));
 
   useEffect(() => {
     if (fullTitle) fetchAll();
@@ -176,19 +188,25 @@ export default function FullTitleDetailPage() {
   }, [fullTitle]);
 
   // Seed the replacement multiselect from existing legacy members' replacedBy.
-  useEffect(() => {
-    if (members.length === 0) return;
-    const fulls = new Set<string>();
-    for (const m of members) {
-      if (m.isLegacy) {
-        for (const rt of m.replacedBy ?? []) {
-          const f = titleToFull.get(rt);
-          if (f) fulls.add(f);
+  // Uses React's "adjust state while rendering" pattern rather than a
+  // setState-in-effect: the multiselect is user-editable after seeding, so it
+  // must be re-seeded only when a new `members` array actually arrives.
+  const [prevMembers, setPrevMembers] = useState(members);
+  if (prevMembers !== members) {
+    setPrevMembers(members);
+    if (members.length > 0) {
+      const fulls = new Set<string>();
+      for (const m of members) {
+        if (m.isLegacy) {
+          for (const rt of m.replacedBy ?? []) {
+            const f = titleToFull.get(rt);
+            if (f) fulls.add(f);
+          }
         }
       }
+      setBulkReplacement(Array.from(fulls));
     }
-    setBulkReplacement(Array.from(fulls));
-  }, [members, titleToFull]);
+  }
 
   // ---- Bulk actions ----
   const patchGroup = async (body: Record<string, unknown>): Promise<string | null> => {

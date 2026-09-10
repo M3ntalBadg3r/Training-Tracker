@@ -15,6 +15,7 @@ import ExportMenu, { type ExportFormat } from "@/components/ui/ExportMenu";
 import { ExportableChart, useChartCapture } from "@/components/reports/ChartCaptureProvider";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
 import { useDebounce } from "@/hooks/useDebounce";
+import { useFetchJson } from "@/hooks/useFetchJson";
 import { useDateFormat } from "@/components/date-format/DateFormatProvider";
 import { Search, ArrowLeft, AlertCircle, Award, GraduationCap, Users } from "lucide-react";
 import Pagination from "@/components/data-table/Pagination";
@@ -110,8 +111,6 @@ function TrainedNotCertifiedPageInner() {
   const [page, setPage] = useState(() => Math.max(1, parseInt(searchParams.get("page") ?? "1", 10) || 1));
   const [pageSize, setPageSize] = useState(() => parseInt(searchParams.get("pageSize") ?? "25", 10) || 25);
 
-  const [data, setData] = useState<TncResponse | null>(null);
-  const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
 
   const buildParams = useCallback(
@@ -163,23 +162,13 @@ function TrainedNotCertifiedPageInner() {
     }
   }, [buildParams, search, groupBy, pathname, router, searchParams]);
 
-  useEffect(() => {
-    if (companyScope.loading) return;
-    const url = withCompany(`/api/reports/trained-not-certified?${buildParams({}).toString()}`, companyScope.selected);
-    let cancelled = false;
-    setLoading(true);
-    fetch(url)
-      .then((r) => r.json())
-      .then((d: TncResponse) => {
-        if (!cancelled) setData(d);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [buildParams, companyScope.loading, companyScope.selected]);
+  // `loading` is derived by useFetchJson (loadedKey !== requestKey), so the
+  // loading state still re-appears on every filter change without a
+  // synchronous setState inside an effect.
+  const dataUrl = companyScope.loading
+    ? null
+    : withCompany(`/api/reports/trained-not-certified?${buildParams({}).toString()}`, companyScope.selected);
+  const { data, loading } = useFetchJson<TncResponse>(dataUrl);
 
   const charts = data?.charts ?? { productSeries: [], bucketSeries: [] };
   const kpis = data?.kpis ?? { total: 0, activeIlt: 0, distinctStudents: 0, distinctIlts: 0 };

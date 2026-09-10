@@ -16,6 +16,7 @@ import ExportMenu, { type ExportFormat } from "@/components/ui/ExportMenu";
 import { ExportableChart, useChartCapture } from "@/components/reports/ChartCaptureProvider";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
 import { useDebounce } from "@/hooks/useDebounce";
+import { useFetchJson } from "@/hooks/useFetchJson";
 import GeoScopeFilter, { GeoScope } from "@/components/reports/GeoScopeFilter";
 import { useDateFormat } from "@/components/date-format/DateFormatProvider";
 import { Search, ArrowLeft, Award, ShieldCheck, GraduationCap, CircleCheck } from "lucide-react";
@@ -126,8 +127,6 @@ function ByProductTypePageInner() {
   const [page, setPage] = useState(() => Math.max(1, parseInt(searchParams.get("page") ?? "1", 10) || 1));
   const [pageSize, setPageSize] = useState(() => parseInt(searchParams.get("pageSize") ?? "25", 10) || 25);
 
-  const [data, setData] = useState<ByProductTypeResponse | null>(null);
-  const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
 
   const dateFrom = dateRange.from ? dateRange.from.toISOString() : "";
@@ -183,23 +182,13 @@ function ByProductTypePageInner() {
     }
   }, [buildParams, search, pathname, router, searchParams]);
 
-  useEffect(() => {
-    if (companyScope.loading) return;
-    const url = withCompany(`/api/reports/by-product-type?${buildParams({}).toString()}`, companyScope.selected);
-    let cancelled = false;
-    setLoading(true);
-    fetch(url)
-      .then((r) => r.json())
-      .then((d: ByProductTypeResponse) => {
-        if (!cancelled) setData(d);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [buildParams, companyScope.loading, companyScope.selected]);
+  // `loading` is derived by useFetchJson (loadedKey !== requestKey), so the
+  // loading state still re-appears on every filter change without a
+  // synchronous setState inside an effect.
+  const dataUrl = companyScope.loading
+    ? null
+    : withCompany(`/api/reports/by-product-type?${buildParams({}).toString()}`, companyScope.selected);
+  const { data, loading } = useFetchJson<ByProductTypeResponse>(dataUrl);
 
   const productSeries = data?.charts.productSeries ?? [];
   const kpis = data?.kpis ?? { total: 0, cert: 0, accred: 0, ilt: 0, olx: 0, active: 0, expired: 0 };

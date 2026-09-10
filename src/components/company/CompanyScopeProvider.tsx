@@ -50,7 +50,10 @@ export default function CompanyScopeProvider({ children }: { children: ReactNode
   const [companies, setCompanies] = useState<CompanyOption[]>([]);
   const [canViewAll, setCanViewAll] = useState(true);
   const [selected, setSelectedState] = useState<CompanySelection>("all");
-  const [loading, setLoading] = useState(true);
+  // `loading` is derived rather than stored: with no signed-in user there is
+  // nothing to fetch, so the old effect wrote setLoading(false) synchronously.
+  // `fetched` records that /api/companies has come back at least once.
+  const [fetched, setFetched] = useState(false);
 
   const fetchCompanies = useCallback(async () => {
     try {
@@ -64,23 +67,26 @@ export default function CompanyScopeProvider({ children }: { children: ReactNode
       setCompanies(data.companies);
       setCanViewAll(data.canViewAll);
     } finally {
-      setLoading(false);
+      setFetched(true);
     }
   }, []);
 
+  const loading = authLoading || (user ? !fetched : false);
+
   useEffect(() => {
-    if (authLoading) return;
-    if (!user) {
-      setLoading(false);
-      return;
-    }
+    if (authLoading || !user) return;
     fetchCompanies();
   }, [authLoading, user, fetchCompanies]);
 
-  // Restore persisted selection (or default to "all"), validated against the
-  // current allow list once it has loaded.
-  useEffect(() => {
-    if (loading) return;
+  // Restore the persisted selection (or default to "all"), validated against the
+  // current allow list once it has loaded. Uses React's "adjust state while
+  // rendering" pattern rather than a setState-in-effect: `selected` is
+  // user-editable afterwards, so it is reconciled only when the allow list
+  // itself changes.
+  const allowListKey = loading ? null : `${canViewAll}|${companies.map((c) => c.id).join(",")}`;
+  const [reconciledKey, setReconciledKey] = useState<string | null>(null);
+  if (allowListKey !== null && allowListKey !== reconciledKey) {
+    setReconciledKey(allowListKey);
     const stored = typeof window !== "undefined" ? window.localStorage.getItem(STORAGE_KEY) : null;
     let next: CompanySelection = "all";
     if (stored && stored !== "all") {
@@ -91,7 +97,7 @@ export default function CompanyScopeProvider({ children }: { children: ReactNode
       next = companies[0].id;
     }
     setSelectedState(next);
-  }, [loading, companies, canViewAll]);
+  }
 
   const setSelected = useCallback((next: CompanySelection) => {
     setSelectedState(next);
