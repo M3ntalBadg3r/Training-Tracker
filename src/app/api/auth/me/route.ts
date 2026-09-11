@@ -56,5 +56,12 @@ export async function GET(request: NextRequest) {
     pendingMfaEnrollment: authUser.pendingMfaEnrollment === true,
     idleMs,
     sessionExpiresAt: sessionStart + ABSOLUTE_SESSION_MS,
+    // Served here rather than inlined into the client bundle. `next.config.ts`
+    // puts APP_VERSION in `env`, which is a build-time *text substitution* at
+    // every reference — and the Sidebar referenced it, so the exact version
+    // shipped inside the chunk graph of the root layout and was readable by an
+    // unauthenticated visitor to /login. Behind this route it is visible only
+    // to someone already signed in.
+    appVersion: process.env.APP_VERSION ?? null,
   });
 }

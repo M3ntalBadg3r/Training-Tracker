@@ -22,6 +22,7 @@ import {
   importTargetFieldLabel,
   type ImportTargetFieldKey,
 } from "@/lib/import-target-fields";
+import { checkImportFile } from "@/lib/import-file";
 
 interface AliasRow {
   id: number;
@@ -106,6 +107,12 @@ export default function ImportAliasesSection() {
   const parseFile = (file: File) => {
     setImportError(null);
     setFileName(file.name);
+    // Bound the input before it is buffered and parsed in this tab.
+    const rejection = checkImportFile(file);
+    if (rejection) {
+      setImportError(rejection);
+      return;
+    }
     const ext = file.name.split(".").pop()?.toLowerCase();
     if (ext === "csv") {
       Papa.parse(file, {

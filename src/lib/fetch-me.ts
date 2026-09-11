@@ -24,6 +24,8 @@ export interface MeResponse {
   pendingMfaEnrollment?: boolean;
   idleMs?: number;
   sessionExpiresAt?: number;
+  /** Build version. Served here so it is not inlined into a client bundle. */
+  appVersion?: string | null;
 }
 
 let inflight: Promise<MeResponse | null> | null = null;

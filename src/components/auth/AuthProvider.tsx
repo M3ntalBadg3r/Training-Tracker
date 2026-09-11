@@ -20,6 +20,9 @@ interface AuthUser {
   displayName: string;
 }
 
+/** Build version, from /api/auth/me. Null until the first fetch resolves. */
+type AppVersion = string | null;
+
 interface SessionTiming {
   // Idle window (ms) baked into the current session token.
   idleMs: number;
@@ -32,6 +35,7 @@ interface AuthContextType {
   isAdmin: boolean;
   loading: boolean;
   session: SessionTiming | null;
+  appVersion: AppVersion;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
 }
@@ -41,6 +45,7 @@ const AuthContext = createContext<AuthContextType>({
   isAdmin: false,
   loading: true,
   session: null,
+  appVersion: null,
   logout: async () => {},
   refreshUser: async () => {},
 });
@@ -54,6 +59,7 @@ const PUBLIC_PATHS = ["/login", "/setup"];
 export default function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [session, setSession] = useState<SessionTiming | null>(null);
+  const [appVersion, setAppVersion] = useState<AppVersion>(null);
   // `loading` is derived rather than stored: on a public path there is nothing
   // to fetch, so the old effect wrote setLoading(false) synchronously. `fetched`
   // records that /api/auth/me has come back at least once.
@@ -75,9 +81,11 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
         } else {
           setSession(null);
         }
+        setAppVersion(typeof data.appVersion === "string" ? data.appVersion : null);
       } else {
         setUser(null);
         setSession(null);
+        setAppVersion(null);
       }
     } finally {
       setFetched(true);
@@ -94,6 +102,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
     await fetch("/api/auth/logout", { method: "POST" });
     setUser(null);
     setSession(null);
+    setAppVersion(null);
     router.push("/login");
   }, [router]);
 
@@ -134,6 +143,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
         isAdmin: user?.role === "Admin" || user?.role === "SuperAdmin",
         loading,
         session,
+        appVersion,
         logout,
         refreshUser,
       }}
