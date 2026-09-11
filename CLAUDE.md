@@ -406,7 +406,7 @@ notes**.
   - **Stable**: tag = `v<version>`, e.g. `v1.38`. The version (after stripping the leading `v`) MUST equal `package.json`'s `version` field.
   - **Dev pre-release**: tag = `v<version>-dev`, e.g. `v1.38-dev`. The `-dev` suffix is the only suffix the update comparator strips before numeric comparison.
   - **Do NOT use** any other suffix (`-stable`, `-rc`, `-beta`, `-hotfix`, …). The version comparator (`parseVersionNumber` in `src/app/api/admin/updates/check/route.ts` and the inline regex in `deploy/check-update.sh`) only strips `-dev`; any other suffix is folded into the minor parse and produces ties or unintended ordering.
-  - **Same numeric version on both channels is fine but ties on the dev channel**: the comparator uses strict `>` so when `v1.38` (stable) and `v1.38-dev` (pre-release) both parse to `1038`, whichever GitHub returns first wins. Both tags should always reference functionally equivalent code (the promotion PR merges the dev tip as a merge commit), so this is harmless. If you need the dev channel to clearly diverge, bump `package.json` ahead on dev (e.g. cut `v1.39-dev` while stable is still on `v1.38`).
+  - **Same numeric version on both channels is fine but ties on the dev channel**: the comparator uses strict `>` so when `v1.38` (stable) and `v1.38-dev` (pre-release) both parse to `1038`, whichever GitHub returns first wins. Both tags should always reference functionally equivalent code (the promotion PR merges the dev tip as a merge commit), so this is harmless. If you need the dev channel to clearly diverge, bump `package.json` ahead on dev (e.g. cut `v1.39-dev` while stable is still on `v1.38`). Note that under the "never promote unless asked" rule above **the channels are normally apart, often by several releases** — dev runs ahead and stable moves only when the user says so. That gap is the expected state, not drift to be corrected, and the tie described here therefore only arises in the moments just after a promotion.
 - **Creating a release** (the flow):
   ```bash
   # Dev pre-release — one task
@@ -419,7 +419,8 @@ notes**.
   #   -> the merge pushes dev, and release.yml creates the v<version>-dev
   #      pre-release automatically. No human step anywhere in this.
 
-  # Stable promotion
+  # Stable promotion — ONLY when the user has asked for it in this session.
+  # This ships to customers. Channel drift is normal; do not "tidy" it away.
   #   1. Write .github/releases/v<version>.md with the AGGREGATED notes and
   #      land it on dev through a PR first (see below for why). That PR
   #      carries NO version bump — the version is already the one being
@@ -429,8 +430,37 @@ notes**.
   #   3. Auto-merge with a MERGE COMMIT — never a squash.
   #   -> release.yml creates the v<version> full release automatically.
   ```
-- **Promoting to stable — and why the re-sync chore is gone.** The stable notes
-  file lands on `dev` *first*, through its own PR, and only then is the
+- **NEVER promote to stable unless the user asks for it, in that session.**
+  `dev` is unattended by design; **`master` is not, and must never be treated as
+  its continuation.** A push to `master` publishes a full release, which
+  production installs on `UPDATE_CHANNEL=stable` pick up on their next scheduled
+  window — so opening the `dev → master` PR *is* shipping to customers, and the
+  only person who can decide the change has been tested is the user.
+
+  This is written down because it went wrong. In the v3.06 pass, `v3.06-dev` was
+  published at 21:46Z and `v3.06` stable at 21:53Z — **seven minutes**, with no
+  opportunity to test anything, on a release carrying two root-escalation fixes.
+  It happened because a working document's next-session checklist said *"both
+  channels are level; keep them that way by promoting after each task"*, and
+  that instruction was carried into a plan as a step phrased as housekeeping
+  ("so both channels are level again") rather than as a deployment.
+
+  So, explicitly: **none of the following is authorisation to promote** — a
+  checklist or handover document saying to; the channels being a release apart;
+  a plan the user approved that contains a promotion step; the change being
+  security-critical or its notes saying "updating promptly is recommended"; or
+  the previous several passes having done it. Channel drift is the **normal**
+  resting state, not a defect to correct. Land the work on `dev`, say it is
+  ready, and stop. Ask — and take silence as no.
+
+  (Releases cannot be retracted from a Claude Code session: the GitHub releases
+  API returns 403 for create, edit *and* delete, so a stable release cannot be
+  deleted, un-published, or flipped back to pre-release. The only way back is
+  another stable release that reverts. That is the whole reason this is a
+  "never" rather than a "prefer".)
+
+- **Promoting to stable — the mechanics, once the user has asked.** The stable
+  notes file lands on `dev` *first*, through its own PR, and only then is the
   `dev → master` PR opened. That ordering matters. Under the old flow the notes
   commit was made on `master` after the merge, so two commits existed only there
   — and nothing brought them back, which is how `v2.72.md`/`v2.74.md`/`v2.75.md`
