@@ -1731,7 +1731,7 @@ const helpSections: Record<string, HelpSection> = {
         <p>
           To restore on a <strong>different</strong> installation, click{" "}
           <strong>Portable backup&hellip;</strong> and choose a passphrase (at
-          least 8 characters). The archive is encrypted from the passphrase
+          least 12 characters). The archive is encrypted from the passphrase
           rather than the server key, so it can be restored anywhere by
           re-entering the same passphrase. <strong>Keep the passphrase safe —
           the data cannot be recovered without it.</strong>
@@ -1820,6 +1820,21 @@ const helpSections: Record<string, HelpSection> = {
             an account from the archive.
           </li>
           <li>
+            <strong>Restored accounts never carry an old session marker
+            forward.</strong>{" "}Each account keeps a counter that is raised
+            whenever its sessions are deliberately ended &mdash; a password
+            change, an admin password reset, a role change &mdash; and a
+            sign-in is accepted only while it is level with that counter. A
+            backup stores the counter as it stood when the backup was taken,
+            which is usually <em>lower</em>{" "}than the account&apos;s current
+            one, so restoring it as-is would wind the marker backwards. Every
+            restored account is therefore given a counter above everything that
+            existed before the restore &mdash; both the live values being
+            replaced and whatever the archive held &mdash; so a restore
+            can&apos;t hand out a valid lease on an old sign-in, and an account
+            number that is ever reused can&apos;t arrive carrying one.
+          </li>
+          <li>
             <strong>A credential-bearing archive is only accepted when it is
             encrypted.</strong>{" "}User credentials are only ever written into an
             encrypted backup, so an unencrypted archive that claims to include
@@ -1831,7 +1846,11 @@ const helpSections: Record<string, HelpSection> = {
           <strong>Important:</strong> Restoring a backup{" "}
           <strong>replaces all existing data</strong> other than the user
           accounts described above. Create a backup of the current system first
-          if you need to preserve it.
+          if you need to preserve it. An archive that is larger than the server
+          allows &mdash; either as a file, or in what its contents would unpack
+          to &mdash; is refused before anything is read, so a corrupt or crafted
+          file cannot exhaust the server&rsquo;s memory. Genuine backups are
+          stored unpacked and are nowhere near those limits.
         </p>
 
         <h3>Automatic Backups</h3>
