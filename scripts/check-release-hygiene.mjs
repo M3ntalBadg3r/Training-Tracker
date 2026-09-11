@@ -72,9 +72,13 @@ if (base !== "dev" && base !== "master") {
 
 /**
  * Mirrors parseVersionNumber in src/app/api/admin/updates/check/route.ts: the
- * app compares versions as major*1000 + minor, so "one 0.01 step" is "+1" in
- * that space. Keep the two in step — a version this script accepts but the
- * comparator orders differently would ship an update clients never see.
+ * app compares versions as major*1000 + minor. Keep the two in step — a version
+ * this script accepts but the comparator orders differently would ship an update
+ * clients never see.
+ *
+ * Note this is an *ordering* function and nothing more. It is deliberately NOT
+ * the definition of "one step": see `stepProblem`, which used to be expressed
+ * here as `to === from + 1` and was wrong at a major boundary.
  */
 function versionNumber(version) {
   const clean = String(version).replace(/-dev$/, "");
@@ -82,6 +86,69 @@ function versionNumber(version) {
   const major = parseInt(parts[0] || "0", 10);
   const minor = parseInt(parts[1] || "0", 10);
   return major * 1000 + minor;
+}
+
+/** Split "2.99" / "v3.00-dev" into its major and minor components. */
+function versionParts(version) {
+  const clean = String(version).replace(/^v/, "").replace(/-dev$/, "");
+  const parts = clean.split(".");
+  return {
+    major: parseInt(parts[0] || "0", 10),
+    minor: parseInt(parts[1] || "0", 10),
+  };
+}
+
+/** The scheme's minor is two digits: 00–99, then the major rolls over. */
+const MAX_MINOR = 99;
+
+/**
+ * Is `version` exactly one task's step past `baseVersion`? Returns null when it
+ * is, or an operator-facing explanation when it is not.
+ *
+ * This used to be `to !== from + 1` over `versionNumber`, which is correct
+ * everywhere except the one place it matters most. `versionNumber` encodes
+ * major*1000 + minor, so 2.99 is 2099 and "+1" is 2100 — a value that can only
+ * be spelled "2.100". But the minor has always been two digits, so the real
+ * successor of 2.99 is 3.00 (3000). The old rule therefore **rejected the
+ * correct version and accepted a malformed one**, and it did so for the first
+ * time at 2.99 → 3.00, roughly a hundred releases after it was written.
+ *
+ * The update comparators were never the problem: they only ask which value is
+ * larger, so 3000 > 2099 and an install on 2.99 sees 3.00 as newer either way.
+ * Only this check was wrong, which is why the fix belongs here and not in the
+ * version string.
+ */
+function stepProblem(baseVersion, version) {
+  const from = versionParts(baseVersion);
+  const to = versionParts(version);
+
+  if (to.minor > MAX_MINOR) {
+    return (
+      `Version "${version}" has a minor of ${to.minor}, but the minor is two ` +
+      `digits (00–${MAX_MINOR}) and rolls over into the next major. After ` +
+      `${from.major}.${String(MAX_MINOR)} comes ${from.major + 1}.00, not ` +
+      `"${version}".`
+    );
+  }
+
+  // The ordinary step: same major, minor + 1.
+  if (to.major === from.major && to.minor === from.minor + 1) return null;
+
+  // The rollover: x.99 -> (x+1).00.
+  if (from.minor === MAX_MINOR && to.major === from.major + 1 && to.minor === 0) {
+    return null;
+  }
+
+  const wentBackwards = versionNumber(version) <= versionNumber(baseVersion);
+  return (
+    `Version must move by exactly one step for one task: ${base} is ` +
+    `"${baseVersion}", this branch is "${version}". ` +
+    (wentBackwards
+      ? "It has not been bumped (or has gone backwards) — release.yml " +
+        "would find the tag already exists and cut nothing."
+      : "It has skipped a number — every version between the two would " +
+        "be missing from the release history.")
+  );
 }
 
 /** Read a path as it exists on the base branch, or null when unavailable. */
@@ -150,19 +217,8 @@ if (!baseVersion) {
       `check (the notes and lockfile checks still ran).`
   );
 } else if (base === "dev") {
-  const from = versionNumber(baseVersion);
-  const to = versionNumber(version);
-  if (to !== from + 1) {
-    errors.push(
-      `Version must move by exactly 0.01 for one task: ${base} is ` +
-        `"${baseVersion}", this branch is "${version}". ` +
-        (to <= from
-          ? "It has not been bumped (or has gone backwards) — release.yml " +
-            "would find the tag already exists and cut nothing."
-          : "It has skipped a number — every version between the two would " +
-            "be missing from the release history.")
-    );
-  }
+  const problem = stepProblem(baseVersion, version);
+  if (problem) errors.push(problem);
 } else if (versionNumber(version) < versionNumber(baseVersion)) {
   errors.push(
     `Version "${version}" is behind master's "${baseVersion}". A promotion ` +
