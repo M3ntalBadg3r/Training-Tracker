@@ -102,10 +102,14 @@ load_env_allowlist() {
 #
 #     https://x-access-token:<token>@github.com/<owner>/<repo>.git
 #
-# A URL parser ends the userinfo at the '@' in the authority, so a token shaped
-# like  x@attacker.example.com/evil.git#  moves the HOST: root pulls the
-# attacker's tree over the working copy and then runs the deploy scripts that
-# pull just wrote. No race and no pre-existing token needed — the attacker
+# A URL parser ends the userinfo at the FIRST '@' in the authority, so a token
+# that itself contains '@' moves the HOST: a value of the form
+#
+#     x<at><host-they-control>/evil.git#
+#
+# leaves the real '@github.com/...' suffix commented out by the '#', and root
+# pulls the attacker's tree over the working copy and then runs the deploy
+# scripts that pull just wrote. No race and no pre-existing token needed — the attacker
 # supplies the value that activates the branch.
 #
 # Every real GitHub credential (ghp_/gho_/ghu_/ghs_/ghr_, github_pat_, and the
@@ -449,7 +453,18 @@ ensure_ownership() {
     # handed to the service account, so it cannot rename one in — but drop a
     # symlink rather than follow it in any case, and guard the chmod (which has
     # no -h and always follows) behind [ ! -L ].
-    if [ -L "${APP_DIR}/.env" ]; then
+    #
+    # Only a symlink the SERVICE ACCOUNT owns is removed. An attacker-planted one
+    # is owned by that account by construction — it is the only identity that
+    # could have created it — so that is the whole of the migration job this
+    # removal still has (clearing one left over from before the carve-out
+    # existed). A root-owned symlink, by contrast, is an operator pointing .env
+    # at a config-managed secrets directory: deleting it takes DATABASE_URL and
+    # JWT_SECRET away from both the app and the updater, and re-creating it is
+    # futile because the next run would delete it again. The [ ! -L ] guard below
+    # already makes leaving it alone safe, so leave it alone.
+    if [ -L "${APP_DIR}/.env" ] &&
+       [ "$(stat -c '%U' "${APP_DIR}/.env" 2>/dev/null || echo root)" = "${SVC_USER}" ]; then
         rm -f "${APP_DIR}/.env"
     fi
     if [ -e "${APP_DIR}/.env" ] && [ ! -L "${APP_DIR}/.env" ]; then
