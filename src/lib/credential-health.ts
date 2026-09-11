@@ -243,7 +243,11 @@ async function probeEmail(): Promise<ProbeResult> {
         user: String(config.user ?? ""),
         pass: String(config.password ?? ""),
       },
-      tls: { rejectUnauthorized: false },
+      // Certificate verification is ON unless the credential explicitly opts
+      // out ("Allow self-signed certificate" on the SMTP form). It used to be
+      // off unconditionally, which meant any host presenting any certificate
+      // received the stored SMTP password.
+      tls: { rejectUnauthorized: config.allowInsecureTls !== true },
       // Without these, nodemailer waits about two minutes. `credentials/check`
       // loops every provider, so a filtered host could pin a worker for that
       // long per request — and the wait itself is a side channel.

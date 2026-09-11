@@ -991,7 +991,9 @@ restriction existed.
 
 Expand the **Provider Credentials** section to manage authentication for each delivery provider.
 
-- **Email (SMTP)** keeps an inline form (host, port, username, password, from address) plus a **Test Connection** button.
+- **Email (SMTP)** keeps an inline form (host, port, username, password, from address) plus a **Test Connection** button. Each field is checked when you save — the host must be a hostname or an IP address and the port a number between 1 and 65535 — so a typo is reported straight away instead of surfacing later as a failed delivery.
+  - **Certificate checking.** Training Tracker verifies the mail server's TLS certificate. If your server presents a self-signed or otherwise untrusted certificate, tick **Allow self-signed certificate (less secure)** on the SMTP form and save. Leave it off wherever you can: with it on, an intercepted connection is indistinguishable from a genuine one, and the SMTP password is what is at stake.
+  - *Upgrading?* Certificate checking used to be off for every SMTP credential. If scheduled mail stops going out after this update and the error reads "Could not connect to the configured host and port", your mail server is presenting a certificate this server does not trust — either install a trusted certificate on the mail server, or tick **Allow self-signed certificate** on the SMTP credential and save.
 - **Google Drive**, **Box**, and **OneDrive** each have a **Connect with…** button that launches a guided OAuth wizard. Training Tracker:
   1. Shows the redirect URI you must register in the provider's developer console (with a Copy button).
   2. Walks you through registering an OAuth app in Google Cloud Console / Box Developer Console / Microsoft Entra.

@@ -58,10 +58,15 @@ export const PROVIDER_CONFIG: Record<CloudProvider, ProviderConfig> = {
   onedrive: {
     label: "OneDrive",
     scopes: ["Files.ReadWrite", "User.Read", "offline_access"],
+    // The tenant ID is validated on the way in (lib/credential-config.ts), but
+    // it is a path segment in a URL built by string interpolation *before*
+    // `new URL` parses it, so encode here too: without both, a `/`, `?`, `#` or
+    // `..` in the value reshapes the request path and query instead of being a
+    // value inside it.
     authorizeUrl: (tenantId) =>
-      `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/authorize`,
+      `https://login.microsoftonline.com/${encodeURIComponent(tenantId)}/oauth2/v2.0/authorize`,
     tokenUrl: (tenantId) =>
-      `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`,
+      `https://login.microsoftonline.com/${encodeURIComponent(tenantId)}/oauth2/v2.0/token`,
     extraAuthParams: { prompt: "consent", response_mode: "query" },
     consoleUrl: "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps",
     registrationHelp:

@@ -107,6 +107,8 @@ export interface EmailConfig {
   password: string;
   from: string;
   to: string;
+  /** Per-credential opt-out from TLS certificate verification. Default: verify. */
+  allowInsecureTls?: boolean;
 }
 
 export async function deliverEmail(
@@ -123,7 +125,16 @@ export async function deliverEmail(
     port: config.port,
     secure: config.secure,
     auth: { user: config.user, pass: config.password },
-    tls: { rejectUnauthorized: false },
+    // Verify the server's certificate unless this credential opted out. The
+    // probe in `credential-health.ts` must stay in step: a delivery that trusts
+    // more than the connection test did would pass its check and then hand the
+    // password to whatever answered.
+    tls: { rejectUnauthorized: config.allowInsecureTls !== true },
+    // Same reasoning as the probe: nodemailer's defaults are about two minutes,
+    // so a filtered host would stall every scheduled send for that long.
+    connectionTimeout: 10_000,
+    greetingTimeout: 10_000,
+    socketTimeout: 15_000,
   });
   await transporter.sendMail({
     from: config.from,
