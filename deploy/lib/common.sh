@@ -142,10 +142,30 @@ checked_github_token() {
 # URL itself: it carries the credential.
 git_remote_host() {
     local url="${1:-}" rest authority host
+    # Positive scheme allowlist. Only the transports a real upstream is ever
+    # reached over are accepted; anything else is refused rather than parsed.
+    # This matters for the transport-helper schemes — ext::, fd::, and friends
+    # — where ext:: in particular runs an arbitrary command: an ext:: "URL"
+    # embeds a real https:// substring, so the *://* prefix-match below would
+    # otherwise dig github.com out of it and wave the whole thing through. Git
+    # refuses ext:: by default today (protocol.ext.allow=never), so this is
+    # defence in depth, not a live hole — but the check's entire job is to catch
+    # a poisoned .git/config, so it must not itself be fooled by one.
     case "${url}" in
-        *://*)
+        https://*|http://*|ssh://*|git://*|ftp://*|ftps://*|git+ssh://*)
             rest="${url#*://}"
             authority="${rest%%/*}"
+            ;;
+        *://*)
+            # Some other scheme (a transport helper, ext::, …). Not an upstream.
+            return 1
+            ;;
+        *[!A-Za-z0-9._@+~-]*:*)
+            # scp-style is user@host:path or host:path, so everything before the
+            # first ':' is the authority and may hold only hostname/userinfo
+            # characters. A space, a quote or transport-helper syntax before the
+            # colon means this is not a git remote to reason about — refuse.
+            return 1
             ;;
         *:*)
             # scp-style: user@host:path
@@ -156,10 +176,10 @@ git_remote_host() {
             ;;
     esac
     # Userinfo ends at the FIRST '@' — that is how git reads it. If what is left
-    # still contains an '@', refuse to guess: git's URL parser and the libcurl
-    # that actually opens the connection split such an authority differently
-    # (git keeps the trailing '@host' as part of the host, curl takes the last
-    # '@'), so there is no single answer to compare against a literal.
+    # still contains an '@', refuse to guess: git and the libcurl that actually
+    # opens the connection disagree on a two-'@' authority (measured: for
+    # a:b@one@two git keeps host="one@two" while curl rejects it as a bad
+    # hostname), so there is no single answer to compare against a literal.
     case "${authority}" in
         *@*) host="${authority#*@}" ;;
         *)   host="${authority}" ;;
@@ -168,12 +188,16 @@ git_remote_host() {
         *@*) return 1 ;;
     esac
     host="${host%%:*}"          # drop :port
+    host="${host%.}"            # a trailing dot is the DNS root label: github.com. == github.com
     # A hostname is letters, digits, dots and hyphens. Anything else is not
     # something to compare against a literal and wave through.
     case "${host}" in
         ''|*[!A-Za-z0-9.-]*) return 1 ;;
     esac
-    printf '%s' "${host}"
+    # Hostnames are case-insensitive and git remote set-url stores them verbatim
+    # (a hand clone or a copy-paste can leave GitHub.COM in .git/config), so
+    # fold to lower before the caller compares against the lowercase literal.
+    printf '%s' "${host,,}"
 }
 
 # Point origin at the upstream repository, adding the token credential when the
@@ -187,6 +211,14 @@ git_remote_host() {
 ensure_origin_remote() {
     local token safe desired current
     token="${GITHUB_TOKEN:-}"
+    # Trim surrounding whitespace up front so a whitespace-only value — a stray
+    # space, or a lone CR from a .env edited on Windows — reads as "no token"
+    # and takes the return-0 fast path, exactly like an empty GITHUB_TOKEN=.
+    # Without this, " " is non-empty here but trims to empty in
+    # checked_github_token, turning a blank setting into a hard, rollback-
+    # inducing failure. (Whitespace *inside* a token is still a rejection.)
+    token="${token#"${token%%[![:space:]]*}"}"
+    token="${token%"${token##*[![:space:]]}"}"
     [ -n "${token}" ] || return 0
 
     if ! safe=$(checked_github_token "${token}"); then
@@ -358,20 +390,39 @@ ensure_ownership() {
         # An unmatched glob expands to itself; -e/-L filters those out.
         [ -e "${entry}" ] || [ -L "${entry}" ] || continue
         case "${entry##*/}" in
-            deploy|.git) continue ;;
+            # Files root executes or restores from — never service-user-owned,
+            # at any instant. deploy/ and .git carry the code root runs;
+            # .update-backup is the rollback copy root restores from on a failed
+            # update. Re-asserted below.
+            deploy|.git|.update-backup) continue ;;
+            # Files root writes but the app also reaches through the group. The
+            # sweep must not hand them over even transiently: while the service
+            # account owns one of these in the sticky APP_DIR it can rename it
+            # aside and plant a symlink, and the .env block / ensure_state_file
+            # that run after the sweep would then follow that link (chown/chmod
+            # a target of the attacker's choosing). Their correct ownership is
+            # set by those two blocks; skipping them here just denies the window.
+            .env|.update-status|.update-log|.auto-update-last-run) continue ;;
         esac
         # -h: the service account may create its own top-level entries here, so
-        # a name may be a symlink it planted. Retag the link, never its target.
-        # (GNU chown -R already implies -P, so it never descends through one.)
+        # a name may be a symlink it planted; retag the link, never its target.
+        # This is belt-and-braces, not load-bearing: chown -R implies -P, and a
+        # symlink given as an argument to chown -R is retagged (not followed)
+        # even without -h (measured). The place a bare chown *does* follow is
+        # the non-recursive .env block below — which is why that one is guarded.
         chown -Rh "${SVC_USER}:${SVC_GROUP}" -- "${entry}"
     done
 
     # Re-assert the carve-outs. Nothing above touches them any more, so on a
     # healthy install this is a no-op; it still matters as the migration path
-    # for a tree whose deploy/ or .git was left owned by the service account,
-    # and as the re-lock for files git — running as root — has just created.
+    # for a tree whose deploy/, .git or .update-backup was left owned by the
+    # service account, and as the re-lock for files git — running as root — has
+    # just created. .update-backup is normally created root-owned by
+    # perform-update.sh at the start of every update, so this is its safety net
+    # rather than its primary owner; go-w leaves it readable so the rollback
+    # path can still read the saved .next.
     local locked
-    for locked in deploy .git; do
+    for locked in deploy .git .update-backup; do
         # A symlink here is never legitimate, and `chmod -R` follows a symlink
         # given as an argument, so leave it alone rather than chmod'ing through
         # it. (chmod ignores symlinks it meets during the traversal itself.)
@@ -390,8 +441,19 @@ ensure_ownership() {
     # below: root owns it, the service user reaches it through the group. 0660
     # keeps it as private as the old 0600 did — only root and the service account
     # are in that group.
-    if [ -f "${APP_DIR}/.env" ]; then
-        chown "root:${SVC_GROUP}" "${APP_DIR}/.env"
+    #
+    # Hardened like ensure_state_file, as defence in depth behind the sweep
+    # carve-out above: a bare `chown`/`chmod` (no -R, no -h) FOLLOWS a symlink
+    # (measured), so if a symlink were ever present here root would retag/relax
+    # a target of the attacker's choosing. The carve-out means .env is never
+    # handed to the service account, so it cannot rename one in — but drop a
+    # symlink rather than follow it in any case, and guard the chmod (which has
+    # no -h and always follows) behind [ ! -L ].
+    if [ -L "${APP_DIR}/.env" ]; then
+        rm -f "${APP_DIR}/.env"
+    fi
+    if [ -e "${APP_DIR}/.env" ] && [ ! -L "${APP_DIR}/.env" ]; then
+        chown -h "root:${SVC_GROUP}" "${APP_DIR}/.env"
         chmod 0660 "${APP_DIR}/.env"
     fi
 
