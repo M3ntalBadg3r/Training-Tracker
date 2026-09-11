@@ -363,7 +363,10 @@ notes**.
 
   # Stable promotion
   #   1. Write .github/releases/v<version>.md with the AGGREGATED notes and
-  #      land it on dev through a normal PR first (see below for why).
+  #      land it on dev through a PR first (see below for why). That PR
+  #      carries NO version bump — the version is already the one being
+  #      promoted — so it needs the `skip-release-checks` label, or
+  #      release-hygiene fails it for not moving the version.
   #   2. Open a PR from dev into master.
   #   3. Auto-merge with a MERGE COMMIT — never a squash.
   #   -> release.yml creates the v<version> full release automatically.
@@ -379,7 +382,12 @@ notes**.
   re-sync. This is just as well: branch protection would reject the direct
   `git push origin dev` the old re-sync required.
 
-  Two consequences to preserve:
+  Three consequences to preserve:
+  - The stable-notes PR into `dev` is **the** intended use of the
+    `skip-release-checks` label. `release-hygiene` demands a 0.01 bump into
+    `dev`, and this PR deliberately has none: bumping would promote a version
+    whose stable notes file does not exist. Label it rather than inventing a
+    version for it.
   - The promotion PR **must merge as a merge commit**. A squash would rewrite
     dev's commits into one new commit on master, breaking the invariant that
     master contains every dev commit — and with it the `--ff-only` relationship
