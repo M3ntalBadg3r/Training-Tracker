@@ -5,6 +5,7 @@
 
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
+import { csvSafeRows } from "@/lib/export-cell";
 
 export interface ExportColumn<T> {
   key: keyof T;
@@ -23,7 +24,7 @@ export function serverExportToCsv<T extends object>(
       })
     )
   );
-  const csv = Papa.unparse(rows);
+  const csv = Papa.unparse(csvSafeRows(rows));
   return Buffer.from(csv, "utf-8");
 }
 

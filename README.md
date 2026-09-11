@@ -1360,11 +1360,13 @@ Export functionality is available on the following pages:
 |------|-----------------|
 | **Admin > Region Data** | Country and Region |
 | **Admin > Training Data** | Training Title, Full Title, Type, Product, Function, Link, Certification, Parent Training Title, Legacy, Replacement |
+
+The **Link** column holds a web address and accepts `http://` and `https://` only; on import, a row with anything else is reported and its link left empty, while the row itself is still imported.
 | **Reports** | Full report results with all columns |
 
 Each export supports three formats:
 
-- **CSV** — Comma-separated values, compatible with any spreadsheet application.
+- **CSV** — Comma-separated values, compatible with any spreadsheet application. A value that would otherwise be read as a spreadsheet *formula* rather than text (one starting with `=`, `+`, `-` or `@`) is marked as text, so a name or title that came in through an import cannot take effect in the spreadsheet of whoever opens the file. Numbers and percentages, including negative ones, are exported unchanged.
 - **Excel** — `.xlsx` format for Microsoft Excel.
 - **PDF** — Formatted table document. Automatically switches to landscape orientation when there are more than 5 columns.
 

@@ -6,7 +6,7 @@ import PageHeader from "@/components/layout/PageHeader";
 import Modal from "@/components/ui/Modal";
 import RequirementModal from "../RequirementModal";
 import { OfferingDataRow, SpecialisationRow } from "@/types";
-import { trainingTypeLabel } from "@/lib/utils";
+import { safeExternalUrl, trainingTypeLabel } from "@/lib/utils";
 import { Plus, Trash2, Pencil, Save, ExternalLink } from "lucide-react";
 
 interface OfferingDetail {
@@ -172,8 +172,8 @@ function OfferingDetailInner() {
 
       <div className="mb-6 border border-gray-200 rounded-xl p-4 bg-white">
         {offering.description ? <p className="text-sm text-gray-700">{offering.description}</p> : <p className="text-sm text-gray-400 italic">No description</p>}
-        {offering.link && (
-          <a href={offering.link} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800">
+        {safeExternalUrl(offering.link) && (
+          <a href={safeExternalUrl(offering.link) ?? undefined} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800">
             <ExternalLink size={14} /> {offering.link}
           </a>
         )}

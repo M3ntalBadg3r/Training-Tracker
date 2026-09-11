@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { TrainingType, FunctionType } from "@prisma/client";
 import { requireAuth, handleAuthError, requireSuperAdmin } from "@/lib/auth";
+import { isRejectedLink, safeExternalUrl } from "@/lib/utils";
 import { getAuthorizedCompanyIds, resolveCompanyFilter } from "@/lib/company-scope";
 import { recomputeAllStudentsForParent } from "@/lib/olx";
 import { resolveProductTypeId } from "@/lib/product-types";
@@ -131,6 +132,16 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // A link is rendered straight into an `<a href>`, where React's escaping does
+  // not constrain the URL scheme. Refuse rather than silently blank it, so the
+  // Admin sees why the value they typed did not stick.
+  if (isRejectedLink(link)) {
+    return NextResponse.json(
+      { error: "Link must be a http:// or https:// web address" },
+      { status: 400 }
+    );
+  }
+
   const productTypeId = await resolveProductTypeId(productType);
   if (productTypeId === null) {
     return NextResponse.json(
@@ -158,7 +169,7 @@ export async function POST(request: NextRequest) {
       trainingType: trainingType as TrainingType,
       productTypeId,
       function: fn as FunctionType,
-      link: link || null,
+      link: safeExternalUrl(link),
       // Only OLX parents may carry certifications.
       certification: trainingType === "OLXSubItem" ? [] : (Array.isArray(certification) ? certification : []),
       isLegacy: legacy.isLegacy,

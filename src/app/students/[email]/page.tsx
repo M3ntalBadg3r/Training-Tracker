@@ -36,7 +36,7 @@ import {
   Tooltip,
 } from "recharts";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { trainingTypeLabel } from "@/lib/utils";
+import { safeExternalUrl, trainingTypeLabel } from "@/lib/utils";
 import { useDateFormat } from "@/components/date-format/DateFormatProvider";
 import DatePicker from "@/components/ui/DatePicker";
 import { useChartTheme, tooltipStyle } from "@/lib/chart-theme";
@@ -60,9 +60,9 @@ function buildTrainingColumns(
       header: "Title",
       render: (row) => (
         <div className="flex flex-wrap items-center gap-2">
-          {row.link ? (
+          {safeExternalUrl(row.link) ? (
             <a
-              href={row.link}
+              href={safeExternalUrl(row.link) ?? undefined}
               target="_blank"
               rel="noopener noreferrer"
               className="text-blue-600 hover:underline"

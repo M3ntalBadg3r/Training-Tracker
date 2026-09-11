@@ -3,6 +3,7 @@ import prisma from "@/lib/prisma";
 import { requireAuth, handleAuthError, type TokenPayload } from "@/lib/auth";
 import { canAccessCompany } from "@/lib/company-scope";
 import { safeDecodeParam } from "@/lib/utils";
+import { isRejectedLink, safeExternalUrl } from "@/lib/utils";
 
 /**
  * Offering names are unique per company, so the admin editor addresses an
@@ -107,6 +108,13 @@ export async function PATCH(
   const hasLink = typeof body?.link === "string";
   const hasSpecs = Array.isArray(body?.specialisationIds);
 
+  if (hasLink && isRejectedLink(body.link)) {
+    return NextResponse.json(
+      { error: "Link must be a http:// or https:// web address" },
+      { status: 400 }
+    );
+  }
+
   if (wantsRename) {
     const collide = await prisma.offering.findUnique({
       where: { companyId_name: { companyId: existing.companyId, name: rawNewName } },
@@ -155,7 +163,7 @@ export async function PATCH(
       data: {
         ...(wantsRename ? { name: rawNewName } : {}),
         ...(hasDescription ? { description: body.description.trim() || null } : {}),
-        ...(hasLink ? { link: body.link.trim() || null } : {}),
+        ...(hasLink ? { link: safeExternalUrl(body.link) } : {}),
       },
     });
     if (hasSpecs) {

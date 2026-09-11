@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { requireAuth, handleAuthError } from "@/lib/auth";
 import { getAuthorizedCompanyIds, resolveCompanyFilter, canAccessCompany } from "@/lib/company-scope";
+import { isRejectedLink, safeExternalUrl } from "@/lib/utils";
 
 /**
  * GET /api/admin/offerings
@@ -82,7 +83,15 @@ export async function POST(request: NextRequest) {
   }
 
   const description = typeof body?.description === "string" ? body.description.trim() || null : null;
-  const link = typeof body?.link === "string" ? body.link.trim() || null : null;
+  // Rendered into an `<a href>` on the offering dashboard and returned by the
+  // public API, so the scheme is constrained here rather than at either reader.
+  if (isRejectedLink(body?.link)) {
+    return NextResponse.json(
+      { error: "Link must be a http:// or https:// web address" },
+      { status: 400 }
+    );
+  }
+  const link = safeExternalUrl(body?.link);
   const specialisationIds: number[] = Array.isArray(body?.specialisationIds)
     ? [
         ...new Set(
