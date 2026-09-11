@@ -364,20 +364,80 @@ On a fresh installation with no users in the database, all routes redirect to `/
 
 The `.env` file requires:
 
+**These are checked when the application starts.** Anything missing or
+malformed is named in the startup log (`journalctl -u training-tracker` on a
+systemd host) together with what to set and where. A correctly configured
+install logs just one line, stating which addresses it treats as reverse
+proxies — see the `TRUSTED_PROXIES` note below for why that one is always
+printed.
+
+`DATABASE_URL` and `JWT_SECRET` are treated as fatal. Without either the app
+cannot serve a single authenticated request, so it stops and says why, rather
+than answering unexplained 500s the first time somebody tries to log in. Note
+what that looks like in practice: the service **stays running and the port
+stays open** — static files are still served, so a simple "is the port up?"
+health check will report the site as healthy — but every real page returns an
+error, with the reason repeated in the log. Do not judge a failed start by the
+service status; read the log. Everything else is a warning: the app runs, but
+something is quietly not doing its job.
+
+Two of those warnings were previously invisible and are worth calling out:
+without `ENCRYPTION_KEY` the secrets meant to be encrypted at rest are written
+to the database **in plaintext**, and without `CRON_SECRET` every scheduled
+backup, export and credential check is rejected exactly as a forged request
+would be — so the jobs simply never run.
+
 | Variable | Description |
 |----------|-------------|
 | `DATABASE_URL` | PostgreSQL connection string |
 | `DATABASE_POOL_MAX` | *(Optional)* Maximum PostgreSQL connections in the app's connection pool. Defaults to `20`. Raise it when many users run heavy reports at once (ensure PostgreSQL's `max_connections` has headroom); lower it on very small servers. |
 | `REPORT_CACHE_TTL_MS` | *(Optional)* Lifetime, in milliseconds, of the short in-memory cache in front of the expensive dashboard/report/program-compliance pages. Defaults to `30000` (30 s). While an entry is fresh, concurrent viewers of the same page share one computation instead of each re-querying the database; the cache is also cleared immediately whenever the underlying data is edited or imported, so results stay current after a change. Set to `0` to disable caching entirely. |
-| `JWT_SECRET` | Secret key for JWT token signing (minimum 32 characters required) |
-| `ENCRYPTION_KEY` | 64-character hex string (32 bytes) used to encrypt secrets at rest — TOTP shared secrets and OAuth/SMTP credentials. Generate with `openssl rand -hex 32`. **After enabling**, a SuperAdmin must POST `/api/admin/security/encrypt-secrets` once to seal any pre-existing rows. |
-| `CRON_SECRET` | *(Optional)* Required only when using the auto-backup / auto-export / credential-check shell scripts. Generate with `openssl rand -hex 32`. Each scheduled request is signed for one endpoint, with a timestamp and a one-time value, so a signature cannot be captured and reused. |
+| `JWT_SECRET` | Secret key for JWT token signing (minimum 32 characters required). **Checked at startup; missing or too short stops the app.** |
+| `ENCRYPTION_KEY` | 64-character hex string (32 bytes) used to encrypt secrets at rest — TOTP shared secrets and OAuth/SMTP credentials — and backup archives. Generate with `openssl rand -hex 32`. **If it is unset or not valid hex, those secrets are stored in the database in plaintext**; the startup check warns, but only setting the key fixes it. **After enabling**, a SuperAdmin must POST `/api/admin/security/encrypt-secrets` once to seal any pre-existing rows. |
+| `CRON_SECRET` | *(Optional)* Required only when using the auto-backup / auto-export / credential-check shell scripts. Generate with `openssl rand -hex 32`. Each scheduled request is signed for one endpoint, with a timestamp and a one-time value, so a signature cannot be captured and reused. Without it those requests are rejected identically to a forged one, so the scheduled jobs never run — the startup check warns when it is absent. |
 | `APP_BASE_URL` | *(Recommended in production)* Canonical externally-resolvable origin (e.g. `https://tracker.example.com`). Used to build OAuth redirect URIs without trusting `X-Forwarded-Host` headers, and to decide whether the auth cookie is marked `Secure` (an `https://` value marks it Secure; otherwise the cookie's Secure flag follows the request protocol, so plain-HTTP LAN access still works). |
-| `TRUSTED_PROXIES` | *(Recommended in production)* Comma-separated list of trusted reverse-proxy IPs whose `X-Forwarded-For` entries are stripped when extracting the real client IP for rate limiting. Defaults to `127.0.0.1,::1`. |
+| `TRUSTED_PROXIES` | *(Recommended in production)* Comma-separated list of trusted reverse-proxy IPs whose `X-Forwarded-For` entries are stripped when extracting the real client IP for rate limiting. Defaults to `127.0.0.1,::1`. Only plain IPv4/IPv6 literals are matched — **CIDR ranges and hostnames are not supported** and are ignored with a warning. Equivalent spellings of one IPv6 address are matched (`::1` and `0:0:0:0:0:0:0:1`), but an IPv4-mapped address is a different value: `::ffff:127.0.0.1` does **not** match a `127.0.0.1` entry, so list both spellings if your proxy presents the mapped form. See the note below on why an incorrect value here is quiet. |
 | `NODE_EXTRA_CA_CERTS` | *(Optional)* Path to a CA bundle Node should trust in addition to its built-ins — set this when running behind an SSL-inspecting proxy/firewall so Prisma engine downloads and outbound HTTPS succeed. The installer sets it to `/etc/ssl/certs/ca-certificates.crt` automatically on Debian. |
 | `EXPORT_ROOT` | *(Optional)* Folder that scheduled exports delivered to the local filesystem may write into. Defaults to `<app dir>/exports` (i.e. `/opt/training-tracker/exports` on a standard install). A schedule pointing anywhere else is refused. On a systemd host, a value outside `/opt/training-tracker` also needs a matching `ReadWritePaths=` drop-in. |
 | `BACKUP_ROOT` | *(Optional)* Folder that backup archives are written to, and the only tree the folder picker on the Backup page can browse. Defaults to `<app dir>/backups`, with the same `ReadWritePaths=` caveat as `EXPORT_ROOT`. |
 | `GITHUB_TOKEN` | *(Optional)* GitHub personal access token — required for update checks **and git pulls** on private repositories |
+
+#### Why `TRUSTED_PROXIES` deserves a second look
+
+Per-IP rate limiting (failed logins, invalid API keys) is only as good as the
+client address behind it, and that address is read from `X-Forwarded-For`. Two
+misconfigurations collapse every client into a single shared bucket, so one
+person's failed logins can throttle everybody:
+
+- **Nothing in front of the app sets `X-Forwarded-For`**, or a proxy appends
+  something that is not an address (Squid with `forwarded_for off` appends the
+  literal `unknown`). Detected: the app logs a warning once, the first time it
+  happens. In the second case the app deliberately stops reading the list at
+  the unreadable entry rather than falling back to whatever a client put
+  earlier in it, which would let callers choose their own rate-limit bucket, or
+  somebody else's.
+- **Your reverse proxy's address is not in `TRUSTED_PROXIES`.** *Not* detected,
+  and it cannot be: with a single proxy that sets the header, the last entry in
+  the list legitimately *is* the client, so a correct deployment and this
+  mistake look identical from inside the application. Nothing here claims to
+  catch it. Instead, **every production start logs the addresses it is actually
+  trusting** — set or not — so there is always a line to compare against your
+  real topology. That line is produced by the same code that performs the
+  attribution, so it cannot drift from what the application actually does. It
+  is the only check there is; read it.
+
+Leaving the setting **blank** is not the same as listing nothing: a blank or
+whitespace-only value falls back to the loopback default. Trusting nothing
+would make your proxy's own address the answer for every client — the very
+collapse described above.
+
+A reverse proxy on the same machine as the app is covered by the loopback
+default and needs no configuration.
+
+Upgrading note: clients previously recorded under an IPv4-mapped form
+(`::ffff:198.51.100.7`) now normalise to the plain IPv6 spelling, so a handful
+of live rate-limit counters reset once on the first start after upgrading.
+Nothing else is affected.
 
 #### Setting up GITHUB_TOKEN
 
