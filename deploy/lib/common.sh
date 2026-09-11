@@ -29,7 +29,17 @@ UPDATE_REQUEST_FILE="${APP_DIR}/.update-request"
 
 # Keys that root legitimately needs out of .env. Nothing outside this list is
 # read, so adding a variable here is a deliberate act.
+#
+# GITHUB_TOKEN stays on the list because a private-repo install cannot update
+# without it; removing it would break those operators. The consequence is that
+# root handles a string the unprivileged service account can choose, so it is
+# never trusted as-is — see checked_github_token below.
 ENV_ALLOWED_KEYS="DATABASE_URL GITHUB_TOKEN NODE_EXTRA_CA_CERTS UPDATE_CHANNEL TT_BUILD_MIN_MB npm_config_cache"
+
+# The upstream repository, in one place so the two update scripts cannot drift.
+# The host is a literal: it is never assembled from anything read out of .env.
+GIT_REMOTE_HOST="github.com"
+GIT_REMOTE_PATH="M3ntalBadg3r/Training-Tracker.git"
 
 # Read the allow-listed keys out of ${APP_DIR}/.env and export them.
 #
@@ -79,6 +89,143 @@ load_env_allowlist() {
         printf -v "${key}" '%s' "${value}"
         export "${key?}"
     done < "${env_file}"
+}
+
+# --- Git remote --------------------------------------------------------------
+
+# Check GITHUB_TOKEN before anything interpolates it into a URL.
+#
+# The value reaches root from ${APP_DIR}/.env, and .env is group-writable by the
+# *unprivileged* service account by design (the app rewrites UPDATE_CHANNEL
+# there when the operator switches release channel). So after an RCE in the app
+# this string is attacker-chosen, and the update scripts splice it into
+#
+#     https://x-access-token:<token>@github.com/<owner>/<repo>.git
+#
+# A URL parser ends the userinfo at the '@' in the authority, so a token shaped
+# like  x@attacker.example.com/evil.git#  moves the HOST: root pulls the
+# attacker's tree over the working copy and then runs the deploy scripts that
+# pull just wrote. No race and no pre-existing token needed — the attacker
+# supplies the value that activates the branch.
+#
+# Every real GitHub credential (ghp_/gho_/ghu_/ghs_/ghr_, github_pat_, and the
+# legacy 40-hex PAT) is drawn from [A-Za-z0-9_], so refusing anything outside a
+# slightly wider set costs a real operator nothing and removes the injection
+# entirely: with no '@', '/', ':', '#', '?' or whitespace, the token cannot
+# reach out of the userinfo field it sits in.
+#
+# Echoes the trimmed token and returns 0 when it is plausible; prints nothing
+# and returns 1 otherwise. Callers must treat a rejection as fatal — quietly
+# carrying on would fail the pull anyway, with a message that explains nothing.
+checked_github_token() {
+    local token="${1:-}"
+    # Surrounding whitespace (a trailing CR from a .env edited on Windows, for
+    # instance) is not part of the value. Whitespace *inside* it means this is
+    # not a token, and the check below rejects it.
+    token="${token#"${token%%[![:space:]]*}"}"
+    token="${token%"${token##*[![:space:]]}"}"
+    [ -n "${token}" ] || return 1
+    [ "${#token}" -le 255 ] || return 1
+    case "${token}" in
+        *[!A-Za-z0-9_.-]*) return 1 ;;
+    esac
+    printf '%s' "${token}"
+}
+
+# The host component of a git remote URL, extracted the way a URL parser reads
+# it: everything between the scheme and the first '/' is the authority, and the
+# host is what follows the userinfo inside it. Used to check where root is about
+# to pull from, so a reshaped URL is caught however it was reshaped — including
+# one an earlier compromise already wrote into .git/config.
+#
+# Returns 1 for anything that is not a recognisable remote URL. Never echoes the
+# URL itself: it carries the credential.
+git_remote_host() {
+    local url="${1:-}" rest authority host
+    case "${url}" in
+        *://*)
+            rest="${url#*://}"
+            authority="${rest%%/*}"
+            ;;
+        *:*)
+            # scp-style: user@host:path
+            authority="${url%%:*}"
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+    # Userinfo ends at the FIRST '@' — that is how git reads it. If what is left
+    # still contains an '@', refuse to guess: git's URL parser and the libcurl
+    # that actually opens the connection split such an authority differently
+    # (git keeps the trailing '@host' as part of the host, curl takes the last
+    # '@'), so there is no single answer to compare against a literal.
+    case "${authority}" in
+        *@*) host="${authority#*@}" ;;
+        *)   host="${authority}" ;;
+    esac
+    case "${host}" in
+        *@*) return 1 ;;
+    esac
+    host="${host%%:*}"          # drop :port
+    # A hostname is letters, digits, dots and hyphens. Anything else is not
+    # something to compare against a literal and wave through.
+    case "${host}" in
+        ''|*[!A-Za-z0-9.-]*) return 1 ;;
+    esac
+    printf '%s' "${host}"
+}
+
+# Point origin at the upstream repository, adding the token credential when the
+# operator has configured one for a private repo. A common misconfiguration is
+# https://TOKEN@github.com/... (token as username only), which makes git prompt
+# for a password and fail in non-interactive contexts — hence the rewrite.
+#
+# Returns 0 having changed nothing when no token is configured (the normal
+# public-repo case). Returns 1 with a one-line reason on stdout when a token is
+# present but is not a plausible credential, or when git refuses the rewrite.
+ensure_origin_remote() {
+    local token safe desired current
+    token="${GITHUB_TOKEN:-}"
+    [ -n "${token}" ] || return 0
+
+    if ! safe=$(checked_github_token "${token}"); then
+        printf 'GITHUB_TOKEN in .env is not a valid GitHub token — refusing to build a remote URL from it'
+        return 1
+    fi
+
+    desired="https://x-access-token:${safe}@${GIT_REMOTE_HOST}/${GIT_REMOTE_PATH}"
+    current=$(git remote get-url origin 2>/dev/null || echo "")
+    if [ "${current}" != "${desired}" ]; then
+        git remote set-url origin "${desired}" || {
+            printf 'could not set the origin remote URL'
+            return 1
+        }
+    fi
+    return 0
+}
+
+# Belt to ensure_origin_remote's braces: confirm the remote root is about to
+# pull from really is the upstream host, whatever put it there. This is what
+# catches a .git/config poisoned before this check existed, and any future
+# reintroduction of a URL built from untrusted input.
+#
+# Returns 1 with a one-line reason on stdout (host only — never the URL).
+verify_origin_host() {
+    local url host
+    url=$(git remote get-url origin 2>/dev/null) || {
+        printf 'the origin remote has no URL'
+        return 1
+    }
+    if ! host=$(git_remote_host "${url}"); then
+        printf 'the origin remote URL is not a recognisable git URL'
+        return 1
+    fi
+    if [ "${host}" != "${GIT_REMOTE_HOST}" ]; then
+        printf 'the origin remote points at %s, not %s' "${host}" "${GIT_REMOTE_HOST}"
+        return 1
+    fi
+    return 0
 }
 
 # --- Privilege ---------------------------------------------------------------
