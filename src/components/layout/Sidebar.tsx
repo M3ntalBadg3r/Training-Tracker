@@ -113,7 +113,7 @@ function subscribeSidebar(callback: () => void): () => void {
 
 export default function Sidebar({ mobile = false, onClose }: { mobile?: boolean; onClose?: () => void } = {}) {
   const pathname = usePathname();
-  const { user, isAdmin, logout } = useAuth();
+  const { user, isAdmin, logout, appVersion } = useAuth();
   const isSuperAdmin = user?.role === "SuperAdmin";
   const { theme, toggleTheme } = useTheme();
   const { appName } = useBrand();
@@ -638,7 +638,7 @@ export default function Sidebar({ mobile = false, onClose }: { mobile?: boolean;
             </button>
             <div className="mt-2 text-center">
               <span className="text-xs text-slate-500">
-                Version {process.env.APP_VERSION}
+                Version {appVersion ?? "\u2014"}
               </span>
             </div>
           </>

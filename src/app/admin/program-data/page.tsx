@@ -23,6 +23,7 @@ import {
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
+import { checkImportFile } from "@/lib/import-file";
 
 const LEVEL_LABELS: Record<string, string> = {
   Country: "Country",
@@ -350,6 +351,12 @@ export default function ProgramDataPage() {
 
   const parseFileToRows = (file: File): Promise<ImportRow[]> => {
     return new Promise((resolve, reject) => {
+      // Bound the input before it is buffered and parsed in this tab.
+      const rejection = checkImportFile(file);
+      if (rejection) {
+        reject(new Error(rejection));
+        return;
+      }
       const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
       if (ext === "csv") {
         Papa.parse(file, {

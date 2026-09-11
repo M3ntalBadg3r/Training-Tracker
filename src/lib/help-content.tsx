@@ -351,7 +351,10 @@ const helpSections: Record<string, HelpSection> = {
         <ol>
           <li>
             <strong>Upload</strong>{" "}&mdash; Drag and drop or click to select a{" "}
-            <code>.csv</code>, <code>.xls</code>, or <code>.xlsx</code> file.
+            <code>.csv</code>, <code>.xls</code>, or <code>.xlsx</code> file, up to
+            25&nbsp;MB. A larger file, or one that is not a spreadsheet, is refused
+            with an explanation rather than left to freeze the page while it is
+            read. Split a very large import into a few smaller files.
           </li>
           <li>
             <strong>Column Mapping</strong>{" "}&mdash; The system auto-maps columns

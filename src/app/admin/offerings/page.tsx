@@ -23,6 +23,7 @@ import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeP
 import { notifyOfferingsChanged } from "@/lib/nav-refresh";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
+import { checkImportFile } from "@/lib/import-file";
 
 interface ExportRow {
   offeringName: string;
@@ -309,6 +310,12 @@ export default function OfferingsAdminPage() {
   // --- Import ---
   const parseFileToRows = (file: File): Promise<Partial<ExportRow>[]> => {
     return new Promise((resolve, reject) => {
+      // Bound the input before it is buffered and parsed in this tab.
+      const rejection = checkImportFile(file);
+      if (rejection) {
+        reject(new Error(rejection));
+        return;
+      }
       const mapRow = (raw: Record<string, unknown>): Partial<ExportRow> => {
         const out: Partial<ExportRow> = {};
         for (const [header, value] of Object.entries(raw)) {

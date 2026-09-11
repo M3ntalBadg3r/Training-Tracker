@@ -17,6 +17,7 @@ import {
   Tag,
   ArrowRightLeft,
 } from "lucide-react";
+import { useAuth } from "@/components/auth/AuthProvider";
 
 interface UpdateInfo {
   currentVersion: string;
@@ -128,7 +129,8 @@ export default function UpdatesPage() {
   );
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const currentVersion = process.env.APP_VERSION || "0.0";
+  const { appVersion } = useAuth();
+  const currentVersion = appVersion || "0.0";
   const channel = process.env.UPDATE_CHANNEL || "stable";
 
   // Promise chains rather than async/await: an async function called from an

@@ -18,6 +18,7 @@ import {
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
+import { checkImportFile } from "@/lib/import-file";
 
 interface ProductTypeRow {
   id: number;
@@ -143,6 +144,12 @@ export default function ProductTypesPage() {
   const parseFile = (file: File) => {
     setImportError(null);
     setFileName(file.name);
+    // Bound the input before it is buffered and parsed in this tab.
+    const rejection = checkImportFile(file);
+    if (rejection) {
+      setImportError(rejection);
+      return;
+    }
     const ext = file.name.split(".").pop()?.toLowerCase();
 
     if (ext === "csv") {

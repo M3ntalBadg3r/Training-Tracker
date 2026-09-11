@@ -14,6 +14,7 @@ import {
   IMPORT_TARGET_FIELDS,
   type ImportTargetFieldKey,
 } from "@/lib/import-target-fields";
+import { checkImportFile } from "@/lib/import-file";
 
 interface DateFormatMismatch {
   assumedFormat: string;
@@ -106,6 +107,12 @@ export default function ImportPage() {
   const parseFile = (file: File) => {
     setError(null);
     setFileName(file.name);
+    // Bound the input before it is buffered and parsed in this tab.
+    const rejection = checkImportFile(file);
+    if (rejection) {
+      setError(rejection);
+      return;
+    }
     const ext = file.name.split(".").pop()?.toLowerCase();
 
     if (ext === "csv") {

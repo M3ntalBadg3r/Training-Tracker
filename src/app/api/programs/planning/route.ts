@@ -53,7 +53,17 @@ export async function GET(request: NextRequest) {
 
   // ── Selector-metadata mode ──
   if (p.get("options") === "true") {
-    const options = await cachedReport("compliance-planning-options", () => buildPlanningOptions());
+    // The loader below is genuinely company-agnostic — Program/ProgramData/
+    // ProgramTier carry no companyId — so a shared key returns the same bytes
+    // to everyone today. The scope goes in the key anyway, because this was the
+    // single exception to the rule CLAUDE.md states for every cachedReport key,
+    // and an exception is exactly what nobody re-examines: the day program data
+    // gains a company dimension this key becomes a cross-tenant leak with no
+    // compiler error and no reviewer signal to catch it.
+    const options = await cachedReport(
+      `compliance-planning-options|${scopeKey(companyFilter)}`,
+      () => buildPlanningOptions()
+    );
     return NextResponse.json({ programs: options }, { headers: { "Cache-Control": "private, max-age=30" } });
   }
 

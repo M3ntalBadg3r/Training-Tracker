@@ -8,18 +8,11 @@
  */
 
 import prisma from "@/lib/prisma";
+import { isSuperAdmin } from "@/lib/roles";
 
-export const SUPER_ADMIN_ROLE = "SuperAdmin";
-export const ADMIN_ROLE = "Admin";
-
-export function isSuperAdmin(role: string | undefined | null): boolean {
-  return role === SUPER_ADMIN_ROLE;
-}
-
-/** A SuperAdmin or Admin can perform admin-style write operations within their scope. */
-export function isAdminish(role: string | undefined | null): boolean {
-  return role === SUPER_ADMIN_ROLE || role === ADMIN_ROLE;
-}
+// Re-exported so existing importers keep working; the definitions now live in
+// lib/roles.ts, which is Prisma-free so proxy.ts (edge) can share them.
+export { ADMIN_ROLE, SUPER_ADMIN_ROLE, isAdminish, isSuperAdmin } from "@/lib/roles";
 
 /**
  * Look up the set of company ids a user can see.

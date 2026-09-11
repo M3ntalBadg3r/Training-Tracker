@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jwtVerify, SignJWT } from "jose";
 import { verifyCronRequest } from "@/lib/cron-auth";
+import { SUPER_ADMIN_ROLE, isAdminish } from "@/lib/roles";
 
 const COOKIE_NAME = "tt-auth";
 
@@ -316,7 +317,7 @@ export async function proxy(request: NextRequest) {
   };
 
   const role = String(payload.role ?? "");
-  const isAdminish = role === "Admin" || role === "SuperAdmin";
+  const adminish = isAdminish(role);
   const pendingMfaEnrollment = payload.pendingMfaEnrollment === true;
 
   if (pendingMfaEnrollment && !isMfaEnrollmentAllowed(pathname)) {
@@ -330,7 +331,7 @@ export async function proxy(request: NextRequest) {
   }
 
   // SuperAdmin-only paths
-  if (isSuperAdminPath(pathname) && role !== "SuperAdmin") {
+  if (isSuperAdminPath(pathname) && role !== SUPER_ADMIN_ROLE) {
     if (isApiRoute(pathname)) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
@@ -338,7 +339,7 @@ export async function proxy(request: NextRequest) {
   }
 
   // Admin (or SuperAdmin) required for the rest of the admin surface
-  if (isAdminPath(pathname) && !isAdminish) {
+  if (isAdminPath(pathname) && !adminish) {
     if (isApiRoute(pathname)) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
