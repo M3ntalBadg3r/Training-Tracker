@@ -476,6 +476,21 @@ git -C /opt/training-tracker remote set-url origin \
 
 After that first successful update, the update scripts will automatically keep the remote URL in sync with the `GITHUB_TOKEN` value in `.env`, so you never need to set it manually again.
 
+**Two checks the update runs before it fetches anything.** `GITHUB_TOKEN` is
+used only to authenticate the update pull, and must look like a GitHub token —
+letters, digits, `_`, `.` and `-` only. If the value in `.env` contains anything
+else, the update **stops with an error naming the variable** rather than using
+it. The update also refuses to run when the repository's `origin` remote does
+not point at `github.com`.
+
+Both are there because `.env` is group-writable by the unprivileged account the
+application runs under (it needs to rewrite `UPDATE_CHANNEL` when you switch
+release channels), so neither value is trusted to be well-formed just because it
+is stored. Standard installations never see either message. If you do, the fix
+is to correct the value in `.env`, or to point `origin` back at github.com —
+updating from a self-hosted mirror is not supported, and such an installation
+could not receive update notifications in any case.
+
 ---
 
 ## Dashboard
