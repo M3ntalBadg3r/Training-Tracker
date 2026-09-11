@@ -850,7 +850,7 @@ still leaves MFA working.
 
 #### Portable Backup (restore on a different system)
 
-To move data to a **different** installation, click **Portable backup…** and choose a passphrase (at least 8 characters). The archive is encrypted with a key derived from that passphrase instead of the server's `ENCRYPTION_KEY`, so it can be restored anywhere by re-entering the same passphrase. The file is named `training-tracker-backup-<timestamp>.portable.zip.enc`.
+To move data to a **different** installation, click **Portable backup…** and choose a passphrase (at least 12 characters). The archive is encrypted with a key derived from that passphrase instead of the server's `ENCRYPTION_KEY`, so it can be restored anywhere by re-entering the same passphrase. The file is named `training-tracker-backup-<timestamp>.portable.zip.enc`.
 
 > **Keep the passphrase safe — there is no way to recover the data if it is lost.**
 
@@ -879,8 +879,9 @@ Click **Upload Backup File** and select a previously created backup file. If it 
 - **Companies are matched by name, never deleted.** A company in the archive that already exists here is reused; one that does not is created. Nothing that references a company (students, offerings, scheduled exports, API-key grants) is disturbed, and student records are re-pointed at the right company by name even if the ids differ between the two systems.
 - A restore that *would* leave the system with no enabled SuperAdmin is **refused** before anything is changed.
 - Restoring accounts signs you out, because the restored accounts are not the ones your current session was issued for. Sign in again with an account from the archive.
+- **Restored accounts never carry an old session marker forward.** Each account tracks a counter that is raised whenever its sessions are deliberately ended (a password change, an admin password reset, a role change), and a sign-in is only accepted while it is level with that counter. A backup stores the counter as it stood when the backup was taken, which is usually *lower* than the account's current one, so restoring it verbatim would have wound the marker backwards. Every restored account is therefore given a counter above everything that existed before the restore — both the live values being replaced and whatever the archive itself held — so a restore cannot hand out a valid lease on an old sign-in, and an account number that is ever reused cannot arrive carrying one.
 
-**Important:** Restoring a backup **replaces all existing data** other than the user accounts described above. Create a backup of the current system first if you need to preserve it. Uploaded archives are capped at 512 MB by default (override with `BACKUP_MAX_RESTORE_MB` in `.env`) so an oversized or malformed upload cannot exhaust server memory.
+**Important:** Restoring a backup **replaces all existing data** other than the user accounts described above. Create a backup of the current system first if you need to preserve it. Uploaded archives are capped at 512 MB by default (override with `BACKUP_MAX_RESTORE_MB` in `.env`) so an oversized or malformed upload cannot exhaust server memory; the same ceiling applies to restoring a **saved** backup from the backups folder. Separately, an archive is refused if its contents would *decompress* to more than 1024 MB (override with `BACKUP_MAX_EXPANDED_MB`), which bounds a small file crafted to expand enormously. A genuine backup is stored uncompressed, so real archives are nowhere near either limit.
 
 #### Automatic Backups
 

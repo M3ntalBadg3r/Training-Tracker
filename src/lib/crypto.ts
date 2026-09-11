@@ -193,9 +193,40 @@ export function isPassphraseEncryptedBuffer(buf: Buffer): boolean {
   );
 }
 
+/**
+ * Minimum length of a portable-backup passphrase.
+ *
+ * This is the *only* secret standing between the file and the entire learner
+ * dataset (plus, when credentials are opted in, every password hash and MFA
+ * secret): the archive is offline, so an attacker guesses at their own pace
+ * with no rate limit to stop them, and scrypt at N=2^14 is an interactive cost,
+ * not an archival one. The floor lives here rather than in the two routes that
+ * used to carry byte-identical copies of it, so it sits beside the scrypt call
+ * it protects and a third caller inherits it — the same reasoning that puts the
+ * restore step-up's rate limit inside `requireRestoreStepUp` and the export
+ * path containment check inside `deliverLocal`.
+ *
+ * Enforced on **encrypt only**. Decryption deliberately accepts any non-empty
+ * passphrase so archives written under the previous floor still restore.
+ */
+export const MIN_PORTABLE_PASSPHRASE_LENGTH = 12;
+
+/**
+ * Validate a portable-backup passphrase. Returns a user-facing message, or null
+ * when it is acceptable. Call this from a route so the caller gets a 400;
+ * `encryptBufferWithPassphrase` re-asserts the same floor as a backstop.
+ */
+export function validatePortablePassphrase(passphrase: unknown): string | null {
+  if (typeof passphrase !== "string" || passphrase.length < MIN_PORTABLE_PASSPHRASE_LENGTH) {
+    return `Passphrase must be at least ${MIN_PORTABLE_PASSPHRASE_LENGTH} characters.`;
+  }
+  return null;
+}
+
 /** AES-256-GCM encrypt a binary buffer with a key derived from `passphrase`. */
 export function encryptBufferWithPassphrase(plain: Buffer, passphrase: string): Buffer {
-  if (!passphrase) throw new Error("A passphrase is required to create a portable backup");
+  const problem = validatePortablePassphrase(passphrase);
+  if (problem) throw new Error(problem);
   const salt = crypto.randomBytes(SALT_LENGTH);
   const key = deriveKeyFromPassphrase(passphrase, salt);
   const iv = crypto.randomBytes(IV_LENGTH);

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSuperAdmin, handleAuthError } from "@/lib/auth";
-import { encryptBufferWithPassphrase } from "@/lib/crypto";
+import { encryptBufferWithPassphrase, validatePortablePassphrase } from "@/lib/crypto";
+import { readJsonBody } from "@/lib/request-body";
 import { generateConfigZip } from "../../route";
 
 /**
@@ -18,19 +19,16 @@ export async function POST(request: NextRequest) {
     return handleAuthError(error);
   }
 
-  let passphrase = "";
-  try {
-    const body = await request.json();
-    passphrase = typeof body?.passphrase === "string" ? body.passphrase : "";
-  } catch {
-    // fall through to validation below
-  }
+  // Same reader as the full portable route: a wrong content-type or malformed
+  // body gets its own status instead of being reported as a passphrase problem.
+  const parsed = await readJsonBody(request);
+  if (!parsed.ok) return parsed.response;
+  const passphrase =
+    typeof parsed.body?.passphrase === "string" ? parsed.body.passphrase : "";
 
-  if (passphrase.length < 8) {
-    return NextResponse.json(
-      { error: "Passphrase must be at least 8 characters." },
-      { status: 400 }
-    );
+  const passphraseProblem = validatePortablePassphrase(passphrase);
+  if (passphraseProblem) {
+    return NextResponse.json({ error: passphraseProblem }, { status: 400 });
   }
 
   const { buffer, timestamp } = await generateConfigZip();

@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import JSZip from "jszip";
 import { requireSuperAdmin, handleAuthError } from "@/lib/auth";
-import { loadBackupArchive, restoreFullArchive, requireRestoreStepUp } from "../route";
+import {
+  loadBackupArchive,
+  restoreFullArchive,
+  requireRestoreStepUp,
+  checkExpandedArchiveSize,
+  MAX_RESTORE_UPLOAD_BYTES,
+} from "../route";
 import path from "path";
 import fs from "fs";
 import { getBackupPath } from "@/lib/backup-config";
@@ -38,6 +44,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Backup file not found" }, { status: 404 });
     }
 
+    // Same ceiling the upload path applies, checked before the read rather than
+    // after it: readFileSync buffers the whole file into memory, so a cap that
+    // ran afterwards would be a cap on nothing. MAX_RESTORE_UPLOAD_BYTES had
+    // only ever been applied to uploads, leaving this route — which restores
+    // any file sitting in the backup directory — with no bound at all.
+    const stats = fs.statSync(filePath);
+    if (stats.size > MAX_RESTORE_UPLOAD_BYTES) {
+      return NextResponse.json(
+        { error: "Backup file is too large to restore." },
+        { status: 413 }
+      );
+    }
+
     const fileBuffer = fs.readFileSync(filePath);
     let zipBytes: Buffer;
     let archiveWasEncrypted = false;
@@ -52,6 +71,10 @@ export async function POST(request: NextRequest) {
       );
     }
     const zip = await JSZip.loadAsync(zipBytes);
+    // And the same decompressed-size ceiling as the upload path — the file cap
+    // above bounds the bytes on disk, not what they expand to.
+    const oversized = checkExpandedArchiveSize(zip);
+    if (oversized) return oversized;
 
     // Restoring is the *same* operation as an uploaded restore, so it runs the
     // same code. These two used to be independent copies of one transaction and

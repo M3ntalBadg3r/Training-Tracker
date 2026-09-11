@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSuperAdmin, handleAuthError } from "@/lib/auth";
-import { encryptBufferWithPassphrase } from "@/lib/crypto";
+import { encryptBufferWithPassphrase, validatePortablePassphrase } from "@/lib/crypto";
+import { readJsonBody } from "@/lib/request-body";
 import { generateBackupZip } from "../route";
 
 /**
@@ -19,21 +20,19 @@ export async function POST(request: NextRequest) {
     return handleAuthError(error);
   }
 
-  let passphrase = "";
-  let includeCredentials = false;
-  try {
-    const body = await request.json();
-    passphrase = typeof body?.passphrase === "string" ? body.passphrase : "";
-    includeCredentials = body?.includeCredentials === true;
-  } catch {
-    // fall through to validation below
-  }
+  // A bare `request.json()` in a try/catch swallowed a wrong content-type and a
+  // malformed body alike, then reported both as a passphrase problem. The shared
+  // reader distinguishes them (415 / 413 / 400) the way every other body-taking
+  // route here does.
+  const parsed = await readJsonBody(request);
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.body;
+  const passphrase = typeof body?.passphrase === "string" ? body.passphrase : "";
+  const includeCredentials = body?.includeCredentials === true;
 
-  if (passphrase.length < 8) {
-    return NextResponse.json(
-      { error: "Passphrase must be at least 8 characters." },
-      { status: 400 }
-    );
+  const passphraseProblem = validatePortablePassphrase(passphrase);
+  if (passphraseProblem) {
+    return NextResponse.json({ error: passphraseProblem }, { status: 400 });
   }
 
   // A portable archive is passphrase-encrypted by construction, so unlike the
