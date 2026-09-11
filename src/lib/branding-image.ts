@@ -2,13 +2,32 @@
  * Validation and serving helpers for the uploaded branding images.
  *
  * The accepted type is decided by sniffing magic bytes, never by trusting the
- * browser-supplied `Content-Type` — a client can claim anything. SVG is
- * deliberately not accepted: an SVG is an executable document, and because
- * these images are served same-origin, navigating straight to the image URL
- * would render it as a top-level document under the app's own CSP
- * (`script-src 'self' 'unsafe-inline'`), making any embedded <script> run with
- * the session cookie in scope. That is a stored-XSS primitive, and a logo is
- * not worth it.
+ * browser-supplied `Content-Type` — a client can claim anything.
+ *
+ * SVG is deliberately not accepted. An SVG is not an image format in the sense
+ * the other four are: it is an executable document that can carry <script>,
+ * event-handler attributes and external references. These files are served
+ * same-origin (`/api/branding/logo`), and the route is public and unauthenticated
+ * so the login page can render before anyone signs in — so a stored SVG is a
+ * document an attacker can navigate a victim straight to, in this app's origin,
+ * with the session cookie in scope. That is a stored-XSS primitive, and a logo
+ * is not worth it.
+ *
+ * Note what this reasoning deliberately does **not** rest on: the value of the
+ * app's `script-src` directive. The ban is right because the app should not
+ * need a CSP directive to stop it serving executable documents it accepted from
+ * an upload form — defence in depth means the upload check stands on its own,
+ * and a policy string is a thing a future release edits.
+ *
+ * The direction of travel is worth recording honestly, because it runs the
+ * opposite way to the usual: today's policy carries `script-src 'self'
+ * 'unsafe-inline'`, which is what lets a stored SVG's inline script execute at
+ * all. A move to a per-request nonce + `strict-dynamic` would make that script
+ * *inert* — no nonce can be attached to markup an attacker supplied. So
+ * tightening `script-src` would relax the constraint here rather than add to
+ * it. It still would not justify accepting SVG: the relief would be CSP-shaped
+ * (it evaporates with the next policy edit, and it does nothing about SVG's
+ * non-script surface), and nothing about a branding logo requires it.
  */
 
 import { NextRequest, NextResponse } from "next/server";
