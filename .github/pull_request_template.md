@@ -29,8 +29,10 @@ the first three mechanically — the rest are yours.
       certification or partner-program names, and no PII, in the diff *or* in
       the release notes. Placeholders only: `Jane Doe`, `jane.doe@co.com`,
       `Product A`, `Cert A`, `EMEA`/`NAM`/`JAPAC`/`LATAM`.
-      *(The `deidentify` check is advisory and only spots email domains and
-      home-directory paths — names are a human check.)*
+      *(The `deidentify` check blocks, but only spots email domains and
+      home-directory paths — names are a human check, and passing it is not a
+      de-identification review. Label `skip-deid-scan` to override a false
+      positive.)*
 
 ### Merge
 
