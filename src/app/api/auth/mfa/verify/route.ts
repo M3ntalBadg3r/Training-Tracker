@@ -9,7 +9,11 @@ import {
   DEFAULT_IDLE_MS,
   accountDisabledResponse,
 } from "@/lib/auth";
-import { isUserDisabled, isSessionEpochStale } from "@/lib/user-status";
+import {
+  isUserDisabled,
+  isUserDeleted,
+  isSessionEpochStale,
+} from "@/lib/user-status";
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 
 // POST: Verify a TOTP code and enable MFA
@@ -22,10 +26,14 @@ export async function POST(request: NextRequest) {
   // These enrolment routes use `getAuthFromRequest` rather than `requireAuth`,
   // because they must stay reachable while the session is pending MFA
   // enrolment. That means the checks `requireAuth` performs are not inherited
-  // and have to be explicit — without them a *suspended* account could still
-  // rewrite its own MFA secret and complete enrolment, and on the
-  // `mustEnableMfa` path be handed a fresh, unlocked session cookie.
+  // and have to be explicit — without them a *suspended* (or deleted) account
+  // could still rewrite its own MFA secret and complete enrolment, and on the
+  // `mustEnableMfa` path be handed a fresh, unlocked session cookie. They stay
+  // here, ahead of everything: this handler mints a token further down, so a
+  // check that ran after that would be issuing the cookie first and revoking
+  // the session second.
   if (await isUserDisabled(authUser.sub)) return accountDisabledResponse();
+  if (await isUserDeleted(authUser.sub)) return accountDisabledResponse();
   if (await isSessionEpochStale(authUser.sub, authUser.sessionEpoch)) {
     return accountDisabledResponse();
   }
