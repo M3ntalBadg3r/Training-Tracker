@@ -3,12 +3,16 @@
 import PageHeader from "@/components/layout/PageHeader";
 import { ExternalLink, FileText } from "lucide-react";
 import { useBrand } from "@/components/brand/BrandProvider";
+import { useAuth } from "@/components/auth/AuthProvider";
 
 const REPO_URL = "https://github.com/M3ntalBadg3r/Training-Tracker";
 const RELEASES_URL = `${REPO_URL}/releases`;
 
 export default function AboutPage() {
   const { appName } = useBrand();
+  // From /api/auth/me rather than the build-time constant, so the version is
+  // not inlined into a client bundle. See the note in that route.
+  const { appVersion } = useAuth();
   return (
     <div>
       <PageHeader title={`About ${appName}`} />
@@ -25,7 +29,7 @@ export default function AboutPage() {
               Current Version
             </h2>
             <p className="text-gray-600">
-              Version {process.env.APP_VERSION}
+              Version {appVersion ?? "\u2014"}
             </p>
           </div>
 

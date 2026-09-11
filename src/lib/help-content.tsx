@@ -351,7 +351,10 @@ const helpSections: Record<string, HelpSection> = {
         <ol>
           <li>
             <strong>Upload</strong>{" "}&mdash; Drag and drop or click to select a{" "}
-            <code>.csv</code>, <code>.xls</code>, or <code>.xlsx</code> file.
+            <code>.csv</code>, <code>.xls</code>, or <code>.xlsx</code> file, up to
+            25&nbsp;MB. A larger file, or one that is not a spreadsheet, is refused
+            with an explanation rather than left to freeze the page while it is
+            read. Split a very large import into a few smaller files.
           </li>
           <li>
             <strong>Column Mapping</strong>{" "}&mdash; The system auto-maps columns
@@ -971,7 +974,12 @@ const helpSections: Record<string, HelpSection> = {
             </tr>
             <tr>
               <td><strong>Link</strong></td>
-              <td>Optional URL to training resources</td>
+              <td>
+                Optional web address for the training resources. Must start with{" "}
+                <strong>http://</strong> or <strong>https://</strong>{" "}&mdash;
+                anything else is refused when you save, and an import reports the
+                rows it could not accept and brings the rest in.
+              </td>
             </tr>
             <tr>
               <td><strong>Certification</strong></td>
@@ -1228,7 +1236,7 @@ const helpSections: Record<string, HelpSection> = {
         <h3>Features</h3>
         <ul>
           <li><strong>Add User</strong>{" "}&mdash; Create a new account with username, display name, password, role, and (for non-SuperAdmin roles) the companies they can see. The <strong>Require MFA at first login</strong> checkbox is on by default; the new user will be locked to the MFA enrolment page until they set up an authenticator.</li>
-          <li><strong>Edit User</strong>{" "}&mdash; Change display name, role, or company assignments. Tick <strong>Require MFA at next login</strong> to force an existing user to enrol in MFA on their next session.</li>
+          <li><strong>Edit User</strong>{" "}&mdash; Change display name, role, or company assignments. Tick{" "}<strong>Require MFA at next login</strong> to force an existing user to enrol in MFA. Changing someone&apos;s role, or ticking that box, signs them out of any session they already have open, so the change applies on their very next click rather than whenever they next sign in &mdash; they simply log back in with their new role. Editing only a display name does not sign anyone out. If you change your own role, you stay signed in and keep working with the new role straight away.</li>
           <li>
             <strong>Reset Password</strong>{" "}&mdash; Set a new password for any
             user. This also signs that user out of every session they have open,

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jwtVerify, SignJWT } from "jose";
 import { verifyCronRequest } from "@/lib/cron-auth";
+import { SUPER_ADMIN_ROLE, isAdminish } from "@/lib/roles";
 
 const COOKIE_NAME = "tt-auth";
 
@@ -78,8 +79,27 @@ const COOKIE_AUTHORITATIVE_PATHS = [
   "/api/auth/logout",
 ];
 
+/**
+ * The same rule for routes whose path carries a dynamic segment and therefore
+ * cannot be matched literally against the list above.
+ *
+ * `PUT /api/admin/users/<id>` bumps the target's session epoch on a role or
+ * enrolment change, and re-issues the caller's own cookie when they are editing
+ * their own row — so it is cookie-authoritative for exactly the same reason
+ * change-password is.
+ *
+ * The prefix also covers that user's `reset-password` and `PATCH` siblings,
+ * which do not issue a cookie. Suppressing the slide there costs only an idle
+ * window that is not extended by these particular requests, which is a cheaper
+ * mistake than the alternative.
+ */
+const COOKIE_AUTHORITATIVE_PREFIXES = ["/api/admin/users/"];
+
 function issuesOwnAuthCookie(pathname: string): boolean {
-  return COOKIE_AUTHORITATIVE_PATHS.includes(pathname);
+  return (
+    COOKIE_AUTHORITATIVE_PATHS.includes(pathname) ||
+    COOKIE_AUTHORITATIVE_PREFIXES.some((prefix) => pathname.startsWith(prefix))
+  );
 }
 
 function isStaticAsset(pathname: string): boolean {
@@ -297,7 +317,7 @@ export async function proxy(request: NextRequest) {
   };
 
   const role = String(payload.role ?? "");
-  const isAdminish = role === "Admin" || role === "SuperAdmin";
+  const adminish = isAdminish(role);
   const pendingMfaEnrollment = payload.pendingMfaEnrollment === true;
 
   if (pendingMfaEnrollment && !isMfaEnrollmentAllowed(pathname)) {
@@ -311,7 +331,7 @@ export async function proxy(request: NextRequest) {
   }
 
   // SuperAdmin-only paths
-  if (isSuperAdminPath(pathname) && role !== "SuperAdmin") {
+  if (isSuperAdminPath(pathname) && role !== SUPER_ADMIN_ROLE) {
     if (isApiRoute(pathname)) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
@@ -319,7 +339,7 @@ export async function proxy(request: NextRequest) {
   }
 
   // Admin (or SuperAdmin) required for the rest of the admin surface
-  if (isAdminPath(pathname) && !isAdminish) {
+  if (isAdminPath(pathname) && !adminish) {
     if (isApiRoute(pathname)) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }

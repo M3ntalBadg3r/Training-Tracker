@@ -22,6 +22,8 @@ import {
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
+import { safeExternalUrl } from "@/lib/utils";
+import { checkImportFile } from "@/lib/import-file";
 
 const TRAINING_TYPES = ["Certification", "Accreditation", "InstructorLedTraining", "OLX", "OLXSubItem"];
 const FUNCTION_TYPES = ["Sales", "PreSales", "Deployments"];
@@ -551,6 +553,12 @@ function TrainingDataPageInner() {
   const parseFile = (file: File) => {
     setImportError(null);
     setFileName(file.name);
+    // Bound the input before it is buffered and parsed in this tab.
+    const rejection = checkImportFile(file);
+    if (rejection) {
+      setImportError(rejection);
+      return;
+    }
     const ext = file.name.split(".").pop()?.toLowerCase();
 
     if (ext === "csv") {
@@ -1522,8 +1530,8 @@ function TrainingDataPageInner() {
                           <input type="url" value={editValues.link}
                             onChange={(e) => setEditValues((prev) => ({ ...prev, link: e.target.value }))}
                             className="border border-gray-300 rounded px-2 py-1 text-sm w-full" placeholder="https://..." />
-                        ) : t.link ? (
-                          <a href={t.link} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Link</a>
+                        ) : safeExternalUrl(t.link) ? (
+                          <a href={safeExternalUrl(t.link) ?? undefined} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Link</a>
                         ) : "-"}
                       </td>
                       {/* Product */}

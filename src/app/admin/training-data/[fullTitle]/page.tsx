@@ -6,6 +6,7 @@ import PageHeader from "@/components/layout/PageHeader";
 import Modal from "@/components/ui/Modal";
 import { TrainingDataRow } from "@/types";
 import { Plus, Trash2, Save, AlertTriangle, ArrowRight } from "lucide-react";
+import { safeExternalUrl } from "@/lib/utils";
 
 const TRAINING_TYPES = ["Certification", "Accreditation", "InstructorLedTraining", "OLX", "OLXSubItem"];
 const FUNCTION_TYPES = ["Sales", "PreSales", "Deployments"];
@@ -577,7 +578,7 @@ export default function FullTitleDetailPage() {
                         {isEditing ? (
                           <input type="url" value={editValues.link} onChange={(e) => setEditValues((p) => ({ ...p, link: e.target.value }))}
                             className="border border-gray-300 rounded px-2 py-1 text-sm w-full" placeholder="https://…" />
-                        ) : t.link ? <a href={t.link} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Link</a> : "-"}
+                        ) : safeExternalUrl(t.link) ? <a href={safeExternalUrl(t.link) ?? undefined} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Link</a> : "-"}
                       </td>
                       <td className="px-4 py-3">
                         {t.isLegacy ? (

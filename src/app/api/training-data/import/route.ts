@@ -5,6 +5,7 @@ import { handleAuthError, requireSuperAdmin } from "@/lib/auth";
 import { recomputeAllStudentsForParent } from "@/lib/olx";
 import { invalidateReportCache } from "@/lib/report-cache";
 import { readJsonBody } from "@/lib/request-body";
+import { isRejectedLink, safeExternalUrl } from "@/lib/utils";
 
 const VALID_TRAINING_TYPES = new Set(Object.values(TrainingType));
 const VALID_FUNCTION_TYPES = new Set(Object.values(FunctionType));
@@ -183,7 +184,15 @@ export async function POST(request: NextRequest) {
       trainingType = TrainingType.OLXSubItem;
     }
 
-    const link = columnMapping.link ? row[columnMapping.link]?.trim() || null : null;
+    // A spreadsheet is the cheapest way to plant links in bulk, so the same
+    // scheme allowlist the interactive routes enforce applies here. The row is
+    // still imported — dropping one bad link is better than failing an
+    // otherwise-good catalogue import — but the Admin is told which and why.
+    const rawLink = columnMapping.link ? row[columnMapping.link]?.trim() || null : null;
+    if (isRejectedLink(rawLink)) {
+      errors.push(`Row ${rowNum}: link for "${trainingTitle}" is not a http:// or https:// web address and was not imported`);
+    }
+    const link = safeExternalUrl(rawLink);
     const certRaw = columnMapping.certification ? row[columnMapping.certification]?.trim() : "";
     const certification = trainingType === TrainingType.OLXSubItem
       ? []

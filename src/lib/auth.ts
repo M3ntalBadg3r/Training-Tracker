@@ -14,6 +14,7 @@ import {
   ACCOUNT_DISABLED_CODE,
   SESSION_TERMINATED_HEADER,
 } from "@/lib/auth-headers";
+import { ADMIN_ROLE, isAdminish, isSuperAdmin } from "@/lib/roles";
 
 const COOKIE_NAME = "tt-auth";
 
@@ -247,8 +248,10 @@ export async function requireAuth(
   await assertSessionCurrent(user);
   if (requiredRole) {
     // "Admin" should accept SuperAdmin too — SuperAdmin is a superset of Admin.
-    if (requiredRole === "Admin") {
-      if (user.role !== "Admin" && user.role !== "SuperAdmin") {
+    // The predicate lives in lib/roles.ts so this and the proxy's /admin gate
+    // cannot drift apart.
+    if (requiredRole === ADMIN_ROLE) {
+      if (!isAdminish(user.role)) {
         throw new AuthError("Forbidden", 403);
       }
     } else if (user.role !== requiredRole) {
@@ -264,7 +267,7 @@ export async function requireSuperAdmin(request: NextRequest): Promise<TokenPayl
   await assertAccountActive(user.sub);
   await assertSessionCurrent(user);
   if (user.pendingMfaEnrollment) throw new AuthError("MFA enrollment required", 403);
-  if (user.role !== "SuperAdmin") throw new AuthError("Forbidden", 403);
+  if (!isSuperAdmin(user.role)) throw new AuthError("Forbidden", 403);
   return user;
 }
 

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { requireAuth, handleAuthError } from "@/lib/auth";
 import { getAuthorizedCompanyIds, resolveCompanyFilter } from "@/lib/company-scope";
+import { safeExternalUrl } from "@/lib/utils";
 
 /**
  * GET /api/offerings
@@ -39,7 +40,7 @@ export async function GET(request: NextRequest) {
     // only ever a company the caller is already scoped to.
     companyName: o.company?.name ?? null,
     description: o.description ?? null,
-    link: o.link ?? null,
+    link: safeExternalUrl(o.link),
     specialisationCount: o._count.specialisations,
     requirementCount: o._count.offeringData,
   }));

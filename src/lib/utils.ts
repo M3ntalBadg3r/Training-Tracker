@@ -140,3 +140,82 @@ export function deriveNameFromEmail(email: string): string {
 
   return titleCaseName(words.join(" "));
 }
+
+/**
+ * Schemes permitted in a stored link field (TrainingData.link, Offering.link).
+ *
+ * These are free text — typed by an Admin, or lifted from a spreadsheet column
+ * by the bulk importers — and they go straight into an `<a href>`. React's
+ * escaping applies to attribute *values*, not to the URL *scheme*, so the thing
+ * that makes every other user-supplied string safe does not cover this field.
+ *
+ * ── What this is, and what it is NOT ─────────────────────────────────────────
+ * This is defence in depth, NOT a fix for a live vulnerability. That distinction
+ * was established by experiment rather than assumed, and it is worth recording
+ * because the code reads like the opposite. Driving a real Chromium against a
+ * planted row:
+ *
+ *   - `javascript:` never reaches the DOM. React 19 substitutes its own
+ *     throwing URL, so the rendered href was React's blocking message and the
+ *     payload did not run.
+ *   - `data:text/html,…` DOES reach the DOM verbatim — React blocks only
+ *     `javascript:` — but clicking it navigated nowhere: the browser refuses
+ *     top-level navigation to a `data:` URL.
+ *   - `vbscript:` reaches the DOM verbatim and is inert outside old IE.
+ *
+ * So two unrelated protections, in two different layers, are what currently
+ * stand between a stored link and script execution — and neither is visible at
+ * the call site. The allowlist below is worth having anyway for the reasons in
+ * `safeExternalUrl`, but do not describe it as closing an XSS hole: it is not,
+ * and a release note that says so would be wrong.
+ */
+const ALLOWED_LINK_PROTOCOLS = new Set(["http:", "https:"]);
+
+/**
+ * Normalise a stored link to one that is safe to put in an `href`, or null.
+ *
+ * Returns the trimmed input unchanged when it is an absolute http(s) URL, and
+ * null for everything else — a dangerous scheme, a relative path, a blank, or
+ * anything the URL parser rejects. The input is returned rather than
+ * `url.href` so a saved link is displayed as the Admin typed it, instead of
+ * being silently re-normalised (a trailing slash appearing after a save reads
+ * as data loss to the person who typed it).
+ *
+ * Parsing with `URL` rather than a regex is deliberate: it applies the WHATWG
+ * rules that browsers apply when they follow the link, so the obfuscations a
+ * hand-rolled prefix check misses — embedded tabs and newlines inside the
+ * scheme (`java&#9;script:`), mixed case, leading control characters — are
+ * resolved the same way here as in the address bar, and then compared against
+ * the allowlist.
+ *
+ * Applied at BOTH ends, deliberately. Validating only on write leaves rows
+ * already in the database live; sanitising only on render leaves the API (and
+ * the public API, which serves `Offering.link`) handing the raw value to every
+ * other consumer.
+ */
+export function safeExternalUrl(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    // Relative or unparseable. These fields are for external resources, so a
+    // value that isn't an absolute URL is a mistake either way.
+    return null;
+  }
+
+  return ALLOWED_LINK_PROTOCOLS.has(parsed.protocol) ? trimmed : null;
+}
+
+/**
+ * True when `value` is non-blank but not an acceptable link. Lets a write path
+ * tell "the Admin left it empty" (fine — the column is nullable) apart from
+ * "the Admin supplied something we refuse to store", so only the second is an
+ * error. Both collapse to null through `safeExternalUrl` alone.
+ */
+export function isRejectedLink(value: unknown): boolean {
+  return typeof value === "string" && value.trim() !== "" && safeExternalUrl(value) === null;
+}
