@@ -1974,6 +1974,38 @@ const helpSections: Record<string, HelpSection> = {
           and <strong>Remove</strong>. Email keeps the inline SMTP form with
           its own <strong>Test Connection</strong> button.
         </p>
+        <p>
+          SMTP settings are checked when you save them: the host must be a
+          hostname or an IP address and the port a whole number between 1 and
+          65535, and anything the form does not recognise is refused. A typo is
+          reported on the spot rather than turning up later as a delivery that
+          silently never arrived. Leaving the password blank keeps the one
+          already stored.
+        </p>
+
+        <h3>Mail server certificates</h3>
+        <p>
+          Training Tracker verifies the mail server&rsquo;s TLS certificate
+          before it hands over the SMTP password. If your mail server presents a
+          self-signed or otherwise untrusted certificate, tick{" "}
+          <strong>Allow self-signed certificate (less secure)</strong>{" "}on the
+          SMTP form and save.
+        </p>
+        <p>
+          Leave it off wherever you can. With it on, a connection that has been
+          intercepted looks exactly like a genuine one, and the SMTP password is
+          what is at stake. The better fix is a certificate the server trusts.
+        </p>
+        <p>
+          <strong>Changed behaviour:</strong>{" "}certificate checking used to be
+          off for every SMTP credential. If scheduled mail stops going out after
+          this update and the error reads{" "}
+          <em>Could not connect to the configured host and port</em>, your mail
+          server is presenting a certificate this server does not trust &mdash;
+          either install a trusted certificate on the mail server, or tick{" "}
+          <strong>Allow self-signed certificate</strong>{" "}on the SMTP
+          credential and save.
+        </p>
 
         <h3>Credential health monitoring</h3>
         <p>

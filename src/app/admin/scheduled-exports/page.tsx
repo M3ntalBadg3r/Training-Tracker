@@ -117,7 +117,18 @@ function browserTimezone(): string {
 
 const DAYS_OF_MONTH = Array.from({ length: 31 }, (_, i) => i + 1);
 
-const CREDENTIAL_PROVIDERS = [
+interface CredentialField {
+  key: string;
+  label: string;
+  type: "text" | "number" | "password" | "checkbox";
+  placeholder?: string;
+  /** Text beside a checkbox. Defaults to "Enabled". */
+  checkboxLabel?: string;
+  /** Optional explanatory line under the control. */
+  help?: string;
+}
+
+const CREDENTIAL_PROVIDERS: { provider: string; label: string; fields: CredentialField[] }[] = [
   {
     provider: "email",
     label: "Email (SMTP)",
@@ -128,6 +139,13 @@ const CREDENTIAL_PROVIDERS = [
       { key: "user", label: "Username", type: "text", placeholder: "user@example.com" },
       { key: "password", label: "Password", type: "password", placeholder: "" },
       { key: "from", label: "From Address", type: "text", placeholder: "reports@example.com" },
+      {
+        key: "allowInsecureTls",
+        label: "Certificate checking",
+        type: "checkbox",
+        checkboxLabel: "Allow self-signed certificate (less secure)",
+        help: "Leave this off. Ticking it accepts any certificate the mail server offers, so the connection can no longer be told apart from one intercepted on the way. Only use it for a mail server on your own network whose certificate you cannot replace.",
+      },
     ],
   },
 ];
@@ -485,7 +503,13 @@ export default function ScheduledExportsPage() {
         setCredResult({ provider, type: "success", message: "Credentials saved." });
         await loadData();
       } else {
-        setCredResult({ provider, type: "error", message: "Failed to save credentials." });
+        // The save route validates each field and names the one at fault; show
+        // that rather than a blanket failure, or a rejected value looks like an
+        // outage. These strings are ours, not a transport error.
+        const data = await res.json().catch(() => null);
+        const message =
+          data && typeof data.error === "string" ? data.error : "Failed to save credentials.";
+        setCredResult({ provider, type: "error", message });
       }
     } catch {
       setCredResult({ provider, type: "error", message: "Failed to save credentials." });
@@ -835,7 +859,9 @@ export default function ScheduledExportsPage() {
                               }
                               className="w-4 h-4"
                             />
-                            <span className="text-sm text-gray-600">Enabled</span>
+                            <span className="text-sm text-gray-600">
+                              {field.checkboxLabel ?? "Enabled"}
+                            </span>
                           </label>
                         ) : (
                           <input
@@ -854,6 +880,9 @@ export default function ScheduledExportsPage() {
                             }
                             className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-lg"
                           />
+                        )}
+                        {field.help && (
+                          <p className="mt-1 text-xs text-gray-500">{field.help}</p>
                         )}
                       </div>
                     ))}
