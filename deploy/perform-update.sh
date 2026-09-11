@@ -227,6 +227,28 @@ if ! git diff --quiet 2>/dev/null; then
     git stash --quiet 2>/dev/null
 fi
 
+# Configure and then verify the remote BEFORE any network operation — the
+# branch-switch fetch below is one, and used to run against whatever remote
+# happened to be configured.
+#
+# GITHUB_TOKEN comes out of .env, a file the unprivileged app can write by
+# design, and it used to be interpolated straight into the remote URL. See
+# checked_github_token in lib/common.sh: a token containing '@' relocates the
+# host, so root would pull an attacker's tree and then execute the deploy
+# scripts it contained. A token that is not a plausible credential is a hard
+# stop, deliberately: continuing would fail the pull anyway and report nothing
+# an operator could act on.
+if ! REMOTE_REASON=$(ensure_origin_remote); then
+    log "Refusing to configure the git remote: ${REMOTE_REASON}"
+    rollback 2 "Cannot configure the update source" "${REMOTE_REASON}"
+    exit 1
+fi
+if ! ORIGIN_REASON=$(verify_origin_host); then
+    log "Refusing to pull: ${ORIGIN_REASON}"
+    rollback 2 "Cannot verify the update source" "Refusing to pull because ${ORIGIN_REASON}"
+    exit 1
+fi
+
 # Switch branch if TARGET_BRANCH is set (used by channel switching)
 if [ -n "$TARGET_BRANCH" ] && [ "$TARGET_BRANCH" != "$BRANCH" ]; then
     log "Switching branch from ${BRANCH} to ${TARGET_BRANCH}..."
@@ -238,19 +260,6 @@ if [ -n "$TARGET_BRANCH" ] && [ "$TARGET_BRANCH" != "$BRANCH" ]; then
     }
     BRANCH="${TARGET_BRANCH}"
     log "Switched to branch ${BRANCH}"
-fi
-
-# Ensure the git remote URL uses the correct auth format for private repos.
-# If GITHUB_TOKEN is set, the URL must be https://x-access-token:TOKEN@github.com/...
-# A common misconfiguration is https://TOKEN@github.com/... (token as username only),
-# which causes git to prompt for a password and fail in non-interactive contexts.
-if [ -n "${GITHUB_TOKEN}" ]; then
-    DESIRED_REMOTE="https://x-access-token:${GITHUB_TOKEN}@github.com/M3ntalBadg3r/Training-Tracker.git"
-    CURRENT_REMOTE=$(git remote get-url origin 2>/dev/null || echo "")
-    if [ "${CURRENT_REMOTE}" != "${DESIRED_REMOTE}" ]; then
-        log "Updating git remote URL to use x-access-token auth format..."
-        git remote set-url origin "${DESIRED_REMOTE}"
-    fi
 fi
 
 PULL_OUTPUT=$(git pull origin "${BRANCH}" 2>&1) || {

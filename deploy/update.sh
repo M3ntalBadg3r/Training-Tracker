@@ -177,6 +177,26 @@ if ! git diff --quiet 2>/dev/null; then
     git stash --quiet 2>/dev/null
 fi
 
+# Configure and then verify the remote BEFORE any network operation — the
+# branch-switch fetch below is one, and used to run against whatever remote
+# happened to be configured.
+#
+# GITHUB_TOKEN comes out of .env, a file the unprivileged app can write by
+# design, and it used to be interpolated straight into the remote URL. See
+# checked_github_token in lib/common.sh: a token containing '@' relocates the
+# host, so root would pull an attacker's tree and then execute the deploy
+# scripts it contained. A token that is not a plausible credential is a hard
+# stop, deliberately: continuing would fail the pull anyway and report nothing
+# an operator could act on.
+if ! REMOTE_REASON=$(ensure_origin_remote); then
+    echo "  ${REMOTE_REASON}"
+    rollback 2 "Cannot configure the update source"
+fi
+if ! ORIGIN_REASON=$(verify_origin_host); then
+    echo "  Refusing to pull because ${ORIGIN_REASON}"
+    rollback 2 "Cannot verify the update source"
+fi
+
 # Switch branch if TARGET_BRANCH is set (used by channel switching)
 if [ -n "$TARGET_BRANCH" ] && [ "$TARGET_BRANCH" != "$BRANCH" ]; then
     echo "  Switching branch from ${BRANCH} to ${TARGET_BRANCH}..."
@@ -187,16 +207,6 @@ if [ -n "$TARGET_BRANCH" ] && [ "$TARGET_BRANCH" != "$BRANCH" ]; then
     }
     BRANCH="${TARGET_BRANCH}"
     echo "  Switched to branch ${BRANCH}"
-fi
-
-# Ensure the git remote URL uses the correct auth format for private repos.
-if [ -n "${GITHUB_TOKEN}" ]; then
-    DESIRED_REMOTE="https://x-access-token:${GITHUB_TOKEN}@github.com/M3ntalBadg3r/Training-Tracker.git"
-    CURRENT_REMOTE=$(git remote get-url origin 2>/dev/null || echo "")
-    if [ "${CURRENT_REMOTE}" != "${DESIRED_REMOTE}" ]; then
-        echo "  Updating git remote URL to use x-access-token auth format..."
-        git remote set-url origin "${DESIRED_REMOTE}"
-    fi
 fi
 
 PULL_OUTPUT=$(git pull origin "${BRANCH}" 2>&1) || {
