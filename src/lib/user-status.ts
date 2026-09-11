@@ -2,22 +2,24 @@ import prisma from "@/lib/prisma";
 
 /**
  * Session-revocation lookups for the auth guards: account suspension
- * (`disabledAt`) and the session epoch (`sessionEpoch`).
+ * (`disabledAt`), the session epoch (`sessionEpoch`), and whether the account
+ * still exists at all.
  *
- * Both answer the same question — "is this token still good?" — and neither can
- * be answered in `proxy.ts`: the edge proxy does no DB access at all, and it
+ * All three answer the same question — "is this token still good?" — and none
+ * can be answered in `proxy.ts`: the edge proxy does no DB access at all, and it
  * slides the auth token forward preserving every claim, so a token minted
- * before a disable (or before a password change) stays valid for the whole idle
- * window and no claim can revoke it. The checks therefore live at the
- * Node-runtime chokepoints every request passes through:
+ * before a disable (or before a password change, or before the row was deleted)
+ * stays valid for the whole idle window and no claim can revoke it. The checks
+ * therefore live at the Node-runtime chokepoints every request passes through:
  * `requireAuth`/`requireSuperAdmin` in lib/auth.ts, plus /api/auth/me,
  * /api/auth/ping and /api/auth/change-password (which use `getAuthFromRequest`
- * directly).
+ * directly — a handler that does that owes the same checks by hand).
  *
- * That puts a DB read on the hot path, so it is cached. Both conditions are
- * rare — most accounts are enabled and sit at epoch 0 — so one small query
- * returning only the *exceptional* rows serves every request in the window
- * rather than a per-user lookup.
+ * That puts a DB read on the hot path, so it is cached. Suspension and a raised
+ * epoch are both rare, but **existence is not a rare property**: knowing that an
+ * id is *absent* means knowing the full set of present ids, so the snapshot
+ * carries every user id rather than only the exceptional rows. See
+ * `loadSnapshot` for what that costs and why the alternatives are worse.
  */
 
 /**
@@ -30,6 +32,12 @@ import prisma from "@/lib/prisma";
 const TTL_MS = 15_000;
 
 interface StatusSnapshot {
+  /**
+   * Every user id that existed when the snapshot was taken. Unlike the two
+   * collections below this one is dense, because "absent" is the answer it has
+   * to support and absence can only be read off a complete list.
+   */
+  known: Set<number>;
   /** Ids of accounts that are currently suspended. */
   disabled: Set<number>;
   /**
@@ -43,20 +51,48 @@ interface StatusSnapshot {
 let cache: { snapshot: StatusSnapshot; at: number } | null = null;
 let inflight: Promise<StatusSnapshot> | null = null;
 
+/**
+ * One relaxed query over the whole `users` table, three narrow columns.
+ *
+ * This used to be filtered to `disabledAt IS NOT NULL OR sessionEpoch > 0` —
+ * only the exceptional rows — which is why a *deleted* account's token sailed
+ * through every guard: it was in neither set, so `disabled.has(id)` was false
+ * and `epochs.get(id) ?? 0` was 0, and nothing asked whether the row was still
+ * there at all.
+ *
+ * Why the whole table is the right shape, against the two alternatives:
+ *
+ * - **A tombstone table** avoids loading every id, but it only records the
+ *   deletions the code remembers to record. Accounts also disappear through the
+ *   full restore's `deleteMany`, through `POST /api/admin/wipe`, and through
+ *   direct SQL — each would have to opt in, and the day one forgets is the day
+ *   the hole is back. A snapshot *derived from the table* is right however the
+ *   row went away, and needs neither a migration nor pruning.
+ * - **A `findUnique` on every authenticated request** is always right but puts a
+ *   DB round-trip on the hot path, which is the cost this cache exists to avoid:
+ *   measured ~0.7ms median per call, so ~7ms of database time per second at a
+ *   modest 10 req/s, against ~8ms once per 15s here.
+ *
+ * Cost of the relaxed query, measured on this schema (warm, median of 5):
+ * 501 rows 4.6ms, 5,001 rows 7.8ms, 50,001 rows 89ms. `User` holds *staff*
+ * accounts — learners are `Student`, keyed by email — so a real instance sits in
+ * the hundreds; 5,000 is already a generous ceiling, and it costs ~8ms once per
+ * TTL per process with concurrent callers de-duplicated onto it. At ten times
+ * that ceiling it is ~89ms per 15s, which is still not on a request.
+ */
 async function loadSnapshot(): Promise<StatusSnapshot> {
   const rows = await prisma.user.findMany({
-    where: {
-      OR: [{ disabledAt: { not: null } }, { sessionEpoch: { gt: 0 } }],
-    },
     select: { id: true, disabledAt: true, sessionEpoch: true },
   });
+  const known = new Set<number>();
   const disabled = new Set<number>();
   const epochs = new Map<number, number>();
   for (const row of rows) {
+    known.add(row.id);
     if (row.disabledAt !== null) disabled.add(row.id);
     if (row.sessionEpoch > 0) epochs.set(row.id, row.sessionEpoch);
   }
-  return { disabled, epochs };
+  return { known, disabled, epochs };
 }
 
 async function getSnapshot(): Promise<StatusSnapshot> {
@@ -94,6 +130,44 @@ export async function isUserDisabled(userId: number): Promise<boolean> {
 }
 
 /**
+ * Has the account this token belongs to been deleted?
+ *
+ * A deleted row cannot carry a raised `sessionEpoch` or a `disabledAt` — there
+ * is nothing left to carry it — so deletion is the one revocation the other two
+ * predicates structurally cannot see, and without this check a deleted user's
+ * token kept its role and full access until the 8h absolute cap.
+ *
+ * Absence from the snapshot is a *filter, not the verdict*: the snapshot is up
+ * to TTL_MS old, so it also lacks an account created in the last 15 seconds, and
+ * rejecting those would sign out every freshly created (or freshly restored)
+ * account for the rest of the window — including the one the setup wizard just
+ * made. So an absent id is confirmed with a single primary-key lookup before the
+ * session is killed. That keeps the common path free of any query, and the
+ * confirming read happens only for a token whose account is genuinely gone (its
+ * next request is a 401 that logs the client out) or was made moments ago.
+ *
+ * **Fails open** (reports `false`, i.e. "still there") on a DB error, for the
+ * same reason as `isUserDisabled` above: the instinct here is to fail closed —
+ * an unknown account sounds like one to reject — and that instinct is wrong,
+ * because a transient DB blip would then sign out every session in the instance
+ * at once. Availability of the whole instance outweighs a deleted account
+ * surviving the few seconds until the database answers again.
+ */
+export async function isUserDeleted(userId: number): Promise<boolean> {
+  try {
+    const { known } = await getSnapshot();
+    if (known.has(userId)) return false;
+    const row = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true },
+    });
+    return row === null;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Has this token been revoked by a later password change or admin reset?
  *
  * `tokenEpoch` is the `sessionEpoch` claim the token carries — `undefined` for
@@ -117,7 +191,9 @@ export async function isSessionEpochStale(
 
 /**
  * Drop the cached snapshot so the next check re-reads. Called after a disable
- * toggle and after a session-epoch bump.
+ * toggle, after a session-epoch bump, and after a user is deleted — the delete
+ * cannot bump an epoch (the row is gone), so invalidating this snapshot is the
+ * only lever it has.
  */
 export function invalidateUserStatusCache(): void {
   cache = null;

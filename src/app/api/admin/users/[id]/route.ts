@@ -297,13 +297,28 @@ export async function DELETE(
     return NextResponse.json({ error: "Cannot delete your own account" }, { status: 400 });
   }
 
-  const targetUser = await prisma.user.findUnique({ where: { id: userId } });
-  if (targetUser?.role === "SuperAdmin") {
+  const targetUser = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { role: true },
+  });
+  // The row was read with `?.` and the absence never acted on, so deleting an
+  // id that is already gone reached `delete`, threw P2025 and surfaced as a 500.
+  if (!targetUser) {
+    return NextResponse.json({ error: "User not found" }, { status: 404 });
+  }
+  if (targetUser.role === "SuperAdmin") {
     if ((await countOtherUsableSuperAdmins(userId)) === 0) {
       return NextResponse.json({ error: "Cannot delete the last SuperAdmin" }, { status: 400 });
     }
   }
 
   await prisma.user.delete({ where: { id: userId } });
+
+  // The deleted account's live sessions are killed by `isUserDeleted`, which
+  // reads the same 15s snapshot as the disable check — so without this the
+  // deletion would not bite for up to another 15 seconds. A delete has no other
+  // lever: it cannot bump `sessionEpoch`, because the row that holds it is gone.
+  invalidateUserStatusCache();
+
   return NextResponse.json({ success: true });
 }

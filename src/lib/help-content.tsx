@@ -1246,7 +1246,7 @@ const helpSections: Record<string, HelpSection> = {
           </li>
           <li><strong>Disable MFA</strong>{" "}&mdash; Turn off multi-factor authentication for a user.</li>
           <li><strong>Disable / Enable Account</strong>{" "}&mdash; Suspend an account without deleting it &mdash; the power icon in the Actions column. A disabled user cannot sign in, and any session they already have open is signed out on their very next click. Nothing is lost: their role, company access, MFA setup and login history are all kept, so enabling the account restores it exactly as it was. You can record an optional reason, shown to other admins in the tooltip on the <em>Disabled</em> badge. You cannot disable your own account or the last SuperAdmin. A disabled account also cannot set up or confirm two-factor authentication, so suspending someone stops every route into their account, not just sign-in.</li>
-          <li><strong>Delete User</strong>{" "}&mdash; Remove a user account. You cannot delete yourself or the last admin. If you only want to stop someone signing in, disable the account instead &mdash; deleting is permanent and loses their history.</li>
+          <li><strong>Delete User</strong>{" "}&mdash; Remove a user account. You cannot delete yourself or the last admin. Deleting also ends any session that user has open, the same way disabling does: their next click is refused and they are signed out. If you only want to stop someone signing in, disable the account instead &mdash; deleting is permanent and loses their history.</li>
         </ul>
 
         <h3>Columns</h3>
