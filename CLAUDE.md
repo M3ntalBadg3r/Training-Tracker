@@ -124,7 +124,8 @@ prisma/
   schema.prisma   # Data model
   migrations/     # Migration history
 deploy/           # install.sh, update.sh, install-remote.sh, perform-update.sh, check-update.sh, auto-update.sh, auto-backup.sh, auto-export.sh, auto-credential-check.sh, update-agent.sh (root side of the update boundary), lib/common.sh (shared idempotent privilege/ownership primitives), lib/cron-sign.sh (the single definition of the cron signing string, sourced by the three auto-*.sh cron scripts — mirrors `src/lib/cron-auth.ts:cronSigningString` and must stay byte-identical to it), and three systemd units: training-tracker.service (the app, unprivileged + sandboxed), training-tracker-update.path + training-tracker-update.service (root-owned update helper)
-scripts/          # check-route-guards.mjs — the CI-enforced per-handler auth-guard inventory (see "Writing a route handler" below). `npm run check:routes` to check, `npm run routes:inventory` for the full table
+scripts/          # CI-enforced checks, all dependency-free Node. check-route-guards.mjs — the per-handler auth-guard inventory (see "Writing a route handler" below); `npm run check:routes` to check, `npm run routes:inventory` for the full table. check-release-hygiene.mjs (`npm run check:release`) — version bump / lockfile / release-notes enforcement, base-branch aware. check-deidentification.mjs (`npm run check:deid`) — advisory scan of added lines, always exits 0
+.github/          # workflows/ci.yml (lint + typecheck + build + route guards, push & PR), workflows/pr-checks.yml (release-hygiene + the advisory deidentify scan, PR only), workflows/release.yml (tags the release on the merge push), pull_request_template.md (the post-change checklist), releases/<tag>.md (one release-notes file per tag — see "Continuous Integration" and "Git Workflow" below)
 ```
 
 ## Data Model
@@ -326,9 +327,13 @@ notes**.
 
 ## Git Workflow
 
-- **Development branch**: `dev` — All changes MUST be committed and pushed here first.
-- **Production branch**: `master` — After testing on dev, merge `dev` to `master` and push.
-- **CI runs lint + typecheck** (`.github/workflows/ci.yml`) on every push and pull request to `dev` and `master`: `npm ci`, `npx prisma generate` (needed for the model types; it does not connect), `npm run lint`, `npx tsc --noEmit`. `release.yml` runs the **same two checks before it tags**, so a release cannot be cut from a tree that does not lint or typecheck. This exists because nothing used to run them — Next 16's `next build` no longer runs ESLint and no `deploy/` script calls it, which is how 44 lint errors accumulated unnoticed before v2.87. **A red lint now blocks the release**, so fix it rather than re-pushing.
+**Nothing is pushed directly to `dev` or `master`. Work lands through pull requests.**
+
+- **Feature branch**: `claude/<topic>` — branch off `dev`, commit the whole task there (version bump + release notes included), push, open a PR into `dev`, enable **auto-merge with squash**. The merge is what pushes `dev`, which is what fires `release.yml`.
+- **Development branch**: `dev` — protected. Reached only by squash-merging a PR.
+- **Production branch**: `master` — protected. Reached only by merging a `dev → master` PR **with a merge commit, never a squash** (see "Promoting to stable" below).
+- **Why PRs.** Before this, the push *was* the release: `release.yml` fires on the push to `dev`, so by the time a check went red the pre-release had already been published. The checks now run on the PR and have to pass before the merge exists. It also means every change has a reviewable diff and a written rationale, rather than arriving as a commit on a shared branch.
+- **What a PR must pass** — see `## Continuous Integration` below. The two required checks are `CI / check` (lint, typecheck, build, route guards) and `release-hygiene` (version bump, lockfile, release notes); `deidentify (advisory)` reports but never blocks.
 - **Releases are automated by GitHub Actions** (`.github/workflows/release.yml`). On every push to `dev` or `master`, the workflow reads `package.json`'s `version`, derives the tag/channel, and creates the release (running on GitHub's runners with `GITHUB_TOKEN`). You do **not** create releases by hand.
   - **Dev releases**: push to `dev` → the workflow creates a **pre-release** tagged `v<version>-dev`. Dev systems (`UPDATE_CHANNEL=dev`) will see these.
   - **Stable releases**: push to `master` → the workflow creates a **full release** tagged `v<version>`. Production systems (`UPDATE_CHANNEL=stable`) will see these.
@@ -338,42 +343,46 @@ notes**.
   - **Stable**: tag = `v<version>`, e.g. `v1.38`. The version (after stripping the leading `v`) MUST equal `package.json`'s `version` field.
   - **Dev pre-release**: tag = `v<version>-dev`, e.g. `v1.38-dev`. The `-dev` suffix is the only suffix the update comparator strips before numeric comparison.
   - **Do NOT use** any other suffix (`-stable`, `-rc`, `-beta`, `-hotfix`, …). The version comparator (`parseVersionNumber` in `src/app/api/admin/updates/check/route.ts` and the inline regex in `deploy/check-update.sh`) only strips `-dev`; any other suffix is folded into the minor parse and produces ties or unintended ordering.
-  - **Same numeric version on both channels is fine but ties on the dev channel**: the comparator uses strict `>` so when `v1.38` (stable) and `v1.38-dev` (pre-release) both parse to `1038`, whichever GitHub returns first wins. Both tags should always reference functionally equivalent code (the master merge is a `--no-ff` of the dev tip), so this is harmless. If you need the dev channel to clearly diverge, bump `package.json` ahead on dev (e.g. cut `v1.39-dev` while stable is still on `v1.38`).
+  - **Same numeric version on both channels is fine but ties on the dev channel**: the comparator uses strict `>` so when `v1.38` (stable) and `v1.38-dev` (pre-release) both parse to `1038`, whichever GitHub returns first wins. Both tags should always reference functionally equivalent code (the promotion PR merges the dev tip as a merge commit), so this is harmless. If you need the dev channel to clearly diverge, bump `package.json` ahead on dev (e.g. cut `v1.39-dev` while stable is still on `v1.38`).
 - **Creating a release** (the flow):
   ```bash
-  # Dev pre-release
-  #   1. Bump package.json "version" (and package-lock.json).
-  #   2. Write .github/releases/v<version>-dev.md with the notes.
-  #   3. Commit both, then: git push -u origin dev
-  #   -> release.yml creates the v<version>-dev pre-release automatically.
+  # Dev pre-release — one task
+  #   1. git checkout -b claude/<topic> origin/dev
+  #   2. Bump package.json "version" (and package-lock.json's two fields).
+  #   3. Write .github/releases/v<version>-dev.md with the notes.
+  #   4. Commit, then: git push -u origin claude/<topic>
+  #   5. Open a PR into dev; auto-merge with SQUASH once checks are green.
+  #   -> the merge pushes dev, and release.yml creates the v<version>-dev
+  #      pre-release automatically.
 
-  # Stable release
-  #   1. Merge dev → master (--no-ff), write .github/releases/v<version>.md
-  #      with the aggregated notes (see below), commit.
-  #   2. git push -u origin master
+  # Stable promotion
+  #   1. Write .github/releases/v<version>.md with the AGGREGATED notes and
+  #      land it on dev through a normal PR first (see below for why).
+  #   2. Open a PR from dev into master.
+  #   3. Auto-merge with a MERGE COMMIT — never a squash.
   #   -> release.yml creates the v<version> full release automatically.
-  #   3. Re-sync dev (see "Keeping dev in step with master" below):
-  #      git checkout dev && git merge --ff-only master && git push origin dev
   ```
-- **Keeping dev in step with master** — step 3 above, and easy to forget. A stable
-  promotion creates two commits that exist **only on master**: the `--no-ff` merge
-  and the `Add v<version> stable release notes` commit that adds
-  `.github/releases/v<version>.md`. Nothing brings them back on its own, so without
-  the re-sync `dev` slowly loses the stable half of its own changelog — which is
-  exactly what happened between v2.70 and v2.75, leaving `v2.72.md`/`v2.74.md`/`v2.75.md`
-  on master only. Because those two commits sit on top of the dev tip that was just
-  merged, `master` contains every `dev` commit and the re-sync is always a
-  **fast-forward**, never a merge:
-  ```bash
-  git checkout dev && git merge --ff-only master && git push origin dev
-  ```
-  If `--ff-only` refuses, someone has pushed to `dev` since the promotion — merge
-  that work into master first rather than forcing anything. The push re-triggers
-  release.yml, which finds `v<version>-dev` already tagged and skips (it is
-  idempotent), so no spurious release is cut. Nothing *breaks* if you skip the
-  re-sync — the workflow reads notes from the branch being pushed and each branch
-  has the files its own channel needs — but the drift compounds and `git log dev`
-  stops showing what has been promoted.
+- **Promoting to stable — and why the re-sync chore is gone.** The stable notes
+  file lands on `dev` *first*, through its own PR, and only then is the
+  `dev → master` PR opened. That ordering matters. Under the old flow the notes
+  commit was made on `master` after the merge, so two commits existed only there
+  — and nothing brought them back, which is how `v2.72.md`/`v2.74.md`/`v2.75.md`
+  ended up on master only between v2.70 and v2.75. Now the only master-only
+  commit is the promotion merge commit itself, which carries no content, so
+  **`dev` needs no re-sync after a promotion** — there is nothing left behind to
+  re-sync. This is just as well: branch protection would reject the direct
+  `git push origin dev` the old re-sync required.
+
+  Two consequences to preserve:
+  - The promotion PR **must merge as a merge commit**. A squash would rewrite
+    dev's commits into one new commit on master, breaking the invariant that
+    master contains every dev commit — and with it the `--ff-only` relationship
+    the update tooling and this document assume. Do **not** enable "Require
+    linear history" on `master`; it would forbid exactly this merge.
+  - Pushing the stable notes to `dev` re-triggers `release.yml` for the dev
+    channel, which finds `v<version>-dev` already tagged and skips (it is
+    idempotent). No spurious release is cut.
+
 - **Stable release notes MUST aggregate every dev pre-release since the previous stable.** Dev systems already saw each `-dev` entry individually, but stable systems only ever see one set of notes per stable bump — so anything that shipped only on `-dev` releases between the last stable and this one needs to be folded into this stable's body. Skipping this means stable users see an incomplete changelog (e.g. v2.00 originally documented only the v2.00 work and silently dropped v1.99-dev's import-aliases feature).
   - Before writing the stable body, list the pre-releases tagged since the previous stable and read their bodies:
     ```bash
@@ -384,10 +393,27 @@ notes**.
   - Concatenate the relevant "What's new / Updated / Fixed" bullets into the stable body, de-duplicating items that were superseded by later dev releases. Lead with a one-line "this stable release rolls up dev pre-releases vX.YY-dev … vZ.WW-dev" sentence so readers know what's in scope.
 - **Update channels**: Systems set `UPDATE_CHANNEL` in `.env` to `"stable"` (default) or `"dev"`. The update check API and CLI scripts use this to determine whether to include pre-releases. Both channels list `releases?per_page=20`, optionally filter out `prerelease`/`draft`, and pick the highest version using `major*1000 + minor` after stripping `v` and `-dev`.
 
+## Continuous Integration
+
+Three workflows, and it matters which runs when.
+
+- **`.github/workflows/ci.yml`** (job `check`) — on every push AND pull request to `dev`/`master`: `npm ci`, `npx prisma generate` (needed for the model types; it does not connect), `npm run lint`, `npm run typecheck`, `npm run build`, `npm run check:routes`. Lint and typecheck exist because nothing else ran them — Next 16's `next build` no longer runs ESLint and no `deploy/` script calls it, which is how 44 lint errors accumulated unnoticed before v2.87. **The build step is here for a different reason**: `npm run build` is the step that actually fails during a production update, on the customer's machine, after the new code has already been pulled — and it catches what `tsc` cannot, such as a server-only module reached from a client component. It needs a dummy `DATABASE_URL` (`src/lib/prisma.ts` reads it at module scope) but never connects; the root layout's `force-dynamic` keeps prerendering off the database.
+
+- **`.github/workflows/pr-checks.yml`** — pull requests only, because both jobs compare against the base branch:
+  - `release-hygiene` (**required**) — runs `scripts/check-release-hygiene.mjs`, which enforces the mechanical half of the Mandatory Post-Change Rules below: into `dev`, the version must move by exactly one 0.01 step and `.github/releases/v<version>-dev.md` must exist and be non-empty; into `master`, `v<version>.md` must exist, be non-empty, and not be a verbatim copy of that version's dev notes (the "aggregate every pre-release" rule); both ways, `package-lock.json`'s two `version` fields must match `package.json`. The version arithmetic **mirrors `parseVersionNumber`** in `src/app/api/admin/updates/check/route.ts` — keep the two in step, or this check will pass a version the update comparator orders differently. Escape hatch: the `skip-release-checks` label sets `SKIP_RELEASE_CHECKS` and the script passes with a notice. It **exits 0 rather than being `if:`-skipped on purpose** — a skipped required check blocks a PR just as firmly as a failing one.
+  - `deidentify (advisory)` — runs `scripts/check-deidentification.mjs` over the **added** lines only, flagging email addresses outside the fictional domains (`co.com`, `example.com`, …) and absolute home-directory paths that name a real account. It always exits 0 and **must not be added to the branch ruleset**. It deliberately does **not** detect real company/product/program/person names: the only way to grep for those is a denylist file containing them, which would put the exact identifiers the policy exists to keep out of this repo *into* it, permanently and publicly. Those stay a human check, via the PR template.
+
+- **`.github/workflows/release.yml`** — on push to `dev`/`master` (i.e. on the merge). Re-runs lint + typecheck **before it tags**, so a release cannot be cut from a tree that does not lint or typecheck, then creates the release. **A red check now blocks the release**, so fix it rather than re-pushing.
+
+### Branch protection (configured in GitHub, not in this repo)
+
+Rulesets on `dev` and `master`: require a pull request, require status checks `CI / check` and `release-hygiene`, block force pushes. **"Require linear history" must stay off** on `master` (it would forbid the promotion merge commit) and "Require branches to be up to date before merging" is left off on both (with one contributor it is churn, and on `master` it would drag the promotion merge commit back into `dev`, re-creating the re-sync chore). Required approvals are 0 so auto-merge lands a green PR without waiting for a human; raise it to 1 to keep a manual veto.
+
 ## Mandatory Post-Change Rules
 
 After every change, you MUST complete these steps before considering the task done:
 
+0. **Deliver it as a pull request** — commit to a `claude/<topic>` branch off `dev` and open a PR into `dev` (see **Git Workflow** above). `dev` and `master` are protected; a direct push is rejected. `release-hygiene` checks rules 1 and 5 mechanically, but it only runs on a PR.
 1. **Bump the version** — Increment `"version"` in `package.json` by exactly **0.01 per task**, regardless of how many individual edits or files the task touched. One task (even one that bundles several related changes) = one 0.01 bump. The new version MUST be the immediate successor of the latest released version — never skip numbers. Example: latest release is `2.02`, so the next task ships `2.03` (not `2.04`/`2.05`), and the task after that ships `2.04`. Before bumping, check the latest tag (`gh api 'repos/M3ntalBadg3r/Training-Tracker/releases?per_page=5'`) and add 0.01 to it. Keep `package-lock.json`'s two `version` fields in sync.
 2. **Update README.md** — If the change affects how the system is used (new features, changed behavior, new pages, config changes), update `README.md` to reflect it.
 3. **Update the help system** — If the change affects user-facing behavior, update the relevant section in `src/lib/help-content.tsx` so the in-app help stays accurate.

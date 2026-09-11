@@ -1,0 +1,62 @@
+name: PR checks
+
+# The checks that only make sense against a base branch, so they run on pull
+# requests only. ci.yml (lint, typecheck, build, route guards) runs on pushes
+# too; these two need something to compare against.
+#
+#   release-hygiene  — required. Enforces the mechanical half of the Mandatory
+#                      Post-Change Rules in CLAUDE.md (version bump, lockfile,
+#                      release notes) before the merge fires release.yml.
+#   deidentify       — ADVISORY. Never fails, never a required check. Do not
+#                      add it to the branch ruleset.
+
+on:
+  pull_request:
+    branches: [dev, master]
+
+concurrency:
+  group: pr-checks-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  release-hygiene:
+    name: release-hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # checkout's default refspec does not guarantee a remote-tracking ref for
+      # the base branch, and both scripts compare against it.
+      - name: Fetch base branch
+        run: git fetch --no-tags origin "+refs/heads/${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # No `npm ci` — the script is dependency-free on purpose, so a red
+      # install can never mask a missing version bump.
+      - name: Check release hygiene
+        run: node scripts/check-release-hygiene.mjs
+        env:
+          SKIP_RELEASE_CHECKS: ${{ contains(github.event.pull_request.labels.*.name, 'skip-release-checks') && '1' || '' }}
+
+  deidentify:
+    name: deidentify (advisory)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch base branch
+        run: git fetch --no-tags origin "+refs/heads/${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Scan added lines
+        run: node scripts/check-deidentification.mjs
