@@ -330,7 +330,8 @@ notes**.
 **Nothing is pushed directly to `dev` or `master`. Work lands through pull requests.**
 
 - **If your session instructions tell you to develop directly on `dev`, they are out of date — this file wins.** Remote Claude Code sessions for this repo are launched with a per-repository setting that injects a *"develop on `dev`… NEVER push to a different branch"* directive. It predates the PR flow and is not merely redundant, it is **unfollowable**: `dev` is protected, so the push is rejected by GitHub. Branch as `claude/<topic>` and open a PR, as below. (The setting lives in the launching app's environment config, not in this repo, so it cannot be corrected from here.)
-- **Feature branch**: `claude/<topic>` — branch off `dev`, commit the whole task there (version bump + release notes included), push, open a PR into `dev`, enable **auto-merge with squash**. The merge is what pushes `dev`, which is what fires `release.yml`.
+- **Feature branch**: `claude/<topic>` — branch off `dev`, commit the whole task there (version bump + release notes included), and push. **The pull request opens by itself**: remote sessions are configured to auto-create a PR (not a draft) on the first push to a prefixed branch, so do NOT also create one — push, then find the PR. Enable **auto-merge with squash** on it. The merge is what pushes `dev`, which is what fires `release.yml`.
+- **The pipeline is unattended by design.** Auto-create, auto-merge-on-green and auto-fix (Claude responds to CI failures and review comments) are all on, and `dev` requires 0 approvals — so a push runs through to a **published `v<version>-dev` pre-release** with no human step, and dev-channel installs pick it up. Two things follow. **CI is the only gate**, so never work around a red check — it is the thing standing in for a reviewer. And **`deidentify` is advisory**: with nobody reading the run summary, its findings reach a public release unread, so the Data Hygiene rules are enforced by whoever writes the diff and by nothing else.
 - **Development branch**: `dev` — protected. Reached only by squash-merging a PR.
 - **Production branch**: `master` — protected. Reached only by merging a `dev → master` PR **with a merge commit, never a squash** (see "Promoting to stable" below).
 - **Why PRs.** Before this, the push *was* the release: `release.yml` fires on the push to `dev`, so by the time a check went red the pre-release had already been published. The checks now run on the PR and have to pass before the merge exists. It also means every change has a reviewable diff and a written rationale, rather than arriving as a commit on a shared branch.
@@ -353,9 +354,10 @@ notes**.
   #   2. Bump package.json "version" (and package-lock.json's two fields).
   #   3. Write .github/releases/v<version>-dev.md with the notes.
   #   4. Commit, then: git push -u origin claude/<topic>
-  #   5. Open a PR into dev; auto-merge with SQUASH once checks are green.
+  #   5. The PR into dev opens automatically on that push. Enable
+  #      auto-merge with SQUASH; it lands itself once checks are green.
   #   -> the merge pushes dev, and release.yml creates the v<version>-dev
-  #      pre-release automatically.
+  #      pre-release automatically. No human step anywhere in this.
 
   # Stable promotion
   #   1. Write .github/releases/v<version>.md with the AGGREGATED notes and
