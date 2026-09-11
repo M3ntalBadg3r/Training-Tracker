@@ -18,6 +18,13 @@ name: PR checks
 on:
   pull_request:
     branches: [dev, master]
+    # `labeled`/`unlabeled` are load-bearing, not tidiness. Both jobs read their
+    # escape-hatch label off github.event.pull_request.labels, and the default
+    # trigger set (opened/synchronize/reopened) never fires again when a label
+    # changes — so a label added after opening was read from a stale payload and
+    # the hatch could not open at all. A PR cannot be labelled before it exists,
+    # which made both labels dead on arrival until this was added.
+    types: [opened, synchronize, reopened, labeled, unlabeled]
 
 concurrency:
   group: pr-checks-${{ github.event.pull_request.number }}
