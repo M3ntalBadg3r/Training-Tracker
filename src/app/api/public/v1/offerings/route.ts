@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { authorizePublicRequest } from "@/lib/public-api";
 import { resolveOfferingGeo, computeOfferingCounts, type OfferingLevel } from "@/lib/offering-compliance";
+import { safeExternalUrl } from "@/lib/utils";
 
 /**
  * GET /api/public/v1/offerings — read-only offering definitions.
@@ -100,7 +101,7 @@ export async function GET(request: NextRequest) {
       name: o.name,
       companyId: o.companyId,
       description: o.description ?? null,
-      link: o.link ?? null,
+      link: safeExternalUrl(o.link),
       specialisations: [...specMap.values()].sort((a, b) => a.name.localeCompare(b.name)),
     };
   });

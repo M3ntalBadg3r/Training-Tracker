@@ -3,6 +3,7 @@ import prisma from "@/lib/prisma";
 import { requireAuth, handleAuthError } from "@/lib/auth";
 import { canAccessCompany } from "@/lib/company-scope";
 import { readJsonBody } from "@/lib/request-body";
+import { isRejectedLink, safeExternalUrl } from "@/lib/utils";
 
 interface RawRow {
   offeringName?: string;
@@ -108,7 +109,15 @@ export async function POST(request: NextRequest) {
     if (!offeringName) return { ok: false, message: "Offering Name is required" };
 
     const description = isNullMarker(raw.description?.trim() ?? "") ? null : (raw.description?.trim() ?? null);
-    const link = isNullMarker(raw.link?.trim() ?? "") ? null : (raw.link?.trim() ?? null);
+    const rawLink = isNullMarker(raw.link?.trim() ?? "") ? null : (raw.link?.trim() ?? null);
+    // Unlike the training-data importer (which warns and drops the cell), this
+    // one already fails a row outright for a bad training or specialisation
+    // name and offers a dry-run preview — so a bad link is a row error here,
+    // matching the surrounding convention rather than inventing a second one.
+    if (isRejectedLink(rawLink)) {
+      return { ok: false, message: "Link must be a http:// or https:// web address" };
+    }
+    const link = safeExternalUrl(rawLink);
     const specialisationName = isNullMarker(raw.specialisationName?.trim() ?? "")
       ? ""
       : (raw.specialisationName?.trim() ?? "");

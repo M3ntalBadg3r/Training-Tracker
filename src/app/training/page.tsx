@@ -7,7 +7,7 @@ import { Download } from "lucide-react";
 import PageHeader from "@/components/layout/PageHeader";
 import DataTable, { DataTableState } from "@/components/data-table/DataTable";
 import { ColumnDef, TrainingAvailableRow } from "@/types";
-import { trainingTypeLabel, functionTypeLabel } from "@/lib/utils";
+import { functionTypeLabel, safeExternalUrl, trainingTypeLabel } from "@/lib/utils";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
 
@@ -34,9 +34,9 @@ const columns: ColumnDef<TrainingAvailableRow>[] = [
     key: "link",
     header: "Link",
     render: (row) =>
-      row.link ? (
+      safeExternalUrl(row.link) ? (
         <a
-          href={row.link}
+          href={safeExternalUrl(row.link) ?? undefined}
           target="_blank"
           rel="noopener noreferrer"
           className="text-blue-600 hover:underline"

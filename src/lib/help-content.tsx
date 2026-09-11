@@ -971,7 +971,12 @@ const helpSections: Record<string, HelpSection> = {
             </tr>
             <tr>
               <td><strong>Link</strong></td>
-              <td>Optional URL to training resources</td>
+              <td>
+                Optional web address for the training resources. Must start with{" "}
+                <strong>http://</strong> or <strong>https://</strong>{" "}&mdash;
+                anything else is refused when you save, and an import reports the
+                rows it could not accept and brings the rest in.
+              </td>
             </tr>
             <tr>
               <td><strong>Certification</strong></td>

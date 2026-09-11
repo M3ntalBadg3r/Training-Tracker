@@ -3,6 +3,7 @@ import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { downloadBlob, pdfSafe } from "@/lib/export";
+import { csvSafeCell, csvSafeRows } from "@/lib/export-cell";
 
 /**
  * Multi-section report export.
@@ -106,14 +107,14 @@ export function exportReportToCsv(doc: ReportDocument, filename: string): void {
   const blocks: string[] = [];
   blocks.push(Papa.unparse([[doc.title]]));
   if (doc.meta && doc.meta.length > 0) {
-    blocks.push(Papa.unparse(doc.meta.map((m) => [m.label, m.value])));
+    blocks.push(Papa.unparse(doc.meta.map((m) => [csvSafeCell(m.label), csvSafeCell(m.value)])));
   }
   for (const section of doc.sections) {
     blocks.push(""); // blank separator line
     if (isTableSection(section)) {
       const header = section.subtitle ? `${section.title} — ${section.subtitle}` : section.title;
-      blocks.push(Papa.unparse([[header]]));
-      blocks.push(Papa.unparse(toHeaderKeyedRows(section)));
+      blocks.push(Papa.unparse([[csvSafeCell(header)]]));
+      blocks.push(Papa.unparse(csvSafeRows(toHeaderKeyedRows(section))));
     } else {
       blocks.push(
         Papa.unparse(section.images.map((img) => [`${img.title} (chart omitted from CSV export)`]))

@@ -3,7 +3,7 @@ import prisma, { type PrismaTransactionClient } from "@/lib/prisma";
 import { TrainingType, FunctionType } from "@prisma/client";
 import { handleAuthError, requireAuth, requireSuperAdmin } from "@/lib/auth";
 import { recomputeAllStudentsForParent } from "@/lib/olx";
-import { safeDecodeParam } from "@/lib/utils";
+import { isRejectedLink, safeDecodeParam, safeExternalUrl } from "@/lib/utils";
 import { resolveProductTypeId } from "@/lib/product-types";
 import { sanitizeLegacyFields, isLegacyEligible } from "@/lib/legacy-training";
 import { invalidateReportCache } from "@/lib/report-cache";
@@ -151,6 +151,15 @@ export async function PUT(
   const decodedTitle = decodedTitleMaybe;
   const body = await request.json();
 
+  // Same scheme allowlist as the create path: this is where an existing row's
+  // link is edited, and a stored `javascript:` value is a live sink at render.
+  if (isRejectedLink(body.link)) {
+    return NextResponse.json(
+      { error: "Link must be a http:// or https:// web address" },
+      { status: 400 }
+    );
+  }
+
   const newTitle = body.trainingTitle?.trim();
   const subItems = body.subItems !== undefined ? dedupeStrings(body.subItems) : undefined;
   const parents = body.parents !== undefined ? dedupeStrings(body.parents) : undefined;
@@ -219,7 +228,7 @@ export async function PUT(
           trainingType,
           productTypeId,
           function: (body.function as FunctionType) ?? old?.function ?? "Sales",
-          link: body.link !== undefined ? body.link || null : old?.link ?? null,
+          link: body.link !== undefined ? safeExternalUrl(body.link) : old?.link ?? null,
           certification: trainingType === "OLXSubItem"
             ? []
             : (body.certification !== undefined
@@ -292,7 +301,7 @@ export async function PUT(
           productTypeId: updateProductTypeId,
         }),
         ...(body.function && { function: body.function as FunctionType }),
-        ...(body.link !== undefined && { link: body.link || null }),
+        ...(body.link !== undefined && { link: safeExternalUrl(body.link) }),
         ...(body.certification !== undefined && {
           certification: body.trainingType === "OLXSubItem"
             ? []

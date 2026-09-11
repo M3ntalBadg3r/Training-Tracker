@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { requireAuth, handleAuthError } from "@/lib/auth";
 import { getAuthorizedCompanyIds, resolveCompanyFilter } from "@/lib/company-scope";
-import { safeDecodeParam } from "@/lib/utils";
+import { safeDecodeParam, safeExternalUrl } from "@/lib/utils";
 import {
   resolveOfferingGeo,
   computeOfferingCounts,
@@ -175,7 +175,7 @@ export async function GET(
   return NextResponse.json({
     name: offering.name,
     description: offering.description ?? null,
-    link: offering.link ?? null,
+    link: safeExternalUrl(offering.link),
     countries,
     regions,
     specialisations,

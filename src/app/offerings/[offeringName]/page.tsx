@@ -7,7 +7,7 @@ import PageHeader from "@/components/layout/PageHeader";
 import Modal from "@/components/ui/Modal";
 import { ExportMenu } from "@/components/programs/ProgramCompliance";
 import { useCompanyScope } from "@/components/company/CompanyScopeProvider";
-import { trainingTypeLabel } from "@/lib/utils";
+import { safeExternalUrl, trainingTypeLabel } from "@/lib/utils";
 import { useFetchJson } from "@/hooks/useFetchJson";
 import { ExternalLink, Users, Ship, Anchor, Globe } from "lucide-react";
 
@@ -175,8 +175,8 @@ function OfferingDashboardInner() {
       {data && (
         <div className="mb-4 border border-gray-200 rounded-xl p-4 bg-white">
           {data.description ? <p className="text-sm text-gray-700">{data.description}</p> : <p className="text-sm text-gray-400 italic">No description</p>}
-          {data.link && (
-            <a href={data.link} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800">
+          {safeExternalUrl(data.link) && (
+            <a href={safeExternalUrl(data.link) ?? undefined} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800">
               <ExternalLink size={14} /> {data.link}
             </a>
           )}

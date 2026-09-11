@@ -22,6 +22,7 @@ import {
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
+import { safeExternalUrl } from "@/lib/utils";
 
 const TRAINING_TYPES = ["Certification", "Accreditation", "InstructorLedTraining", "OLX", "OLXSubItem"];
 const FUNCTION_TYPES = ["Sales", "PreSales", "Deployments"];
@@ -1522,8 +1523,8 @@ function TrainingDataPageInner() {
                           <input type="url" value={editValues.link}
                             onChange={(e) => setEditValues((prev) => ({ ...prev, link: e.target.value }))}
                             className="border border-gray-300 rounded px-2 py-1 text-sm w-full" placeholder="https://..." />
-                        ) : t.link ? (
-                          <a href={t.link} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Link</a>
+                        ) : safeExternalUrl(t.link) ? (
+                          <a href={safeExternalUrl(t.link) ?? undefined} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Link</a>
                         ) : "-"}
                       </td>
                       {/* Product */}

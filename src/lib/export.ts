@@ -2,6 +2,7 @@ import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { csvSafeRows } from "@/lib/export-cell";
 
 export function exportToCsv<T extends object>(
   data: T[],
@@ -14,7 +15,7 @@ export function exportToCsv<T extends object>(
       return [col.header, Array.isArray(val) ? val.join(", ") : val ?? ""];
     }))
   );
-  const csv = Papa.unparse(rows);
+  const csv = Papa.unparse(csvSafeRows(rows));
   downloadBlob(csv, `${filename}.csv`, "text/csv;charset=utf-8;");
 }
 
