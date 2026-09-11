@@ -10,6 +10,7 @@
 
 import { Prisma } from "@prisma/client";
 import prisma from "@/lib/prisma";
+import { normaliseIp, resolveTrustedProxies, type TrustedProxies } from "@/lib/client-ip";
 
 export interface RateLimitResult {
   /** Whether this request is allowed under the limit. */
@@ -97,6 +98,41 @@ export async function checkRateLimit(
   }
 }
 
+// The list is re-resolved only when the environment value itself changes, so
+// the parse (and its validation) no longer runs on every single request. Keyed
+// on the raw string rather than resolved once, so a process that rewrites the
+// variable is still honoured.
+let trustedCache: { raw: string | undefined; parsed: TrustedProxies } | null = null;
+let warnedInvalidTrusted = false;
+
+function trustedProxies(): TrustedProxies {
+  const raw = process.env.TRUSTED_PROXIES;
+  if (trustedCache && trustedCache.raw === raw) return trustedCache.parsed;
+
+  // Shared with the boot check in `src/instrumentation.ts`, so the addresses
+  // it reports are by construction the addresses matched here.
+  const parsed = resolveTrustedProxies(raw);
+
+  if (parsed.invalid.length && !warnedInvalidTrusted) {
+    warnedInvalidTrusted = true;
+    console.warn(
+      `TRUSTED_PROXIES contains ${parsed.invalid.length} entry/entries that are not IP addresses and are being ` +
+        `ignored: ${parsed.invalid.join(", ")}. Only plain IPv4/IPv6 literals are matched — CIDR ranges and ` +
+        `hostnames are not supported. If one of those is your reverse proxy, per-IP limits are counting every ` +
+        `client behind it as one.`
+    );
+  }
+
+  trustedCache = { raw, parsed };
+  return parsed;
+}
+
+/** Warned once per process, not once per request. */
+let warnedUnknownClient = false;
+
+/** Bucket used when no client address can be established. @see getClientIp */
+export const UNKNOWN_CLIENT_IP = "unknown";
+
 /**
  * Extract client IP from a request.
  *
@@ -104,29 +140,82 @@ export async function checkRateLimit(
  * reverse proxy that overwrites it. Naively trusting the first entry lets
  * any internet-reachable client spoof a unique IP and bypass per-IP rate
  * limits. To be conservative we walk the XFF list from the right (closest
- * to the server) and return the first hop that is NOT in TRUSTED_PROXIES.
+ * to the server) and return the first hop that is a valid IP literal and is
+ * NOT in TRUSTED_PROXIES.
+ *
+ * A hop that is not an IP literal **stops the walk** — it does not become a
+ * bucket key (this value is a database key, and junk of unbounded shape has no
+ * business being one) and the walk does not step past it either. Stepping past
+ * is worse than either alternative: Squid with `forwarded_for off` appends the
+ * literal `unknown`, and under such a proxy walking left would land on the
+ * first client-supplied entry, letting a caller both pick a fresh bucket per
+ * request and nominate somebody else's address to be throttled. Once a hop is
+ * unreadable, nothing further left is attributable, so the walk fails closed
+ * to `UNKNOWN_CLIENT_IP`.
+ *
+ * An **empty** hop is not treated as unreadable — empties are dropped before
+ * the walk. The distinction is deliberate: a non-empty token that is not an
+ * address is a positive claim by a hop that it would not or could not name the
+ * client (Squid's literal `unknown`), whereas an empty token between two
+ * commas is a formatting artifact and carries no claim at all. Stopping on it
+ * would also make `"1.2.3.4,127.0.0.1,"` — a proxy that emits a trailing comma
+ * — resolve to `UNKNOWN_CLIENT_IP`, silently collapsing every client on that
+ * deployment into one bucket, which is the failure this code exists to avoid.
  *
  * Configure TRUSTED_PROXIES in .env as a comma-separated list of trusted
  * proxy IPs (e.g. "127.0.0.1,::1,10.0.0.5"). Leaving it at the default
  * loopback set is appropriate for the typical single-host deployment fronted
- * by nginx/Apache.
+ * by nginx/Apache on the same machine.
+ *
+ * Two ways this degrades into one shared bucket, and only one of them is
+ * detectable:
+ *
+ *  - **No XFF header at all** (nothing in front of the app, or a proxy that
+ *    does not set the header). Every caller then shares the single
+ *    `UNKNOWN_CLIENT_IP` bucket, so one client's failed logins throttle
+ *    everybody. That is visible from here, and is warned about once per
+ *    process the first time it happens.
+ *  - **A proxy whose own address is missing from TRUSTED_PROXIES.** Its
+ *    address is then returned for every client, collapsing them into one
+ *    bucket just as badly. This is **not** detectable from inside the
+ *    process: with a single proxy that sets XFF, the rightmost hop
+ *    legitimately *is* the client, so a correct deployment and a
+ *    misconfigured one produce byte-identical observations. There is
+ *    deliberately no check for it — claiming one would be worse than having
+ *    none. The whole mitigation is the note `src/instrumentation.ts` prints on
+ *    **every** production boot, naming the addresses actually being trusted so
+ *    an operator can compare them against the real topology. That note is
+ *    unconditional for this reason: printing it only when TRUSTED_PROXIES was
+ *    unset would have skipped the one case anybody checks.
  */
 export function getClientIp(request: Request): string {
-  const trusted = (process.env.TRUSTED_PROXIES ?? "127.0.0.1,::1")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
+  const { addresses } = trustedProxies();
 
   const forwarded = request.headers.get("x-forwarded-for");
   if (forwarded) {
     const hops = forwarded
       .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean)
+      .map((hop) => hop.trim())
+      .filter((hop) => hop.length > 0) // A formatting artifact, not a claim.
       .reverse();
-    for (const ip of hops) {
-      if (!trusted.includes(ip)) return ip;
+    for (const hop of hops) {
+      const ip = normaliseIp(hop);
+      if (!ip) break; // Unreadable hop: nothing further left is attributable.
+      if (!addresses.has(ip)) return ip;
     }
   }
-  return "unknown";
+
+  if (!warnedUnknownClient) {
+    warnedUnknownClient = true;
+    console.warn(
+      "No client address could be attributed from X-Forwarded-For, so per-IP limits (failed logins, invalid API " +
+        "keys) are counting every caller as one client — one person's failures can throttle everyone. Either the " +
+        "header is absent, or every entry in it is a trusted proxy, or an entry was not a readable IP address " +
+        "(some proxies append the literal 'unknown'), which stops the walk on purpose rather than trusting what " +
+        "lies beyond it. If this app is behind a reverse proxy, configure that proxy to append the real client " +
+        "address. If it is directly exposed, per-IP rate limiting cannot work at all and the per-account lockout " +
+        "is the only brute-force defence left."
+    );
+  }
+  return UNKNOWN_CLIENT_IP;
 }
