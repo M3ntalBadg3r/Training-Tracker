@@ -190,14 +190,46 @@ ensure_ownership() {
     [ -d "${APP_DIR}" ] || return 0
     id -u "${SVC_USER}" >/dev/null 2>&1 || return 0
 
-    chown -R "${SVC_USER}:${SVC_GROUP}" "${APP_DIR}"
+    # The carve-outs are SKIPPED, never handed over and undone.
+    #
+    # This used to be one blanket `chown -R "${SVC_USER}" "${APP_DIR}"` with the
+    # re-lock below undoing it for deploy/ and .git afterwards. That is not
+    # equivalent, and the difference is a route to root: chown changes metadata,
+    # not content, so every byte the service account managed to write while it
+    # owned deploy/perform-update.sh SURVIVED the re-lock — leaving a root-owned
+    # file holding app-chosen content, which root then executes via the helper
+    # unit. Nor was the window a knife-edge: `chown -R` walks in readdir order
+    # and reaches deploy/ long before node_modules, so the scripts stayed
+    # service-user-owned for the rest of a tens-of-thousands-of-files traversal,
+    # and the app can summon an update on demand by writing .update-request.
+    #
+    # Iterating the top-level entries and skipping the two carve-outs keeps them
+    # root-owned for the whole call. It is also immune to a trailing slash on
+    # APP_DIR, which a `find -path` prune would not be.
+    local entry
+    for entry in "${APP_DIR}"/* "${APP_DIR}"/.[!.]* "${APP_DIR}"/..?*; do
+        # An unmatched glob expands to itself; -e/-L filters those out.
+        [ -e "${entry}" ] || [ -L "${entry}" ] || continue
+        case "${entry##*/}" in
+            deploy|.git) continue ;;
+        esac
+        # -h: the service account may create its own top-level entries here, so
+        # a name may be a symlink it planted. Retag the link, never its target.
+        # (GNU chown -R already implies -P, so it never descends through one.)
+        chown -Rh "${SVC_USER}:${SVC_GROUP}" -- "${entry}"
+    done
 
-    # Carve-outs, applied after the blanket chown so a re-run always re-locks
-    # them (git pull runs as root and recreates files under both paths).
+    # Re-assert the carve-outs. Nothing above touches them any more, so on a
+    # healthy install this is a no-op; it still matters as the migration path
+    # for a tree whose deploy/ or .git was left owned by the service account,
+    # and as the re-lock for files git — running as root — has just created.
     local locked
     for locked in deploy .git; do
-        if [ -e "${APP_DIR}/${locked}" ]; then
-            chown -R root:root "${APP_DIR}/${locked}"
+        # A symlink here is never legitimate, and `chmod -R` follows a symlink
+        # given as an argument, so leave it alone rather than chmod'ing through
+        # it. (chmod ignores symlinks it meets during the traversal itself.)
+        if [ -e "${APP_DIR}/${locked}" ] && [ ! -L "${APP_DIR}/${locked}" ]; then
+            chown -Rh root:root -- "${APP_DIR}/${locked}"
             chmod -R go-w "${APP_DIR}/${locked}"
         fi
     done
@@ -216,7 +248,7 @@ ensure_ownership() {
         chmod 0660 "${APP_DIR}/.env"
     fi
 
-    # Must come last: the blanket chown above would otherwise hand these to the
+    # Must come last: the sweep above would otherwise leave these owned by the
     # service user, which is exactly what breaks root's writes to them.
     # .auto-update-last-run is written by root from auto-update.sh, so it gets
     # the same treatment: pre-created root-owned, never adopted from a symlink
@@ -248,9 +280,27 @@ ensure_state_file() {
         if [ -L "${f}" ]; then
             rm -f "${f}"
         fi
-        [ -e "${f}" ] || : > "${f}"
-        chown "root:${SVC_GROUP}" "${f}" 2>/dev/null || true
-        chmod 0664 "${f}" 2>/dev/null || true
+        # `set -C` turns the redirection into an O_CREAT|O_EXCL open, which
+        # fails outright rather than following a symlink planted between the
+        # check above and this line — they are separate path lookups, and a
+        # plain `: > "${f}"` would truncate whatever the link pointed at.
+        if [ ! -e "${f}" ]; then
+            ( set -C; : > "${f}" ) 2>/dev/null || true
+        fi
+        # stat(1) does not dereference, so this reports the link, not its
+        # target. Skipping the two calls below when the file is already exactly
+        # right — which it is on every call after the first — means the steady
+        # state performs no path-following write here at all.
+        if [ "$(stat -c '%U:%G %a' "${f}" 2>/dev/null)" != "root:${SVC_GROUP} 664" ]; then
+            # -h: if a symlink did win the race above, retag the link rather
+            # than chowning the file it points at.
+            chown -h "root:${SVC_GROUP}" "${f}" 2>/dev/null || true
+            # chmod has no -h and always follows, so only apply it once this is
+            # known not to be a link.
+            if [ ! -L "${f}" ]; then
+                chmod 0664 "${f}" 2>/dev/null || true
+            fi
+        fi
     done
 }
 
