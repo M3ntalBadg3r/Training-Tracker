@@ -50,6 +50,46 @@ const GENERIC_PROVIDER_ERROR =
 const GENERIC_EXCHANGE_ERROR =
   "Could not complete the connection with the provider. Please retry from Training Tracker.";
 
+/**
+ * Render the popup page the provider redirects back to.
+ *
+ * This is the only hand-built HTML in the app, so it is also the only place
+ * that has to think about the Content-Security-Policy by hand. Two rules shape
+ * the markup below — the first about `script-src`, the second about `style-src`:
+ *
+ *  - **No inline event handlers.** `onclick="…"` is covered by `'unsafe-inline'`
+ *    and by nothing else — a nonce cannot apply to an attribute, and a hash
+ *    only reaches one with `'unsafe-hashes'`. Under a tightened policy the
+ *    handler would simply never run, and the failure is silent: the button
+ *    renders, the user clicks, nothing happens, and no message reaches them.
+ *    The click is therefore wired with `addEventListener` from inside the
+ *    <script> block, which a nonce *can* cover.
+ *
+ *    **This route does not emit a nonce today**, and nothing stamps one on it:
+ *    it hand-builds its own NextResponse rather than going through the React
+ *    render path. So under a nonce-only `script-src` this block would be
+ *    blocked as a whole and the button would be dead anyway. That is expected —
+ *    this change is preparation, not readiness. A future migration must stamp
+ *    the nonce onto this <script> too; removing the inline handler is the half
+ *    that cannot be done later by the migration, because no nonce would ever
+ *    have covered it.
+ *
+ *  - **The <style> block is static.** The old block interpolated
+ *    `h1 { color: ${colour} }`. `colour` was a two-literal union, so that was
+ *    hashable in principle — two `sha256-` entries — but awkward and fragile:
+ *    every edit to the block silently invalidates the pinned hashes, and the
+ *    count grows with the states. One static block is one hash
+ *    (`sha256-lnIrPltkLoQVOmLsunLOWQAS1dkf2bcIZYmak+8dBmo=` at the time of
+ *    writing) and is simpler markup regardless of any policy.
+ *
+ * Keeping the block hashable is housekeeping, not a step towards dropping
+ * `style-src 'unsafe-inline'` — that is not going anywhere app-wide. `src/`
+ * carries eight inline `style={…}` attributes, and a style *attribute* cannot
+ * take a nonce. The one in the root layout (`<html style={…}>`, the brand
+ * colour) is conditional on a branded install, but `BrandMark` renders
+ * `style={{ height: size }}` unconditionally on the login page, and Recharts
+ * sets inline styles on its own containers at runtime throughout the reports.
+ */
 function htmlPage(opts: { provider: string; status: "ok" | "error"; message: string }): string {
   const payload = scriptSafeJson({
     type: "tt-oauth",
@@ -59,7 +99,9 @@ function htmlPage(opts: { provider: string; status: "ok" | "error"; message: str
   });
   const heading = opts.status === "ok" ? "Connected" : "Connection failed";
   const safeMessage = escapeHtml(opts.message);
-  const colour = opts.status === "ok" ? "#16a34a" : "#dc2626";
+  // A literal, not interpolated data: the two arms are the only values this can
+  // ever take, so the class attribute needs no escaping.
+  const statusClass = opts.status === "ok" ? "ok" : "err";
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -67,24 +109,53 @@ function htmlPage(opts: { provider: string; status: "ok" | "error"; message: str
   <title>${heading}</title>
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; max-width: 480px; margin: 4rem auto; padding: 2rem; text-align: center; }
-    h1 { color: ${colour}; }
+    body.ok h1 { color: #16a34a; }
+    body.err h1 { color: #dc2626; }
     button { padding: 0.5rem 1rem; margin-top: 1.5rem; cursor: pointer; }
   </style>
 </head>
-<body>
+<body class="${statusClass}">
   <h1>${heading}</h1>
   <p>${safeMessage}</p>
   <p>You can close this window.</p>
-  <button onclick="window.close()">Close window</button>
+  <button id="tt-close-window" type="button">Close window</button>
   <script>
-    try {
-      if (window.opener && !window.opener.closed) {
-        window.opener.postMessage(${payload}, window.location.origin);
-        setTimeout(function () { window.close(); }, 250);
+    (function () {
+      function wireClose() {
+        var button = document.getElementById("tt-close-window");
+        if (button) {
+          button.addEventListener("click", function () { window.close(); });
+        }
       }
-    } catch (e) {
-      // Ignore — the user can close manually.
-    }
+      // An inline script at the end of the document body runs *during*
+      // parsing, so readyState is "loading" here and the DOMContentLoaded
+      // branch is the one actually taken: the click listener is registered
+      // after the try/catch below has already run, not before it. Measured,
+      // not assumed — the listener lands at readyState "interactive".
+      //
+      // That ordering is fine, and the two reasons are worth stating because
+      // they are what a future edit could break. Nothing before the
+      // registration can throw past it (the catch swallows the postMessage
+      // path entirely), and this page has no subresources, so
+      // DOMContentLoaded fires immediately after parsing — long before a user
+      // can click. Keep it that way: if this block ever grows code that can
+      // throw *outside* that catch, move the wiring ahead of it, because the
+      // manual close is the fallback for when the postMessage path fails and
+      // must not depend on it.
+      if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", wireClose);
+      } else {
+        wireClose();
+      }
+      try {
+        if (window.opener && !window.opener.closed) {
+          window.opener.postMessage(${payload}, window.location.origin);
+          setTimeout(function () { window.close(); }, 250);
+        }
+      } catch (e) {
+        // Ignore — the user can close manually.
+      }
+    })();
   </script>
 </body>
 </html>`;
