@@ -13,6 +13,7 @@ import {
 } from "@/lib/auth";
 import {
   isUserDisabled,
+  isUserDeleted,
   isSessionEpochStale,
   invalidateUserStatusCache,
 } from "@/lib/user-status";
@@ -25,10 +26,12 @@ export async function POST(request: NextRequest) {
   }
 
   // This route uses `getAuthFromRequest` rather than `requireAuth`, so the
-  // revocation checks have to be spelled out — a suspended account must not be
-  // able to change its own password, and neither must a session that a password
-  // change elsewhere has already ended.
+  // revocation checks have to be spelled out — a suspended or deleted account
+  // must not be able to change its own password, and neither must a session that
+  // a password change elsewhere has already ended. This route re-issues the
+  // caller's cookie, so the checks belong here, before anything is minted.
   if (await isUserDisabled(authUser.sub)) return accountDisabledResponse();
+  if (await isUserDeleted(authUser.sub)) return accountDisabledResponse();
   if (await isSessionEpochStale(authUser.sub, authUser.sessionEpoch)) {
     return accountDisabledResponse();
   }

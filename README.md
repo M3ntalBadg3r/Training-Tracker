@@ -364,20 +364,80 @@ On a fresh installation with no users in the database, all routes redirect to `/
 
 The `.env` file requires:
 
+**These are checked when the application starts.** Anything missing or
+malformed is named in the startup log (`journalctl -u training-tracker` on a
+systemd host) together with what to set and where. A correctly configured
+install logs just one line, stating which addresses it treats as reverse
+proxies — see the `TRUSTED_PROXIES` note below for why that one is always
+printed.
+
+`DATABASE_URL` and `JWT_SECRET` are treated as fatal. Without either the app
+cannot serve a single authenticated request, so it stops and says why, rather
+than answering unexplained 500s the first time somebody tries to log in. Note
+what that looks like in practice: the service **stays running and the port
+stays open** — static files are still served, so a simple "is the port up?"
+health check will report the site as healthy — but every real page returns an
+error, with the reason repeated in the log. Do not judge a failed start by the
+service status; read the log. Everything else is a warning: the app runs, but
+something is quietly not doing its job.
+
+Two of those warnings were previously invisible and are worth calling out:
+without `ENCRYPTION_KEY` the secrets meant to be encrypted at rest are written
+to the database **in plaintext**, and without `CRON_SECRET` every scheduled
+backup, export and credential check is rejected exactly as a forged request
+would be — so the jobs simply never run.
+
 | Variable | Description |
 |----------|-------------|
 | `DATABASE_URL` | PostgreSQL connection string |
 | `DATABASE_POOL_MAX` | *(Optional)* Maximum PostgreSQL connections in the app's connection pool. Defaults to `20`. Raise it when many users run heavy reports at once (ensure PostgreSQL's `max_connections` has headroom); lower it on very small servers. |
 | `REPORT_CACHE_TTL_MS` | *(Optional)* Lifetime, in milliseconds, of the short in-memory cache in front of the expensive dashboard/report/program-compliance pages. Defaults to `30000` (30 s). While an entry is fresh, concurrent viewers of the same page share one computation instead of each re-querying the database; the cache is also cleared immediately whenever the underlying data is edited or imported, so results stay current after a change. Set to `0` to disable caching entirely. |
-| `JWT_SECRET` | Secret key for JWT token signing (minimum 32 characters required) |
-| `ENCRYPTION_KEY` | 64-character hex string (32 bytes) used to encrypt secrets at rest — TOTP shared secrets and OAuth/SMTP credentials. Generate with `openssl rand -hex 32`. **After enabling**, a SuperAdmin must POST `/api/admin/security/encrypt-secrets` once to seal any pre-existing rows. |
-| `CRON_SECRET` | *(Optional)* Required only when using the auto-backup / auto-export / credential-check shell scripts. Generate with `openssl rand -hex 32`. Each scheduled request is signed for one endpoint, with a timestamp and a one-time value, so a signature cannot be captured and reused. |
+| `JWT_SECRET` | Secret key for JWT token signing (minimum 32 characters required). **Checked at startup; missing or too short stops the app.** |
+| `ENCRYPTION_KEY` | 64-character hex string (32 bytes) used to encrypt secrets at rest — TOTP shared secrets and OAuth/SMTP credentials — and backup archives. Generate with `openssl rand -hex 32`. **If it is unset or not valid hex, those secrets are stored in the database in plaintext**; the startup check warns, but only setting the key fixes it. **After enabling**, a SuperAdmin must POST `/api/admin/security/encrypt-secrets` once to seal any pre-existing rows. |
+| `CRON_SECRET` | *(Optional)* Required only when using the auto-backup / auto-export / credential-check shell scripts. Generate with `openssl rand -hex 32`. Each scheduled request is signed for one endpoint, with a timestamp and a one-time value, so a signature cannot be captured and reused. Without it those requests are rejected identically to a forged one, so the scheduled jobs never run — the startup check warns when it is absent. |
 | `APP_BASE_URL` | *(Recommended in production)* Canonical externally-resolvable origin (e.g. `https://tracker.example.com`). Used to build OAuth redirect URIs without trusting `X-Forwarded-Host` headers, and to decide whether the auth cookie is marked `Secure` (an `https://` value marks it Secure; otherwise the cookie's Secure flag follows the request protocol, so plain-HTTP LAN access still works). |
-| `TRUSTED_PROXIES` | *(Recommended in production)* Comma-separated list of trusted reverse-proxy IPs whose `X-Forwarded-For` entries are stripped when extracting the real client IP for rate limiting. Defaults to `127.0.0.1,::1`. |
+| `TRUSTED_PROXIES` | *(Recommended in production)* Comma-separated list of trusted reverse-proxy IPs whose `X-Forwarded-For` entries are stripped when extracting the real client IP for rate limiting. Defaults to `127.0.0.1,::1`. Only plain IPv4/IPv6 literals are matched — **CIDR ranges and hostnames are not supported** and are ignored with a warning. Equivalent spellings of one IPv6 address are matched (`::1` and `0:0:0:0:0:0:0:1`), but an IPv4-mapped address is a different value: `::ffff:127.0.0.1` does **not** match a `127.0.0.1` entry, so list both spellings if your proxy presents the mapped form. See the note below on why an incorrect value here is quiet. |
 | `NODE_EXTRA_CA_CERTS` | *(Optional)* Path to a CA bundle Node should trust in addition to its built-ins — set this when running behind an SSL-inspecting proxy/firewall so Prisma engine downloads and outbound HTTPS succeed. The installer sets it to `/etc/ssl/certs/ca-certificates.crt` automatically on Debian. |
 | `EXPORT_ROOT` | *(Optional)* Folder that scheduled exports delivered to the local filesystem may write into. Defaults to `<app dir>/exports` (i.e. `/opt/training-tracker/exports` on a standard install). A schedule pointing anywhere else is refused. On a systemd host, a value outside `/opt/training-tracker` also needs a matching `ReadWritePaths=` drop-in. |
 | `BACKUP_ROOT` | *(Optional)* Folder that backup archives are written to, and the only tree the folder picker on the Backup page can browse. Defaults to `<app dir>/backups`, with the same `ReadWritePaths=` caveat as `EXPORT_ROOT`. |
 | `GITHUB_TOKEN` | *(Optional)* GitHub personal access token — required for update checks **and git pulls** on private repositories |
+
+#### Why `TRUSTED_PROXIES` deserves a second look
+
+Per-IP rate limiting (failed logins, invalid API keys) is only as good as the
+client address behind it, and that address is read from `X-Forwarded-For`. Two
+misconfigurations collapse every client into a single shared bucket, so one
+person's failed logins can throttle everybody:
+
+- **Nothing in front of the app sets `X-Forwarded-For`**, or a proxy appends
+  something that is not an address (Squid with `forwarded_for off` appends the
+  literal `unknown`). Detected: the app logs a warning once, the first time it
+  happens. In the second case the app deliberately stops reading the list at
+  the unreadable entry rather than falling back to whatever a client put
+  earlier in it, which would let callers choose their own rate-limit bucket, or
+  somebody else's.
+- **Your reverse proxy's address is not in `TRUSTED_PROXIES`.** *Not* detected,
+  and it cannot be: with a single proxy that sets the header, the last entry in
+  the list legitimately *is* the client, so a correct deployment and this
+  mistake look identical from inside the application. Nothing here claims to
+  catch it. Instead, **every production start logs the addresses it is actually
+  trusting** — set or not — so there is always a line to compare against your
+  real topology. That line is produced by the same code that performs the
+  attribution, so it cannot drift from what the application actually does. It
+  is the only check there is; read it.
+
+Leaving the setting **blank** is not the same as listing nothing: a blank or
+whitespace-only value falls back to the loopback default. Trusting nothing
+would make your proxy's own address the answer for every client — the very
+collapse described above.
+
+A reverse proxy on the same machine as the app is covered by the loopback
+default and needs no configuration.
+
+Upgrading note: clients previously recorded under an IPv4-mapped form
+(`::ffff:198.51.100.7`) now normalise to the plain IPv6 spelling, so a handful
+of live rate-limit counters reset once on the first start after upgrading.
+Nothing else is affected.
 
 #### Setting up GITHUB_TOKEN
 
@@ -760,7 +820,7 @@ Navigate to **Admin > Users** to manage user accounts.
 - **Reset Password** — Set a new password for any user. This also **signs that user out of every session they have open**, so resetting the password of a compromised account evicts whoever is using it. Requires you to re-enter your own password (and MFA code, if you have MFA enabled).
 - **Disable MFA** — Turn off multi-factor authentication for a user.
 - **Disable / Enable Account** — Suspend an account without deleting it (the power icon in the Actions column). A disabled user cannot sign in, and any session they already have open is signed out on their very next request. Their role, company access, MFA setup and login history are all preserved, so enabling the account restores it exactly as it was. An optional reason can be recorded and is shown to other admins in the tooltip on the grey **Disabled** badge. You cannot disable your own account or the last SuperAdmin. A disabled account also cannot set up or confirm two-factor authentication, so suspension closes every route into the account rather than sign-in alone.
-- **Delete User** — Remove a user account. Cannot delete yourself or the last admin. To simply stop someone signing in, disable the account instead — deletion is permanent and discards their history.
+- **Delete User** — Remove a user account. Cannot delete yourself or the last admin. Like disabling, deleting an account ends any session that user already has open — their next request is refused and they are signed out. To simply stop someone signing in, disable the account instead — deletion is permanent and discards their history.
 
 A disabled account is refused at login with the same generic "Invalid username or password" message as a wrong password, so a disabled username can't be distinguished from a nonexistent one. The attempt is still recorded in the **Failed login attempts** panel with the reason *Account disabled*.
 
@@ -771,7 +831,7 @@ A disabled account is refused at login with the same generic "Invalid username o
 - **Default Date Format** — `DD/MM/YYYY` or `MM/DD/YYYY`. Used for:
   - Parsing dates during CSV / Excel imports (the import flow detects format mismatches and prompts before committing — see **Import Data → Date Format Detection**).
   - Displaying dates throughout the app for users who haven't picked a personal preference.
-- **Session Timeout** — How long a signed-in user can be **inactive** before being automatically signed out (default **30 minutes**, adjustable 5–1440 minutes). A warning dialog with a countdown appears shortly before the timeout so an active user can choose **Stay signed in**. Ongoing activity keeps the session alive; a change takes effect the next time a user signs in. A fixed **absolute cap** (8 hours, overridable with the `SESSION_ABSOLUTE_HOURS` environment variable) also applies — a session is ended once it reaches the cap regardless of activity. Separately from any timeout, a session is ended immediately when the account is disabled, or when its password is changed from somewhere else (see **Changing your password**).
+- **Session Timeout** — How long a signed-in user can be **inactive** before being automatically signed out (default **30 minutes**, adjustable 5–1440 minutes). A warning dialog with a countdown appears shortly before the timeout so an active user can choose **Stay signed in**. Ongoing activity keeps the session alive; a change takes effect the next time a user signs in. A fixed **absolute cap** (8 hours, overridable with the `SESSION_ABSOLUTE_HOURS` environment variable) also applies — a session is ended once it reaches the cap regardless of activity. Separately from any timeout, a session is ended immediately when the account is disabled or deleted, or when its password is changed from somewhere else (see **Changing your password**).
 - **Import Aliases** — The per-field header alias list used by the student import's column auto-mapper.
 - **Branding** — White-labelling; see below.
 
@@ -850,7 +910,7 @@ still leaves MFA working.
 
 #### Portable Backup (restore on a different system)
 
-To move data to a **different** installation, click **Portable backup…** and choose a passphrase (at least 8 characters). The archive is encrypted with a key derived from that passphrase instead of the server's `ENCRYPTION_KEY`, so it can be restored anywhere by re-entering the same passphrase. The file is named `training-tracker-backup-<timestamp>.portable.zip.enc`.
+To move data to a **different** installation, click **Portable backup…** and choose a passphrase (at least 12 characters). The archive is encrypted with a key derived from that passphrase instead of the server's `ENCRYPTION_KEY`, so it can be restored anywhere by re-entering the same passphrase. The file is named `training-tracker-backup-<timestamp>.portable.zip.enc`.
 
 > **Keep the passphrase safe — there is no way to recover the data if it is lost.**
 
@@ -879,8 +939,9 @@ Click **Upload Backup File** and select a previously created backup file. If it 
 - **Companies are matched by name, never deleted.** A company in the archive that already exists here is reused; one that does not is created. Nothing that references a company (students, offerings, scheduled exports, API-key grants) is disturbed, and student records are re-pointed at the right company by name even if the ids differ between the two systems.
 - A restore that *would* leave the system with no enabled SuperAdmin is **refused** before anything is changed.
 - Restoring accounts signs you out, because the restored accounts are not the ones your current session was issued for. Sign in again with an account from the archive.
+- **Restored accounts never carry an old session marker forward.** Each account tracks a counter that is raised whenever its sessions are deliberately ended (a password change, an admin password reset, a role change), and a sign-in is only accepted while it is level with that counter. A backup stores the counter as it stood when the backup was taken, which is usually *lower* than the account's current one, so restoring it verbatim would have wound the marker backwards. Every restored account is therefore given a counter above everything that existed before the restore — both the live values being replaced and whatever the archive itself held — so a restore cannot hand out a valid lease on an old sign-in, and an account number that is ever reused cannot arrive carrying one.
 
-**Important:** Restoring a backup **replaces all existing data** other than the user accounts described above. Create a backup of the current system first if you need to preserve it. Uploaded archives are capped at 512 MB by default (override with `BACKUP_MAX_RESTORE_MB` in `.env`) so an oversized or malformed upload cannot exhaust server memory.
+**Important:** Restoring a backup **replaces all existing data** other than the user accounts described above. Create a backup of the current system first if you need to preserve it. Uploaded archives are capped at 512 MB by default (override with `BACKUP_MAX_RESTORE_MB` in `.env`) so an oversized or malformed upload cannot exhaust server memory; the same ceiling applies to restoring a **saved** backup from the backups folder. Separately, an archive is refused if its contents would *decompress* to more than 1024 MB (override with `BACKUP_MAX_EXPANDED_MB`), which bounds a small file crafted to expand enormously. A genuine backup is stored uncompressed, so real archives are nowhere near either limit.
 
 #### Automatic Backups
 
@@ -990,7 +1051,9 @@ restriction existed.
 
 Expand the **Provider Credentials** section to manage authentication for each delivery provider.
 
-- **Email (SMTP)** keeps an inline form (host, port, username, password, from address) plus a **Test Connection** button.
+- **Email (SMTP)** keeps an inline form (host, port, username, password, from address) plus a **Test Connection** button. Each field is checked when you save — the host must be a hostname or an IP address and the port a number between 1 and 65535 — so a typo is reported straight away instead of surfacing later as a failed delivery.
+  - **Certificate checking.** Training Tracker verifies the mail server's TLS certificate. If your server presents a self-signed or otherwise untrusted certificate, tick **Allow self-signed certificate (less secure)** on the SMTP form and save. Leave it off wherever you can: with it on, an intercepted connection is indistinguishable from a genuine one, and the SMTP password is what is at stake.
+  - *Upgrading?* Certificate checking used to be off for every SMTP credential. If scheduled mail stops going out after this update and the error reads "Could not connect to the configured host and port", your mail server is presenting a certificate this server does not trust — either install a trusted certificate on the mail server, or tick **Allow self-signed certificate** on the SMTP credential and save.
 - **Google Drive**, **Box**, and **OneDrive** each have a **Connect with…** button that launches a guided OAuth wizard. Training Tracker:
   1. Shows the redirect URI you must register in the provider's developer console (with a Copy button).
   2. Walks you through registering an OAuth app in Google Cloud Console / Box Developer Console / Microsoft Entra.

@@ -13,6 +13,8 @@ import {
   OAUTH_STATE_COOKIE_OPTIONS,
 } from "@/lib/oauth-state";
 import { sealConfig, openConfig } from "@/lib/crypto";
+import { readJsonBody } from "@/lib/request-body";
+import { tenantIdProblem, validateCredentialConfig } from "@/lib/credential-config";
 
 interface StartBody {
   clientId?: string;
@@ -37,7 +39,9 @@ export async function POST(
     return NextResponse.json({ error: `Unknown provider: ${provider}` }, { status: 400 });
   }
 
-  const body = (await request.json()) as StartBody;
+  const parsed = await readJsonBody(request);
+  if (!parsed.ok) return parsed.response;
+  const body = (parsed.body ?? {}) as StartBody;
   if (!body.clientId || !body.clientSecret) {
     return NextResponse.json(
       { error: "clientId and clientSecret are required" },
@@ -46,6 +50,18 @@ export async function POST(
   }
 
   const cfg = PROVIDER_CONFIG[provider];
+
+  // The tenant ID is interpolated into the provider's authorize/token URL by
+  // `oauth-providers.ts` before `new URL` parses it, so a `/`, `?`, `#` or `..`
+  // reshapes the request path rather than sitting in it as a value. Checked here
+  // as well as in the credentials POST because this route is the other door the
+  // same value comes through.
+  const tenantId = cfg.needsTenantId ? (body.tenantId?.trim() || "common") : undefined;
+  const tenantProblem = tenantId === undefined ? null : tenantIdProblem(tenantId);
+  if (tenantProblem) {
+    return NextResponse.json({ error: tenantProblem }, { status: 400 });
+  }
+
   const redirectUri = getRedirectUri(request, provider);
   const state = await signOAuthState(provider);
 
@@ -57,8 +73,8 @@ export async function POST(
     clientSecret: body.clientSecret,
     pending: true,
   };
-  if (cfg.needsTenantId) {
-    pendingConfig.tenantId = body.tenantId?.trim() || "common";
+  if (tenantId !== undefined) {
+    pendingConfig.tenantId = tenantId;
   }
   if (cfg.folderField === "folderId" && body.folderId) {
     pendingConfig.folderId = body.folderId;
@@ -82,7 +98,18 @@ export async function POST(
     }
   }
 
-  const sealed = sealConfig(pendingConfig);
+  // Run the same write schema the credentials POST does. This object is
+  // server-assembled from a fixed key set so the unknown-key class cannot arise
+  // here, but the *values* are all client-supplied and this is the object that
+  // gets sealed — validating it keeps the two write paths from diverging.
+  // `allowInternal` because `pending`/`previousRefreshToken` are ours, not the
+  // client's: they are not accepted from a request body anywhere.
+  const validated = validateCredentialConfig(provider, pendingConfig, { allowInternal: true });
+  if ("error" in validated) {
+    return NextResponse.json({ error: validated.error }, { status: 400 });
+  }
+
+  const sealed = sealConfig(validated.config);
   await prisma.exportCredential.upsert({
     where: { provider },
     update: { config: sealed as object },
@@ -94,7 +121,7 @@ export async function POST(
     clientId: body.clientId,
     redirectUri,
     state,
-    tenantId: cfg.needsTenantId ? (body.tenantId?.trim() || "common") : undefined,
+    tenantId,
   });
 
   const response = NextResponse.json({ authUrl, redirectUri });

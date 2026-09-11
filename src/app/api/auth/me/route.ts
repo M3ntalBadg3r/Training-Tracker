@@ -6,7 +6,11 @@ import {
   ABSOLUTE_SESSION_MS,
   DEFAULT_IDLE_MS,
 } from "@/lib/auth";
-import { isUserDisabled, isSessionEpochStale } from "@/lib/user-status";
+import {
+  isUserDisabled,
+  isUserDeleted,
+  isSessionEpochStale,
+} from "@/lib/user-status";
 import { getSystemDateFormat } from "@/lib/system-settings";
 import { isDateFormat } from "@/lib/date-format";
 
@@ -20,6 +24,10 @@ export async function GET(request: NextRequest) {
   // during pending-MFA enrolment) rather than `requireAuth`. Routing it through
   // the shared helper keeps one definition of the rule.
   if (await isUserDisabled(authUser.sub)) return accountDisabledResponse();
+  // A deleted account used to fall through to the `findUnique` below and get a
+  // bare 404, which tells the client nothing it can act on — the auto-logout
+  // watches for the header this response carries.
+  if (await isUserDeleted(authUser.sub)) return accountDisabledResponse();
   if (await isSessionEpochStale(authUser.sub, authUser.sessionEpoch)) {
     return accountDisabledResponse();
   }

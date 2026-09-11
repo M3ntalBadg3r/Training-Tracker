@@ -1246,7 +1246,7 @@ const helpSections: Record<string, HelpSection> = {
           </li>
           <li><strong>Disable MFA</strong>{" "}&mdash; Turn off multi-factor authentication for a user.</li>
           <li><strong>Disable / Enable Account</strong>{" "}&mdash; Suspend an account without deleting it &mdash; the power icon in the Actions column. A disabled user cannot sign in, and any session they already have open is signed out on their very next click. Nothing is lost: their role, company access, MFA setup and login history are all kept, so enabling the account restores it exactly as it was. You can record an optional reason, shown to other admins in the tooltip on the <em>Disabled</em> badge. You cannot disable your own account or the last SuperAdmin. A disabled account also cannot set up or confirm two-factor authentication, so suspending someone stops every route into their account, not just sign-in.</li>
-          <li><strong>Delete User</strong>{" "}&mdash; Remove a user account. You cannot delete yourself or the last admin. If you only want to stop someone signing in, disable the account instead &mdash; deleting is permanent and loses their history.</li>
+          <li><strong>Delete User</strong>{" "}&mdash; Remove a user account. You cannot delete yourself or the last admin. Deleting also ends any session that user has open, the same way disabling does: their next click is refused and they are signed out. If you only want to stop someone signing in, disable the account instead &mdash; deleting is permanent and loses their history.</li>
         </ul>
 
         <h3>Columns</h3>
@@ -1731,7 +1731,7 @@ const helpSections: Record<string, HelpSection> = {
         <p>
           To restore on a <strong>different</strong> installation, click{" "}
           <strong>Portable backup&hellip;</strong> and choose a passphrase (at
-          least 8 characters). The archive is encrypted from the passphrase
+          least 12 characters). The archive is encrypted from the passphrase
           rather than the server key, so it can be restored anywhere by
           re-entering the same passphrase. <strong>Keep the passphrase safe —
           the data cannot be recovered without it.</strong>
@@ -1820,6 +1820,21 @@ const helpSections: Record<string, HelpSection> = {
             an account from the archive.
           </li>
           <li>
+            <strong>Restored accounts never carry an old session marker
+            forward.</strong>{" "}Each account keeps a counter that is raised
+            whenever its sessions are deliberately ended &mdash; a password
+            change, an admin password reset, a role change &mdash; and a
+            sign-in is accepted only while it is level with that counter. A
+            backup stores the counter as it stood when the backup was taken,
+            which is usually <em>lower</em>{" "}than the account&apos;s current
+            one, so restoring it as-is would wind the marker backwards. Every
+            restored account is therefore given a counter above everything that
+            existed before the restore &mdash; both the live values being
+            replaced and whatever the archive held &mdash; so a restore
+            can&apos;t hand out a valid lease on an old sign-in, and an account
+            number that is ever reused can&apos;t arrive carrying one.
+          </li>
+          <li>
             <strong>A credential-bearing archive is only accepted when it is
             encrypted.</strong>{" "}User credentials are only ever written into an
             encrypted backup, so an unencrypted archive that claims to include
@@ -1831,7 +1846,11 @@ const helpSections: Record<string, HelpSection> = {
           <strong>Important:</strong> Restoring a backup{" "}
           <strong>replaces all existing data</strong> other than the user
           accounts described above. Create a backup of the current system first
-          if you need to preserve it.
+          if you need to preserve it. An archive that is larger than the server
+          allows &mdash; either as a file, or in what its contents would unpack
+          to &mdash; is refused before anything is read, so a corrupt or crafted
+          file cannot exhaust the server&rsquo;s memory. Genuine backups are
+          stored unpacked and are nowhere near those limits.
         </p>
 
         <h3>Automatic Backups</h3>
@@ -1954,6 +1973,38 @@ const helpSections: Record<string, HelpSection> = {
           <strong>Connect/Reconnect</strong>, <strong>Test Connection</strong>,
           and <strong>Remove</strong>. Email keeps the inline SMTP form with
           its own <strong>Test Connection</strong> button.
+        </p>
+        <p>
+          SMTP settings are checked when you save them: the host must be a
+          hostname or an IP address and the port a whole number between 1 and
+          65535, and anything the form does not recognise is refused. A typo is
+          reported on the spot rather than turning up later as a delivery that
+          silently never arrived. Leaving the password blank keeps the one
+          already stored.
+        </p>
+
+        <h3>Mail server certificates</h3>
+        <p>
+          Training Tracker verifies the mail server&rsquo;s TLS certificate
+          before it hands over the SMTP password. If your mail server presents a
+          self-signed or otherwise untrusted certificate, tick{" "}
+          <strong>Allow self-signed certificate (less secure)</strong>{" "}on the
+          SMTP form and save.
+        </p>
+        <p>
+          Leave it off wherever you can. With it on, a connection that has been
+          intercepted looks exactly like a genuine one, and the SMTP password is
+          what is at stake. The better fix is a certificate the server trusts.
+        </p>
+        <p>
+          <strong>Changed behaviour:</strong>{" "}certificate checking used to be
+          off for every SMTP credential. If scheduled mail stops going out after
+          this update and the error reads{" "}
+          <em>Could not connect to the configured host and port</em>, your mail
+          server is presenting a certificate this server does not trust &mdash;
+          either install a trusted certificate on the mail server, or tick{" "}
+          <strong>Allow self-signed certificate</strong>{" "}on the SMTP
+          credential and save.
         </p>
 
         <h3>Credential health monitoring</h3>

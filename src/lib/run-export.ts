@@ -79,6 +79,7 @@ export async function runExport(schedule: ScheduledExport): Promise<{ status: st
           password: String(cred.password),
           from: String(cred.from),
           to: String(config.to ?? cred.from),
+          allowInsecureTls: cred.allowInsecureTls === true,
         });
         break;
       }

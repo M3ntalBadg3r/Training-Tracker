@@ -9,7 +9,11 @@ import {
   isEncryptedBlob,
   isEncryptionConfigured,
 } from "@/lib/crypto";
-import { isUserDisabled, isSessionEpochStale } from "@/lib/user-status";
+import {
+  isUserDisabled,
+  isUserDeleted,
+  isSessionEpochStale,
+} from "@/lib/user-status";
 import {
   ACCOUNT_DISABLED_CODE,
   SESSION_TERMINATED_HEADER,
@@ -210,14 +214,32 @@ export async function getAuthFromRequest(
 // --- Auth Guards ---
 
 /**
- * Reject the request if the token's account has since been disabled. Every
- * authenticated route funnels through the guards below, so this is what makes a
- * suspension take effect on the very next request rather than at the end of the
- * idle window (proxy.ts can't do it — the edge has no DB access).
+ * Reject the request if the token's account has since been disabled — or
+ * deleted. Every authenticated route funnels through the guards below, so this
+ * is what makes a suspension take effect on the very next request rather than at
+ * the end of the idle window (proxy.ts can't do it — the edge has no DB access).
+ *
+ * Deletion is checked here for exactly the same reason, and used not to be: a
+ * deletion cannot leave a marker on the token's account the way a suspension or
+ * a `sessionEpoch` bump does, because the row it would live on is gone. So a
+ * deleted user kept their role and full API access for the rest of the session —
+ * and, because the proxy slides the idle window on every request, an active one
+ * kept it up to the 8h absolute cap. `/api/auth/me` does its own `findUnique`
+ * and so returned 404 throughout, which made the UI look signed out while every
+ * data route still answered 200.
+ *
+ * Both rejections are raised with `ACCOUNT_DISABLED_CODE`. A distinct code
+ * would buy nothing — the client's only sensible reaction to either is the same
+ * clean logout its `X-Session-Terminated` handler already performs — and the
+ * shared generic message avoids telling an unauthenticated caller which of the
+ * two happened.
  */
 async function assertAccountActive(userId: number): Promise<void> {
   if (await isUserDisabled(userId)) {
     throw new AuthError("Account disabled", 401, ACCOUNT_DISABLED_CODE);
+  }
+  if (await isUserDeleted(userId)) {
+    throw new AuthError("Account no longer exists", 401, ACCOUNT_DISABLED_CODE);
   }
 }
 

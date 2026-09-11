@@ -20,6 +20,17 @@ import {
   HardDrive,
 } from "lucide-react";
 
+/**
+ * Minimum portable-backup passphrase length, restated for the client.
+ *
+ * The authority is `MIN_PORTABLE_PASSPHRASE_LENGTH` in `lib/crypto.ts`, which
+ * both portable routes enforce — this is only the form's own guard and label,
+ * and it cannot import that module (crypto.ts pulls in node:crypto and would
+ * not bundle for the browser). Keep the two in step; the server refuses a short
+ * passphrase either way.
+ */
+const MIN_PASSPHRASE_LENGTH = 12;
+
 // ─── Timezone Helpers ────────────────────────────────────────────────────────
 // Schedule times are stored and sent to cron as UTC.
 // The UI displays and accepts times in the browser's local timezone.
@@ -303,7 +314,7 @@ export default function BackupPage() {
   };
 
   const handlePortableBackup = async () => {
-    if (portablePass.length < 8 || portablePass !== portablePass2) return;
+    if (portablePass.length < MIN_PASSPHRASE_LENGTH || portablePass !== portablePass2) return;
     setPortableCreating(true);
     setResult(null);
     const endpoint =
@@ -1236,7 +1247,7 @@ export default function BackupPage() {
             <button
               onClick={handlePortableBackup}
               disabled={
-                portablePass.length < 8 ||
+                portablePass.length < MIN_PASSPHRASE_LENGTH ||
                 portablePass !== portablePass2 ||
                 portableCreating
               }
@@ -1266,7 +1277,10 @@ export default function BackupPage() {
           {" "}— store it somewhere safe.
         </p>
         <label className="block text-sm text-gray-600 mb-1">
-          Passphrase <span className="text-gray-400">(at least 8 characters)</span>
+          Passphrase{" "}
+          <span className="text-gray-400">
+            (at least {MIN_PASSPHRASE_LENGTH} characters)
+          </span>
         </label>
         <input
           type="password"

@@ -40,6 +40,79 @@ export const MAX_RESTORE_UPLOAD_BYTES =
   Math.max(1, Number(process.env.BACKUP_MAX_RESTORE_MB) || 512) * 1024 * 1024;
 
 /**
+ * Upper bound on an archive's *decompressed* size.
+ *
+ * MAX_RESTORE_UPLOAD_BYTES bounds only what arrives on the wire, which a
+ * compressed archive can multiply without limit — and every entry the restore
+ * cares about is then read to a string and JSON.parsed, multiplying it again.
+ *
+ * The default is measured, not guessed. A real full backup of a populated
+ * database (500 students, 4,750 training records, credentials included) expands
+ * to **0.96 MB**, so 1024 MB is roughly a thousand times a realistic archive and
+ * still several times the largest install that could plausibly exist. It is
+ * also unreachable by honest data for a second reason: JSZip writes these
+ * archives with no compression (verified — the inner zip's byte length equals
+ * the sum of its entries' uncompressed sizes), so a genuine archive expands
+ * about 1:1 and one that passed the 512 MB upload cap cannot exceed it. Only
+ * something that compresses heavily can, which is exactly what this refuses.
+ * Override with BACKUP_MAX_EXPANDED_MB.
+ */
+export const MAX_EXPANDED_ARCHIVE_BYTES =
+  Math.max(1, Number(process.env.BACKUP_MAX_EXPANDED_MB) || 1024) * 1024 * 1024;
+
+/**
+ * Ceiling for `User.sessionEpoch`, which is a Postgres `integer`. Used to clamp
+ * the restore's epoch floor so a hostile or corrupt archived value cannot make
+ * the write overflow the column.
+ */
+const MAX_SESSION_EPOCH = 2147483647;
+
+/** JSZip records each entry's central-directory size here at loadAsync time. */
+interface ZipEntryInternals {
+  _data?: { uncompressedSize?: unknown };
+}
+
+/**
+ * Refuse an archive whose entries decompress to more than
+ * MAX_EXPANDED_ARCHIVE_BYTES. Returns a ready response, or null to proceed.
+ *
+ * JSZip fills `_data.uncompressedSize` from the central directory during
+ * `loadAsync`, before anything is inflated, so this is a cheap header read
+ * rather than a streaming count. An entry whose size cannot be read is treated
+ * as **unbounded, not zero**, and refuses the archive: a size we cannot see is
+ * a size we cannot cap, and silently counting it as 0 would reopen the hole for
+ * exactly the crafted archive this exists to stop. If a future JSZip moves the
+ * field, every restore fails loudly with this message — which is the right way
+ * round for a guard.
+ */
+export function checkExpandedArchiveSize(zip: JSZip): NextResponse | null {
+  const tooLarge = () =>
+    NextResponse.json(
+      { error: "Backup archive is too large to restore." },
+      { status: 413 }
+    );
+  let total = 0;
+  for (const [name, entry] of Object.entries(zip.files)) {
+    if (entry.dir) continue;
+    const size = (entry as unknown as ZipEntryInternals)._data?.uncompressedSize;
+    if (typeof size !== "number" || !Number.isFinite(size) || size < 0) {
+      console.warn(
+        `[backup] refusing archive: entry "${name}" reports no decompressed size`
+      );
+      return tooLarge();
+    }
+    total += size;
+    if (total > MAX_EXPANDED_ARCHIVE_BYTES) {
+      console.warn(
+        `[backup] refusing archive: entries decompress to more than ${MAX_EXPANDED_ARCHIVE_BYTES} bytes`
+      );
+      return tooLarge();
+    }
+  }
+  return null;
+}
+
+/**
  * Options shared by the backup writers.
  *
  * `includeCredentials` opts the archive in to carrying `passwordHash` and
@@ -493,6 +566,10 @@ export async function POST(request: NextRequest) {
     );
   }
   const zip = await JSZip.loadAsync(zipBytes);
+  // The upload cap above bounded the compressed bytes; this bounds what they
+  // expand to, before any entry is inflated or parsed.
+  const oversized = checkExpandedArchiveSize(zip);
+  if (oversized) return oversized;
 
   // Detect archive kind from metadata so we can route config-only backups to
   // the partial-restore path that leaves Student/TrainingTaken untouched.
@@ -690,6 +767,9 @@ export async function restoreFullArchive(
   let companiesRestored = 0;
   let userCompaniesRestored = 0;
   let studentsReassigned = 0;
+  // Highest sessionEpoch among the accounts this restore is about to delete.
+  // Read inside the transaction, *before* the deleteMany destroys it.
+  let liveSessionEpochMax = 0;
 
   // Restore inside a transaction: wipe then re-insert in FK order.
   // Prisma's default interactive-transaction timeout is 5s, which a restore of
@@ -704,6 +784,11 @@ export async function restoreFullArchive(
     await tx.importMetadata.deleteMany({});
     await tx.importAlias.deleteMany({});
     if (replacingUsers) {
+      // Capture the live session-epoch high-water mark before the delete throws
+      // it away — it is the floor the restored rows have to clear (see the
+      // sessionEpoch comment on userRows below).
+      const liveEpochs = await tx.user.aggregate({ _max: { sessionEpoch: true } });
+      liveSessionEpochMax = liveEpochs._max.sessionEpoch ?? 0;
       // Cascades user_companies; only done when we can actually put accounts
       // back (see the doc comment).
       await tx.user.deleteMany({});
@@ -813,10 +898,62 @@ export async function restoreFullArchive(
     }
 
     if (replacingUsers) {
+      // Every restored account starts above BOTH the epochs this restore just
+      // destroyed and whatever the archive claimed.
+      //
+      // The property the whole revocation lever rests on is that an account's
+      // `sessionEpoch` never moves backwards — `isSessionEpochStale` revokes a
+      // token only when its epoch is *behind* the column, so a counter that
+      // decreases silently re-validates whatever was minted at the lower value.
+      // Restoring users was the one operation that moved it backwards:
+      // `...rest` carries the archive's own `sessionEpoch`, and an older backup
+      // routinely holds a value below the live one (it predates every password
+      // change and admin reset since). The floor restores the invariant.
+      //
+      // Note what this does *not* claim. Rows go in without their archived ids
+      // and `users_id_seq` is never reset (no `resetSequence` call covers
+      // `users`), so on a given database user ids only ever advance: a restored
+      // row cannot take an id a previous account held, and a token issued before
+      // the restore is therefore orphaned rather than re-pointed. The floor is
+      // what keeps that true where the sequence is *not* ahead — a database
+      // rebuilt from a dump, or the same archive restored onto another install
+      // that shares this one's JWT secret — so an id that does get reused cannot
+      // arrive carrying a usable lease.
+      //
+      // This is the one place a plain `set` is correct rather than the
+      // `{ increment: 1 }` used everywhere else (users/[id], change-password,
+      // reset-password). Those bump one account's own counter, which is
+      // meaningful because the row's identity is unchanged. Here the rows are
+      // new, their ids are reassigned, and an archived counter describes a
+      // different instance's history — so per-user carry-over has no meaning and
+      // only a single **global** floor is well defined. Do not "restore" this to
+      // an increment: incrementing the archived value can still land below the
+      // live one, which is exactly the hole.
+      const archivedSessionEpochMax = restorableUsers.reduce(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (max: number, u: any) =>
+          typeof u?.sessionEpoch === "number" && u.sessionEpoch > max
+            ? u.sessionEpoch
+            : max,
+        0
+      );
+      // Clamped to the column's type. `session_epoch` is a Postgres `integer`,
+      // so an archive carrying the maximum would otherwise make the +1 overflow
+      // and abort the transaction (P2020) — turning an archive that used to
+      // restore into an unexplained failure. At the clamp the floor stops rising
+      // and the "always above what came before" guarantee degrades to "equal
+      // to", which is only reachable from an archive that already sat at the
+      // ceiling, and is strictly better than refusing to restore at all.
+      const sessionEpochFloor = Math.min(
+        Math.max(liveSessionEpochMax, archivedSessionEpochMax) + 1,
+        MAX_SESSION_EPOCH
+      );
+
       const userRows = restorableUsers.map(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         ({ id: _id, ...rest }: any) => ({
           ...rest,
+          sessionEpoch: sessionEpochFloor,
           createdAt: new Date(rest.createdAt),
           updatedAt: new Date(rest.updatedAt),
           lockedUntil: rest.lockedUntil ? new Date(rest.lockedUntil) : null,

@@ -75,7 +75,12 @@ const PUBLIC_HANDLERS = {
  * account could still complete enrolment and be handed a fresh session token.
  *
  * So this list is not an exemption. Every handler on it must call
- * `getAuthFromRequest` *and* both checks below.
+ * `getAuthFromRequest` *and* every check below.
+ *
+ * The requirement list grows whenever `requireAuth` gains a check — and it has
+ * to grow in the same change, or this assertion quietly covers only part of the
+ * rule while still reporting green, which is worse than asserting nothing.
+ * `isUserDeleted` was added for exactly that reason.
  */
 const SELF_GUARDED_HANDLERS = {
   "auth/change-password/route.ts": { POST: "Re-issues the caller's cookie with a bumped session epoch." },
@@ -89,6 +94,7 @@ const SELF_GUARDED_HANDLERS = {
 const SELF_GUARD_REQUIREMENTS = [
   { name: "getAuthFromRequest", re: /\bgetAuthFromRequest\s*\(/ },
   { name: "isUserDisabled", re: /\bisUserDisabled\s*\(/ },
+  { name: "isUserDeleted", re: /\bisUserDeleted\s*\(/ },
   { name: "isSessionEpochStale", re: /\bisSessionEpochStale\s*\(/ },
 ];
 
