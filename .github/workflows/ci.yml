@@ -1,11 +1,18 @@
 name: CI
 
-# Lint + typecheck on every push and pull request to the long-lived branches.
+# Lint + typecheck + build + route guards on every push and pull request to
+# the long-lived branches.
 #
 # This exists because nothing else runs them: release.yml only tags releases,
 # no deploy/ script calls eslint or tsc, and Next 16's `next build` no longer
 # runs ESLint. Without this, lint errors accumulate silently — which is exactly
 # how 44 of them built up before v2.87.
+#
+# The build step is here for a different reason: `npm run build` is the step
+# that actually fails during a production update, on the customer's machine,
+# after the new code has already been pulled. Failing it here instead is the
+# whole point — and it catches what tsc cannot, such as a server-only module
+# pulled into a client component.
 
 on:
   push:
@@ -39,7 +46,16 @@ jobs:
         run: npm run lint
 
       - name: Typecheck
-        run: npx tsc --noEmit
+        run: npm run typecheck
+
+      # Same dummy URL as above: next build compiles the routes, it never opens
+      # a connection. src/lib/prisma.ts reads DATABASE_URL at module scope, and
+      # the root layout's `force-dynamic` keeps prerendering off the database.
+      - name: Build
+        run: npm run build
+        env:
+          DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+          NEXT_TELEMETRY_DISABLED: "1"
 
       # Round 1 of the security review added an auth guard to every handler.
       # That is a per-route obligation every new handler inherits, not a fix
