@@ -1233,7 +1233,7 @@ const helpSections: Record<string, HelpSection> = {
         <h3>Features</h3>
         <ul>
           <li><strong>Add User</strong>{" "}&mdash; Create a new account with username, display name, password, role, and (for non-SuperAdmin roles) the companies they can see. The <strong>Require MFA at first login</strong> checkbox is on by default; the new user will be locked to the MFA enrolment page until they set up an authenticator.</li>
-          <li><strong>Edit User</strong>{" "}&mdash; Change display name, role, or company assignments. Tick <strong>Require MFA at next login</strong> to force an existing user to enrol in MFA on their next session.</li>
+          <li><strong>Edit User</strong>{" "}&mdash; Change display name, role, or company assignments. Tick{" "}<strong>Require MFA at next login</strong> to force an existing user to enrol in MFA. Changing someone&apos;s role, or ticking that box, signs them out of any session they already have open, so the change applies on their very next click rather than whenever they next sign in &mdash; they simply log back in with their new role. Editing only a display name does not sign anyone out. If you change your own role, you stay signed in and keep working with the new role straight away.</li>
           <li>
             <strong>Reset Password</strong>{" "}&mdash; Set a new password for any
             user. This also signs that user out of every session they have open,
