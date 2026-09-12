@@ -722,54 +722,61 @@ ensure_state_file() {
     local f attempt state ok
     for f in "$@"; do
         ok=0
-        # Three attempts, because every failure mode here is someone else
-        # winning a race, and a race lost twice running is a race not worth a
-        # third second of effort. The loop never blocks and never retries a
-        # condition that cannot change (a directory at the name fails all three
-        # identically, and the warning below is what the operator needs).
+        # Three attempts: every failure here is a lost race, and a race lost
+        # twice running is not worth a third second. A condition that cannot
+        # change — a directory at the name, or a service group that does not
+        # exist yet — fails all three identically and lands on the warning,
+        # which is what the operator needs to see.
         for attempt in 1 2 3; do
             # lstat, not stat: `stat -c` does not dereference, so a symlink
             # reports as "symbolic link" rather than as whatever it points at.
+            # GNU stat spells a zero-length file "regular empty file", so both
+            # spellings appear below. One call decides type, owner, group and
+            # mode together, with nothing left to re-check on a second lookup.
             state="$(stat -c '%F|%U:%G|%a' "${f}" 2>/dev/null || echo 'missing')"
-            # GNU stat reports a zero-length file as "regular empty file", so
-            # both spellings mean "a plain file" here. A symlink reports as
-            # "symbolic link" and a FIFO as "fifo", which is the point: one
-            # lstat decides type, owner and mode together, with nothing left to
-            # re-check on a second path lookup.
+
             case "${state}" in
                 "regular file|root:${SVC_GROUP}|664"|"regular empty file|root:${SVC_GROUP}|664")
                     ok=1
                     break
                     ;;
+                "regular file|root:"*"|664"|"regular empty file|root:"*"|664")
+                    # Right shape, right mode, wrong group — the state a tree is
+                    # in for one call after the service account is created.
+                    # Correct it in place rather than replacing the file: chown
+                    # -h never resolves a symlink, so there is nothing to race,
+                    # and an existing log keeps its contents.
+                    chown -h "root:${SVC_GROUP}" -- "${f}" 2>/dev/null || true
+                    continue
+                    ;;
             esac
 
-            # Anything else — missing, a symlink, a FIFO, a directory, the wrong
-            # owner or the wrong mode — is replaced outright rather than
+            # Everything else — missing, a symlink, a FIFO, a directory, another
+            # owner, or the wrong mode — is replaced outright rather than
             # adjusted in place.
             #
-            # This is the whole point of the rewrite. Adjusting in place means
-            # `chmod` on a *name*, and chmod has no -h: it always resolves the
-            # final component, in a second path lookup that is not the one the
-            # preceding `[ ! -L ]` made. Where the service account can rename
-            # the entry — which it can whenever it owns the containing
-            # directory, the state a pre-2.70 tree is in when update-agent.sh
-            # calls this before ensure_ownership has run — swapping a symlink in
-            # between the two has root relax the permissions of a file of the
-            # attacker's choosing. Measured on the previous code: 471 wins in
-            # 2000 calls.
+            # This is the point of the rewrite. Adjusting a mode means `chmod` on
+            # a NAME, and chmod has no -h: it always resolves the final
+            # component, in a lookup that is not the one the preceding "is this a
+            # symlink?" test made. Wherever the unprivileged account can rename
+            # the entry — which it can whenever it owns the containing directory,
+            # the state a pre-2.70 tree is in when update-agent.sh calls this
+            # before the ownership repair has run — swapping a symlink in between
+            # the two has root relax the permissions of a file of the attacker's
+            # choosing. Measured on the previous code: 354-471 wins in 1500-2000
+            # calls.
             #
-            # Replacing instead removes every path-following write: the file is
-            # created fresh with O_EXCL (so it cannot land on a planted link),
-            # it is born 0664 from the umask (so no chmod is needed at all), and
-            # the only remaining metadata call is `chown -h`, which never
-            # follows. The cost is that a state file in the wrong shape loses
-            # its contents — acceptable because these are progress/log files, and
-            # invisible on a healthy install, where the first check above
-            # matches and nothing is touched.
+            # Replacing removes every path-following write: the file is created
+            # fresh with O_EXCL so it cannot land on a planted link, it is born
+            # 0664 from the umask so no chmod is ever needed, and the only
+            # metadata call left is chown -h, which never follows. The cost is
+            # that an entry found in the wrong shape loses its contents — these
+            # are progress and log files, and on a healthy install the first case
+            # above matches and nothing is touched at all.
             rm -f -- "${f}" 2>/dev/null || true
-            # umask 0113: 0666 & ~0113 = 0664, the mode this file must end up
-            # with. `set -C` makes the redirection an O_CREAT|O_EXCL open, which
-            # fails outright rather than following a link planted since the rm.
+            # umask 0113: 0666 & ~0113 = 0664. `set -C` makes the redirection an
+            # O_CREAT|O_EXCL open, which fails outright rather than following a
+            # link planted since the rm.
             ( umask 0113; set -C; : > "${f}" ) 2>/dev/null || continue
             chown -h "root:${SVC_GROUP}" -- "${f}" 2>/dev/null || true
         done
