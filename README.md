@@ -379,7 +379,7 @@ SuperAdmins can require MFA enrolment for individual users:
 - **At first login** — When creating a user via **Admin → Users → Add User**, the **Require MFA at first login** checkbox is enabled by default. The new user's first session will be locked to a chromeless `/setup-mfa` page until they enrol in TOTP MFA.
 - **At next login** — In the **Edit User** modal, tick **Require MFA at next login** to flip the same flag on an existing user. Their next login will be locked to `/setup-mfa`.
 
-The lock is enforced server-side: the user receives a session cookie that the proxy treats as valid only for the MFA enrolment routes — every other page and API returns 403 / redirects to `/setup-mfa` until enrolment completes.
+The lock is enforced server-side, in two independent places: the user receives a session cookie that the proxy treats as valid only for the MFA enrolment routes, **and** the API endpoints themselves refuse a half-enrolled session rather than relying on the proxy having already turned it away. Every other page and API returns 403 / redirects to `/setup-mfa` until enrolment completes.
 
 ### Last login tracking
 
