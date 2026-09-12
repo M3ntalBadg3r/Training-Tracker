@@ -86,6 +86,19 @@ export async function buildProgramReport(opts: BuildProgramReportOptions) {
     };
   }
 
+  // Deliberately unscoped, and the asymmetry with the scoped `listTheatres`
+  // call two lines below is intentional rather than an oversight.
+  //
+  // `RegionData` is a global, admin-curated reference table (country → region →
+  // theatre) with no `companyId` — there is no tenant dimension to filter on.
+  // It carries no student, completion or company data, so reading it in full
+  // discloses nothing about another tenant. `listTheatres` is scoped because it
+  // derives its list from `Student` rows, which ARE tenant data.
+  //
+  // Scoping this would also be wrong on its own terms: the country/region lists
+  // populate the dashboard's geography pickers, so narrowing them to countries
+  // that happen to have an in-scope student would silently drop legitimately
+  // empty geographies a partner is expected to plan against.
   const regionData = await prisma.regionData.findMany({ orderBy: { country: "asc" } });
   const countries = regionData.map((r: typeof regionData[number]) => r.country);
   const regionList = [...new Set(regionData.map((r: typeof regionData[number]) => r.region))].filter(Boolean).sort();
@@ -162,7 +175,7 @@ export async function buildProgramReport(opts: BuildProgramReportOptions) {
   if (level === "global") {
     const distinctTheatres = theatreList;
 
-    // Global counts + per-theatre breakdown are needed for Global Diamond-style
+    // Global counts + per-theatre breakdown are needed for Global-level
     // requirements that carry a real training title / per-theatre minimum.
     const allTitles = extractTitles(programData);
     const globalEmailSets = await getEmailSetsByTitle(allTitles, now, { companyIds });
@@ -196,9 +209,9 @@ export async function buildProgramReport(opts: BuildProgramReportOptions) {
       ? await getEmailSetsByTitleAndTheatre(allTheatreReqTitles, horizonDate, companyIds)
       : new Map<string, Map<string, Set<string>>>();
 
-    // Count of compliant theatres for a given snapshot (APS semantics — a theatre
-    // is compliant when it meets every theatre-level requirement). Pure: reads the
-    // pre-fetched per-theatre email sets instead of querying per theatre.
+    // Count of compliant theatres for a given snapshot — a theatre is compliant
+    // when it meets every theatre-level requirement. Pure: reads the pre-fetched
+    // per-theatre email sets instead of querying per theatre.
     // `unionAttainedByTheatre(req, map, [t])` reproduces the old
     // `unionAttained(req, getEmailSetsByTitle(titles, asOf, { theatre: t }))`.
     function countCompliantTheatres(
@@ -246,8 +259,8 @@ export async function buildProgramReport(opts: BuildProgramReportOptions) {
         }
 
         // For title-bearing requirements the "attained" figure is the global
-        // student count; for the APS theatre-compliance placeholder it's the
-        // number of compliant theatres.
+        // student count; for the theatre-compliance placeholder (a Global row
+        // naming no training) it's the number of compliant theatres.
         const attained = hasTrainingTitle ? globalAttained : compliantTheatreCount;
         const primaryMet = attained >= req.quantityRequired;
         const theatresMet = theatreBreakdown === null || theatreBreakdown.every((t) => t.compliant);
@@ -663,7 +676,12 @@ export async function getProgramStudents(opts: GetProgramStudentsOptions) {
   } else if (level === "theatre" && theatre) {
     studentFilter.theatre = theatre;
   }
-  if (companyIds && companyIds.length > 0) {
+  // Empty array = "no accessible companies", which must match nothing. Testing
+  // `length > 0` dropped the filter and returned every company's holders.
+  // `null` stays the deliberate "unrestricted" case; `[]` is truthy and yields
+  // `in: []`. The callers short-circuit on an empty scope today (see the note
+  // on BuildProgramReportOptions.companyIds), but this no longer relies on it.
+  if (companyIds) {
     studentFilter.companyId = { in: companyIds };
   }
 

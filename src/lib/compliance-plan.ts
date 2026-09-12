@@ -328,7 +328,11 @@ function studentWhereFromScope(scope: ComplianceScope): Record<string, unknown> 
   if (scope.country) w.country = scope.country;
   if (scope.countries) w.country = { in: scope.countries };
   if (scope.theatre) w.theatre = scope.theatre;
-  if (Array.isArray(scope.companyIds) && scope.companyIds.length > 0) {
+  // `[]` means "no accessible companies" and must match nothing, so the test is
+  // plain truthiness rather than `length > 0`: an empty array is truthy and
+  // yields `in: []`. `null`/`undefined` remains "unrestricted". The one caller
+  // guards on an empty scope already; this makes the helper itself fail closed.
+  if (scope.companyIds) {
     w.companyId = { in: scope.companyIds };
   }
   return Object.keys(w).length > 0 ? w : null;

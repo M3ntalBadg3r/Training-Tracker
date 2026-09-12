@@ -8,12 +8,33 @@ import { authorizePublicRequest } from "@/lib/public-api";
  * per-program compliance endpoint:
  *  - `levels`: which compliance levels (Country/Theatre/Global) are configured
  *  - `hasMinimumPerTheatre`: whether any requirement enforces a per-theatre
- *    minimum (Global Diamond-style per-theatre breakdown)
+ *    minimum (drives the per-theatre breakdown on the Global level)
  *  - `isTiered`: whether the program has a tier ladder
  *
- * Program definitions aren't per-company, so the list itself isn't scoped — but
- * a valid API key is still required (per-program compliance data at
- * `/api/public/v1/programs/{name}` is company-scoped to the key).
+ * This list is deliberately NOT company-scoped, unlike every other endpoint on
+ * this surface. Reviewed and kept, on this evidence:
+ *
+ *  - There is no tenant dimension to scope by. `Program`, `ProgramTier`,
+ *    `ProgramData` and `Specialisation` carry no `companyId` in the schema —
+ *    they are a global registry describing how this instance is configured.
+ *    `Offering` is the deliberate contrast: it DOES carry a `companyId`,
+ *    because offerings are tenant data. When something here is meant to be
+ *    per-tenant, the schema says so.
+ *  - Nothing per-company leaves this handler. The response is four fields per
+ *    program — the program name, its configured levels, and two booleans — all
+ *    read from the registry tables above. No student, completion, count,
+ *    attainment or company value is read, derived or returned, so no key can
+ *    learn anything about another key's companies from it. The compliance
+ *    numbers that ARE tenant data live at `/api/public/v1/programs/{name}`,
+ *    which scopes them to the key's companies.
+ *  - A valid API key is still required, and the global public-API switch still
+ *    gates it.
+ *
+ * The one thing that would invalidate this: if programs ever become per-tenant
+ * (a `companyId` on `Program`, or programs offered to some companies and not
+ * others), this list becomes tenant data and MUST be filtered by
+ * `ctx.companyIds` like the rest of the surface. Treat adding that column as
+ * the trigger to revisit this handler.
  */
 export async function GET(request: NextRequest) {
   const ctx = await authorizePublicRequest(request);

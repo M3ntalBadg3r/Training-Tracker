@@ -48,10 +48,99 @@ echo "[1/10] Updating system packages..."
 apt-get update -qq
 
 # 2. Install Node.js 22 LTS
-echo "[2/10] Installing Node.js 22 LTS..."
+NODE_MIN_MAJOR=22
+
+# The major version of a Node the SERVICE will actually be able to run, or
+# nothing.
+#
+# The two halves both matter. The version, obviously — but also the location:
+# the unit runs as the unprivileged account with a plain PATH, so a Node that
+# only root can reach (an nvm or tarball install under a root home, which is
+# plausible on the hand-built hosts this project has to cope with) is no use to
+# the service however new it is. Skipping the package install on the strength of
+# one would leave a host that finished installing and cannot start. Requiring
+# the interpreter to resolve under a system bin directory keeps the skip to the
+# case it was added for: a re-run on a host this installer already set up.
+node_major_version() {
+    local p v
+    p="$(command -v node 2>/dev/null)" || return 1
+    case "${p}" in
+        /usr/bin/node|/usr/local/bin/node|/bin/node) ;;
+        *) return 1 ;;
+    esac
+    v="$(node --version 2>/dev/null)" || return 1
+    v="${v#v}"
+    v="${v%%.*}"
+    case "${v}" in
+        ''|*[!0-9]*) return 1 ;;
+    esac
+    printf '%s' "${v}"
+}
+
+# Add the vendor's apt repository for Node.js.
+#
+# Be clear about what this is: a script fetched over the network and executed as
+# root. It cannot be pinned to a digest — the vendor regenerates the script and
+# publishes no checksum for it, so any value hard-coded here would be a guess
+# that breaks the next install on a host that has no way to tell you why. What
+# can be done, is:
+#
+#   - it is not run at all when a new enough Node is already installed in a
+#     system location, which is every re-run of this installer on an existing
+#     host;
+#   - it is downloaded to a private temporary file first rather than piped
+#     straight into a shell, so a truncated transfer cannot be executed as far
+#     as it got — a pipe into `bash` runs each complete line as it arrives;
+#   - the transfer is pinned to HTTPS (a plain `-L` would follow a redirect to
+#     http://) with TLS 1.2 or better and a timeout;
+#   - what arrives has to look like a shell script of a plausible size, so a
+#     captive-portal or proxy error page is refused rather than run;
+#   - the SHA-256 of what was actually executed is printed, so an operator
+#     installing a fleet can compare hosts, and so it is in the install log if
+#     anything is ever questioned afterwards.
+install_node_repository() {
+    local tmp rc=0 size magic
+    tmp="$(mktemp -d)" || {
+        echo "ERROR: could not create a temporary directory for the Node.js setup script." >&2
+        return 1
+    }
+    chmod 700 "${tmp}"
+
+    if ! curl --proto '=https' --tlsv1.2 -fsSL --max-time 300 \
+              -o "${tmp}/setup.sh" \
+              "https://deb.nodesource.com/setup_${NODE_MIN_MAJOR}.x"; then
+        rm -rf "${tmp}"
+        echo "ERROR: could not download the Node.js repository setup script." >&2
+        return 1
+    fi
+
+    size="$(stat -c '%s' "${tmp}/setup.sh" 2>/dev/null || echo 0)"
+    magic="$(head -c 2 "${tmp}/setup.sh" 2>/dev/null || echo '')"
+    if [ "${size}" -lt 1024 ] || [ "${size}" -gt 1048576 ] || [ "${magic}" != '#!' ]; then
+        rm -rf "${tmp}"
+        echo "ERROR: what was downloaded from the Node.js repository does not look like a shell script (${size} bytes) — refusing to run it as root." >&2
+        return 1
+    fi
+
+    if command -v sha256sum >/dev/null 2>&1; then
+        echo "  Node.js setup script SHA-256: $(sha256sum "${tmp}/setup.sh" | cut -d' ' -f1)"
+    fi
+
+    bash "${tmp}/setup.sh" || rc=$?
+    rm -rf "${tmp}"
+    return "${rc}"
+}
+
+echo "[2/10] Installing Node.js ${NODE_MIN_MAJOR} LTS..."
 apt-get install -y ca-certificates curl gnupg
-curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
-apt-get install -y nodejs
+
+NODE_HAVE="$(node_major_version || true)"
+if [ -n "${NODE_HAVE}" ] && [ "${NODE_HAVE}" -ge "${NODE_MIN_MAJOR}" ]; then
+    echo "  Node ${NODE_HAVE}.x is already installed system-wide — leaving the package sources alone."
+else
+    install_node_repository
+    apt-get install -y nodejs
+fi
 
 # Ensure node/npm are on PATH
 export PATH="/usr/bin:/usr/local/bin:$PATH"

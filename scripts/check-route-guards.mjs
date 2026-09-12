@@ -37,17 +37,23 @@ const API_ROOT = join(process.cwd(), "src", "app", "api");
 /**
  * Calls that count as authenticating a request.
  *
- * Note `ensurePublicApiEnabled`, which is the odd one out: it is the global
- * public-API on/off switch, not authentication. It is accepted here because the
- * `/api/public/v1` index route calls it directly rather than going through
- * `authorizePublicRequest`. No live hole — every public route also calls
- * `requireApiKey` — but a future public handler could satisfy this pattern while
- * authenticating nobody. Whoever owns the public API surface should decide
- * whether it belongs; do not quietly drop it, since that would fail the index
- * route today.
+ * `ensurePublicApiEnabled` is deliberately NOT on this list, and the omission is
+ * the point. It is the global public-API on/off switch — it answers "is this
+ * surface turned on", never "who is calling" — but it used to be accepted here
+ * because the `/api/public/v1` index route calls it directly instead of going
+ * through `authorizePublicRequest`. That reasoning was wrong twice over: the
+ * index route also calls `requireApiKey`, so it never needed the allowance, and
+ * while it stood, any new public handler could satisfy this check with the
+ * switch alone and ship authenticating nobody — the exact silent-pass this
+ * script exists to prevent.
+ *
+ * A public handler authenticates with `authorizePublicRequest` (the whole chain:
+ * switch, key, rate limit, company filter) or, if it needs the key's own
+ * identity, `requireApiKey` plus the rest of that chain by hand. Both still
+ * count. SELF_TESTS asserts all three verdicts, in both directions.
  */
 const GUARD_PATTERN =
-  /\b(requireAuth|requireSuperAdmin|requireFullSession|authorizePublicRequest|requireApiKey|authorizeCronRequest|ensurePublicApiEnabled)\s*\(/;
+  /\b(requireAuth|requireSuperAdmin|requireFullSession|authorizePublicRequest|requireApiKey|authorizeCronRequest)\s*\(/;
 
 /**
  * Handlers that are deliberately reachable without a session, with the reason.
@@ -679,6 +685,40 @@ const SELF_TESTS = [
       `export async function GET(r) { return 1; }\n` +
       `export async function GET(r) { await requireAuth(r); return 1; }`,
     guarded: { GET: false },
+  },
+  // The three public-API verdicts. GUARD_PATTERN once accepted the global
+  // on/off switch as authentication, so a handler shaped exactly like the first
+  // case below passed this check while verifying no credential at all. These
+  // assert the negative AND both positives: a pattern that only ever says "yes"
+  // is not a check, and dropping one of the two real guards would be just as
+  // bad a regression in the other direction.
+  {
+    name: "the public-API on/off switch alone does not authenticate anybody",
+    src:
+      `export async function GET(r) {\n` +
+      `  const disabled = await ensurePublicApiEnabled();\n` +
+      `  if (disabled) return disabled;\n` +
+      `  return NextResponse.json({ students: await prisma.student.findMany() });\n}`,
+    guarded: { GET: false },
+  },
+  {
+    name: "authorizePublicRequest counts as a guard",
+    src:
+      `export async function GET(r) {\n` +
+      `  const ctx = await authorizePublicRequest(r);\n` +
+      `  if (ctx instanceof NextResponse) return ctx;\n` +
+      `  return NextResponse.json({ ok: true });\n}`,
+    guarded: { GET: true },
+  },
+  {
+    name: "requireApiKey counts even alongside the on/off switch (the index route's shape)",
+    src:
+      `export async function GET(r) {\n` +
+      `  const disabled = await ensurePublicApiEnabled();\n` +
+      `  if (disabled) return disabled;\n` +
+      `  const auth = await requireApiKey(r);\n` +
+      `  return NextResponse.json({ keyName: auth.name });\n}`,
+    guarded: { GET: true },
   },
 ];
 

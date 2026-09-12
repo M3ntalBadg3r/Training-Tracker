@@ -15,6 +15,20 @@ import { getBrandingSafe } from "@/lib/system-settings";
  * runs at build time — which would bake the app name and favicon into the HTML
  * and leave a rename invisible until the next deploy. The cost is negligible:
  * every page here is a client shell that fetches its own data anyway.
+ *
+ * **This line is also what keeps the Content-Security-Policy working, and that
+ * is the more expensive half to get wrong.** Next only stamps its per-request
+ * nonce onto the `<script>` tags of routes it renders per request; anything it
+ * prerenders ships chunk tags with no nonce at all. Under `CSP_MODE=enforce`
+ * (see `lib/csp.ts`) the browser then refuses every script on those pages and
+ * the user gets a blank shell — served with **HTTP 200**, which is what makes it
+ * so unpleasant: `deploy/perform-update.sh` health-checks for `200|302|307`, so
+ * an unattended install would take that update and report itself healthy.
+ *
+ * This is the only layout in the app, so this one line is why `npm run build`
+ * reports every route as dynamic and none as static. If you are here to remove
+ * it — because branding moved, or caching became attractive — the policy has to
+ * be dealt with in the same change, not discovered afterwards.
  */
 export const dynamic = "force-dynamic";
 

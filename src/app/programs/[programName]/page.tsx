@@ -233,7 +233,7 @@ export default function ProgramDetailPage() {
     }
   };
 
-  // APS-style flat export (Country / Region / Theatre / theatre-count Global).
+  // Flat export: Country / Region / Theatre, and the theatre-count Global shape.
   const buildExportData = (specList: Specialisation[], levelLabel: string, filterValue: string) => {
     const rows: Record<string, string | number>[] = [];
     for (const spec of specList) {
@@ -286,7 +286,7 @@ export default function ProgramDetailPage() {
     { key: "filter", header: "Filter" },
   ];
 
-  // Global Diamond-style export (global counts + per-theatre breakdown rows).
+  // Global-level export with per-theatre minimums (global counts + breakdown rows).
   const buildGlobalDiamondExport = () => {
     const rows: Record<string, string | number>[] = [];
     for (const spec of specs) {

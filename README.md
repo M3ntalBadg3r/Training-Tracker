@@ -185,6 +185,35 @@ The application runs on **port 3000** by default. To change the port, edit the `
 
 ### Troubleshooting
 
+**After updating, a page is blank (or a button does nothing) and the browser
+console shows "Refused to execute inline script"** — set `CSP_MODE=legacy` in
+`.env` and restart. **No rebuild is required**; the setting is read on every
+request:
+
+```bash
+echo 'CSP_MODE=legacy' >> /opt/training-tracker/.env
+systemctl restart training-tracker
+```
+
+That restores the Content-Security-Policy used before this setting existed.
+Confirm it took effect with:
+
+```bash
+curl -sI -H 'Accept: text/html' http://localhost:3000/login | grep -i content-security-policy
+```
+
+You should see `script-src 'self' 'unsafe-inline'`. If you would rather collect
+detail than revert, `CSP_MODE=report-only` reports violations without blocking
+anything — but note that **no policy is enforced at all** in that mode, not just
+the script rules, so switch back as soon as you have what you need. `legacy` is
+the setting to sit on if you need one for longer than a few minutes. Please report the console
+message: a page that needs `legacy` is a bug worth fixing properly.
+
+Checking this by hand with `curl` needs the `Accept: text/html` header. Without
+it, `curl` is not treated as a browser page request and you will see the simpler
+policy used for images and data — which looks like the nonce is missing when it
+is not.
+
 **Build fails with `Cannot find module '...lightningcss...node'` or
 `...@tailwindcss/oxide...`** — On a host whose OS/architecture differs from the
 one the committed `package-lock.json` was generated on (e.g. an ARM64 Debian VM
@@ -400,6 +429,7 @@ would be — so the jobs simply never run.
 | `NODE_EXTRA_CA_CERTS` | *(Optional)* Path to a CA bundle Node should trust in addition to its built-ins — set this when running behind an SSL-inspecting proxy/firewall so Prisma engine downloads and outbound HTTPS succeed. The installer sets it to `/etc/ssl/certs/ca-certificates.crt` automatically on Debian. |
 | `EXPORT_ROOT` | *(Optional)* Folder that scheduled exports delivered to the local filesystem may write into. Defaults to `<app dir>/exports` (i.e. `/opt/training-tracker/exports` on a standard install). A schedule pointing anywhere else is refused. On a systemd host, a value outside `/opt/training-tracker` also needs a matching `ReadWritePaths=` drop-in. |
 | `BACKUP_ROOT` | *(Optional)* Folder that backup archives are written to, and the only tree the folder picker on the Backup page can browse. Defaults to `<app dir>/backups`, with the same `ReadWritePaths=` caveat as `EXPORT_ROOT`. |
+| `CSP_MODE` | *(Optional)* How strictly the Content-Security-Policy is applied — the browser rule deciding which scripts a page may run. `enforce` (the default) allows only scripts Training Tracker itself put on the page, which is what stops an injected `<script>` from running. `report-only` applies the same rules but merely reports violations to the browser console instead of blocking — useful for finding out *which* script is at fault, but **no policy is enforced at all while it is on**, so treat it as a short diagnostic window and not as a safer middle setting. (Page framing, content-type sniffing, referrer and permissions protections are unaffected — those are sent separately — but script, form, plugin and connection restrictions all lapse.) If you need to run this way for more than a few minutes, use `legacy` instead: it is looser than the default but it does enforce. `legacy` restores the older, looser policy. Read on every request, so a change takes a **restart, not a rebuild**. |
 | `GITHUB_TOKEN` | *(Optional)* GitHub personal access token — required for update checks **and git pulls** on private repositories |
 
 #### Why `TRUSTED_PROXIES` deserves a second look

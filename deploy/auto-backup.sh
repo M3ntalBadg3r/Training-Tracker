@@ -41,21 +41,63 @@ log() {
 [ -f "${CONFIG_FILE}" ] || exit 0
 
 # One node call for the whole config; prints "enabled frequency hour minute dow".
+#
+# This job runs as the service account, not as root, so the read crosses no
+# privilege boundary — but it reads the same shape of file in the same place as
+# the automatic-update job, and it is hardened identically so the two cannot
+# drift. The file is opened rather than read by name, and the descriptor — not
+# the path — decides what happens next:
+#
+#   O_NOFOLLOW  a symlink at the name is refused outright, rather than being
+#               followed to whatever it was aimed at
+#   O_NONBLOCK  a FIFO at the name returns immediately instead of waiting for a
+#               writer that never comes, which would otherwise leave a hung
+#               process behind every five minutes, for ever
+#   fstat       the file type and the size cap are checked against the thing
+#               actually being read, so there is no second path lookup to race
+#
+# The `[ -f ]` test above is a fast path, not a guard: it stops a FIFO left at
+# the name, but it is a separate path lookup from the open, so flipping the name
+# between a regular file and a FIFO across that gap gets past it. See the fuller
+# note in auto-update.sh, where the same read runs as root.
+#
 # The path is passed as an argument rather than spliced into the program text —
-# the same rule the rest of the deploy scripts follow (see check-update.sh).
+# the same rule the rest of the deploy scripts follow (see check-update.sh) —
+# and every refusal falls through to the same defaults as a malformed file, so a
+# tampered config means "not scheduled" rather than an error.
 CONFIG=$(node -e '
   const fs = require("fs");
+  const MAX = 64 * 1024;
+  let out = "0 daily 2 0 0";
+  let fd = -1;
   try {
-    const c = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
-    const [h, m] = String(c.time || "02:00").split(":").map(Number);
-    process.stdout.write([
-      c.enabled === true ? "1" : "0",
-      c.frequency === "weekly" ? "weekly" : "daily",
-      Number.isFinite(h) ? h : 2,
-      Number.isFinite(m) ? m : 0,
-      Number.isFinite(Number(c.dayOfWeek)) ? Number(c.dayOfWeek) : 0,
-    ].join(" "));
-  } catch { process.stdout.write("0 daily 2 0 0"); }
+    fd = fs.openSync(process.argv[1],
+      fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
+    const st = fs.fstatSync(fd);
+    if (st.isFile() && st.size <= MAX) {
+      const buf = Buffer.alloc(st.size);
+      let off = 0;
+      while (off < st.size) {
+        const r = fs.readSync(fd, buf, off, st.size - off, off);
+        if (r <= 0) break;
+        off += r;
+      }
+      const c = JSON.parse(buf.subarray(0, off).toString("utf8"));
+      const [h, m] = String(c.time || "02:00").split(":").map(Number);
+      out = [
+        c.enabled === true ? "1" : "0",
+        c.frequency === "weekly" ? "weekly" : "daily",
+        Number.isFinite(h) ? h : 2,
+        Number.isFinite(m) ? m : 0,
+        Number.isFinite(Number(c.dayOfWeek)) ? Number(c.dayOfWeek) : 0,
+      ].join(" ");
+    }
+  } catch {
+    /* unreadable, not a plain file, too big or not JSON: use the defaults */
+  } finally {
+    if (fd >= 0) { try { fs.closeSync(fd); } catch {} }
+  }
+  process.stdout.write(out);
 ' "${CONFIG_FILE}" 2>/dev/null) || exit 0
 
 read -r ENABLED FREQUENCY SCHED_HOUR SCHED_MIN SCHED_DOW <<< "${CONFIG}"

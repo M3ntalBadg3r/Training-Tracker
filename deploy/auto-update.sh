@@ -68,19 +68,71 @@ log() {
 [ -f "${CONFIG_FILE}" ] || exit 0
 
 # One node call for the whole config; prints "enabled frequency hour minute dow".
+#
+# This runs as ROOT, every five minutes, on a file the unprivileged service
+# account owns and can replace at will, in a directory it can create entries in.
+# So the file is opened rather than read by name, and the descriptor — not the
+# path — decides what happens next:
+#
+#   O_NOFOLLOW  a symlink at the name is refused outright, instead of having
+#               root read whatever it was aimed at
+#   O_NONBLOCK  a FIFO at the name returns immediately instead of waiting for a
+#               writer that never comes, which would otherwise leave a hung root
+#               process behind every five minutes, for ever
+#   fstat       the file type and the size cap are checked against the thing
+#               actually being read, so there is no second path lookup to race
+#
+# The `[ -f ]` test above is a fast path, not a guard. It does stop a FIFO that
+# is simply left at the name — `-f` is false for one, so the script exits before
+# reading — but it is a separate path lookup from the open, so flipping the name
+# between a regular file and a FIFO across that gap gets straight past it:
+# measured at 27 hangs in 200 attempts, and each one is a root process waiting
+# for a writer that never comes, re-armed by cron every five minutes.
+#
+# Note what does NOT save us here. fs.protected_symlinks is irrelevant, because
+# the account creates the FIFO *at* the name rather than a link to one; and
+# fs.protected_fifos restricts O_CREAT opens of FIFOs in world-writable sticky
+# directories, neither of which describes this — the open carries no O_CREAT,
+# and APP_DIR at 1775 is sticky but not world-writable. The guard has to be in
+# the open.
+#
+# The path is passed as an argument rather than spliced into the program text —
+# the same rule the rest of the deploy scripts follow (see check-update.sh) —
+# and every refusal falls through to the same defaults as a malformed file, so a
+# tampered config means "not scheduled" rather than an error.
 CONFIG=$(node -e '
   const fs = require("fs");
+  const MAX = 64 * 1024;
+  let out = "0 daily 3 0 0";
+  let fd = -1;
   try {
-    const c = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
-    const [h, m] = String(c.time || "03:00").split(":").map(Number);
-    process.stdout.write([
-      c.enabled === true ? "1" : "0",
-      c.frequency === "weekly" ? "weekly" : "daily",
-      Number.isFinite(h) ? h : 3,
-      Number.isFinite(m) ? m : 0,
-      Number.isFinite(Number(c.dayOfWeek)) ? Number(c.dayOfWeek) : 0,
-    ].join(" "));
-  } catch { process.stdout.write("0 daily 3 0 0"); }
+    fd = fs.openSync(process.argv[1],
+      fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
+    const st = fs.fstatSync(fd);
+    if (st.isFile() && st.size <= MAX) {
+      const buf = Buffer.alloc(st.size);
+      let off = 0;
+      while (off < st.size) {
+        const r = fs.readSync(fd, buf, off, st.size - off, off);
+        if (r <= 0) break;
+        off += r;
+      }
+      const c = JSON.parse(buf.subarray(0, off).toString("utf8"));
+      const [h, m] = String(c.time || "03:00").split(":").map(Number);
+      out = [
+        c.enabled === true ? "1" : "0",
+        c.frequency === "weekly" ? "weekly" : "daily",
+        Number.isFinite(h) ? h : 3,
+        Number.isFinite(m) ? m : 0,
+        Number.isFinite(Number(c.dayOfWeek)) ? Number(c.dayOfWeek) : 0,
+      ].join(" ");
+    }
+  } catch {
+    /* unreadable, not a plain file, too big or not JSON: use the defaults */
+  } finally {
+    if (fd >= 0) { try { fs.closeSync(fd); } catch {} }
+  }
+  process.stdout.write(out);
 ' "${CONFIG_FILE}" 2>/dev/null) || exit 0
 
 read -r ENABLED FREQUENCY SCHED_HOUR SCHED_MIN SCHED_DOW <<< "${CONFIG}"
