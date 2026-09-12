@@ -262,12 +262,41 @@ write_env "NODE_EXTRA_CA_CERTS=${WORLD_WRITABLE}
 assert_eq "<UNSET>" "$(value_of NODE_EXTRA_CA_CERTS)" \
     "anyone on the host could choose which certificate authorities root's Node trusts"
 
-start_test "a service-user-owned bundle is dropped (the owner rule)"
+start_test "a service-user-owned bundle is dropped (the plain-file owner rule)"
 SVC_OWNED="${APP_DIR}/svc-owned-bundle.crt"
 : > "${SVC_OWNED}"; chown "${SVC_USER}:${SVC_GROUP}" "${SVC_OWNED}"; chmod 0644 "${SVC_OWNED}"
 write_env "NODE_EXTRA_CA_CERTS=${SVC_OWNED}
 "
 assert_eq "<UNSET>" "$(value_of NODE_EXTRA_CA_CERTS)"
+
+# The SYMLINK owner rule, which is the security-relevant one and which the
+# fixture above does NOT reach.
+#
+# checked_ca_bundle makes two separate owner checks: a non-dereferencing one on
+# the NAME, and a dereferencing one on what Node will actually open. A plain file
+# owned by the service user is rejected by BOTH, so a fixture using one proves
+# nothing about the first — the same pass-for-the-wrong-reason shape as the
+# original version of this section.
+#
+# Only a symlink separates them: the target is a root-owned bundle, so the
+# dereferencing check is satisfied, and the LINK is service-user-owned. Without
+# the rule on the name, this is accepted — and the account that owns the link can
+# then re-point it at a bundle of its choosing, which is the whole escalation.
+start_test "a service-user-owned SYMLINK to a root bundle is dropped (the symlink owner rule)"
+LINK_TARGET="${APP_DIR}/real-root-bundle.crt"
+: > "${LINK_TARGET}"; chown root:root "${LINK_TARGET}"; chmod 0644 "${LINK_TARGET}"
+SVC_LINK="${APP_DIR}/svc-owned-link.crt"
+ln -s "${LINK_TARGET}" "${SVC_LINK}"; chown -h "${SVC_USER}:${SVC_GROUP}" "${SVC_LINK}"
+# Establish the premise: the TARGET satisfies the dereferencing check, so only
+# the check on the name can reject this.
+[ "$(stat -Lc '%U %a' "${SVC_LINK}")" = "root 644" ] ||
+    die "the symlink fixture's target is not root:root 0644, so the dereferencing check would reject it and the symlink owner rule would never be reached"
+[ "$(stat -c '%U' "${SVC_LINK}")" = "${SVC_USER}" ] ||
+    die "the symlink fixture's link is not owned by the service user"
+write_env "NODE_EXTRA_CA_CERTS=${SVC_LINK}
+"
+assert_eq "<UNSET>" "$(value_of NODE_EXTRA_CA_CERTS)" \
+    "a symlink the service account owns was accepted; it can re-point it at any bundle and so choose which certificate authorities root's Node trusts"
 
 start_test "a path containing shell punctuation is dropped (the path rule)"
 # Rejected on the path's characters alone, before anything is stat'd — a
@@ -282,10 +311,28 @@ write_env "NODE_EXTRA_CA_CERTS=${PUNCT}
 assert_eq "<UNSET>" "$(value_of NODE_EXTRA_CA_CERTS)" \
     "a path carrying shell punctuation was accepted into root's environment"
 
-start_test "a relative CA bundle path is dropped"
-write_env "NODE_EXTRA_CA_CERTS=relative/bundle.crt
+# A relative path that DOES exist, resolved from the process's working
+# directory. The obvious fixture — a relative path naming nothing — passes with
+# the absolute-path rule deleted, because a non-existent path fails the stat
+# anyway. That is the identical trap the punctuation fixture above reasons
+# about, and it was not applied here the first time.
+start_test "a relative CA bundle path is dropped even when it resolves to a valid bundle"
+mkdir -p "${APP_DIR}/relbundle"
+REL_REAL="${APP_DIR}/relbundle/bundle.crt"
+: > "${REL_REAL}"; chown root:root "${REL_REAL}"; chmod 0644 "${REL_REAL}"
+write_env "NODE_EXTRA_CA_CERTS=relbundle/bundle.crt
 "
-assert_eq "<UNSET>" "$(value_of NODE_EXTRA_CA_CERTS)"
+# cd into APP_DIR so the relative path resolves — otherwise the stat fails and
+# the rule under test is never the reason for the rejection.
+assert_eq "<UNSET>" \
+    "$( cd "${APP_DIR}" && ( load_env_allowlist >/dev/null 2>&1; printf '%s' "${NODE_EXTRA_CA_CERTS-<UNSET>}" ) )" \
+    "a relative path was accepted; which file it names then depends on the working directory of whatever runs next"
+
+# The length cap ([ "${#path}" -le 4096 ]) deliberately has NO fixture. On Linux
+# PATH_MAX is 4096, so a path longer than the cap cannot name a file that exists
+# — any fixture would be rejected by the stat rather than by the cap, and would
+# pass with the cap deleted. It is defence in depth ahead of a check that would
+# fail anyway. Recorded here rather than covered by a test that proves nothing.
 
 # The counter-rule, and the one most likely to be "tidied" into symmetry by
 # someone making the checks consistent. It must stay asymmetric.

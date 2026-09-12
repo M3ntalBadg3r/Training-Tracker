@@ -175,6 +175,11 @@ MUTATIONS=(
 # its fixture bundle was rejected by the owner check before any of them ran.
 "|test-load-env-allowlist.sh|remove the service-group-writable rule from checked_ca_bundle|s/        \[ \"\${group}\" != \"\${SVC_GROUP}\" \] || return 1/        :/"
 "|test-load-env-allowlist.sh|remove the world-writable rule from checked_ca_bundle|s/    \[ \$(( 0\${mode} \& 0002 )) -eq 0 \] || return 1/    :/"
+# The symlink owner rule is the security-relevant one: without it a
+# service-user-owned symlink pointing at a root bundle is accepted, and the
+# account that owns the link can re-point it at will.
+"|test-load-env-allowlist.sh|remove the symlink OWNER rule from checked_ca_bundle|s/^    \\[ \"\${owner}\" = \"root\" \\] || return 1$/    :/"
+"|test-load-env-allowlist.sh|remove the absolute-path rule from checked_ca_bundle|0,/^        \\*) return 1 ;;$/ s|^        \\*) return 1 ;;$|        *) : ;;|"
 "|test-load-env-allowlist.sh|remove the path-punctuation rule from checked_ca_bundle|s|        \*\[!A-Za-z0-9_./@:+-\]\*) return 1 ;;|        xxxnevermatchesxxx) return 1 ;;|"
 # The direction that costs an inspecting-proxy install its CA bundle: a
 # "tightening" that refuses the root:root 0664 file configuration management

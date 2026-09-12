@@ -233,8 +233,11 @@ assert_eq "absent|absent|absent" \
         done )" \
     "state files were created for a group that does not exist; the early return is missing"
 
-start_test "a missing service account leaves the tree's ownership alone"
-assert_eq "root:root" "$(owner_of "${d}/src/app.ts")" \
-    "the tree was modified despite the service account not existing"
+# NOTE: there is deliberately no assertion here on src/app.ts's owner. build_tree
+# leaves it root:root, and a recursive chown naming a user that does not exist
+# fails atomically without touching anything — so such an assertion holds whether
+# or not the guard exists. It was here, it could not fail, and a false marker of
+# coverage is worse than an obvious gap. The two assertions above are the ones
+# that distinguish the guarded case from the unguarded one.
 
 finish_suite "ensure_ownership"
