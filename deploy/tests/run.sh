@@ -24,6 +24,11 @@ set -u
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# `stat -c %F` is localised by GNU coreutils and both common.sh and the fixtures
+# compare against the English spellings ("regular file"). Pin the locale so a
+# developer on a translated system sees the same result as CI.
+export LC_ALL=C
+
 if [ "$(id -u)" -ne 0 ]; then
     cat >&2 <<'MSG'
 ERROR: deploy/tests/run.sh must run as root.

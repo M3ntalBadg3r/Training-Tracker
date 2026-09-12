@@ -89,5 +89,14 @@ die() {
 
 finish_suite() {
     printf '\n%s: %d assertions, %d failed\n' "${1:-suite}" "${TESTS_RUN}" "${TESTS_FAILED}"
+    # A suite that ran NO assertions is a failure, not a pass. Without this,
+    # gutting a suite's body leaves it reporting "all suites passed" — the exact
+    # green-check-that-ran-nothing this whole directory exists to rule out, and
+    # the same reasoning as run.sh refusing to run as a non-root user.
+    if [ "${TESTS_RUN}" -eq 0 ]; then
+        printf '%sERROR%s %s ran no assertions at all — treating that as a failure.\n' \
+            "${C_RED}" "${C_OFF}" "${1:-suite}" >&2
+        return 1
+    fi
     [ "${TESTS_FAILED}" -eq 0 ]
 }

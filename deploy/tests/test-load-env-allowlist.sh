@@ -216,16 +216,76 @@ write_env "NODE_EXTRA_CA_CERTS=${BUNDLE}
 assert_eq "${BUNDLE}" "$(value_of NODE_EXTRA_CA_CERTS)" \
     "the value install.sh itself writes was rejected; updates behind an SSL-inspecting proxy would break"
 
-start_test "a CA bundle the service group can write is DROPPED"
-BAD="${APP_DIR}/svc-writable-bundle.crt"
-: > "${BAD}"; chown "${SVC_USER}:${SVC_GROUP}" "${BAD}"; chmod 0664 "${BAD}"
-write_env "NODE_EXTRA_CA_CERTS=${BAD}
+# checked_ca_bundle applies four independent rules, and the first version of
+# this fixture exercised only one of them. Its bundle was SERVICE-USER-OWNED, so
+# the owner check rejected it before the group, world-writable and
+# path-punctuation rules were ever reached — all three could be deleted and the
+# fixture stayed green. Each rule now gets a bundle that reaches exactly it.
+#
+# The accept direction matters as much as the reject direction here. common.sh
+# deliberately ACCEPTS a root:root 0664 bundle — the artefact a configuration
+# management system leaves behind — because the threat is the application
+# account rewriting the file, not the group-write bit as such. A "tightening"
+# that refused it would cost every install behind an SSL-inspecting proxy its CA
+# bundle on the next update, which is a worse outage than the one it prevents.
+
+start_test "a bundle the SERVICE GROUP can write is dropped (the group rule)"
+GRP_WRITABLE="${APP_DIR}/root-owned-svc-group-writable.crt"
+: > "${GRP_WRITABLE}"; chown "root:${SVC_GROUP}" "${GRP_WRITABLE}"; chmod 0664 "${GRP_WRITABLE}"
+# Root-owned, so it gets past the owner check and the group rule is what has to
+# reject it. That is the whole point of this fixture.
+[ "$(stat -c '%U:%G %a' "${GRP_WRITABLE}")" = "root:${SVC_GROUP} 664" ] ||
+    die "the group-writable bundle fixture is not root:${SVC_GROUP} 0664, so it would not reach the group rule"
+write_env "NODE_EXTRA_CA_CERTS=${GRP_WRITABLE}
 "
 assert_eq "<UNSET>" "$(value_of NODE_EXTRA_CA_CERTS)" \
-    "the app could choose which certificate authorities root's Node trusts"
+    "the application account could rewrite this file, and so choose which certificate authorities root's Node trusts"
 
 start_test "dropping the CA bundle is reported loudly"
 assert_contains "$(messages)" "NODE_EXTRA_CA_CERTS"
+
+start_test "a root:root group-writable bundle is ACCEPTED (the deliberate carve-out)"
+CFG_MANAGED="${APP_DIR}/root-root-group-writable.crt"
+: > "${CFG_MANAGED}"; chown root:root "${CFG_MANAGED}"; chmod 0664 "${CFG_MANAGED}"
+write_env "NODE_EXTRA_CA_CERTS=${CFG_MANAGED}
+"
+assert_eq "${CFG_MANAGED}" "$(value_of NODE_EXTRA_CA_CERTS)" \
+    "a root:root 0664 bundle was rejected; every install behind an SSL-inspecting proxy would lose its CA bundle on the next update"
+
+start_test "a world-writable bundle is dropped (the world rule)"
+WORLD_WRITABLE="${APP_DIR}/root-owned-world-writable.crt"
+: > "${WORLD_WRITABLE}"; chown root:root "${WORLD_WRITABLE}"; chmod 0666 "${WORLD_WRITABLE}"
+# root:root, so neither the owner nor the service-group rule applies: only the
+# world-writable rule can reject this one.
+write_env "NODE_EXTRA_CA_CERTS=${WORLD_WRITABLE}
+"
+assert_eq "<UNSET>" "$(value_of NODE_EXTRA_CA_CERTS)" \
+    "anyone on the host could choose which certificate authorities root's Node trusts"
+
+start_test "a service-user-owned bundle is dropped (the owner rule)"
+SVC_OWNED="${APP_DIR}/svc-owned-bundle.crt"
+: > "${SVC_OWNED}"; chown "${SVC_USER}:${SVC_GROUP}" "${SVC_OWNED}"; chmod 0644 "${SVC_OWNED}"
+write_env "NODE_EXTRA_CA_CERTS=${SVC_OWNED}
+"
+assert_eq "<UNSET>" "$(value_of NODE_EXTRA_CA_CERTS)"
+
+start_test "a path containing shell punctuation is dropped (the path rule)"
+# Rejected on the path's characters alone, before anything is stat'd — a
+# certificate bundle path has no punctuation of this kind and a value that does
+# is not one. The file deliberately does not exist: if the punctuation rule were
+# removed, the value would still be rejected for not existing, so the fixture
+# creates it to make the punctuation the only thing standing in the way.
+PUNCT="${APP_DIR}/bundle;rm -rf.crt"
+: > "${PUNCT}"; chown root:root "${PUNCT}"; chmod 0644 "${PUNCT}"
+write_env "NODE_EXTRA_CA_CERTS=${PUNCT}
+"
+assert_eq "<UNSET>" "$(value_of NODE_EXTRA_CA_CERTS)" \
+    "a path carrying shell punctuation was accepted into root's environment"
+
+start_test "a relative CA bundle path is dropped"
+write_env "NODE_EXTRA_CA_CERTS=relative/bundle.crt
+"
+assert_eq "<UNSET>" "$(value_of NODE_EXTRA_CA_CERTS)"
 
 # The counter-rule, and the one most likely to be "tidied" into symmetry by
 # someone making the checks consistent. It must stay asymmetric.
@@ -256,13 +316,24 @@ assert_contains "$(messages)" "npm_config_cache"
 start_test "a value already in the environment but absent from .env is not checked"
 write_env 'UPDATE_CHANNEL=dev
 '
-assert_eq "${BAD}" "$( NODE_EXTRA_CA_CERTS="${BAD}" bash -c '
+assert_eq "${GRP_WRITABLE}" "$( NODE_EXTRA_CA_CERTS="${GRP_WRITABLE}" bash -c '
     set -u
     export APP_DIR="$1"
     source "$2"
     load_env_allowlist >/dev/null 2>&1
     printf "%s" "${NODE_EXTRA_CA_CERTS-<UNSET>}"' _ "${APP_DIR}" "${HERE}/../lib/common.sh" )" \
     "an operator's one-off environment override was dropped by a check meant for the file"
+
+# Reading the value back in the same subshell cannot tell an assignment from an
+# export, and it is the EXPORT that matters: root's children — npm, prisma,
+# pg_dump — are what actually need DATABASE_URL. This reads it from a child
+# process instead.
+start_test "values are exported, not merely assigned (root's children must see them)"
+write_env 'DATABASE_URL=postgresql://u:p@localhost:5432/db
+'
+assert_eq "postgresql://u:p@localhost:5432/db" \
+    "$( ( load_env_allowlist >/dev/null 2>&1; bash -c 'printf "%s" "${DATABASE_URL-<UNSET>}"' ) )" \
+    "the value was assigned but not exported; npm, prisma and pg_dump would not see it"
 
 start_test "a healthy .env produces no diagnostics at all"
 write_env "UPDATE_CHANNEL=dev

@@ -48,9 +48,24 @@ d="${APP_DIR}"
 VICTIMS="$(mktemp -d)"
 trap 'rm -rf "${VICTIMS}"' EXIT
 
-# A tree shaped like a real install, with everything wrongly owned by the
-# service account to begin with — which is the state a pre-2.70 install, or a
-# tree the old blanket sweep touched, is actually in.
+# A tree shaped like a real install, built in a state that is WRONG IN BOTH
+# DIRECTIONS. That mixture is the whole point of this fixture and it is easy to
+# get wrong — the first version of this file chowned everything to the service
+# account, which made the precondition identical to the postcondition for the
+# "ordinary tree contents are owned by the service user" assertion. Deleting the
+# sweep's chown — the function's primary job — left the suite green.
+#
+# So, deliberately:
+#
+#   the carve-outs (deploy/, .git/, .update-backup/) start SERVICE-USER-owned
+#   and group-writable, so the re-lock has to move them back to root and strip
+#   the group bit;
+#
+#   everything else (src/, package.json, node_modules/) starts ROOT-owned, so
+#   the sweep has to hand it over.
+#
+# Neither assertion can now pass by accident: each starts from the state the
+# other one ends in.
 build_tree() {
     rm -rf "${d:?}"/* "${d:?}"/.[!.]* 2>/dev/null || true
     mkdir -p "${d}/deploy/lib" "${d}/.git/refs" "${d}/.update-backup" "${d}/src" "${d}/node_modules/pkg"
@@ -62,13 +77,20 @@ build_tree() {
     : > "${d}/package.json"
     : > "${d}/node_modules/pkg/index.js"
     : > "${d}/.env"
-    chown -R "${SVC_USER}:${SVC_GROUP}" "${d}"
-    # Group-writable to begin with, which is the state a pre-2.70 tree (or one
-    # the old blanket sweep touched) is actually in. Starting from 0644 would
-    # make the `chmod -R go-w` re-lock a no-op, and the assertion below would
-    # pass whether or not that line still existed — which is exactly how a
-    # fixture ends up as decoration.
-    chmod -R u+w,g+w "${d}"
+
+    # Ordinary tree: root-owned, so the sweep must hand it over.
+    chown -R root:root "${d}"
+
+    # Carve-outs: service-user-owned AND group-writable, so the re-lock must
+    # take them back and `chmod -R go-w` must strip the bit. Starting them at
+    # root:root 0644 would make both of those lines no-ops and the assertions
+    # decoration.
+    chown -R "${SVC_USER}:${SVC_GROUP}" "${d}/deploy" "${d}/.git" "${d}/.update-backup"
+    chmod -R u+w,g+w "${d}/deploy" "${d}/.git" "${d}/.update-backup"
+
+    # A recognisable, deliberately wrong mode on APP_DIR itself, so the
+    # missing-account fixture below can tell "left alone" from "1775 applied".
+    chmod 0700 "${d}"
 }
 
 owner_of() { stat -c '%U:%G' "$1" 2>/dev/null || echo missing; }
@@ -114,11 +136,25 @@ assert_eq "root:root" "$(owner_of "${d}/.update-backup/db-pre-update.sql")" \
     "the rollback would restore from a file the app controls"
 
 # --- everything else genuinely IS handed over --------------------------------
-# The carve-out must be a carve-out, not a refusal to do the job at all.
-start_test "ordinary tree contents are owned by the service user"
+# The carve-out must be a carve-out, not a refusal to do the job at all. These
+# entries were built root-owned (see build_tree), so this can only pass if the
+# sweep actually ran — which the first version of this fixture could not tell.
+start_test "the fixture really does start root-owned (guards the assertion below)"
+build_tree
+assert_eq "root:root|root:root|root:root" \
+    "$(owner_of "${d}/src/app.ts")|$(owner_of "${d}/package.json")|$(owner_of "${d}/node_modules/pkg/index.js")" \
+    "build_tree no longer establishes the wrong starting state, so the next assertion would be vacuous"
+
+ensure_ownership >/dev/null 2>&1
+
+start_test "ordinary tree contents are handed to the service user"
 assert_eq "${SVC_USER}:${SVC_GROUP}|${SVC_USER}:${SVC_GROUP}|${SVC_USER}:${SVC_GROUP}" \
     "$(owner_of "${d}/src/app.ts")|$(owner_of "${d}/package.json")|$(owner_of "${d}/node_modules/pkg/index.js")" \
     "the sweep did not hand the application tree to the service account"
+
+start_test "the hand-over reaches nested contents, not just the top level"
+assert_eq "${SVC_USER}:${SVC_GROUP}" "$(owner_of "${d}/node_modules/pkg/index.js")" \
+    "the sweep is not recursive"
 
 # --- the shared state files --------------------------------------------------
 start_test ".env is root:group 0660"
@@ -176,12 +212,29 @@ assert_eq "${first}|" "${second}|${second_out}" \
 
 # --- it must not run at all without a service account ------------------------
 # Better to do nothing than to chown the tree to a uid that does not exist.
-start_test "a missing service account makes it a no-op rather than a mis-chown"
+# Observing src/app.ts's owner is NOT enough and was the original mistake here:
+# `chown -R nosuchuser:grp` fails before touching anything, so that file is
+# unchanged whether or not the guard exists. The things that DO differ are the
+# directory's own mode and whether the state files get created, so those are
+# what this asserts.
+start_test "a missing service account leaves APP_DIR's mode untouched"
 build_tree
-before="$(stat -c '%U:%G' "${d}/src/app.ts")"
+mode_before="$(mode_of "${d}")"
 ( SVC_USER="tt-definitely-no-such-user-$$"
   ensure_ownership >/dev/null 2>&1 )
-assert_eq "${before}" "$(stat -c '%U:%G' "${d}/src/app.ts")" \
+assert_eq "${mode_before}" "$(mode_of "${d}")" \
+    "ensure_ownership applied 1775 to APP_DIR despite the service account not existing — it is not the no-op it claims to be"
+
+start_test "a missing service account creates no state files"
+assert_eq "absent|absent|absent" \
+    "$( for f in .update-status .update-log .auto-update-last-run; do
+          printf '%s' "$( [ -e "${d}/${f}" ] && echo present || echo absent )"
+          [ "${f}" = ".auto-update-last-run" ] || printf '|'
+        done )" \
+    "state files were created for a group that does not exist; the early return is missing"
+
+start_test "a missing service account leaves the tree's ownership alone"
+assert_eq "root:root" "$(owner_of "${d}/src/app.ts")" \
     "the tree was modified despite the service account not existing"
 
 finish_suite "ensure_ownership"
