@@ -162,12 +162,15 @@ if command -v systemctl &> /dev/null && systemctl list-units --type=service | gr
     systemctl enable postgresql
     systemctl start postgresql
 else
+    # shellcheck disable=SC2046  # word splitting is intended: this supplies two arguments
+    #                              (cluster version and name) from one command.
     pg_ctlcluster $(pg_lsclusters -h | head -1 | awk '{print $1, $2}') start 2>/dev/null || \
     service postgresql start 2>/dev/null || \
     pg_lsclusters  # show status if nothing works
 fi
 
 # Wait for PostgreSQL to be ready
+# shellcheck disable=SC2034  # the counter is only a repeat count; the loop body does not use it.
 for i in $(seq 1 10); do
     pg_isready -q && break
     echo "Waiting for PostgreSQL..."

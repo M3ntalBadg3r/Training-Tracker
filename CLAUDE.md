@@ -227,6 +227,97 @@ The configurable brand colour re-tints the whole app by **overriding Tailwind v4
 
 Not covered by the ramp (they use hardcoded hex, not `blue-*` classes): `lib/chart-theme.ts` Recharts colours and the jsPDF export palette. Both intentionally keep the stock palette.
 
+## Security — the standing framework
+
+`SECURITY.md` is the public-facing version of this (reporting, audit cadence,
+audit scope). This section is the part that governs *writing code here*.
+
+**The finding that produced this framework was structural, not technical.**
+A full review found that three controls from an earlier round had silently
+reverted, and nothing was tracking whether they had survived — because they had
+been recorded as *completed work* rather than as *standing rules*. Roughly 110
+handlers were written afterwards and never held to them. Assume the same will
+happen to anything below that is not machine-checked.
+
+### When a change needs security thought
+
+Not every change does. These do, and the list is deliberately about *shapes*
+rather than areas, because the areas move:
+
+- it **authenticates or authorises** anything, or changes a guard, role, token,
+  session lifetime or revocation path;
+- it adds a **surface reachable from outside the session cookie** — a public
+  endpoint, a webhook, a cron target;
+- it crosses a **privilege boundary** — between the unprivileged app and root,
+  or between tenants;
+- it reaches a **sink**: the filesystem, a shell, an outbound request, HTML, or
+  an export;
+- it **accepts a credential** of any kind — password, MFA code, passphrase, API
+  key;
+- it changes what a **backup or export** contains;
+- it adds a dependency with **runtime** reach.
+
+If a change is in one of those shapes, the obligations in **Writing a route
+handler** below are not optional extras — they are the specification.
+
+### Three rules that apply to any security work
+
+1. **Reproduce before fixing, with a control run on the unfixed code.** A
+   finding nobody has made fire is a hypothesis. A fix nobody has made fire is
+   decoration. This has repeatedly changed severities in both directions, and
+   it is how a fix that closed a window *without achieving its stated property*
+   was caught.
+2. **Someone other than the implementer checks the work.** In recent rounds
+   this found something real in most changes it examined — twice a regression
+   the security fix itself introduced. Check what the docs claim against what
+   was measured.
+3. **Close the class, not the instance.** More than once, a fix has landed
+   against the one site that prompted it while siblings in the same shape were
+   left — and a comment then made the remainder look intentional. After fixing,
+   grep for the shape.
+
+### Where a decision gets recorded
+
+- A **mechanism** goes in a code comment beside the code. That comment is how
+  the control survives the next refactor, and it is only useful to someone who
+  already has the source.
+- A **rule everyone inherits** goes here, in `CLAUDE.md`, and is given a CI
+  check if one is possible. Prose alone decays; that is the whole lesson above.
+- A **control being traded away** gets named where the trade is made. A comment
+  reasoning carefully about what a choice defends, while never naming what it
+  gives up, is how an interaction goes unnoticed until it is exploited.
+- An **accepted risk** goes in the findings register held outside this
+  repository, with the reasoning and the trigger that should make someone
+  re-check it. It does not go in a public repo: a note saying which weakness was
+  deliberately left is a map.
+- A **finding** never goes in the repository, in an issue, or in release notes.
+  Release notes describe outcomes — "two gaps in how requests are checked for
+  permission have been closed" — with no paths, payloads or extensions. Commit
+  messages sit in between: technical, but not a reproduction recipe.
+
+### When the next audit is due
+
+Against a **trigger**, not a date — decay tracks feature growth, not elapsed
+time. Any item in "When a change needs security thought" above landing as a
+genuinely new surface is a trigger. **Backstop: a lightweight review every 25
+releases** even if nothing triggered one. `SECURITY.md` carries the audit scope
+checklist; work it rather than only hunting new bugs, because the standing
+obligations are what decay.
+
+### What is deliberately not machine-checked
+
+Worth knowing, so nobody mistakes a green pipeline for a clean review:
+
+- **Real customer, partner, product and program names.** `check:deid` matches
+  shapes — email domains, home paths — and cannot match names. The only way to
+  grep for those is a denylist containing them, which would put the exact
+  identifiers the policy exists to exclude *into* a public repo, permanently.
+- **Whether an entry on the public-route allow-list should be there.** The check
+  enforces that the list is explicit; it cannot judge the decision.
+- **Whether a generic error message is generic enough.**
+- **Anything about the deployment scripts' behaviour on a platform CI does not
+  run** — an unprivileged LXC, ARM64, a host without systemd.
+
 ## Writing a route handler
 
 Round 1 of the security review added an auth guard to every handler, generic
@@ -531,6 +622,8 @@ Three workflows, and it matters which runs when.
 
 - **`.github/workflows/ci.yml`** (job `check`) — on every push AND pull request to `dev`/`master`: `npm ci`, `npx prisma generate` (needed for the model types; it does not connect), `npm run lint`, `npm run typecheck`, `npm run build`, `npm run check:routes`. Lint and typecheck exist because nothing else ran them — Next 16's `next build` no longer runs ESLint and no `deploy/` script calls it, which is how 44 lint errors accumulated unnoticed before v2.87. **The build step is here for a different reason**: `npm run build` is the step that actually fails during a production update, on the customer's machine, after the new code has already been pulled — and it catches what `tsc` cannot, such as a server-only module reached from a client component. It needs a dummy `DATABASE_URL` (`src/lib/prisma.ts` reads it at module scope) but never connects; the root layout's `force-dynamic` keeps prerendering off the database.
 
+- **`deploy` job in `ci.yml`** — on every push and PR, in parallel with `check` (it needs no `npm ci`, Prisma or build, so a two-second answer does not queue behind one). `bash -n` on every script, `shellcheck` at `--severity=warning` pinned to a specific version with a SHA-256 (unpinned, a runner image bump turns CI red with no code change), the `deploy/tests/` fixtures, and `scripts/check-deploy-parity.mjs`. That last one guards what `check-route-guards.mjs` structurally cannot see: it compares proxy↔handler but never sees the **cron scripts**, so a signed path missing its `isCronRequest` entry — the documented failure where the daily credential check silently 401'd for twenty releases — was invisible to it. Parity now **executes** both sides rather than reading them: the agent's `case` dispatch is run against each payload, and it refuses to proceed unless exactly one `case "${ACTION_RAW}"` block exists, because a decoy in a helper function or a heredoc otherwise gets read instead of the program.
+
 - **`.github/workflows/pr-checks.yml`** — pull requests only, because both jobs compare against the base branch:
   - `release-hygiene` (**required**) — runs `scripts/check-release-hygiene.mjs`, which enforces the mechanical half of the Mandatory Post-Change Rules below: into `dev`, the version must move by exactly one step — minor + 1, or `x.99` → `(x+1).00` at a rollover — and `.github/releases/v<version>-dev.md` must exist and be non-empty; into `master`, `v<version>.md` must exist, be non-empty, and not be a verbatim copy of that version's dev notes (the "aggregate every pre-release" rule); both ways, `package-lock.json`'s two `version` fields must match `package.json`. `versionNumber` here **mirrors `parseVersionNumber`** in `src/app/api/admin/updates/check/route.ts` and is used for *ordering* only — keep the two in step, or this check will pass a version the update comparator orders differently. **"One step" is a separate rule (`stepProblem`) and must not be re-expressed as `+1` over that encoding**: `major*1000 + minor` makes `2.99 + 1` the unspellable `2100`, which is exactly the bug the 2.99 → 3.00 rollover exposed. Escape hatch: the `skip-release-checks` label sets `SKIP_RELEASE_CHECKS` and the script passes with a notice. It **exits 0 rather than being `if:`-skipped on purpose** — a skipped required check blocks a PR just as firmly as a failing one.
   - `deidentify` (**required** since v2.96) — runs `scripts/check-deidentification.mjs` over the **added** lines only, flagging email addresses outside the fictional domains (`co.com`, `company.com`, `example.com`, …) and absolute home-directory paths that name a real account. It shipped *advisory* on the reasoning that a heuristic should never block a release — which assumed a person would read its findings on the PR. Nobody does: the pipeline is unattended end to end, so an advisory check has no reader and stops nothing, while its findings ride out to a public GitHub release. It now fails the job, and a false positive gets past it with the **`skip-deid-scan`** label (`SKIP_DEID_SCAN`), which exits 0 rather than being `if:`-skipped, for the same reason `release-hygiene` does. Two matcher details worth keeping: an `@` inside a URL authority (`https://x-access-token:${TOKEN}@github.com/…`, all over `deploy/`) is credentials, not a person, and is suppressed via `insideUrlAuthority`; and a failed `git diff` against the base **exits 1**, because on a required check "I could not look" must not read as "I looked and it was clean". It deliberately does **not** detect real company/product/program/person names: the only way to grep for those is a denylist file containing them, which would put the exact identifiers the policy exists to keep out of this repo *into* it, permanently and publicly. Those stay a human check, via the PR template.
@@ -554,6 +647,7 @@ After every change, you MUST complete these steps before considering the task do
 4. **Update CLAUDE.md** — If the change modifies the project structure (new/renamed/removed files or directories) or the data model (new/changed models, fields, enums, or relationships), update the relevant sections in this file.
 5. **Ship the release notes** — Write friendly notes (what's new/changed/fixed) to `.github/releases/<tag>.md` (`v<version>-dev.md` for dev, `v<version>.md` for stable) and commit them with the version bump. The GitHub release itself is created automatically by `.github/workflows/release.yml` when you push (see the Git Workflow section) — do not call the releases API by hand; it's blocked for web sessions.
 6. **De-identify** — Before committing and before writing release notes, confirm the diff and the release body contain no real company/product/program names or PII (see **Data Hygiene & De-identification** above). Use fictional placeholders, and never name the identifier you are removing.
+7. **Ask whether this change was security-relevant** — check the diff against the shapes listed in **Security — the standing framework** above (authentication/authorisation, an externally reachable surface, a privilege boundary, a sink, a credential, backup/export contents, a runtime dependency). If it is one of them: hold it to the obligations in **Writing a route handler**, and note whether it is a **new surface** — if so an audit is due, and that belongs in the findings register outside this repo, not in an issue. Most changes are not security-relevant and this step is a five-second read of your own diff; it exists because the last review found the obligations decayed silently across ~110 handlers that nobody thought to check them against.
 
 ## Deployment
 
@@ -579,6 +673,8 @@ Production runs via systemd at `/opt/training-tracker` on port 3000. See `deploy
 **No-systemd hosts** (the init.d fallback) have no `.path` unit, so `auto-update.sh` drains a pending `.update-request` by exec'ing `update-agent.sh` itself — the same validating agent, polled from cron every 5 min instead of event-driven. It skips this when the `.path` unit exists so the two never race.
 
 **Root cannot be assumed able to write files it does not own.** On an unprivileged LXC — a platform this project explicitly targets — root has no effective `CAP_DAC_OVERRIDE`, so `root` gets `EACCES` writing a file owned by `training-tracker`, and cannot delete inside a service-user-owned directory either. (`CAP_CHOWN` *is* retained, which is what makes the fix below work.) This silently broke all update progress reporting in 2.70/2.71: every `log()`/`write_status()` in `perform-update.sh` failed, updates completed with the UI frozen on step 0, and the rollback path's `rm -rf .next` would have failed too. **The rule: root touches only root-owned paths (`deploy/`, `.git`, `.update-backup/`, unit files, `/etc/cron.d`); anything owned by the service user is manipulated via `run_as_service_user`.** The three files both sides write — `.update-status`, `.update-log` and `.env` — are `root:training-tracker` `0664`/`0660` via `ensure_state_file`/`ensure_ownership`: root writes as owner, the app writes through the group. Consequence to preserve: the app **cannot unlink** them (APP_DIR is sticky + they are root-owned), so `api/admin/updates/status?ack=1` **truncates to `{"status":"idle"}`** rather than `unlinkSync`. Regression check: `stat -c '%U:%G %a' .update-status .update-log` must show `root:training-tracker 664`.
+
+**These helpers have fixture tests** (`deploy/tests/`, `npm run test:deploy`), which is the first automated checking this layer has ever had: the three-way decision across the whole input matrix, the `nlink != 1` refusal, the symlink and FIFO refusals in both nofollow primitives, the `ENV_ALLOWED_KEYS` closed set, the drop-vs-warn asymmetry in the value checks, and the `ensure_ownership` carve-out list. For `checked_ca_bundle` there is a fixture per rule — the **owner rule on the name** (a service-user-owned *symlink* to a root bundle; the plain-file case never reaches it, which is why an earlier fixture passed vacuously), the owner rule on the target, the service-group-write rule, the world-write rule, the absolute-path rule (using a relative path that *resolves*, since one that does not is rejected by the lookup instead) and the punctuation rule — **plus the accept direction**, because a `root:root 0664` bundle is deliberately allowed and refusing it would cost every install behind an inspecting proxy its CA bundle. The length cap has **no** fixture: it equals `PATH_MAX`, so a longer path cannot name a file that exists. **The fixtures pin final state**; the transient-window property the carve-out exists for is a race and is not covered, nor is the repair branch's `chown -h` or removal of the carve-out arm (the re-lock restores the same final state). `npm run test:deploy:mutate` breaks the library on purpose to confirm the fixtures can still fail — it has a control run and a canary that must come back *undetected*, because an earlier version of it reported every mutation caught on a tree where nothing worked.
 
 **Root never *interprets* anything the service user can write — it only parses it.** The corollary of the rule above: `.env` is `0660 root:training-tracker` precisely so the app can rewrite `UPDATE_CHANNEL`, which means a root `source .env` would be arbitrary root code execution triggerable on demand (the app can start an update itself by writing `.update-request`). `perform-update.sh`/`update.sh` therefore call **`load_env_allowlist`** (`lib/common.sh`) instead of sourcing: it walks the file line by line, accepts only `KEY=VALUE` where `KEY` is a valid identifier **on the `ENV_ALLOWED_KEYS` list** (`DATABASE_URL GITHUB_TOKEN NODE_EXTRA_CA_CERTS UPDATE_CHANNEL CSP_MODE TT_BUILD_MIN_MB npm_config_cache` — the closed set root actually needs; `CSP_MODE` is on it so the operator's way back from a broken Content-Security-Policy survives an update, since a way back a routine update silently discards is not one), strips one layer of quotes, and assigns with `printf -v`, which never evaluates. **Parsing safely is only half of it: the values are checked too — but only where doing something about one is an improvement.** `checked_github_token` guards the remote URL and a rejection there is fatal. `NODE_EXTRA_CA_CERTS` is **dropped** on rejection, because it decides which certificate authority root's Node believes; it must name a root-owned plain file that is neither world-writable nor writable by the service group (a config-managed `root:root 0664` bundle is fine — the rule is about the service group, not the group-write bit). `npm_config_cache` and `DATABASE_URL` only ever **warn**: neither reaches a root-run process (`psql`/`pg_dump` go through `run_as_service_user`), and unsetting `DATABASE_URL` would make `perform-update.sh` skip the pre-update dump and leave the rollback nothing to restore — **a validation failure must never leave the system worse off than no validation at all.** Only values the file itself supplied are checked, so an operator's one-off environment override is left alone. `require_root` re-execs with `sudo --preserve-env=<closed list>`, **not `sudo -E`** — that swap is what stops the caller's variables crossing into a non-interactive root `bash`. (It asks only for variables actually set, which on a current sudo is a no-op since `--preserve-env=LIST` ignores unset ones; it is kept for an older sudo that might refuse the request on sight. Do not read it as load-bearing.) `SVC_USER`, `SVC_GROUP` and `LOG_DIR` are **fixed literals** rather than `${VAR:-default}` — they name the account the tree is handed to, the group that reaches the shared state files, and the directory root writes logs in. `APP_DIR` stays overridable on purpose: every entry point sets it from its own argv or a literal before sourcing `lib/common.sh`, and `update.sh`/`perform-update.sh` pass it through the environment when they re-enter that file in a fresh `bash` after the pull. The same rule governs every other root-side read: `check-update.sh` builds its curl command as an **array** rather than through `eval` (its `GITHUB_TOKEN` comes from that same `.env`), and passes the version/tag/release-name/channel strings to `node` as **`process.argv` elements** rather than splicing them into the program text — those values come from a service-user-owned `package.json`, from `.env`, and from the GitHub API, and the script runs as root from cron. **Anything root reads from a service-user-writable path is data, never code.**
 

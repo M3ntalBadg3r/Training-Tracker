@@ -64,3 +64,119 @@ jobs:
       # public one both shipped. This is the enforcement point.
       - name: Route guards
         run: npm run check:routes
+
+  # The deploy/ layer had no automated checking of any kind: no lint, no
+  # typecheck, no tests, while the app side had all three. That asymmetry was
+  # backwards. These are shell scripts that run AS ROOT on customers' machines,
+  # and a mistake in them does not produce a wrong answer on a page — it bricks
+  # an install or silently stops updates from ever running again.
+  #
+  # A separate job rather than more steps on `check`, for two reasons: these
+  # checks need no npm install, no Prisma client and no build (both scripts are
+  # dependency-free on purpose), so bolting them onto a job that does all three
+  # would make a two-second answer wait several minutes; and a red deploy check
+  # should be legible on its own rather than buried under a build failure.
+  #
+  # NOTE: this job is not a required status check until it is added to the
+  # branch protection rulesets on dev and master, alongside `CI / check`.
+  deploy:
+    name: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Needed by the parity check (it evaluates the TypeScript signing
+      # expression) and by the fixtures (common.sh's nofollow primitives are
+      # implemented with `node -e`).
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # PIN the shellcheck version rather than using whatever ubuntu-latest
+      # ships. This is the one realistic way this job false-fails: a runner
+      # image bump brings a newer shellcheck with new checks, and a REQUIRED
+      # status check turns red with no code change — on someone else's unrelated
+      # pull request. Pinning makes the linter's verdict a function of this
+      # repository alone, and moving it becomes a deliberate commit.
+      #
+      # The tarball is verified by SHA-256 because it is fetched over the
+      # network into a job that then runs it. Release assets are immutable, so
+      # the digest is stable; bump both together.
+      - name: Install pinned shellcheck
+        env:
+          SHELLCHECK_VERSION: v0.10.0
+          SHELLCHECK_SHA256: 6c881ab0698e4e6ea235245f22832860544f17ba386442fe7e9d629f8cbedf87
+        run: |
+          set -euo pipefail
+
+          # Fast path: if the image already ships the pinned version, use it.
+          # Pinning removed an image-bump vector and replaced it with a network
+          # fetch inside a required job — a better trade (loud and retryable,
+          # rather than a silent change in what gets checked), but not one worth
+          # paying on every run when the answer is already correct.
+          if command -v shellcheck >/dev/null 2>&1 &&
+             shellcheck --version | grep -qx "version: ${SHELLCHECK_VERSION#v}"; then
+            echo "Preinstalled shellcheck is already ${SHELLCHECK_VERSION}; using it."
+            shellcheck --version
+            exit 0
+          fi
+
+          # The published asset is architecture-specific. Fail here with a
+          # sentence that names the problem rather than 40 lines down with a
+          # confusing "cannot execute binary file" — moving this job to an arm64
+          # runner label is a plausible future change.
+          arch="$(uname -m)"
+          case "$arch" in
+            x86_64) asset="linux.x86_64" ;;
+            aarch64|arm64) asset="linux.aarch64" ;;
+            *)
+              echo "No pinned shellcheck asset for architecture '$arch'." >&2
+              echo "Add one (and its SHA-256) above, or run this job on x86_64." >&2
+              exit 1
+              ;;
+          esac
+          if [ "$asset" != "linux.x86_64" ]; then
+            echo "SHELLCHECK_SHA256 is the digest of the x86_64 asset only." >&2
+            echo "Add the '$asset' digest before running this job on $arch." >&2
+            exit 1
+          fi
+
+          url="https://github.com/koalaman/shellcheck/releases/download/${SHELLCHECK_VERSION}/shellcheck-${SHELLCHECK_VERSION}.${asset}.tar.xz"
+          curl -fsSL --retry 3 -o /tmp/shellcheck.tar.xz "$url"
+          echo "${SHELLCHECK_SHA256}  /tmp/shellcheck.tar.xz" | sha256sum -c -
+          tar -xJf /tmp/shellcheck.tar.xz -C /tmp
+          sudo install -m 0755 "/tmp/shellcheck-${SHELLCHECK_VERSION}/shellcheck" /usr/local/bin/shellcheck
+          shellcheck --version
+
+      # bash -n on every script, then shellcheck at --severity=warning. The
+      # threshold and the reasoning behind it are recorded in the script.
+      #
+      # No `npm ci`: both of these are dependency-free, so a broken install can
+      # never mask a deploy-layer regression.
+      - name: Static checks (syntax + shellcheck)
+        run: bash scripts/check-deploy-scripts.sh
+
+      # The two cross-language invariants CLAUDE.md marks as must-never-drift
+      # (the update-request literals and the cron signing string), plus the
+      # cron script -> proxy leg that check-route-guards.mjs cannot see. Every
+      # one of these failures is SILENT in production: the update never
+      # happens, or every scheduled job 401s.
+      - name: Deploy/app parity
+        run: node scripts/check-deploy-parity.mjs
+
+      # Fixture tests for the load-bearing helpers in deploy/lib/common.sh.
+      #
+      # These need root, because every property they assert is about ownership
+      # and privilege — that root repairs a state file in place rather than
+      # replacing it, that a symlink or hardlink the unprivileged account
+      # planted is refused, that the sweep never hands deploy/ over. The suite
+      # refuses to run as a non-root user rather than skipping those checks: a
+      # green run that tested nothing is the exact failure mode this job exists
+      # to remove.
+      #
+      # `env PATH=$PATH` because sudo resets PATH to secure_path, which does not
+      # include the Node that setup-node installed — and common.sh's nofollow
+      # primitives are `node -e` programs. Without it the suite would abort on
+      # its own precondition check.
+      - name: Fixture tests (deploy/lib/common.sh)
+        run: sudo env "PATH=$PATH" bash deploy/tests/run.sh

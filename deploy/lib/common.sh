@@ -38,6 +38,7 @@ LOG_DIR="/var/log/training-tracker"
 # and pass APP_DIR through the environment to do it. So the environment can only
 # supply it to a process that is already root and had no other source for it.
 APP_DIR="${APP_DIR:-/opt/training-tracker}"
+# shellcheck disable=SC2034  # consumed by auto-update.sh, which sources this file.
 UPDATE_REQUEST_FILE="${APP_DIR}/.update-request"
 
 # --- Configuration -----------------------------------------------------------
