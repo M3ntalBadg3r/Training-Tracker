@@ -64,3 +64,69 @@ jobs:
       # public one both shipped. This is the enforcement point.
       - name: Route guards
         run: npm run check:routes
+
+  # The deploy/ layer had no automated checking of any kind: no lint, no
+  # typecheck, no tests, while the app side had all three. That asymmetry was
+  # backwards. These are shell scripts that run AS ROOT on customers' machines,
+  # and a mistake in them does not produce a wrong answer on a page — it bricks
+  # an install or silently stops updates from ever running again.
+  #
+  # A separate job rather than more steps on `check`, for two reasons: these
+  # checks need no npm install, no Prisma client and no build (both scripts are
+  # dependency-free on purpose), so bolting them onto a job that does all three
+  # would make a two-second answer wait several minutes; and a red deploy check
+  # should be legible on its own rather than buried under a build failure.
+  #
+  # NOTE: this job is not a required status check until it is added to the
+  # branch protection rulesets on dev and master, alongside `CI / check`.
+  deploy:
+    name: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Needed by the parity check (it evaluates the TypeScript signing
+      # expression) and by the fixtures (common.sh's nofollow primitives are
+      # implemented with `node -e`).
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # shellcheck is preinstalled on ubuntu-latest. Prove it is actually here
+      # rather than discovering later that the lint step passed by doing
+      # nothing — check-deploy-scripts.sh also hard-fails if it is missing.
+      - name: Confirm shellcheck is available
+        run: shellcheck --version
+
+      # bash -n on every script, then shellcheck at --severity=warning. The
+      # threshold and the reasoning behind it are recorded in the script.
+      #
+      # No `npm ci`: both of these are dependency-free, so a broken install can
+      # never mask a deploy-layer regression.
+      - name: Static checks (syntax + shellcheck)
+        run: bash scripts/check-deploy-scripts.sh
+
+      # The two cross-language invariants CLAUDE.md marks as must-never-drift
+      # (the update-request literals and the cron signing string), plus the
+      # cron script -> proxy leg that check-route-guards.mjs cannot see. Every
+      # one of these failures is SILENT in production: the update never
+      # happens, or every scheduled job 401s.
+      - name: Deploy/app parity
+        run: node scripts/check-deploy-parity.mjs
+
+      # Fixture tests for the load-bearing helpers in deploy/lib/common.sh.
+      #
+      # These need root, because every property they assert is about ownership
+      # and privilege — that root repairs a state file in place rather than
+      # replacing it, that a symlink or hardlink the unprivileged account
+      # planted is refused, that the sweep never hands deploy/ over. The suite
+      # refuses to run as a non-root user rather than skipping those checks: a
+      # green run that tested nothing is the exact failure mode this job exists
+      # to remove.
+      #
+      # `env PATH=$PATH` because sudo resets PATH to secure_path, which does not
+      # include the Node that setup-node installed — and common.sh's nofollow
+      # primitives are `node -e` programs. Without it the suite would abort on
+      # its own precondition check.
+      - name: Fixture tests (deploy/lib/common.sh)
+        run: sudo env "PATH=$PATH" bash deploy/tests/run.sh
