@@ -14,6 +14,10 @@ Operations — One-command install on any Debian LXC or VM, systemd service, enc
 
 Built with Next.js, React, TypeScript, PostgreSQL, and Prisma.
 
+**Found a security problem?** Please report it privately rather than opening an
+issue — see [SECURITY.md](SECURITY.md), which also documents how security is
+kept current here and when full audits happen.
+
 ---
 
 ## Table of Contents
