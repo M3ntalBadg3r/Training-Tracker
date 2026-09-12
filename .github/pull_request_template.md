@@ -34,6 +34,20 @@ the first three mechanically — the rest are yours.
       de-identification review. Label `skip-deid-scan` to override a false
       positive.)*
 
+### Security
+
+- [ ] **Not security-relevant** — this change does not touch authentication or
+      authorisation, an externally reachable surface, a privilege boundary, a
+      sink (filesystem / shell / outbound request / HTML / export), a
+      credential, backup or export contents, or a runtime dependency.
+- [ ] **Or: it is**, and it was held to the obligations in `CLAUDE.md`
+      → *Writing a route handler*. If it introduces a **new surface** of any of
+      those kinds, an audit is due — see `SECURITY.md`.
+
+*A green pipeline is not a security review: the checks encode failures already
+found. Real customer, partner, product and program names in particular are a
+human check and nothing else.*
+
 ### Merge
 
 - Into `dev`: **squash**.

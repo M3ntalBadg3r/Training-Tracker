@@ -227,6 +227,97 @@ The configurable brand colour re-tints the whole app by **overriding Tailwind v4
 
 Not covered by the ramp (they use hardcoded hex, not `blue-*` classes): `lib/chart-theme.ts` Recharts colours and the jsPDF export palette. Both intentionally keep the stock palette.
 
+## Security — the standing framework
+
+`SECURITY.md` is the public-facing version of this (reporting, audit cadence,
+audit scope). This section is the part that governs *writing code here*.
+
+**The finding that produced this framework was structural, not technical.**
+A full review found that three controls from an earlier round had silently
+reverted, and nothing was tracking whether they had survived — because they had
+been recorded as *completed work* rather than as *standing rules*. Roughly 110
+handlers were written afterwards and never held to them. Assume the same will
+happen to anything below that is not machine-checked.
+
+### When a change needs security thought
+
+Not every change does. These do, and the list is deliberately about *shapes*
+rather than areas, because the areas move:
+
+- it **authenticates or authorises** anything, or changes a guard, role, token,
+  session lifetime or revocation path;
+- it adds a **surface reachable from outside the session cookie** — a public
+  endpoint, a webhook, a cron target;
+- it crosses a **privilege boundary** — between the unprivileged app and root,
+  or between tenants;
+- it reaches a **sink**: the filesystem, a shell, an outbound request, HTML, or
+  an export;
+- it **accepts a credential** of any kind — password, MFA code, passphrase, API
+  key;
+- it changes what a **backup or export** contains;
+- it adds a dependency with **runtime** reach.
+
+If a change is in one of those shapes, the obligations in **Writing a route
+handler** below are not optional extras — they are the specification.
+
+### Three rules that apply to any security work
+
+1. **Reproduce before fixing, with a control run on the unfixed code.** A
+   finding nobody has made fire is a hypothesis. A fix nobody has made fire is
+   decoration. This has repeatedly changed severities in both directions, and
+   it is how a fix that closed a window *without achieving its stated property*
+   was caught.
+2. **Someone other than the implementer checks the work.** In recent rounds
+   this found something real in most changes it examined — twice a regression
+   the security fix itself introduced. Check what the docs claim against what
+   was measured.
+3. **Close the class, not the instance.** More than once, a fix has landed
+   against the one site that prompted it while siblings in the same shape were
+   left — and a comment then made the remainder look intentional. After fixing,
+   grep for the shape.
+
+### Where a decision gets recorded
+
+- A **mechanism** goes in a code comment beside the code. That comment is how
+  the control survives the next refactor, and it is only useful to someone who
+  already has the source.
+- A **rule everyone inherits** goes here, in `CLAUDE.md`, and is given a CI
+  check if one is possible. Prose alone decays; that is the whole lesson above.
+- A **control being traded away** gets named where the trade is made. A comment
+  reasoning carefully about what a choice defends, while never naming what it
+  gives up, is how an interaction goes unnoticed until it is exploited.
+- An **accepted risk** goes in the findings register held outside this
+  repository, with the reasoning and the trigger that should make someone
+  re-check it. It does not go in a public repo: a note saying which weakness was
+  deliberately left is a map.
+- A **finding** never goes in the repository, in an issue, or in release notes.
+  Release notes describe outcomes — "two gaps in how requests are checked for
+  permission have been closed" — with no paths, payloads or extensions. Commit
+  messages sit in between: technical, but not a reproduction recipe.
+
+### When the next audit is due
+
+Against a **trigger**, not a date — decay tracks feature growth, not elapsed
+time. Any item in "When a change needs security thought" above landing as a
+genuinely new surface is a trigger. **Backstop: a lightweight review every 25
+releases** even if nothing triggered one. `SECURITY.md` carries the audit scope
+checklist; work it rather than only hunting new bugs, because the standing
+obligations are what decay.
+
+### What is deliberately not machine-checked
+
+Worth knowing, so nobody mistakes a green pipeline for a clean review:
+
+- **Real customer, partner, product and program names.** `check:deid` matches
+  shapes — email domains, home paths — and cannot match names. The only way to
+  grep for those is a denylist containing them, which would put the exact
+  identifiers the policy exists to exclude *into* a public repo, permanently.
+- **Whether an entry on the public-route allow-list should be there.** The check
+  enforces that the list is explicit; it cannot judge the decision.
+- **Whether a generic error message is generic enough.**
+- **Anything about the deployment scripts' behaviour on a platform CI does not
+  run** — an unprivileged LXC, ARM64, a host without systemd.
+
 ## Writing a route handler
 
 Round 1 of the security review added an auth guard to every handler, generic
@@ -554,6 +645,7 @@ After every change, you MUST complete these steps before considering the task do
 4. **Update CLAUDE.md** — If the change modifies the project structure (new/renamed/removed files or directories) or the data model (new/changed models, fields, enums, or relationships), update the relevant sections in this file.
 5. **Ship the release notes** — Write friendly notes (what's new/changed/fixed) to `.github/releases/<tag>.md` (`v<version>-dev.md` for dev, `v<version>.md` for stable) and commit them with the version bump. The GitHub release itself is created automatically by `.github/workflows/release.yml` when you push (see the Git Workflow section) — do not call the releases API by hand; it's blocked for web sessions.
 6. **De-identify** — Before committing and before writing release notes, confirm the diff and the release body contain no real company/product/program names or PII (see **Data Hygiene & De-identification** above). Use fictional placeholders, and never name the identifier you are removing.
+7. **Ask whether this change was security-relevant** — check the diff against the shapes listed in **Security — the standing framework** above (authentication/authorisation, an externally reachable surface, a privilege boundary, a sink, a credential, backup/export contents, a runtime dependency). If it is one of them: hold it to the obligations in **Writing a route handler**, and note whether it is a **new surface** — if so an audit is due, and that belongs in the findings register outside this repo, not in an issue. Most changes are not security-relevant and this step is a five-second read of your own diff; it exists because the last review found the obligations decayed silently across ~110 handlers that nobody thought to check them against.
 
 ## Deployment
 
