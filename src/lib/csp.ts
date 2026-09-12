@@ -57,12 +57,21 @@ export const CSP_MODES: readonly CspMode[] = ["legacy", "report-only", "enforce"
 /**
  * The mode used when `CSP_MODE` is unset or unrecognised.
  *
- * This single constant is the whole behavioural switch. Changing it changes what
- * every install does by default, so it is deliberately the only thing that has
- * to move to go from "all the machinery is in place, nothing has changed" to
- * "the strict policy is live".
+ * This single constant is the whole behavioural switch, which is why it was
+ * introduced one release before it moved: the machinery landed at `legacy`,
+ * where the headers were provably identical to what shipped before it, and only
+ * this line changes the behaviour.
+ *
+ * Now `enforce`. `script-src` no longer carries `'unsafe-inline'`, so an inline
+ * `<script>` block or an `onclick=` attribute that reaches a page through an
+ * HTML-injection bug is inert text rather than running code. Everything the app
+ * legitimately runs is either nonce-stamped by the renderer or loaded by
+ * something that was, which is what `'strict-dynamic'` is for.
+ *
+ * An install that hits trouble sets `CSP_MODE=legacy` in `.env` and restarts —
+ * no rebuild — which is the whole reason the setting exists.
  */
-export const DEFAULT_CSP_MODE: CspMode = "legacy";
+export const DEFAULT_CSP_MODE: CspMode = "enforce";
 
 /**
  * Parse a `CSP_MODE` value. Unknown values fall back to the default rather than
