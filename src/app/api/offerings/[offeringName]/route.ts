@@ -193,7 +193,11 @@ async function getOfferingStudents(
   if (countries.length === 0) return NextResponse.json({ students: [] });
 
   const studentFilter: Record<string, unknown> = { country: { in: countries } };
-  if (companyFilter && companyFilter.length > 0) studentFilter.companyId = { in: companyFilter };
+  // An empty array means "scoped to no companies" and must match nothing; `[]`
+  // is truthy and yields `in: []`. `null` remains the deliberate "unrestricted"
+  // case. Testing `length > 0` here dropped the filter instead — fail-open. The
+  // caller guards on an empty scope already, so this was not reachable.
+  if (companyFilter) studentFilter.companyId = { in: companyFilter };
 
   const records = await prisma.trainingTaken.findMany({
     where: {

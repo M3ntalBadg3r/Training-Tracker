@@ -186,7 +186,14 @@ export async function fetchTrainingsWithStudents(opts: {
   if (opts.theatre) studentWhere.theatre = opts.theatre;
   if (opts.country) studentWhere.country = opts.country;
   if (opts.region) studentWhere.regionData = { region: opts.region };
-  if (opts.companyIds && opts.companyIds.length > 0) {
+  // An *empty* array means "scoped to no companies" and must match nothing.
+  // Testing `length > 0` here dropped the filter instead, returning every
+  // company's records — fail-open, and the opposite of what the caller asked
+  // for. `null`/`undefined` is the separate, deliberate "unrestricted" case, so
+  // plain truthiness is the right test: `[]` is truthy and yields `in: []`,
+  // which matches nothing. Every caller today early-returns on an empty scope,
+  // so this was not reachable — but the next caller would not know that.
+  if (opts.companyIds) {
     studentWhere.companyId = { in: opts.companyIds };
   }
 
