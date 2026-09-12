@@ -814,32 +814,99 @@ ensure_native_deps() {
     native_deps_ok
 }
 
+# Read at most <max> bytes of <path> and write them to stdout, without ever
+# following a symlink and without ever blocking.
+#
+# This exists because no coreutils tool can open a file with O_NOFOLLOW: `head`,
+# `cat` and `dd` all resolve the final component, so a `[ -L ]` test before them
+# is a *separate* path lookup and therefore only a race, not a guard. Whenever
+# root reads a file living in a directory the unprivileged service account can
+# create entries in (/tmp above all), that race is the whole exposure: swap the
+# name for a symlink between the check and the open and root reads — and, in the
+# caller's case, copies into a log the account can read — a file of the
+# attacker's choosing.
+#
+# Three flags do the work, and all three are load-bearing:
+#   O_NOFOLLOW  the open itself refuses a symlink, so there is no window
+#   O_NONBLOCK  opening a FIFO returns immediately instead of waiting forever
+#               for a writer (O_NOFOLLOW does not help here: the account can
+#               create a FIFO *at* the name rather than a link to one)
+#   fstat       the size and file-type checks are made against the descriptor
+#               that is actually being read, not against the path again
+#
+# Returns 1 (printing nothing) when the path is not a plain readable file, when
+# it is larger than the cap, or when node is unavailable. Callers must treat
+# that as "no content" rather than falling back to an unguarded read.
+read_file_nofollow() {
+    local path="${1:-}" max="${2:-8000}"
+    [ -n "${path}" ] || return 1
+    command -v node >/dev/null 2>&1 || return 1
+
+    node -e '
+      const fs = require("fs");
+      const p = process.argv[1];
+      const max = Number(process.argv[2]) || 0;
+      let fd = -1;
+      try {
+        fd = fs.openSync(p, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
+        const st = fs.fstatSync(fd);
+        if (!st.isFile()) { fs.closeSync(fd); process.exit(1); }
+        const n = Math.min(st.size, max);
+        if (n > 0) {
+          const buf = Buffer.alloc(n);
+          let off = 0;
+          for (;;) {
+            const r = fs.readSync(fd, buf, off, n - off, off);
+            if (r <= 0 || off >= n) break;
+            off += r;
+          }
+          fs.closeSync(fd);
+          fd = -1;
+          process.stdout.write(buf.subarray(0, off));
+        } else {
+          fs.closeSync(fd);
+          fd = -1;
+        }
+      } catch (e) {
+        if (fd >= 0) { try { fs.closeSync(fd); } catch (_) {} }
+        process.exit(1);
+      }
+    ' "${path}" "${max}" 2>/dev/null
+}
+
 # Copy any Next.js panic dumps written since <epoch seconds> into <logfile>.
 #
 # A Turbopack panic writes its detail to /tmp/next-panic-<hash>.log and prints
 # only the path, so the build output on its own says almost nothing. /tmp is
 # cleared on reboot: unless the dump is copied somewhere durable at the moment it
 # happens, the one artefact that explains the failure is gone before anyone looks.
+#
+# The destination is .update-log, which the service account reads — so this is a
+# root read whose result is handed straight to the unprivileged side, and /tmp is
+# world-writable. training-tracker-update.service sets PrivateTmp=yes, which
+# gives the systemd path its own /tmp and closes this; update.sh run by hand and
+# the init.d fallback have no such namespace. Hence read_file_nofollow above:
+# the file type is decided by the descriptor being read, not by a preceding test
+# on the name.
 capture_panic_logs() {
-    local since="$1" dest="$2" f
+    local since="$1" dest="$2" f content
 
     [ -n "${dest}" ] && [ -w "${dest}" ] || return 0
     [ -d /tmp ] || return 0
 
     while IFS= read -r f; do
-        # Skip symlinks. training-tracker-update.service sets PrivateTmp=yes so
-        # the app cannot plant one there, but update.sh runs outside that unit
-        # (and the init.d fallback has no unit at all), and `[ -f ]` follows
-        # links — which would copy the target's first 8 KB into a log the
-        # service account can read.
-        [ -L "${f}" ] && continue
-        [ -f "${f}" ] || continue
-        {
-            echo "--- begin ${f} ---"
-            head -c 8000 "${f}"
-            echo ""
-            echo "--- end ${f} ---"
-        } >> "${dest}"
+        # No [ -L ]/[ -f ] pre-test: it would only re-introduce the check-then-
+        # open gap this function exists to avoid, and read_file_nofollow already
+        # refuses anything that is not a plain file.
+        if content="$(read_file_nofollow "${f}" 8000)"; then
+            {
+                echo "--- begin ${f} ---"
+                printf '%s\n' "${content}"
+                echo "--- end ${f} ---"
+            } >> "${dest}"
+        else
+            echo "--- skipped ${f}: not a plain readable file ---" >> "${dest}"
+        fi
     done < <(find /tmp -maxdepth 1 -name 'next-panic-*.log' -newermt "@${since}" 2>/dev/null)
 
     return 0
