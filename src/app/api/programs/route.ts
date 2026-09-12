@@ -7,10 +7,10 @@ import { requireAuth, handleAuthError } from "@/lib/auth";
  * shape each one needs so the UI can auto-adapt:
  *  - `levels`: which compliance levels (Country/Theatre/Global) are configured
  *  - `hasMinimumPerTheatre`: whether any requirement enforces a per-theatre
- *    minimum (drives the Global Diamond-style per-theatre breakdown)
+ *    minimum (drives the per-theatre breakdown on the Global level)
  *
  * This single endpoint feeds the programs index page and the sidebar submenu,
- * replacing the previously-hardcoded APS / Global Diamond entries.
+ * replacing the two previously-hardcoded per-program entries.
  */
 export async function GET(request: NextRequest) {
   try {

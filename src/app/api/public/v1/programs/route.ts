@@ -8,7 +8,7 @@ import { authorizePublicRequest } from "@/lib/public-api";
  * per-program compliance endpoint:
  *  - `levels`: which compliance levels (Country/Theatre/Global) are configured
  *  - `hasMinimumPerTheatre`: whether any requirement enforces a per-theatre
- *    minimum (Global Diamond-style per-theatre breakdown)
+ *    minimum (drives the per-theatre breakdown on the Global level)
  *  - `isTiered`: whether the program has a tier ladder
  *
  * This list is deliberately NOT company-scoped, unlike every other endpoint on

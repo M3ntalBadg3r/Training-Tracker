@@ -8,10 +8,12 @@ import { cachedReport, scopeKey } from "@/lib/report-cache";
  * Unified, data-driven program compliance endpoint. The program is identified
  * by the `[programName]` route segment (URL-decoded), so any program configured
  * in ProgramData gets a dashboard without code changes. This is the union of
- * the old hardcoded APS and Global Diamond routes:
- *  - Country / Region / Theatre levels behave like APS (count attained people).
- *  - The Global level supports both APS "compliant theatre count" semantics and
- *    Global Diamond per-title global counts with optional per-theatre minimums.
+ * the two hardcoded per-program routes it replaced, whose two shapes it still
+ * supports:
+ *  - Country / Region / Theatre levels count attained people.
+ *  - The Global level supports both "count the compliant theatres" semantics
+ *    (for a row naming no training) and per-title global holder counts with an
+ *    optional per-theatre minimum.
  *
  * A `meta` block reports the configured levels and whether any requirement uses
  * a per-theatre minimum, so the client can render the right sections.

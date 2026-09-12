@@ -175,7 +175,7 @@ export async function buildProgramReport(opts: BuildProgramReportOptions) {
   if (level === "global") {
     const distinctTheatres = theatreList;
 
-    // Global counts + per-theatre breakdown are needed for Global Diamond-style
+    // Global counts + per-theatre breakdown are needed for Global-level
     // requirements that carry a real training title / per-theatre minimum.
     const allTitles = extractTitles(programData);
     const globalEmailSets = await getEmailSetsByTitle(allTitles, now, { companyIds });
@@ -209,9 +209,9 @@ export async function buildProgramReport(opts: BuildProgramReportOptions) {
       ? await getEmailSetsByTitleAndTheatre(allTheatreReqTitles, horizonDate, companyIds)
       : new Map<string, Map<string, Set<string>>>();
 
-    // Count of compliant theatres for a given snapshot (APS semantics — a theatre
-    // is compliant when it meets every theatre-level requirement). Pure: reads the
-    // pre-fetched per-theatre email sets instead of querying per theatre.
+    // Count of compliant theatres for a given snapshot — a theatre is compliant
+    // when it meets every theatre-level requirement. Pure: reads the pre-fetched
+    // per-theatre email sets instead of querying per theatre.
     // `unionAttainedByTheatre(req, map, [t])` reproduces the old
     // `unionAttained(req, getEmailSetsByTitle(titles, asOf, { theatre: t }))`.
     function countCompliantTheatres(
@@ -259,8 +259,8 @@ export async function buildProgramReport(opts: BuildProgramReportOptions) {
         }
 
         // For title-bearing requirements the "attained" figure is the global
-        // student count; for the APS theatre-compliance placeholder it's the
-        // number of compliant theatres.
+        // student count; for the theatre-compliance placeholder (a Global row
+        // naming no training) it's the number of compliant theatres.
         const attained = hasTrainingTitle ? globalAttained : compliantTheatreCount;
         const primaryMet = attained >= req.quantityRequired;
         const theatresMet = theatreBreakdown === null || theatreBreakdown.every((t) => t.compliant);

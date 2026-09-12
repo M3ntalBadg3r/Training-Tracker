@@ -215,10 +215,10 @@ export async function POST(request: NextRequest) {
       resolvedTrainingTitle = trainingMatch.trainingTitle;
     } else if (level !== "Global" || hasTier) {
       // Non-global rows must have training; tier deployment requirements always
-      // name a training (they can't be the APS "count theatres" placeholder).
+      // name a training (they can't be the "count compliant theatres" placeholder).
       return { ok: false, message: "Training Type and Training are required for Country/Theatre level rows and tier deployment requirements" };
     }
-    // Global + no training = APS-style "count compliant theatres" mode (allowed)
+    // Global + no training = "count compliant theatres" mode (allowed)
 
     // --- Resolve alternatives (pipe-separated training names) ---
     const altData: { trainingType: string; trainingTitle: string }[] = [];

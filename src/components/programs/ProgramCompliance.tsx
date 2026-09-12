@@ -28,7 +28,8 @@ export interface Requirement {
   trainingFullTitle: string;
   quantityRequired: number;
   attained: number;
-  // Global Diamond-style fields (present at the Global level).
+  // Global-level fields: a global holder count, optionally gated by a
+  // per-theatre minimum. Present only at the Global level.
   globalAttained?: number;
   minimumPerTheatre?: number | null;
   theatreBreakdown?: { theatre: string; count: number; compliant: boolean }[] | null;
@@ -202,8 +203,10 @@ export function ExpiringNote({ attained, projected }: { attained: number; projec
 }
 
 /**
- * APS-style side-by-side specialisation matrix (one column per specialisation,
- * grouped rows of Training / Required / Attained).
+ * Side-by-side specialisation matrix (one column per specialisation, grouped
+ * rows of Training / Required / Attained). Used wherever compliance is a count
+ * of attained people: the Country, Region and Theatre levels, and the Global
+ * level when it counts compliant theatres rather than holders.
  */
 export function ComplianceTable({
   specialisations,
@@ -405,8 +408,9 @@ function RequirementRowGroup({
 }
 
 /**
- * Global Diamond-style card: one card per specialisation with a status badge
- * and a table of requirements, each expandable to a per-theatre breakdown.
+ * Card layout for the Global level when requirements carry a per-theatre
+ * minimum: one card per specialisation with a status badge and a table of
+ * requirements, each expandable to a per-theatre breakdown.
  */
 export function SpecialisationCard({ spec }: { spec: Specialisation }) {
   const deploymentReqs = spec.deploymentRequirements ?? [];

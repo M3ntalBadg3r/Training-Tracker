@@ -6,7 +6,7 @@
  * ProgramDataAlternative children (OR logic — any of {primary, ...alternatives}
  * counts toward the requirement's quantity). A "compliant" requirement is one
  * where the union of unique students holding any qualifying training meets or
- * exceeds quantityRequired (and, for Global Diamond requirements with a
+ * exceeds quantityRequired (and, for Global-level requirements carrying a
  * minimumPerTheatre, every theatre meets that minimum too).
  */
 
