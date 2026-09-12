@@ -30,9 +30,17 @@
  * real gate is which mode is the default.
  *
  *  - `legacy`      — today's policy, byte for byte. No nonce is minted.
- *  - `report-only` — the legacy policy is still enforced; the strict policy
- *                    rides alongside it as `Content-Security-Policy-Report-Only`
- *                    so violations are reported without breaking anything.
+ *  - `report-only` — the strict policy is sent as
+ *                    `Content-Security-Policy-Report-Only` **and nothing is
+ *                    enforced**. Read that twice: this mode does NOT keep the
+ *                    legacy policy enforced alongside the report, so while it
+ *                    is on, `frame-ancestors`, `object-src` and every other
+ *                    directive stop being enforced too. It is forced rather
+ *                    than chosen — the reason is spelled out where the headers
+ *                    are assembled in `proxy.ts` — and it makes this a short
+ *                    diagnostic window for finding out *which* script broke,
+ *                    never a resting state. To run with reduced risk, use
+ *                    `legacy`, which really does enforce.
  *  - `enforce`     — the strict policy is the enforced one. `'unsafe-inline'`
  *                    is gone from `script-src`.
  *
