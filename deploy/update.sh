@@ -54,11 +54,18 @@ rollback() {
     # Restore git state
     if [ -n "$BEFORE_COMMIT" ]; then
         echo "  Restoring git to commit ${BEFORE_COMMIT}..."
-        # shellcheck disable=SC2164  # a redundant re-assert: the guarded `cd "${APP_DIR}" || exit 1`
-        # at the top of the script has already run before any step that can call rollback, and a
-        # failed cd leaves the working directory unchanged, so the git commands below still run in
-        # the right tree. Left in place rather than "fixed", because changing control flow inside a
-        # rollback path is not worth a lint finding.
+        # shellcheck disable=SC2164  # Verified redundant AS THE FILE STANDS TODAY, not in general.
+        # The guarded `cd "${APP_DIR}" || exit 1` above runs before BEFORE_COMMIT is ever assigned,
+        # this block is gated on that variable, and there is no other `cd` anywhere between that
+        # guard and any rollback call site — so the working directory is already APP_DIR at every
+        # reachable invocation and a failed cd here changes nothing.
+        #
+        # That last clause is the whole justification, and it is a property of the current control
+        # flow rather than of `cd`. ADDING A `cd` ANYWHERE BETWEEN THAT GUARD AND A ROLLBACK CALL
+        # WOULD INVALIDATE IT, and this suppression would then be hiding a `git reset --hard` run
+        # as root in the wrong tree. If you introduce one, remove this suppression and guard this
+        # cd instead. Left unguarded for now only because changing control flow inside a rollback
+        # path to satisfy a linter is the riskier edit.
         cd "${APP_DIR}"
         git checkout "${BEFORE_COMMIT}" -- . 2>/dev/null
         git checkout "${BRANCH}" 2>/dev/null

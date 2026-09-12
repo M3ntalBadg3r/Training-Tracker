@@ -22,18 +22,41 @@
 # no blanket exclusions — which is what keeps it useful. A future SC2164 or
 # SC2046 somewhere new will fail this check rather than being pre-forgiven.
 #
-# `info` and `style` are NOT enabled: 21 findings each, all stylistic
-# (`$(...)` preferences, read -r, [ vs [[), and acting on them would mean
-# touching the root-executed path for no defect. If that ever changes, raise the
-# threshold deliberately and fix the findings — do not add exclusions.
+# `info` and `style` are NOT enabled. The 16 findings beyond `warning` are
+# 12x SC1091 ("not following" a sourced file — an artefact of not running with
+# `-x`, not a code smell) and 4-5x SC2015 (`A && B || C`). Every SC2015 site was
+# read: all are the benign `... || true` form. So the threshold stays where it
+# is, but note WHY: it is not that those findings are stylistic noise in
+# general, it is that these particular ones are accounted for. If that ever
+# changes, raise the threshold deliberately and fix the findings — do not add
+# exclusions.
+#
+# (An earlier version of this comment described those findings as `$(...)`
+# preferences, `read -r` and `[` vs `[[`. No such finding exists in this tree.
+# The conclusion was right and the stated reason was wrong, which is the more
+# misleading of the two failures — a future reader would have trusted a
+# characterisation nobody had checked.)
 
 set -u
 
 SEVERITY="${SHELLCHECK_SEVERITY:-warning}"
 
+# GNU coreutils localises `stat -c %F` ("regular file"), and both common.sh and
+# the fixtures compare against the English spellings. Pin the locale so a
+# developer on a translated system gets the same verdict as CI rather than an
+# unexplained red run. (The same exposure exists in common.sh itself on a
+# translated host — pre-existing, noted, and not changed here.)
+export LC_ALL=C
+
 cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 2
 
-mapfile -t SCRIPTS < <(find deploy -name '*.sh' -type f | sort)
+# A plain read loop rather than `mapfile`, which needs bash 4 and so would fail
+# on macOS's system bash 3.2. It fails loudly there rather than silently, but
+# there is no reason to make a contributor meet that at all.
+SCRIPTS=()
+while IFS= read -r f; do
+    SCRIPTS+=("${f}")
+done < <(find deploy -name '*.sh' -type f | sort)
 
 if [ "${#SCRIPTS[@]}" -eq 0 ]; then
     echo "ERROR: no shell scripts found under deploy/. This check would pass vacuously." >&2

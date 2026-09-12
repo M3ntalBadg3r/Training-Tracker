@@ -92,11 +92,28 @@ jobs:
         with:
           node-version: 22
 
-      # shellcheck is preinstalled on ubuntu-latest. Prove it is actually here
-      # rather than discovering later that the lint step passed by doing
-      # nothing — check-deploy-scripts.sh also hard-fails if it is missing.
-      - name: Confirm shellcheck is available
-        run: shellcheck --version
+      # PIN the shellcheck version rather than using whatever ubuntu-latest
+      # ships. This is the one realistic way this job false-fails: a runner
+      # image bump brings a newer shellcheck with new checks, and a REQUIRED
+      # status check turns red with no code change — on someone else's unrelated
+      # pull request. Pinning makes the linter's verdict a function of this
+      # repository alone, and moving it becomes a deliberate commit.
+      #
+      # The tarball is verified by SHA-256 because it is fetched over the
+      # network into a job that then runs it. Release assets are immutable, so
+      # the digest is stable; bump both together.
+      - name: Install pinned shellcheck
+        env:
+          SHELLCHECK_VERSION: v0.10.0
+          SHELLCHECK_SHA256: 6c881ab0698e4e6ea235245f22832860544f17ba386442fe7e9d629f8cbedf87
+        run: |
+          set -euo pipefail
+          url="https://github.com/koalaman/shellcheck/releases/download/${SHELLCHECK_VERSION}/shellcheck-${SHELLCHECK_VERSION}.linux.x86_64.tar.xz"
+          curl -fsSL --retry 3 -o /tmp/shellcheck.tar.xz "$url"
+          echo "${SHELLCHECK_SHA256}  /tmp/shellcheck.tar.xz" | sha256sum -c -
+          tar -xJf /tmp/shellcheck.tar.xz -C /tmp
+          sudo install -m 0755 "/tmp/shellcheck-${SHELLCHECK_VERSION}/shellcheck" /usr/local/bin/shellcheck
+          shellcheck --version
 
       # bash -n on every script, then shellcheck at --severity=warning. The
       # threshold and the reasoning behind it are recorded in the script.
