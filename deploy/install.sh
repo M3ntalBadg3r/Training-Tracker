@@ -50,9 +50,24 @@ apt-get update -qq
 # 2. Install Node.js 22 LTS
 NODE_MIN_MAJOR=22
 
-# The installed Node major version, or nothing when Node is absent/unreadable.
+# The major version of a Node the SERVICE will actually be able to run, or
+# nothing.
+#
+# The two halves both matter. The version, obviously — but also the location:
+# the unit runs as the unprivileged account with a plain PATH, so a Node that
+# only root can reach (an nvm or tarball install under a root home, which is
+# plausible on the hand-built hosts this project has to cope with) is no use to
+# the service however new it is. Skipping the package install on the strength of
+# one would leave a host that finished installing and cannot start. Requiring
+# the interpreter to resolve under a system bin directory keeps the skip to the
+# case it was added for: a re-run on a host this installer already set up.
 node_major_version() {
-    local v
+    local p v
+    p="$(command -v node 2>/dev/null)" || return 1
+    case "${p}" in
+        /usr/bin/node|/usr/local/bin/node|/bin/node) ;;
+        *) return 1 ;;
+    esac
     v="$(node --version 2>/dev/null)" || return 1
     v="${v#v}"
     v="${v%%.*}"
@@ -70,8 +85,9 @@ node_major_version() {
 # that breaks the next install on a host that has no way to tell you why. What
 # can be done, is:
 #
-#   - it is not run at all when a new enough Node is already present, which is
-#     every re-run of this installer on an existing host;
+#   - it is not run at all when a new enough Node is already installed in a
+#     system location, which is every re-run of this installer on an existing
+#     host;
 #   - it is downloaded to a private temporary file first rather than piped
 #     straight into a shell, so a truncated transfer cannot be executed as far
 #     as it got — a pipe into `bash` runs each complete line as it arrives;
@@ -120,7 +136,7 @@ apt-get install -y ca-certificates curl gnupg
 
 NODE_HAVE="$(node_major_version || true)"
 if [ -n "${NODE_HAVE}" ] && [ "${NODE_HAVE}" -ge "${NODE_MIN_MAJOR}" ]; then
-    echo "  Node ${NODE_HAVE}.x is already installed — leaving the package sources alone."
+    echo "  Node ${NODE_HAVE}.x is already installed system-wide — leaving the package sources alone."
 else
     install_node_repository
     apt-get install -y nodejs

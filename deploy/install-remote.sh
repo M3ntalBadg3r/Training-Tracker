@@ -62,9 +62,18 @@ if [ "$(id -u)" -ne 0 ]; then
         # A closed list rather than `sudo -E`, for the reason given in
         # require_root in lib/common.sh: the whole caller environment should not
         # cross into the root process just because one command was permitted.
-        # These four are the ones this bootstrap documents.
-        if sudo --help 2>&1 | grep -q -- '--preserve-env=list'; then
-            exec sudo --preserve-env=GITHUB_TOKEN,APP_BASE_URL,TRUSTED_PROXIES,UPDATE_CHANNEL bash "$0" "$@"
+        # These four are the ones this bootstrap documents, and only the ones
+        # actually set are asked for — under a sudoers rule with no SETENV: tag
+        # sudo refuses the request rather than ignoring it, so asking for
+        # nothing must not become asking for something.
+        KEEP=""
+        for _v in GITHUB_TOKEN APP_BASE_URL TRUSTED_PROXIES UPDATE_CHANNEL; do
+            if [ -n "${!_v:-}" ]; then
+                KEEP="${KEEP:+${KEEP},}${_v}"
+            fi
+        done
+        if [ -n "${KEEP}" ] && LC_ALL=C sudo --help 2>&1 | grep -q -- '--preserve-env=list'; then
+            exec sudo "--preserve-env=${KEEP}" bash "$0" "$@"
         fi
         exec sudo bash "$0" "$@"
     fi

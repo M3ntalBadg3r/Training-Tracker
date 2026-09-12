@@ -46,13 +46,26 @@ UPDATE_REQUEST_FILE="${APP_DIR}/.update-request"
 # read, so adding a variable here is a deliberate act.
 #
 # Every key on this list names a value the unprivileged service account can
-# choose (it writes .env), and each one changes how a root-run or root-spawned
-# program behaves — so parsing the file safely is only half the job. The values
-# are checked before anything acts on them: GITHUB_TOKEN by checked_github_token
-# at its point of use in ensure_origin_remote, and NODE_EXTRA_CA_CERTS,
-# npm_config_cache and DATABASE_URL by check_env_values immediately below the
-# parser. UPDATE_CHANNEL and TT_BUILD_MIN_MB are each compared against a fixed
-# set or read as a number by their consumers, so they need nothing here.
+# choose (it writes .env), so parsing the file safely is only half the job — the
+# values are looked at too, but only where doing something about one is an
+# improvement:
+#
+#   GITHUB_TOKEN         checked_github_token, at its point of use in
+#                        ensure_origin_remote, where a rejection is FATAL: it
+#                        reshapes the URL root pulls from.
+#   NODE_EXTRA_CA_CERTS  checked_ca_bundle, via check_env_values, where a
+#                        rejection DROPS the value: it decides which certificate
+#                        authority root's Node believes.
+#   npm_config_cache     checked_npm_cache, via check_env_values, WARN only.
+#   DATABASE_URL         checked_database_url, via check_env_values, WARN only —
+#                        it reaches nothing that runs as root, and unsetting it
+#                        would cost the update its database rollback.
+#   UPDATE_CHANNEL       compared against a fixed set by its consumers.
+#   TT_BUILD_MIN_MB      read as a number by build_min_mb.
+#
+# The rule the last four follow: a check with no privilege boundary behind it
+# reports, it does not act. Acting would make a validation failure worse than no
+# validation at all.
 ENV_ALLOWED_KEYS="DATABASE_URL GITHUB_TOKEN NODE_EXTRA_CA_CERTS UPDATE_CHANNEL TT_BUILD_MIN_MB npm_config_cache"
 
 # The upstream repository, in one place so the two update scripts cannot drift.
@@ -72,6 +85,14 @@ GIT_REMOTE_PATH="M3ntalBadg3r/Training-Tracker.git"
 load_env_allowlist() {
     local env_file="${APP_DIR}/.env"
     [ -f "${env_file}" ] || return 0
+
+    # Which keys this file actually supplied. Only those are value-checked: a
+    # value already in root's environment was put there by whoever invoked the
+    # script as root (the sudo re-exec forwards a closed list that includes none
+    # of these), so it has a trusted source and silently dropping it would break
+    # a legitimate one-off override such as
+    # `NODE_EXTRA_CA_CERTS=/path/to/bundle bash update.sh`.
+    local from_file=""
 
     local line key value
     while IFS= read -r line || [ -n "${line}" ]; do
@@ -111,10 +132,11 @@ load_env_allowlist() {
         # printf -v assigns; it does not evaluate the value.
         printf -v "${key}" '%s' "${value}"
         export "${key?}"
+        from_file="${from_file} ${key}"
     done < "${env_file}"
 
     # Parsing the file safely is only half the job — see check_env_values.
-    check_env_values
+    check_env_values "${from_file}"
 }
 
 # --- .env value checks -------------------------------------------------------
@@ -148,14 +170,21 @@ _trim_env_value() {
 # Node will accept. A value naming a file the service account can write lets
 # that account decide who root's Node believes — which is the whole of TLS.
 #
-# So the file must be a plain file that only root can change: root-owned, and
-# neither group- nor other-writable. A symlink is allowed (some distributions
-# ship the bundle that way) but the link itself must be root-owned too,
-# otherwise its target could simply be re-pointed. The stock Debian bundle
-# written by update-ca-certificates — root:root 0644 — passes unchanged, which
-# is the case install.sh configures.
+# So the file must be a plain file the service account cannot change:
+# root-owned, not world-writable, and not group-writable *to the service
+# group*. A symlink is allowed (some distributions ship the bundle that way) but
+# the link itself must be root-owned too, otherwise its target could simply be
+# re-pointed.
+#
+# The group rule is deliberately about the service group rather than about the
+# group-write bit as such. The threat is the application account rewriting the
+# bundle; a `root:root 0664` file — which is what a configuration-management
+# system tends to leave behind — is not that, and refusing it would cost an
+# operator a working build behind an inspecting proxy for no security gain. The
+# stock bundle written by update-ca-certificates (root:root 0644) passes either
+# way, which is the case install.sh configures.
 checked_ca_bundle() {
-    local path meta mode owner
+    local path meta mode owner group
     path="$(_trim_env_value "${1:-}")"
     [ -n "${path}" ] || return 1
     [ "${#path}" -le 4096 ] || return 1
@@ -180,9 +209,15 @@ checked_ca_bundle() {
         *) return 1 ;;
     esac
     mode="${meta##*|}"
-    # Reject group- or other-writable (0022). The leading 0 makes bash read the
-    # mode as octal.
-    [ $(( 0${mode} & 0022 )) -eq 0 ] || return 1
+    # World-writable is never acceptable. The leading 0 makes bash read the mode
+    # as octal.
+    [ $(( 0${mode} & 0002 )) -eq 0 ] || return 1
+    # Group-writable only matters when the group is the one the application runs
+    # as — see the note above.
+    if [ $(( 0${mode} & 0020 )) -ne 0 ]; then
+        group="$(stat -Lc '%G' "${path}" 2>/dev/null)" || return 1
+        [ "${group}" != "${SVC_GROUP}" ] || return 1
+    fi
 
     printf '%s' "${path}"
 }
@@ -220,10 +255,13 @@ checked_npm_cache() {
 # redirects the dump into a root-owned file. So there is no privilege boundary
 # here to defend, and a check claiming otherwise would be theatre.
 #
-# What it does do is keep the value in the shape every consumer expects, so that
-# a future root-run consumer inherits something sane rather than, say, a string
-# beginning with '-' that psql would read as an option. Deliberately loose: a
-# real connection string is accepted whatever its password contains.
+# So this reports and does not act: a value that fails is used anyway. Acting on
+# it would be strictly harmful — an unset DATABASE_URL makes perform-update.sh
+# skip the pre-update pg_dump, leaving the rollback nothing to restore from, and
+# trading "this string looks odd" for "this update has no database safety net"
+# is the wrong trade at any odds. What the check is worth is a line in the log
+# when the value is not the shape every consumer expects. Deliberately loose
+# besides: a real connection string is accepted whatever its password contains.
 checked_database_url() {
     local url
     url="$(_trim_env_value "${1:-}")"
@@ -240,37 +278,55 @@ checked_database_url() {
     printf '%s' "${url}"
 }
 
-# Apply the checks above to whatever load_env_allowlist just read. A rejected
-# value is dropped with a one-line warning that never echoes the value itself —
-# DATABASE_URL carries a password and GITHUB_TOKEN is a credential.
+# Apply the checks above to the keys ${APP_DIR}/.env supplied, named in $1 as a
+# space-separated list. Keys already in root's environment are NOT checked: the
+# sudo re-exec forwards a closed list containing none of them, so such a value
+# was set by whoever invoked the script as root, and dropping it would break a
+# legitimate one-off override.
+#
+# Two different responses, and the difference is the whole point:
+#
+#   drop   only where the value genuinely crosses a privilege boundary, so
+#          carrying on with it is worse than carrying on without it. That is
+#          NODE_EXTRA_CA_CERTS alone — it decides which certificate authority
+#          root's Node believes. Losing it breaks a build behind an inspecting
+#          proxy in a way the operator will not connect to a .env line, so the
+#          message has to say exactly what to fix.
+#
+#   warn   everywhere else. A validation failure must never leave the system
+#          worse off than no validation at all, and unsetting DATABASE_URL does
+#          exactly that: perform-update.sh then skips the pre-update pg_dump and
+#          the rollback has nothing to restore from, trading a cosmetic
+#          complaint for the loss of the update's database safety net. So the
+#          odd-looking value is reported and then used.
+#
+# No message ever echoes the value: DATABASE_URL carries a password.
 #
 # GITHUB_TOKEN is not handled here: it is checked at the point of use, in
 # ensure_origin_remote, where a rejection has to be fatal rather than ignorable.
 check_env_values() {
-    local checked
-    if [ -n "${NODE_EXTRA_CA_CERTS:-}" ]; then
+    local from_file=" ${1:-} " checked
+
+    if [ -n "${NODE_EXTRA_CA_CERTS:-}" ] && [ "${from_file#* NODE_EXTRA_CA_CERTS }" != "${from_file}" ]; then
         if checked="$(checked_ca_bundle "${NODE_EXTRA_CA_CERTS}")"; then
             export NODE_EXTRA_CA_CERTS="${checked}"
         else
-            echo "WARNING: NODE_EXTRA_CA_CERTS in .env does not name a root-owned certificate file that only root can write — ignoring it." >&2
+            echo "ERROR: NODE_EXTRA_CA_CERTS in ${APP_DIR}/.env does not name a certificate file that only root can change." >&2
+            echo "       It must be an absolute path to a root-owned regular file that is neither world-writable" >&2
+            echo "       nor writable by the ${SVC_GROUP} group; otherwise the application account could choose" >&2
+            echo "       which certificate authorities root trusts. Ignoring it for this run." >&2
+            echo "       If this system is behind an SSL-inspecting proxy, the build below may now fail: point the" >&2
+            echo "       setting at /etc/ssl/certs/ca-certificates.crt, or fix the ownership of the file it names." >&2
             unset NODE_EXTRA_CA_CERTS
         fi
     fi
-    if [ -n "${npm_config_cache:-}" ]; then
-        if checked="$(checked_npm_cache "${npm_config_cache}")"; then
-            export npm_config_cache="${checked}"
-        else
-            echo "WARNING: npm_config_cache in .env is not a plain absolute path — ignoring it." >&2
-            unset npm_config_cache
-        fi
+
+    if [ -n "${npm_config_cache:-}" ] && [ "${from_file#* npm_config_cache }" != "${from_file}" ]; then
+        checked_npm_cache "${npm_config_cache}" >/dev/null ||             echo "WARNING: npm_config_cache in ${APP_DIR}/.env is not a plain absolute path. Using it anyway." >&2
     fi
-    if [ -n "${DATABASE_URL:-}" ]; then
-        if checked="$(checked_database_url "${DATABASE_URL}")"; then
-            export DATABASE_URL="${checked}"
-        else
-            echo "WARNING: DATABASE_URL in .env is not a postgres:// connection string — ignoring it (the pre-update database backup will be skipped)." >&2
-            unset DATABASE_URL
-        fi
+
+    if [ -n "${DATABASE_URL:-}" ] && [ "${from_file#* DATABASE_URL }" != "${from_file}" ]; then
+        checked_database_url "${DATABASE_URL}" >/dev/null ||             echo "WARNING: DATABASE_URL in ${APP_DIR}/.env does not look like a postgres:// connection string. Using it anyway." >&2
     fi
 }
 
@@ -480,8 +536,29 @@ require_root() {
         # so any sudoers rule that matched the old invocation still matches this
         # one; older sudo builds without it simply carry nothing across, which
         # only means the operator is prompted for the site settings.
-        if sudo --help 2>&1 | grep -q -- '--preserve-env=list'; then
-            exec sudo "--preserve-env=${REEXEC_KEEP_ENV}" bash "$0" "$@"
+        #
+        # It is only asked for when there is something to carry. That matters
+        # under a restricted sudoers rule with no SETENV: tag, where sudo REFUSES
+        # the request outright rather than ignoring it — so asking unconditionally
+        # would turn "this operator may run the installer" into "this operator may
+        # not run anything", for no gain when nothing was set. With something set,
+        # the refusal is the right outcome and sudo's own message names the
+        # variables; the operator can add SETENV: to the rule, or put the setting
+        # in .env, rather than have their override silently dropped.
+        #
+        # LC_ALL=C because the probe matches sudo's help text.
+        local keep="" var
+        # Unquoted on purpose: REEXEC_KEEP_ENV is a literal defined in this
+        # file and the comma-to-space substitution is what splits it.
+        # An explicit `if` rather than `[ … ] && …` because install.sh runs
+        # under `set -e`, where an AND-list whose test fails would abort it.
+        for var in ${REEXEC_KEEP_ENV//,/ }; do
+            if [ -n "${!var:-}" ]; then
+                keep="${keep:+${keep},}${var}"
+            fi
+        done
+        if [ -n "${keep}" ] && LC_ALL=C sudo --help 2>&1 | grep -q -- '--preserve-env=list'; then
+            exec sudo "--preserve-env=${keep}" bash "$0" "$@"
         fi
         exec sudo bash "$0" "$@"
     fi
@@ -506,6 +583,9 @@ check_dependencies() {
     command -v chown   >/dev/null 2>&1 || missing+=("chown       (coreutils)")
     command -v install >/dev/null 2>&1 || missing+=("install     (coreutils)")
     command -v stat    >/dev/null 2>&1 || missing+=("stat        (coreutils)")
+    # install.sh downloads the Node repository setup script to a private
+    # temporary file before running it, rather than piping it into a shell.
+    command -v mktemp  >/dev/null 2>&1 || missing+=("mktemp      (coreutils)")
 
     if ! command -v useradd >/dev/null 2>&1 && ! command -v adduser >/dev/null 2>&1; then
         missing+=("useradd or adduser (passwd / adduser)")
@@ -718,16 +798,62 @@ ensure_ownership() {
 # corollary is that the app cannot *unlink* them (APP_DIR is sticky and they are
 # root-owned), so the ack path in api/admin/updates/status truncates to an idle
 # payload instead of deleting.
+# Set <path>'s mode to <octal mode> without ever following a symlink, and
+# without needing write permission on the containing directory.
+#
+# The counterpart to read_file_nofollow, and it exists because the two obvious
+# ways to fix a mode each give up one property that matters here:
+#
+#   chmod on a NAME            follows the final component in a lookup that is
+#                              not the one the preceding check made, so a
+#                              rename can land in between;
+#   delete and re-create       is race-free, but unlinking needs write
+#                              permission on the PARENT — which root does not
+#                              have on an unprivileged LXC when the directory
+#                              belongs to the service account, because root
+#                              there has no effective CAP_DAC_OVERRIDE. That is
+#                              precisely the tree this function is called on, so
+#                              it must not depend on it.
+#
+# Opening with O_NOFOLLOW and then acting on the DESCRIPTOR gives both at once:
+# a symlink at the name is refused by the open itself, and fchmod changes the
+# inode that descriptor already refers to, so there is nothing left to race and
+# nothing to unlink. O_NONBLOCK keeps a FIFO at the name from stalling the open
+# (fstat then rejects it).
+#
+# Returns 1, having changed nothing, when the path is not a plain file, cannot
+# be opened, the fchmod is refused, or node is unavailable.
+set_file_mode_nofollow() {
+    local path="${1:-}" mode="${2:-}"
+    [ -n "${path}" ] && [ -n "${mode}" ] || return 1
+    command -v node >/dev/null 2>&1 || return 1
+
+    node -e '
+      const fs = require("fs");
+      const p = process.argv[1];
+      const mode = parseInt(process.argv[2], 8);
+      let fd = -1;
+      try {
+        if (!Number.isFinite(mode)) process.exit(1);
+        fd = fs.openSync(p, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
+        const st = fs.fstatSync(fd);
+        if (!st.isFile()) { fs.closeSync(fd); process.exit(1); }
+        if ((st.mode & 0o7777) !== mode) fs.fchmodSync(fd, mode);
+        fs.closeSync(fd);
+      } catch (e) {
+        if (fd >= 0) { try { fs.closeSync(fd); } catch (_) {} }
+        process.exit(1);
+      }
+    ' "${path}" "${mode}" 2>/dev/null
+}
+
 ensure_state_file() {
     local f attempt state ok
     for f in "$@"; do
         ok=0
-        # Three attempts: every failure here is a lost race, and a race lost
-        # twice running is not worth a third second. A condition that cannot
-        # change — a directory at the name, or a service group that does not
-        # exist yet — fails all three identically and lands on the warning,
-        # which is what the operator needs to see.
-        for attempt in 1 2 3; do
+        # Four passes: three that may act, and a final verify-only pass so a
+        # repair that lands on the third is not reported as a failure.
+        for attempt in 1 2 3 4; do
             # lstat, not stat: `stat -c` does not dereference, so a symlink
             # reports as "symbolic link" rather than as whatever it points at.
             # GNU stat spells a zero-length file "regular empty file", so both
@@ -740,43 +866,62 @@ ensure_state_file() {
                     ok=1
                     break
                     ;;
-                "regular file|root:"*"|664"|"regular empty file|root:"*"|664")
-                    # Right shape, right mode, wrong group — the state a tree is
-                    # in for one call after the service account is created.
-                    # Correct it in place rather than replacing the file: chown
-                    # -h never resolves a symlink, so there is nothing to race,
-                    # and an existing log keeps its contents.
-                    chown -h "root:${SVC_GROUP}" -- "${f}" 2>/dev/null || true
+            esac
+            [ "${attempt}" -lt 4 ] || break
+
+            case "${state}" in
+                "regular file|"*|"regular empty file|"*)
+                    # A plain file. Repair it IN PLACE — never replace it.
+                    #
+                    # Both halves avoid the trap that motivated this rewrite
+                    # without falling into the one that replacing it created:
+                    # `chown -h` never resolves a symlink, and the mode is set
+                    # through an open descriptor rather than through the name.
+                    # Neither needs write permission on the containing
+                    # directory, so this still repairs the file where root has
+                    # no CAP_DAC_OVERRIDE and the directory belongs to the
+                    # service account — the state a pre-2.70 tree is in when
+                    # update-agent.sh calls this before the ownership repair
+                    # runs. Replacing the file there fails outright and leaves
+                    # it broken, which is the outage described at the top of
+                    # this comment.
+                    #
+                    # Repairing rather than replacing also keeps the file's
+                    # contents, so an existing update log survives.
+                    case "${state}" in
+                        *"|root:${SVC_GROUP}|"*) ;;
+                        *) chown -h "root:${SVC_GROUP}" -- "${f}" 2>/dev/null || true ;;
+                    esac
+                    case "${state}" in
+                        *'|664') ;;
+                        *)
+                            if ! set_file_mode_nofollow "${f}" 0664; then
+                                # Only when there is no safe mechanism at all:
+                                # a host with no node (the window during a fresh
+                                # install, before step 2 has run) also has no
+                                # application running that could plant a link,
+                                # and leaving the file unrepairable is the worse
+                                # outcome. When node IS present its refusal is
+                                # trusted — it means the entry is not a plain
+                                # file, and chmod'ing the name would be exactly
+                                # the mistake being avoided.
+                                if ! command -v node >/dev/null 2>&1 && [ ! -L "${f}" ]; then
+                                    chmod 0664 -- "${f}" 2>/dev/null || true
+                                fi
+                            fi
+                            ;;
+                    esac
                     continue
                     ;;
             esac
 
-            # Everything else — missing, a symlink, a FIFO, a directory, another
-            # owner, or the wrong mode — is replaced outright rather than
-            # adjusted in place.
-            #
-            # This is the point of the rewrite. Adjusting a mode means `chmod` on
-            # a NAME, and chmod has no -h: it always resolves the final
-            # component, in a lookup that is not the one the preceding "is this a
-            # symlink?" test made. Wherever the unprivileged account can rename
-            # the entry — which it can whenever it owns the containing directory,
-            # the state a pre-2.70 tree is in when update-agent.sh calls this
-            # before the ownership repair has run — swapping a symlink in between
-            # the two has root relax the permissions of a file of the attacker's
-            # choosing. Measured on the previous code: 354-471 wins in 1500-2000
-            # calls.
-            #
-            # Replacing removes every path-following write: the file is created
-            # fresh with O_EXCL so it cannot land on a planted link, it is born
-            # 0664 from the umask so no chmod is ever needed, and the only
-            # metadata call left is chown -h, which never follows. The cost is
-            # that an entry found in the wrong shape loses its contents — these
-            # are progress and log files, and on a healthy install the first case
-            # above matches and nothing is touched at all.
+            # Not a plain file — a symlink, a FIFO, a directory, a socket — or
+            # missing. There is no inode here worth keeping and no safe way to
+            # adjust one, so replace it: `rm -f`, then create with `set -C`
+            # (an O_CREAT|O_EXCL open, which fails outright rather than
+            # following a link planted since the rm) under `umask 0113`, so the
+            # file is born 0664 and needs no chmod at all.
             rm -f -- "${f}" 2>/dev/null || true
-            # umask 0113: 0666 & ~0113 = 0664. `set -C` makes the redirection an
-            # O_CREAT|O_EXCL open, which fails outright rather than following a
-            # link planted since the rm.
             ( umask 0113; set -C; : > "${f}" ) 2>/dev/null || continue
             chown -h "root:${SVC_GROUP}" -- "${f}" 2>/dev/null || true
         done
