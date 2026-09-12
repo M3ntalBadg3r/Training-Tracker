@@ -45,10 +45,14 @@ UPDATE_REQUEST_FILE="${APP_DIR}/.update-request"
 # Keys that root legitimately needs out of .env. Nothing outside this list is
 # read, so adding a variable here is a deliberate act.
 #
-# GITHUB_TOKEN stays on the list because a private-repo install cannot update
-# without it; removing it would break those operators. The consequence is that
-# root handles a string the unprivileged service account can choose, so it is
-# never trusted as-is — see checked_github_token below.
+# Every key on this list names a value the unprivileged service account can
+# choose (it writes .env), and each one changes how a root-run or root-spawned
+# program behaves — so parsing the file safely is only half the job. The values
+# are checked before anything acts on them: GITHUB_TOKEN by checked_github_token
+# at its point of use in ensure_origin_remote, and NODE_EXTRA_CA_CERTS,
+# npm_config_cache and DATABASE_URL by check_env_values immediately below the
+# parser. UPDATE_CHANNEL and TT_BUILD_MIN_MB are each compared against a fixed
+# set or read as a number by their consumers, so they need nothing here.
 ENV_ALLOWED_KEYS="DATABASE_URL GITHUB_TOKEN NODE_EXTRA_CA_CERTS UPDATE_CHANNEL TT_BUILD_MIN_MB npm_config_cache"
 
 # The upstream repository, in one place so the two update scripts cannot drift.
@@ -92,18 +96,182 @@ load_env_allowlist() {
         esac
 
         value="${line#*=}"
-        # Strip one matching layer of surrounding quotes, then trailing CR from
-        # a file that has been through a Windows editor.
+        # Trailing CR first, THEN one matching layer of surrounding quotes: a
+        # .env that has been through a Windows editor ends the line KEY="v"<CR>,
+        # and stripping the quotes first never matches, leaving the quote
+        # characters embedded in the value. (That produced a path or a token
+        # nothing could use, silently; the value checks below now reject it
+        # loudly, so getting the order right matters more than it used to.)
+        value="${value%$'\r'}"
         case "${value}" in
             \"*\") value="${value#\"}"; value="${value%\"}" ;;
             "'"*"'") value="${value#\'}"; value="${value%\'}" ;;
         esac
-        value="${value%$'\r'}"
 
         # printf -v assigns; it does not evaluate the value.
         printf -v "${key}" '%s' "${value}"
         export "${key?}"
     done < "${env_file}"
+
+    # Parsing the file safely is only half the job — see check_env_values.
+    check_env_values
+}
+
+# --- .env value checks -------------------------------------------------------
+#
+# checked_github_token above is the model for these. The parser that reads .env
+# is sound — it assigns, it never evaluates — but a correct parser wrapped
+# around a value that is then handed to a privileged program is not containment.
+# .env is group-writable by the unprivileged service account by design, so every
+# value on ENV_ALLOWED_KEYS is attacker-chosen after a compromise of the app,
+# and each of these is checked before anything acts on it.
+#
+# Each returns 0 and echoes the accepted (whitespace-trimmed) value, or returns
+# 1 and prints nothing. Callers drop a rejected value rather than aborting: the
+# update must still be able to run, and each caller already handles the setting
+# being absent.
+
+# Trim leading and trailing whitespace. A trailing CR from a .env edited on
+# Windows is not part of the value.
+_trim_env_value() {
+    local v="${1:-}"
+    v="${v#"${v%%[![:space:]]*}"}"
+    v="${v%"${v##*[![:space:]]}"}"
+    printf '%s' "${v}"
+}
+
+# The extra CA bundle Node is told to trust.
+#
+# This is the one with real teeth. NODE_EXTRA_CA_CERTS is exported into the
+# environment of every child the update scripts start, root-run ones included,
+# and it does exactly what it says: it adds a certificate authority to the set
+# Node will accept. A value naming a file the service account can write lets
+# that account decide who root's Node believes — which is the whole of TLS.
+#
+# So the file must be a plain file that only root can change: root-owned, and
+# neither group- nor other-writable. A symlink is allowed (some distributions
+# ship the bundle that way) but the link itself must be root-owned too,
+# otherwise its target could simply be re-pointed. The stock Debian bundle
+# written by update-ca-certificates — root:root 0644 — passes unchanged, which
+# is the case install.sh configures.
+checked_ca_bundle() {
+    local path meta mode owner
+    path="$(_trim_env_value "${1:-}")"
+    [ -n "${path}" ] || return 1
+    [ "${#path}" -le 4096 ] || return 1
+    case "${path}" in
+        /*) ;;
+        *) return 1 ;;
+    esac
+    # No whitespace, quotes, or shell/URL punctuation: a certificate bundle path
+    # has none of it, and a value that does is not one.
+    case "${path}" in
+        *[!A-Za-z0-9_./@:+-]*) return 1 ;;
+    esac
+
+    # If the name is a symlink, the link must be root's as well as the target.
+    owner="$(stat -c '%U' "${path}" 2>/dev/null)" || return 1
+    [ "${owner}" = "root" ] || return 1
+
+    # -L: judge what Node will actually open.
+    meta="$(stat -Lc '%F|%U|%a' "${path}" 2>/dev/null)" || return 1
+    case "${meta}" in
+        "regular file|root|"*|"regular empty file|root|"*) ;;
+        *) return 1 ;;
+    esac
+    mode="${meta##*|}"
+    # Reject group- or other-writable (0022). The leading 0 makes bash read the
+    # mode as octal.
+    [ $(( 0${mode} & 0022 )) -eq 0 ] || return 1
+
+    printf '%s' "${path}"
+}
+
+# npm's cache directory.
+#
+# npm itself only ever runs as the service account here (run_as_service_user),
+# so this crosses no privilege boundary today — but npm_config_cache is one of
+# the npm_config_* levers, it is exported into root's environment alongside the
+# rest, and "no boundary today" is not a property worth relying on. Accept an
+# absolute path made of ordinary path characters with no parent-directory
+# segment, and nothing else.
+checked_npm_cache() {
+    local path
+    path="$(_trim_env_value "${1:-}")"
+    [ -n "${path}" ] || return 1
+    [ "${#path}" -le 4096 ] || return 1
+    case "${path}" in
+        /*) ;;
+        *) return 1 ;;
+    esac
+    case "${path}" in
+        *[!A-Za-z0-9_./@+-]*) return 1 ;;
+        *'..'*) return 1 ;;
+    esac
+    printf '%s' "${path}"
+}
+
+# The database connection string.
+#
+# Be honest about what this check is for. DATABASE_URL reaches psql and pg_dump,
+# and both of those are started through run_as_service_user — they run as the
+# unprivileged account, which already holds the application's database
+# credentials. Root's own shell only ever tests whether the value is empty and
+# redirects the dump into a root-owned file. So there is no privilege boundary
+# here to defend, and a check claiming otherwise would be theatre.
+#
+# What it does do is keep the value in the shape every consumer expects, so that
+# a future root-run consumer inherits something sane rather than, say, a string
+# beginning with '-' that psql would read as an option. Deliberately loose: a
+# real connection string is accepted whatever its password contains.
+checked_database_url() {
+    local url
+    url="$(_trim_env_value "${1:-}")"
+    [ -n "${url}" ] || return 1
+    [ "${#url}" -le 4096 ] || return 1
+    case "${url}" in
+        postgres://*|postgresql://*) ;;
+        *) return 1 ;;
+    esac
+    # Embedded newlines or tabs mean this is not one value.
+    case "${url}" in
+        *$'\n'*|*$'\r'*|*$'\t'*) return 1 ;;
+    esac
+    printf '%s' "${url}"
+}
+
+# Apply the checks above to whatever load_env_allowlist just read. A rejected
+# value is dropped with a one-line warning that never echoes the value itself —
+# DATABASE_URL carries a password and GITHUB_TOKEN is a credential.
+#
+# GITHUB_TOKEN is not handled here: it is checked at the point of use, in
+# ensure_origin_remote, where a rejection has to be fatal rather than ignorable.
+check_env_values() {
+    local checked
+    if [ -n "${NODE_EXTRA_CA_CERTS:-}" ]; then
+        if checked="$(checked_ca_bundle "${NODE_EXTRA_CA_CERTS}")"; then
+            export NODE_EXTRA_CA_CERTS="${checked}"
+        else
+            echo "WARNING: NODE_EXTRA_CA_CERTS in .env does not name a root-owned certificate file that only root can write — ignoring it." >&2
+            unset NODE_EXTRA_CA_CERTS
+        fi
+    fi
+    if [ -n "${npm_config_cache:-}" ]; then
+        if checked="$(checked_npm_cache "${npm_config_cache}")"; then
+            export npm_config_cache="${checked}"
+        else
+            echo "WARNING: npm_config_cache in .env is not a plain absolute path — ignoring it." >&2
+            unset npm_config_cache
+        fi
+    fi
+    if [ -n "${DATABASE_URL:-}" ]; then
+        if checked="$(checked_database_url "${DATABASE_URL}")"; then
+            export DATABASE_URL="${checked}"
+        else
+            echo "WARNING: DATABASE_URL in .env is not a postgres:// connection string — ignoring it (the pre-update database backup will be skipped)." >&2
+            unset DATABASE_URL
+        fi
+    fi
 }
 
 # --- Git remote --------------------------------------------------------------
