@@ -1,6 +1,6 @@
 import type { NextConfig } from "next";
 import pkg from "./package.json" with { type: "json" };
-import { buildCsp, resolveCspMode } from "./src/lib/csp";
+import { buildCsp, resolveCspMode, staticAssetHeaderSources } from "./src/lib/csp";
 
 const nextConfig: NextConfig = {
   // Stop `next dev` appending its own block to CLAUDE.md on every start.
@@ -70,12 +70,18 @@ const nextConfig: NextConfig = {
           },
         ],
       },
-      // Kept in step with the `matcher` in `src/proxy.ts`. If a path is added
-      // to that exclusion list it must be added here too, or it will be the one
-      // path in the app with no policy at all.
-      { source: "/_next/static/:path*", headers: cspHeader },
-      { source: "/_next/image", headers: cspHeader },
-      { source: "/favicon.ico", headers: cspHeader },
+      // Exactly the paths `src/proxy.ts`'s matcher excludes — no more, no less.
+      //
+      // These are generated from the same `STATIC_ASSET_PREFIXES` the matcher's
+      // alternation is written from, as regex sources rather than hand-written
+      // path-to-regexp ones, because the two have to be *equal* and not merely
+      // similar. Writing them by hand is how the first version of this shipped a
+      // gap: the matcher excludes by regex prefix, so `/_next/staticx/a.js` and
+      // `/favicon.icox` were excluded from the proxy but matched none of the
+      // exact sources here, and were served with no policy at all. A path in
+      // both lists is the opposite failure — two CSP headers, enforced as their
+      // intersection.
+      ...staticAssetHeaderSources().map((source) => ({ source, headers: cspHeader })),
     ];
   },
 };

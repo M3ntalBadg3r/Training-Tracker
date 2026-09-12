@@ -104,6 +104,50 @@ export function generateNonce(): string {
   return btoa(binary);
 }
 
+/**
+ * The paths the proxy's `matcher` excludes, and therefore the exact set
+ * `next.config.ts` has to cover instead.
+ *
+ * These two lists have to be **equal**, not merely overlapping, and getting that
+ * wrong is silent in both directions: a path in both places gets two
+ * `Content-Security-Policy` response headers and a browser enforces their
+ * *intersection*; a path in neither gets no policy at all. The first shipped
+ * version of this had the second bug — the matcher excludes by **regex prefix**
+ * while the config entries were written as path-to-regexp exact/sub-path
+ * sources, so everything in the gap (`/_next/staticx/a.js`, `/favicon.icox`,
+ * `/_next/image/`, …) fell through both and was served with no policy.
+ *
+ * They are expressed here as regex **prefix** fragments, matching the matcher's
+ * own semantics, and `staticAssetHeaderSources()` wraps them in the
+ * path-to-regexp custom-regex form `next.config.ts` needs. Note the escaped dot:
+ * the matcher's original `favicon.ico` had a bare `.`, which is a wildcard, so
+ * it also excluded `/faviconXico`. Escaping it narrows the exclusion — those
+ * paths now go through the proxy and get their policy there, which is the safe
+ * direction.
+ *
+ * **`proxy.ts`'s `matcher` must be kept in step by hand.** Next requires that
+ * value to be a statically analysable literal, so it cannot import this — the
+ * literal there is `"/((?!_next/static|_next/image|favicon\.ico).*)"` and the
+ * alternation inside it is exactly this list.
+ */
+export const STATIC_ASSET_PREFIXES: readonly string[] = [
+  "_next/static",
+  "_next/image",
+  "favicon\\.ico",
+];
+
+/**
+ * `STATIC_ASSET_PREFIXES` as `next.config.ts` header `source` patterns.
+ *
+ * `/:path(<regex>)` is Next's escape hatch for a custom regex in a source, and
+ * because the fragment ends in `.*` it matches the rest of the path including
+ * slashes — the same prefix match the matcher performs. That is what makes the
+ * two exhaustive rather than approximately aligned.
+ */
+export function staticAssetHeaderSources(): string[] {
+  return STATIC_ASSET_PREFIXES.map((prefix) => `/:path(${prefix}.*)`);
+}
+
 export interface BuildCspOptions {
   /**
    * The per-request nonce, or null for a response that is not an HTML document

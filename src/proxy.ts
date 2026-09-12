@@ -185,18 +185,23 @@ function isMfaEnrollmentAllowed(pathname: string): boolean {
 //
 // The policy is built here rather than in `next.config.ts` because the strict
 // variant carries a per-request nonce, and `next.config.ts` runs once at build
-// time. `next.config.ts` keeps a static, nonce-free entry for the few paths
-// this proxy's matcher excludes (`/_next/static`, `/_next/image`,
-// `/favicon.ico`) — built from the same `lib/csp.ts` builder.
+// time. `next.config.ts` covers the static-asset paths the `matcher` at the
+// bottom of this file excludes, from the same `lib/csp.ts` builder and from the
+// same `STATIC_ASSET_PREFIXES` list the matcher is written from.
 //
-// **Exactly one enforced `Content-Security-Policy` response header per path.**
-// Two of them do not combine, they intersect: a browser enforces both, so the
-// effective policy is the narrowest of the pair and a page can break in a way
-// neither header explains on its own. The CSP key was therefore removed from
-// `next.config.ts`'s catch-all `/(.*)` entry when this moved here; the two
-// sources now cover disjoint sets of paths. (`report-only` mode does send two
-// headers, but they are two different header *names* — one enforced, one
-// reporting — which is the documented way to trial a policy.)
+// **Exactly one `Content-Security-Policy` response header per path, and never
+// zero.** Both failures are silent. Two headers do not combine, they intersect:
+// a browser enforces both, so the effective policy is the narrowest of the pair
+// and a page breaks in a way neither header explains on its own. Zero headers
+// looks like nothing at all — the page works, and the protection is simply
+// absent. The CSP key was removed from `next.config.ts`'s catch-all `/(.*)`
+// entry when the policy moved here, so the two sources have to partition the
+// path space exactly between them; see `STATIC_ASSET_PREFIXES` for how, and for
+// the gap the first version of this left behind.
+//
+// In `report-only` mode the single header goes out under the report-only name
+// and there is no enforced header at all — not one of each. See the note on
+// `responseCsp` below for why that is forced rather than chosen.
 
 const CSP_HEADER = "content-security-policy";
 const CSP_REPORT_ONLY_HEADER = "content-security-policy-report-only";
@@ -268,21 +273,17 @@ function createCspContext(request: NextRequest): CspContext {
   const strictCsp = strict ? buildCsp({ nonce, strict: true, isDev }) : null;
 
   if (nonce && strictCsp) {
-    // Deliberately asymmetric, and it reads like a bug if you do not know why.
-    //
     // The forwarded REQUEST header always carries the *strict* policy, under
-    // the plain name, in both strict modes — even in report-only, where the
-    // policy the browser actually enforces is the legacy one. These headers
-    // travel inward only; the browser never sees them. Their single job is to
-    // tell Next's renderer which nonce to stamp, and it finds that by reading
-    // `script-src` out of this header. Forward the legacy policy here and it
-    // would find no nonce, stamp nothing, and every one of Next's own scripts
-    // would report a violation — noise that says nothing about the app, which
-    // is the one outcome that makes report-only mode useless.
+    // the plain name, in both strict modes. These headers travel inward only;
+    // the browser never sees them. Their single job is to tell Next's renderer
+    // which nonce to stamp, and it finds that by reading `script-src` out of
+    // this header — so it must be the policy that actually contains the nonce.
     //
     // The plain name is used rather than the report-only one even in
-    // report-only mode — see the note on `responseCsp` below for why the two
-    // cannot be separated on this version of Next.
+    // report-only mode, where the response goes out under the report-only name
+    // only. The two names are decoupled on purpose: see the note on
+    // `responseCsp` below for why the request side cannot follow the response
+    // side here.
     requestHeaders.set(CSP_HEADER, strictCsp);
     requestHeaders.set(NONCE_HEADER, nonce);
   }
@@ -534,11 +535,20 @@ async function route(request: NextRequest, csp: CspContext): Promise<NextRespons
 export const config = {
   matcher: [
     /*
-     * Match all request paths except:
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
+     * Everything except the static-asset paths, which are served straight from
+     * disk and need neither auth nor a per-request nonce:
+     *  - _next/static  (build output)
+     *  - _next/image   (image optimizer)
+     *  - favicon.ico
+     *
+     * This alternation must stay equal to `STATIC_ASSET_PREFIXES` in
+     * `lib/csp.ts`, which is what `next.config.ts` uses to put a policy on these
+     * same paths. Next requires this value to be a statically analysable
+     * literal, so it cannot import that list — the duplication is forced, and
+     * the consequence of the two drifting apart is a path with either no
+     * Content-Security-Policy or two of them. Note the escaped dot: unescaped it
+     * is a wildcard, which also excluded paths like /faviconXico.
      */
-    "/((?!_next/static|_next/image|favicon.ico).*)",
+    "/((?!_next/static|_next/image|favicon\\.ico).*)",
   ],
 };
