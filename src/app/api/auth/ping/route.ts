@@ -29,5 +29,16 @@ export async function POST(request: NextRequest) {
   if (await isSessionEpochStale(authUser.sub, authUser.sessionEpoch)) {
     return accountDisabledResponse();
   }
+  // And for a session that has not finished forced MFA enrolment — the same
+  // argument as the deleted-account case two checks up, for the same reason:
+  // this endpoint exists to slide the idle window, so a half-enrolled session
+  // getting a 200 here renews itself to the 8h absolute cap instead of lapsing.
+  // `proxy.ts` already refuses this path during enrolment (it is deliberately
+  // NOT on MFA_ENROLLMENT_ALLOWLIST, and nothing pings from `/setup-mfa` —
+  // `AppShell` does not mount the idle manager there), so this changes no
+  // reachable behaviour; it stops the edge being the only thing enforcing it.
+  if (authUser.pendingMfaEnrollment) {
+    return NextResponse.json({ error: "MFA enrollment required" }, { status: 403 });
+  }
   return NextResponse.json({ ok: true });
 }
