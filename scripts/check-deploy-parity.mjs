@@ -66,28 +66,52 @@ const PROXY_TS = join(ROOT, "src", "proxy.ts");
 const DEPLOY_DIR = join(ROOT, "deploy");
 
 /**
- * Every script under deploy/ that signs a cron request — DISCOVERED, not listed.
+ * Every script under deploy/ that CALLS the cron signing helper — discovered,
+ * not listed, and searched RECURSIVELY.
  *
  * This was a hardcoded three-element array, and a review walked straight past
- * it: a new `deploy/auto-newjob.sh` signing an unregistered path with a
- * lowercase method and the wrong header was simply invisible to the check. A
- * list of files you have to remember to extend is the same failure mode this
- * script exists to remove, one level up.
+ * it. Made discovery-based, it was then walked past again: the walk was one
+ * level deep, so `deploy/cron/auto-newjob.sh` — signing a lowercase method at an
+ * unregistered path, sending the wrong header and curling a different method
+ * than it signed — produced four findings and none was reported. A list you have
+ * to remember to extend and a directory you have to remember not to nest in are
+ * the same failure one level apart.
+ *
+ * Recursing has one trap, which is why this matches a CALL rather than the bare
+ * token: `deploy/lib/cron-sign.sh` contains `cron_sign_request` as its own
+ * function DEFINITION. Treating that as a cron script makes `analyseCronScript`
+ * fail with "found 1 and 0" — a confusing error about a file that is not a cron
+ * job at all. A call is the name followed by an argument; a definition is the
+ * name followed by `()`.
+ *
+ * deploy/tests/ is skipped: fixtures may legitimately contain sample text.
  */
 function discoverCronScripts() {
   const found = [];
-  for (const name of readdirSync(DEPLOY_DIR).sort()) {
-    if (!name.endsWith(".sh")) continue;
-    const full = join(DEPLOY_DIR, name);
-    let src;
-    try {
-      src = readFileSync(full, "utf8");
-    } catch {
-      continue;
+  const walk = (dir) => {
+    for (const ent of readdirSync(dir, { withFileTypes: true }).sort((a, b) =>
+      a.name < b.name ? -1 : 1
+    )) {
+      const full = join(dir, ent.name);
+      if (ent.isDirectory()) {
+        if (ent.name === "tests") continue;
+        walk(full);
+        continue;
+      }
+      if (!ent.isFile() || !ent.name.endsWith(".sh")) continue;
+      let src;
+      try {
+        src = readFileSync(full, "utf8");
+      } catch {
+        continue;
+      }
+      const stripped = stripShellComments(src);
+      // A CALL (name followed by an argument), never the definition.
+      if (/\bcron_sign_request[ \t]+["'A-Za-z$]/.test(stripped)) found.push(full);
     }
-    if (/\bcron_sign_request\b/.test(stripShellComments(src))) found.push(full);
-  }
-  return found;
+  };
+  walk(DEPLOY_DIR);
+  return found.sort();
 }
 
 /** Thrown for anything this script cannot read confidently. */
@@ -279,6 +303,32 @@ export function parseUpdateRequestLiterals(tsSource) {
  */
 export function parseAgentCaseArmsOrdered(shSource) {
   const src = stripShellComments(shSource);
+
+  // EXACTLY ONE dispatch, or refuse.
+  //
+  // This took the FIRST `case "${ACTION_RAW}"` in the file and never checked
+  // whether there was another. A review put a decoy earlier in the file — once
+  // as a plausible `_describe_action()` logging helper, once as the same text
+  // inside a `: <<'DOC'` heredoc — corrupted the REAL dispatch by moving `*)` to
+  // the top (so the agent rejects every update), and this check reported parity
+  // and exited 0 both times.
+  //
+  // That is the same class as the defect this function was written to fix: the
+  // checker reading something that is not the program. Counting the occurrences
+  // closes both shapes at once, and it closes the heredoc without needing a
+  // heredoc parser — which is the right trade, because a half-correct heredoc
+  // parser would be one more thing that reads the file differently from bash.
+  const occurrences = src.match(/case\s+"\$\{ACTION_RAW\}"\s+in/g) || [];
+  if (occurrences.length > 1) {
+    throw new ParseError(
+      `deploy/update-agent.sh contains ${occurrences.length} \`case "\${ACTION_RAW}"\` blocks.\n` +
+        "  Only one of them is the dispatch that decides what the agent does, and this checker\n" +
+        "  cannot tell which — so it would check one while the other ran. A second block can be a\n" +
+        "  helper function, or text inside a heredoc that this reader does not treat as quoted.\n" +
+        "  Keep a single dispatch, or teach this parser which one is real — deliberately."
+    );
+  }
+
   const m = src.match(/case\s+"\$\{ACTION_RAW\}"\s+in([\s\S]*?)\besac\b/);
   if (!m) {
     throw new ParseError(
@@ -699,6 +749,59 @@ const SELF_TESTS = [
     },
   },
   {
+    name: "ordered arm parser refuses a DECOY case in a helper function",
+    run: () => {
+      const decoy =
+        '_describe_action() {\n' +
+        '    case "${ACTION_RAW}" in\n' +
+        '        \'{"action":"update"}\') echo one ;;\n' +
+        '        *) echo other ;;\n' +
+        '    esac\n' +
+        '}\n' +
+        'case "${ACTION_RAW}" in\n' +
+        '    *)\n reject ;;\n' +
+        '    \'{"action":"update"}\')\n :;;\n' +
+        'esac\n';
+      try {
+        parseAgentCaseArmsOrdered(decoy);
+        return false;
+      } catch (e) {
+        return e instanceof ParseError && /2 .*blocks/.test(e.message);
+      }
+    },
+  },
+  {
+    name: "ordered arm parser refuses a DECOY case hidden in a quoted heredoc",
+    run: () => {
+      const decoy =
+        ": <<'DOC'\n" +
+        'case "${ACTION_RAW}" in\n' +
+        '    \'{"action":"update"}\') echo one ;;\n' +
+        '    *) echo other ;;\n' +
+        'esac\n' +
+        "DOC\n" +
+        'case "${ACTION_RAW}" in\n' +
+        '    *)\n reject ;;\n' +
+        '    \'{"action":"update"}\')\n :;;\n' +
+        'esac\n';
+      try {
+        parseAgentCaseArmsOrdered(decoy);
+        return false;
+      } catch (e) {
+        return e instanceof ParseError;
+      }
+    },
+  },
+  {
+    name: "a single dispatch is still accepted (the refusal is not blanket)",
+    run: () => {
+      const arms = parseAgentCaseArmsOrdered(
+        'case "${ACTION_RAW}" in\n    \'{"a":1}\')\n :;;\n    *)\n :;;\nesac\n'
+      );
+      return arms.length === 2 && arms[1].isDefault === true;
+    },
+  },
+  {
     name: "ordered arm parser refuses an arm shape it cannot read (an unquoted glob)",
     run: () => {
       try {
@@ -728,6 +831,23 @@ const SELF_TESTS = [
       const found = discoverCronScripts().map((f) => f.split("/").pop());
       return found.length >= 3 && found.every((f) => f.startsWith("auto-")) &&
         !found.includes("install.sh");
+    },
+  },
+  {
+    name: "cron script discovery does NOT treat the function's own definition as a cron script",
+    run: () =>
+      !discoverCronScripts().some((f) => f.endsWith("cron-sign.sh")),
+  },
+  {
+    name: "a call is recognised but a definition is not",
+    run: () => {
+      const callRe = /\bcron_sign_request[ \t]+["'A-Za-z$]/;
+      return (
+        callRe.test('cron_sign_request POST "/a"') &&
+        callRe.test("cron_sign_request \"POST\" \"/a\"") &&
+        !callRe.test("cron_sign_request() {") &&
+        !callRe.test("cron_sign_request () {")
+      );
     },
   },
   {
