@@ -34,13 +34,20 @@
  *                    `Content-Security-Policy-Report-Only` **and nothing is
  *                    enforced**. Read that twice: this mode does NOT keep the
  *                    legacy policy enforced alongside the report, so while it
- *                    is on, `frame-ancestors`, `object-src` and every other
- *                    directive stop being enforced too. It is forced rather
+ *                    is on, every CSP directive stops biting — `script-src`
+ *                    included, so an injected inline script runs just as it
+ *                    would under `legacy`. What genuinely lapses is the set
+ *                    with no equivalent elsewhere: `object-src`, `base-uri`,
+ *                    `form-action`, `connect-src`, `img-src`. `frame-ancestors`
+ *                    is backstopped by the `X-Frame-Options: DENY` that
+ *                    `next.config.ts` sends separately, and the other non-CSP
+ *                    headers survive for the same reason. It is forced rather
  *                    than chosen — the reason is spelled out where the headers
  *                    are assembled in `proxy.ts` — and it makes this a short
  *                    diagnostic window for finding out *which* script broke,
- *                    never a resting state. To run with reduced risk, use
- *                    `legacy`, which really does enforce.
+ *                    never a resting state and never a safer middle setting.
+ *                    To run with reduced risk, use `legacy`, which really does
+ *                    enforce.
  *  - `enforce`     — the strict policy is the enforced one. `'unsafe-inline'`
  *                    is gone from `script-src`.
  *
