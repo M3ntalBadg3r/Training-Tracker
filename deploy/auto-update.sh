@@ -87,7 +87,7 @@ log() {
 # two was measured to hang the read in 50 of 400 attempts.
 #
 # The path is passed as an argument rather than spliced into the program text —
-# the same rule the rest of the deploy scripts follow (see check-update.sh) -
+# the same rule the rest of the deploy scripts follow (see check-update.sh) —
 # and every refusal falls through to the same defaults as a malformed file, so a
 # tampered config means "not scheduled" rather than an error.
 CONFIG=$(node -e '

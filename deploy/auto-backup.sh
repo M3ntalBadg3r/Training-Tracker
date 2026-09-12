@@ -42,28 +42,26 @@ log() {
 
 # One node call for the whole config; prints "enabled frequency hour minute dow".
 #
-# This runs as the service account rather than as root, so it crosses no
-# privilege boundary — but it reads the same shape of file in the same place,
-# and the read is hardened the same way so the two cannot drift. The file is
-# opened rather than read by name, every five minutes, on a file the unprivileged service
-# account owns and can replace at will, in a directory it can create entries in.
-# So the file is opened rather than read by name, and the descriptor — not the
-# path — decides what happens next:
+# This job runs as the service account, not as root, so the read crosses no
+# privilege boundary — but it reads the same shape of file in the same place as
+# the automatic-update job, and it is hardened identically so the two cannot
+# drift. The file is opened rather than read by name, and the descriptor — not
+# the path — decides what happens next:
 #
-#   O_NOFOLLOW  a symlink at the name is refused outright, instead of having
-#               root read whatever it was aimed at
+#   O_NOFOLLOW  a symlink at the name is refused outright, rather than being
+#               followed to whatever it was aimed at
 #   O_NONBLOCK  a FIFO at the name returns immediately instead of waiting for a
 #               writer that never comes, which would otherwise leave a hung
 #               process behind every five minutes, for ever
 #   fstat       the file type and the size cap are checked against the thing
 #               actually being read, so there is no second path lookup to race
 #
-# The existing `[ -f ]` test above is a fast path, not a guard: it is a separate
-# lookup, and flipping the name between a regular file and a FIFO between the
-# two was measured to hang the read in 50 of 400 attempts.
+# The `[ -f ]` test above is a fast path, not a guard: it is a separate lookup,
+# and flipping the name between a regular file and a FIFO between the two was
+# measured to hang the read in 50 of 400 attempts.
 #
 # The path is passed as an argument rather than spliced into the program text —
-# the same rule the rest of the deploy scripts follow (see check-update.sh) -
+# the same rule the rest of the deploy scripts follow (see check-update.sh) —
 # and every refusal falls through to the same defaults as a malformed file, so a
 # tampered config means "not scheduled" rather than an error.
 CONFIG=$(node -e '
