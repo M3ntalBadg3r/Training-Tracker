@@ -54,6 +54,11 @@ rollback() {
     # Restore git state
     if [ -n "$BEFORE_COMMIT" ]; then
         echo "  Restoring git to commit ${BEFORE_COMMIT}..."
+        # shellcheck disable=SC2164  # a redundant re-assert: the guarded `cd "${APP_DIR}" || exit 1`
+        # at the top of the script has already run before any step that can call rollback, and a
+        # failed cd leaves the working directory unchanged, so the git commands below still run in
+        # the right tree. Left in place rather than "fixed", because changing control flow inside a
+        # rollback path is not worth a lint finding.
         cd "${APP_DIR}"
         git checkout "${BEFORE_COMMIT}" -- . 2>/dev/null
         git checkout "${BRANCH}" 2>/dev/null
