@@ -19,10 +19,25 @@
 # user is granted nothing at all, and the mechanism is identical on an LXC and a
 # VM with no packages beyond systemd and util-linux.
 
-SVC_USER="${SVC_USER:-training-tracker}"
-SVC_GROUP="${SVC_GROUP:-training-tracker}"
+# Fixed, deliberately NOT `${VAR:-default}`.
+#
+# These three name the account the whole tree is handed to, the group that
+# reaches the shared state files, and the directory root creates and writes logs
+# in. Leaving them environment-overridable meant whoever invoked a privileged
+# script chose all three — see the note in require_root on why that is not
+# merely a stylistic point. Nothing in this project has ever set them from the
+# environment, so pinning them changes no supported behaviour.
+SVC_USER="training-tracker"
+SVC_GROUP="training-tracker"
+LOG_DIR="/var/log/training-tracker"
+
+# APP_DIR is different, and stays overridable on purpose: every entry point
+# assigns it from its own argv or from a literal BEFORE sourcing this file
+# (`APP_DIR="${1:-/opt/training-tracker}"`), which ignores the environment, and
+# update.sh/perform-update.sh re-enter this file in a fresh bash after the pull
+# and pass APP_DIR through the environment to do it. So the environment can only
+# supply it to a process that is already root and had no other source for it.
 APP_DIR="${APP_DIR:-/opt/training-tracker}"
-LOG_DIR="${LOG_DIR:-/var/log/training-tracker}"
 UPDATE_REQUEST_FILE="${APP_DIR}/.update-request"
 
 # --- Configuration -----------------------------------------------------------
@@ -270,12 +285,37 @@ verify_origin_host() {
 # they usually log in as a regular user, so re-exec under sudo when it exists.
 # sudo is only ever used here, for the human-invoked entry points — never as the
 # running service's escalation path.
+# Environment variables a human invoker is documented as being able to set on
+# the command line (see install.sh's site-configuration prompts and
+# build_min_mb). These are the ONLY ones carried across the sudo re-exec below.
+REEXEC_KEEP_ENV="APP_BASE_URL,TRUSTED_PROXIES,TT_BUILD_MIN_MB"
+
 require_root() {
     [ "$(id -u)" -eq 0 ] && return 0
 
     if [ -f "$0" ] && command -v sudo >/dev/null 2>&1; then
         echo "Not running as root — re-executing under sudo..."
-        exec sudo -E bash "$0" "$@"
+        # Forward a closed list, not the whole environment.
+        #
+        # This used to be `sudo -E`, which hands the *caller's entire
+        # environment* to the root process. That is harmless when the caller is
+        # a full sudoer — they could become root anyway — but it is not the only
+        # way these scripts are run. A site that grants an operator the right to
+        # run only the installer or the updater as root, and nothing else, is
+        # relying on the privilege stopping at that command. It did not:
+        # SVC_USER, SVC_GROUP, LOG_DIR and APP_DIR were all `${VAR:-default}`
+        # below, so the caller's environment chose which account the tree is
+        # chowned to, where the log directory is created and what goes into
+        # /etc/cron.d. Measured: all three crossed intact into the root process.
+        #
+        # The long form keeps the command line byte-identical (`bash <script>`),
+        # so any sudoers rule that matched the old invocation still matches this
+        # one; older sudo builds without it simply carry nothing across, which
+        # only means the operator is prompted for the site settings.
+        if sudo --help 2>&1 | grep -q -- '--preserve-env=list'; then
+            exec sudo "--preserve-env=${REEXEC_KEEP_ENV}" bash "$0" "$@"
+        fi
+        exec sudo bash "$0" "$@"
     fi
 
     echo "ERROR: This script must be run as root." >&2
