@@ -61,12 +61,18 @@ UPDATE_REQUEST_FILE="${APP_DIR}/.update-request"
 #                        it reaches nothing that runs as root, and unsetting it
 #                        would cost the update its database rollback.
 #   UPDATE_CHANNEL       compared against a fixed set by its consumers.
+#   CSP_MODE             compared against a fixed set by lib/csp.ts, which falls
+#                        back to its default on anything it does not recognise.
+#                        It is on this list so it survives an update: it is the
+#                        operator's way back from a Content-Security-Policy that
+#                        breaks a page, and a way back that a routine update
+#                        silently discards is not one.
 #   TT_BUILD_MIN_MB      read as a number by build_min_mb.
 #
 # The rule the last four follow: a check with no privilege boundary behind it
 # reports, it does not act. Acting would make a validation failure worse than no
 # validation at all.
-ENV_ALLOWED_KEYS="DATABASE_URL GITHUB_TOKEN NODE_EXTRA_CA_CERTS UPDATE_CHANNEL TT_BUILD_MIN_MB npm_config_cache"
+ENV_ALLOWED_KEYS="DATABASE_URL GITHUB_TOKEN NODE_EXTRA_CA_CERTS UPDATE_CHANNEL CSP_MODE TT_BUILD_MIN_MB npm_config_cache"
 
 # The upstream repository, in one place so the two update scripts cannot drift.
 # The host is a literal: it is never assembled from anything read out of .env.
