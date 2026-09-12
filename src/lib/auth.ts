@@ -272,9 +272,18 @@ async function assertSessionCurrent(user: TokenPayload): Promise<void> {
  * read: `pendingMfaEnrollment` is a claim on the token, minted at login and
  * cleared by `mfa/verify` issuing a fresh one.
  *
- * 403, not 401: the credential is valid, the session is simply not finished.
- * A 401 would trip the client's `X-Session-Terminated` auto-logout and bounce
- * the user out of the very flow they are being asked to complete.
+ * 403, not 401, for two reasons — and note which one is NOT among them. The
+ * credential is valid and the session is merely unfinished, so 403 is the
+ * honest status; and `proxy.ts` already answers this exact condition with 403,
+ * so handler and edge agree rather than differing by layer.
+ *
+ * It is **not** because a 401 would sign the user out. The client's auto-logout
+ * keys on the `X-Session-Terminated` *header*
+ * (`AuthProvider.tsx`: `response.headers.has(...)`), not on the status, and
+ * that header is set in exactly one place — `accountDisabledResponse()`, which
+ * this never reaches. A bare 401 from here would carry no header and trip
+ * nothing. Measured, because the opposite was written here first and a wrong
+ * mechanism in a comment is what steers the next decision wrongly.
  */
 function assertMfaEnrolled(user: TokenPayload): void {
   if (user.pendingMfaEnrollment) {

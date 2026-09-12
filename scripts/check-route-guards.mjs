@@ -115,14 +115,22 @@ const SELF_GUARDED_HANDLERS = {
  * asserting only part of it.
  *
  * **`pendingMfaEnrollment` is the documented exception, and the only one.**
- * `requireAuth` rejects a half-enrolled session, but every handler on this list
- * exists *because* it must stay reachable during that enrolment — the setup and
- * verify routes that perform it, the `me` route the page reads, the keep-alive
- * that stops the session expiring mid-flow. Adding it here would assert that
- * the enrolment flow must refuse the enrolment flow, and the first person to
+ * `requireAuth` rejects a half-enrolled session. **Three** of the five handlers
+ * on this list must stay reachable *during* that enrolment and therefore must
+ * not inherit it — `mfa/setup` and `mfa/verify`, which perform the enrolment,
+ * and `auth/me`, which the enrolment page reads. Asserting it of those would
+ * mean the enrolment flow refusing the enrolment flow, and the first person to
  * satisfy the assertion would lock every forced-MFA user out of the only page
- * they are allowed to reach. If a future check is genuinely universal, add it;
- * this one is not.
+ * they may reach.
+ *
+ * The other two — `auth/ping` and `auth/change-password` — are **not** part of
+ * the flow (`proxy.ts` refuses both during enrolment; they are on this list for
+ * unrelated reasons, and nothing pings from `/setup-mfa`). They check
+ * `pendingMfaEnrollment` explicitly in their own bodies instead, so the rule is
+ * satisfied in substance for them. It is not asserted mechanically here only
+ * because this list is all-or-nothing and the other three genuinely must be
+ * exempt. An earlier draft of this comment claimed all five had to be; that was
+ * wrong, and it is the kind of wrong that makes a residual gap look intended.
  */
 const SELF_GUARD_REQUIREMENTS = [
   { name: "getAuthFromRequest", re: /\bgetAuthFromRequest\s*\(/ },

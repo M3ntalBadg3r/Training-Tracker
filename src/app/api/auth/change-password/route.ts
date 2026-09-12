@@ -35,6 +35,12 @@ export async function POST(request: NextRequest) {
   if (await isSessionEpochStale(authUser.sub, authUser.sessionEpoch)) {
     return accountDisabledResponse();
   }
+  // Not reachable during forced MFA enrolment — `proxy.ts` refuses this path
+  // and the re-issued token below preserves `pendingMfaEnrollment` anyway — but
+  // checked here so the edge is not the only thing enforcing it.
+  if (authUser.pendingMfaEnrollment) {
+    return NextResponse.json({ error: "MFA enrollment required" }, { status: 403 });
+  }
 
   // Throttle so a stolen cookie can't brute-force the current password.
   const ip = getClientIp(request);
