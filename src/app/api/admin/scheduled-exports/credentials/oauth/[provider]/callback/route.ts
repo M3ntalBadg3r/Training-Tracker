@@ -9,6 +9,7 @@ import {
 } from "@/lib/oauth-state";
 import { sealConfig, openConfig } from "@/lib/crypto";
 import { requireAuth } from "@/lib/auth";
+import { NONCE_PATTERN } from "@/lib/csp";
 
 /**
  * Escape text for interpolation into HTML element content.
@@ -65,14 +66,12 @@ const GENERIC_EXCHANGE_ERROR =
  *    The click is therefore wired with `addEventListener` from inside the
  *    <script> block, which a nonce *can* cover.
  *
- *    **This route does not emit a nonce today**, and nothing stamps one on it:
- *    it hand-builds its own NextResponse rather than going through the React
- *    render path. So under a nonce-only `script-src` this block would be
- *    blocked as a whole and the button would be dead anyway. That is expected —
- *    this change is preparation, not readiness. A future migration must stamp
- *    the nonce onto this <script> too; removing the inline handler is the half
- *    that cannot be done later by the migration, because no nonce would ever
- *    have covered it.
+ *    **This route stamps its own nonce.** It hand-builds a NextResponse rather
+ *    than going through the React render path, so nothing stamps one for it —
+ *    the value is read back from the `x-nonce` request header the proxy sets
+ *    (see `readNonce` below) and written onto the <script> tag by hand. Under a
+ *    nonce-only `script-src` the block would otherwise be refused as a whole
+ *    and this page would silently lose both the auto-close and the button.
  *
  *  - **The <style> block is static.** The old block interpolated
  *    `h1 { color: ${colour} }`. `colour` was a two-literal union, so that was
@@ -90,7 +89,27 @@ const GENERIC_EXCHANGE_ERROR =
  * `style={{ height: size }}` unconditionally on the login page, and Recharts
  * sets inline styles on its own containers at runtime throughout the reports.
  */
-function htmlPage(opts: { provider: string; status: "ok" | "error"; message: string }): string {
+/**
+ * The per-request nonce, from the header `src/proxy.ts` forwards.
+ *
+ * Validated rather than trusted. The proxy clears any caller-supplied `x-nonce`
+ * on every path it handles, so a forged value should never reach here — but
+ * this value is interpolated straight into an HTML attribute, and a header that
+ * is *usually* sanitised upstream is exactly the kind of assumption that stops
+ * being true when someone adds a new pass-through branch. Anything that is not
+ * plain base64 is dropped, which costs this page its script (under a strict
+ * policy it would have been refused anyway) rather than opening an injection.
+ *
+ * Empty string when the policy is in legacy mode and no nonce exists — the
+ * attribute is then omitted entirely rather than emitted blank, because
+ * `nonce=""` is a source expression that matches nothing.
+ */
+function readNonce(request: NextRequest): string {
+  const value = request.headers.get("x-nonce") ?? "";
+  return NONCE_PATTERN.test(value) ? value : "";
+}
+
+function htmlPage(opts: { provider: string; status: "ok" | "error"; message: string; nonce: string }): string {
   const payload = scriptSafeJson({
     type: "tt-oauth",
     provider: opts.provider,
@@ -102,6 +121,8 @@ function htmlPage(opts: { provider: string; status: "ok" | "error"; message: str
   // A literal, not interpolated data: the two arms are the only values this can
   // ever take, so the class attribute needs no escaping.
   const statusClass = opts.status === "ok" ? "ok" : "err";
+  // Already validated as base64 by readNonce, so it needs no escaping.
+  const nonceAttr = opts.nonce ? ` nonce="${opts.nonce}"` : "";
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -119,7 +140,7 @@ function htmlPage(opts: { provider: string; status: "ok" | "error"; message: str
   <p>${safeMessage}</p>
   <p>You can close this window.</p>
   <button id="tt-close-window" type="button">Close window</button>
-  <script>
+  <script${nonceAttr}>
     (function () {
       function wireClose() {
         var button = document.getElementById("tt-close-window");
@@ -161,8 +182,14 @@ function htmlPage(opts: { provider: string; status: "ok" | "error"; message: str
 </html>`;
 }
 
-function htmlResponse(provider: string, status: "ok" | "error", message: string, code = 200): NextResponse {
-  const response = new NextResponse(htmlPage({ provider, status, message }), {
+function htmlResponse(
+  provider: string,
+  status: "ok" | "error",
+  message: string,
+  nonce: string,
+  code = 200,
+): NextResponse {
+  const response = new NextResponse(htmlPage({ provider, status, message, nonce }), {
     status: code,
     headers: { "Content-Type": "text/html; charset=utf-8" },
   });
@@ -176,6 +203,13 @@ export async function GET(
   { params }: { params: Promise<{ provider: string }> },
 ) {
   const { provider } = await params;
+  const nonce = readNonce(request);
+  // Every exit from this handler renders the same popup, so bind the two
+  // per-request values once rather than threading them through eleven call
+  // sites — a nonce that one error branch quietly forgot would be a dead
+  // button on exactly the path where the user most needs the message.
+  const page = (status: "ok" | "error", message: string, code = 200) =>
+    htmlResponse(provider, status, message, nonce, code);
 
   // Guard in the handler, not just at the edge (Round 1 item 3: every handler
   // carries its own guard). This route renders HTML and the auth cookie is
@@ -185,8 +219,7 @@ export async function GET(
   try {
     await requireAuth(request, "Admin");
   } catch {
-    return htmlResponse(
-      provider,
+    return page(
       "error",
       "You need to be signed in to Training Tracker to finish connecting.",
       401,
@@ -194,7 +227,7 @@ export async function GET(
   }
 
   if (!isCloudProvider(provider)) {
-    return htmlResponse(provider, "error", "Unknown provider.", 400);
+    return page("error", "Unknown provider.", 400);
   }
 
   const url = new URL(request.url);
@@ -210,36 +243,36 @@ export async function GET(
       `[oauth] ${provider} returned an error: ${errorParam}` +
         (errorDesc ? ` (${errorDesc})` : ""),
     );
-    return htmlResponse(provider, "error", GENERIC_PROVIDER_ERROR, 400);
+    return page("error", GENERIC_PROVIDER_ERROR, 400);
   }
   if (!code || !state) {
-    return htmlResponse(provider, "error", "Missing 'code' or 'state' from provider.", 400);
+    return page("error", "Missing 'code' or 'state' from provider.", 400);
   }
 
   const stateCookie = request.cookies.get(OAUTH_STATE_COOKIE)?.value;
   if (!stateCookie || stateCookie !== state) {
-    return htmlResponse(provider, "error", "State mismatch — please retry the connection from Training Tracker.", 400);
+    return page("error", "State mismatch — please retry the connection from Training Tracker.", 400);
   }
   const verified = await verifyOAuthState(stateCookie, provider);
   if (!verified) {
-    return htmlResponse(provider, "error", "State token invalid or expired — please retry.", 400);
+    return page("error", "State token invalid or expired — please retry.", 400);
   }
 
   const cred = await prisma.exportCredential.findUnique({ where: { provider } });
   if (!cred) {
-    return htmlResponse(provider, "error", "No pending credential found. Please retry from Training Tracker.", 400);
+    return page("error", "No pending credential found. Please retry from Training Tracker.", 400);
   }
 
   let pendingConfig: Record<string, unknown>;
   try {
     pendingConfig = openConfig(cred.config);
   } catch {
-    return htmlResponse(provider, "error", "Stored credential could not be decrypted (encryption key missing or rotated).", 500);
+    return page("error", "Stored credential could not be decrypted (encryption key missing or rotated).", 500);
   }
   const clientId = typeof pendingConfig.clientId === "string" ? pendingConfig.clientId : "";
   const clientSecret = typeof pendingConfig.clientSecret === "string" ? pendingConfig.clientSecret : "";
   if (!clientId || !clientSecret) {
-    return htmlResponse(provider, "error", "Pending credential is missing Client ID or Secret.", 400);
+    return page("error", "Pending credential is missing Client ID or Secret.", 400);
   }
 
   const redirectUri = getRedirectUri(request, provider);
@@ -275,11 +308,11 @@ export async function GET(
       },
     });
 
-    return htmlResponse(provider, "ok", "Training Tracker is now connected.");
+    return page("ok", "Training Tracker is now connected.");
   } catch (err) {
     // The upstream failure text can carry internal hostnames and token-endpoint
     // responses; keep it in the server log and show the operator a fixed string.
     console.warn(`[oauth] ${provider} token exchange failed:`, err);
-    return htmlResponse(provider, "error", GENERIC_EXCHANGE_ERROR, 400);
+    return page("error", GENERIC_EXCHANGE_ERROR, 400);
   }
 }
