@@ -86,6 +86,19 @@ export async function buildProgramReport(opts: BuildProgramReportOptions) {
     };
   }
 
+  // Deliberately unscoped, and the asymmetry with the scoped `listTheatres`
+  // call two lines below is intentional rather than an oversight.
+  //
+  // `RegionData` is a global, admin-curated reference table (country → region →
+  // theatre) with no `companyId` — there is no tenant dimension to filter on.
+  // It carries no student, completion or company data, so reading it in full
+  // discloses nothing about another tenant. `listTheatres` is scoped because it
+  // derives its list from `Student` rows, which ARE tenant data.
+  //
+  // Scoping this would also be wrong on its own terms: the country/region lists
+  // populate the dashboard's geography pickers, so narrowing them to countries
+  // that happen to have an in-scope student would silently drop legitimately
+  // empty geographies a partner is expected to plan against.
   const regionData = await prisma.regionData.findMany({ orderBy: { country: "asc" } });
   const countries = regionData.map((r: typeof regionData[number]) => r.country);
   const regionList = [...new Set(regionData.map((r: typeof regionData[number]) => r.region))].filter(Boolean).sort();
