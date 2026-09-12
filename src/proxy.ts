@@ -305,9 +305,17 @@ function createCspContext(request: NextRequest): CspContext {
   // `'unsafe-inline'`, so the "report-only" trial would quietly be enforcing.
   //
   // The cost is real and belongs in the operator docs: while this mode is on,
-  // the enforced policy is suspended, so `frame-ancestors`, `object-src` and
-  // the rest stop being enforced. It is a short diagnostic window — the mode to
-  // turn on to find out *which* script broke — not a resting state.
+  // NO CSP is enforced, so every directive stops biting — `script-src` included,
+  // which means an injected inline script runs exactly as it would under
+  // `legacy`. The directives with no equivalent elsewhere are the real loss:
+  // `object-src`, `base-uri`, `form-action`, `connect-src` and `img-src`.
+  // `frame-ancestors` is the exception worth knowing, because `next.config.ts`
+  // still sends `X-Frame-Options: DENY` alongside, and that keeps framing
+  // blocked; the other non-CSP headers (nosniff, Referrer-Policy, HSTS,
+  // Permissions-Policy) survive too, since none of them travel in the CSP.
+  // It is a short diagnostic window — the mode to turn on to find out *which*
+  // script broke — not a resting state, and not a safer middle setting than
+  // `enforce`. `legacy` is the mode to sit on, because it really does enforce.
   const isReportOnly = mode === "report-only";
   return {
     mode,
