@@ -1,5 +1,6 @@
 import type { NextConfig } from "next";
 import pkg from "./package.json" with { type: "json" };
+import { buildCsp, resolveCspMode } from "./src/lib/csp";
 
 const nextConfig: NextConfig = {
   // Stop `next dev` appending its own block to CLAUDE.md on every start.
@@ -22,29 +23,35 @@ const nextConfig: NextConfig = {
     UPDATE_CHANNEL: process.env.UPDATE_CHANNEL || "stable",
   },
   async headers() {
-    // Content-Security-Policy. Next.js App Router emits inline <script>
-    // tags for hydration AND loads its chunks via <script src=...> tags
-    // that are not nonce-stamped on statically-rendered pages, so
-    // script-src must allow 'unsafe-inline' to keep both forms working.
-    // We still get useful protection from the other directives — frame-
-    // ancestors, object-src, connect-src, form-action, base-uri.
-    // 'unsafe-eval' is only relaxed in development for HMR.
-    const scriptSrc =
-      process.env.NODE_ENV === "production"
-        ? "'self' 'unsafe-inline'"
-        : "'self' 'unsafe-eval' 'unsafe-inline'";
-    const csp = [
-      "default-src 'self'",
-      `script-src ${scriptSrc}`,
-      "style-src 'self' 'unsafe-inline'",
-      "img-src 'self' data: blob:",
-      "font-src 'self' data:",
-      "connect-src 'self'",
-      "frame-ancestors 'none'",
-      "base-uri 'self'",
-      "form-action 'self'",
-      "object-src 'none'",
-    ].join("; ");
+    // Content-Security-Policy — for the few paths `src/proxy.ts` does NOT see.
+    //
+    // The policy moved to the proxy, because the strict variant carries a
+    // per-request nonce and this function runs once, at build time. What is
+    // left here covers exactly the paths the proxy's matcher excludes
+    // (`/_next/static`, `/_next/image`, `/favicon.ico`) — static assets, which
+    // never need a nonce.
+    //
+    // The two sources cover DISJOINT sets of paths, deliberately. The CSP key
+    // used to live on the catch-all `/(.*)` entry below; leaving it there would
+    // now put a second `Content-Security-Policy` header on every proxied
+    // response, and browsers enforce the intersection of two policies rather
+    // than the later one. The other five security headers stay on `/(.*)`,
+    // where a duplicate is not a hazard and the single entry is clearer.
+    //
+    // One asymmetry worth knowing: `CSP_MODE` is read here at BUILD time and in
+    // the proxy at REQUEST time, so changing the mode on a running install
+    // changes the policy on pages and API routes but not on these static-asset
+    // paths until the next build. That is harmless — a policy on a JS or icon
+    // response governs only the (non-existent) document it would be if opened
+    // directly — but it would be confusing to hit and not know.
+    const staticCsp = buildCsp({
+      nonce: null,
+      strict: resolveCspMode(process.env.CSP_MODE) === "enforce",
+      isDev: process.env.NODE_ENV !== "production",
+    });
+    const cspHeader = [
+      { key: "Content-Security-Policy", value: staticCsp },
+    ];
 
     return [
       {
@@ -61,9 +68,14 @@ const nextConfig: NextConfig = {
             key: "Permissions-Policy",
             value: "camera=(), microphone=(), geolocation=()",
           },
-          { key: "Content-Security-Policy", value: csp },
         ],
       },
+      // Kept in step with the `matcher` in `src/proxy.ts`. If a path is added
+      // to that exclusion list it must be added here too, or it will be the one
+      // path in the app with no policy at all.
+      { source: "/_next/static/:path*", headers: cspHeader },
+      { source: "/_next/image", headers: cspHeader },
+      { source: "/favicon.ico", headers: cspHeader },
     ];
   },
 };

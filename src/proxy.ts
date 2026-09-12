@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { jwtVerify, SignJWT } from "jose";
 import { verifyCronRequest } from "@/lib/cron-auth";
 import { SUPER_ADMIN_ROLE, isAdminish } from "@/lib/roles";
+import { buildCsp, generateNonce, resolveCspMode, type CspMode } from "@/lib/csp";
 
 const COOKIE_NAME = "tt-auth";
 
@@ -178,24 +179,205 @@ function isMfaEnrollmentAllowed(pathname: string): boolean {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Content-Security-Policy
+// ---------------------------------------------------------------------------
+//
+// The policy is built here rather than in `next.config.ts` because the strict
+// variant carries a per-request nonce, and `next.config.ts` runs once at build
+// time. `next.config.ts` keeps a static, nonce-free entry for the few paths
+// this proxy's matcher excludes (`/_next/static`, `/_next/image`,
+// `/favicon.ico`) — built from the same `lib/csp.ts` builder.
+//
+// **Exactly one enforced `Content-Security-Policy` response header per path.**
+// Two of them do not combine, they intersect: a browser enforces both, so the
+// effective policy is the narrowest of the pair and a page can break in a way
+// neither header explains on its own. The CSP key was therefore removed from
+// `next.config.ts`'s catch-all `/(.*)` entry when this moved here; the two
+// sources now cover disjoint sets of paths. (`report-only` mode does send two
+// headers, but they are two different header *names* — one enforced, one
+// reporting — which is the documented way to trial a policy.)
+
+const CSP_HEADER = "content-security-policy";
+const CSP_REPORT_ONLY_HEADER = "content-security-policy-report-only";
+const NONCE_HEADER = "x-nonce";
+
+/**
+ * Is this request for an HTML document, as opposed to an API call, an RSC
+ * payload, or a subresource?
+ *
+ * Only a document can use a nonce, so only a document gets one minted. The
+ * alternative — a nonce on every response — puts a per-request value into
+ * headers on responses that are allowed to be cached, and widens the blast
+ * radius of any bug in the nonce path to the entire API surface.
+ *
+ * `sec-fetch-dest` is the modern answer and every current browser sends it on
+ * navigations. When it is absent (a much older browser, or a command-line
+ * client) fall back to the `Accept` header. Note the consequence for
+ * hand-testing: curl sends a wildcard `Accept` and no `sec-fetch-dest`, so a
+ * bare curl is NOT classified as a document and will see no nonce. Add
+ * `-H 'Accept: text/html'` when checking this by hand, or you will conclude the
+ * nonce is broken when it is working.
+ */
+function isDocumentRequest(request: NextRequest): boolean {
+  const dest = request.headers.get("sec-fetch-dest");
+  // When the browser tells us what this is for, believe it and nothing else —
+  // an RSC fetch sends `sec-fetch-dest: empty` with a permissive Accept.
+  if (dest) return dest === "document";
+  const accept = request.headers.get("accept");
+  if (accept === null) return true;
+  return accept.includes("text/html");
+}
+
+interface CspContext {
+  mode: CspMode;
+  nonce: string | null;
+  /** Request headers to forward, with the policy headers under our control. */
+  requestHeaders: Headers;
+  /** Enforced `Content-Security-Policy` response header, or null in report-only mode. */
+  responseCsp: string | null;
+  /** Value for the report-only response header, or null when not in that mode. */
+  responseReportOnlyCsp: string | null;
+}
+
+function createCspContext(request: NextRequest): CspContext {
+  const mode = resolveCspMode(process.env.CSP_MODE);
+  const isDev = process.env.NODE_ENV !== "production";
+  const strict = mode !== "legacy";
+  const nonce = strict && isDocumentRequest(request) ? generateNonce() : null;
+
+  const requestHeaders = new Headers(request.headers);
+
+  // Next reads the *forwarded request* `Content-Security-Policy` header, pulls
+  // the `'nonce-…'` source expression out of its `script-src`, and hands it to
+  // React's renderer — which is what stamps `nonce="…"` onto the bootstrap
+  // <script> tags. That is the only mechanism; `x-nonce` exists purely so our
+  // own code can read the value back (the OAuth callback page does).
+  //
+  // Which means a *client* can send that header and choose the nonce Next
+  // stamps. Harmless while `'unsafe-inline'` is in force and a hole the moment
+  // it is not, so these three are cleared unconditionally — in every mode, on
+  // every path — and only then re-set from values we generated. Use `set`,
+  // never `append`: appending would leave the caller's value in place alongside
+  // ours, and Next takes the first `script-src` it finds.
+  requestHeaders.delete(CSP_HEADER);
+  requestHeaders.delete(CSP_REPORT_ONLY_HEADER);
+  requestHeaders.delete(NONCE_HEADER);
+
+  const legacyCsp = buildCsp({ nonce: null, strict: false, isDev });
+  const strictCsp = strict ? buildCsp({ nonce, strict: true, isDev }) : null;
+
+  if (nonce && strictCsp) {
+    // Deliberately asymmetric, and it reads like a bug if you do not know why.
+    //
+    // The forwarded REQUEST header always carries the *strict* policy, under
+    // the plain name, in both strict modes — even in report-only, where the
+    // policy the browser actually enforces is the legacy one. These headers
+    // travel inward only; the browser never sees them. Their single job is to
+    // tell Next's renderer which nonce to stamp, and it finds that by reading
+    // `script-src` out of this header. Forward the legacy policy here and it
+    // would find no nonce, stamp nothing, and every one of Next's own scripts
+    // would report a violation — noise that says nothing about the app, which
+    // is the one outcome that makes report-only mode useless.
+    //
+    // The plain name is used rather than the report-only one even in
+    // report-only mode — see the note on `responseCsp` below for why the two
+    // cannot be separated on this version of Next.
+    requestHeaders.set(CSP_HEADER, strictCsp);
+    requestHeaders.set(NONCE_HEADER, nonce);
+  }
+
+  // What the browser is sent.
+  //
+  // `report-only` sends ONLY the report-only header — it does not keep the
+  // legacy policy enforced alongside it, and that is forced rather than chosen.
+  // Next takes the nonce from `req.headers["content-security-policy"]`, and the
+  // Node side copies every middleware *response* header over `req.headers`
+  // before the render (`resolve-routes.js`: `req.headers[key] = value`). So an
+  // enforced response header always wins over the one forwarded above. Keeping
+  // the legacy policy enforced during a trial would therefore hand the renderer
+  // a policy with no nonce in it, nothing would be stamped, and every script
+  // Next emits would report a violation — a report full of noise about the
+  // framework and silent about the app, which is the one result that makes the
+  // mode worthless. Putting the nonce into the legacy policy instead does not
+  // work either: a policy that contains a nonce makes browsers ignore
+  // `'unsafe-inline'`, so the "report-only" trial would quietly be enforcing.
+  //
+  // The cost is real and belongs in the operator docs: while this mode is on,
+  // the enforced policy is suspended, so `frame-ancestors`, `object-src` and
+  // the rest stop being enforced. It is a short diagnostic window — the mode to
+  // turn on to find out *which* script broke — not a resting state.
+  const isReportOnly = mode === "report-only";
+  return {
+    mode,
+    nonce,
+    requestHeaders,
+    responseCsp: isReportOnly ? null : mode === "enforce" && strictCsp ? strictCsp : legacyCsp,
+    responseReportOnlyCsp: isReportOnly ? strictCsp : null,
+  };
+}
+
+/**
+ * The single pass-through. Every pass-through branch below goes through here so
+ * that no branch can forget to forward the policy headers.
+ *
+ * This matters more than it looks: `route()` returns from five different
+ * pass-through points, and the one that covers `/login` and `/setup` is the
+ * *early* `isPublicPath` return. Threading the nonce only at the fall-through
+ * would cover every authenticated page and miss exactly the two pages an
+ * unauthenticated user has to reach — so under an enforcing policy everyone
+ * already signed in would be fine and nobody else could get in.
+ */
+function allow(csp: CspContext): NextResponse {
+  return NextResponse.next({ request: { headers: csp.requestHeaders } });
+}
+
+/** Stamp the policy on the way out, whatever produced the response. */
+function applyCspHeaders(response: NextResponse, csp: CspContext): NextResponse {
+  if (csp.responseCsp) {
+    response.headers.set("Content-Security-Policy", csp.responseCsp);
+  } else {
+    response.headers.delete("Content-Security-Policy");
+  }
+  if (csp.responseReportOnlyCsp) {
+    response.headers.set(
+      "Content-Security-Policy-Report-Only",
+      csp.responseReportOnlyCsp,
+    );
+  } else {
+    response.headers.delete("Content-Security-Policy-Report-Only");
+  }
+  return response;
+}
+
+/**
+ * Entry point. Kept as a thin wrapper so the policy is applied to *every*
+ * response this proxy can produce — pass-throughs, redirects and the JSON 401s
+ * and 403s alike — on one line that no future early return can route around.
+ */
 export async function proxy(request: NextRequest) {
+  const csp = createCspContext(request);
+  return applyCspHeaders(await route(request, csp), csp);
+}
+
+async function route(request: NextRequest, csp: CspContext): Promise<NextResponse> {
   const { pathname } = request.nextUrl;
 
   // Allow static assets
   if (isStaticAsset(pathname)) {
-    return NextResponse.next();
+    return allow(csp);
   }
 
   // Allow public paths (login, setup, and their API routes)
   if (isPublicPath(pathname)) {
-    return NextResponse.next();
+    return allow(csp);
   }
 
   // The read-only public API authenticates with an API key (not the JWT
   // cookie). Edge middleware can't do the required DB lookup, so let these
   // requests through — each route handler enforces the key via requireApiKey().
   if (pathname.startsWith("/api/public/")) {
-    return NextResponse.next();
+    return allow(csp);
   }
 
   // Allow cron-triggered endpoints with a valid HMAC signature.
@@ -219,7 +401,7 @@ export async function proxy(request: NextRequest) {
 
   if (isCronRequest) {
     if (verifyCronRequest(request).ok) {
-      return NextResponse.next();
+      return allow(csp);
     }
     // Fall through to normal JWT auth if signature is invalid
   }
@@ -346,7 +528,7 @@ export async function proxy(request: NextRequest) {
     return applyRefresh(NextResponse.redirect(new URL("/dashboard", request.url)));
   }
 
-  return applyRefresh(NextResponse.next());
+  return applyRefresh(allow(csp));
 }
 
 export const config = {
