@@ -53,7 +53,7 @@
  *   node scripts/check-deploy-parity.mjs
  */
 
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 
@@ -63,11 +63,32 @@ const UPDATE_AGENT_SH = join(ROOT, "deploy", "update-agent.sh");
 const CRON_AUTH_TS = join(ROOT, "src", "lib", "cron-auth.ts");
 const CRON_SIGN_SH = join(ROOT, "deploy", "lib", "cron-sign.sh");
 const PROXY_TS = join(ROOT, "src", "proxy.ts");
-const CRON_SCRIPTS = [
-  "auto-backup.sh",
-  "auto-export.sh",
-  "auto-credential-check.sh",
-].map((f) => join(ROOT, "deploy", f));
+const DEPLOY_DIR = join(ROOT, "deploy");
+
+/**
+ * Every script under deploy/ that signs a cron request — DISCOVERED, not listed.
+ *
+ * This was a hardcoded three-element array, and a review walked straight past
+ * it: a new `deploy/auto-newjob.sh` signing an unregistered path with a
+ * lowercase method and the wrong header was simply invisible to the check. A
+ * list of files you have to remember to extend is the same failure mode this
+ * script exists to remove, one level up.
+ */
+function discoverCronScripts() {
+  const found = [];
+  for (const name of readdirSync(DEPLOY_DIR).sort()) {
+    if (!name.endsWith(".sh")) continue;
+    const full = join(DEPLOY_DIR, name);
+    let src;
+    try {
+      src = readFileSync(full, "utf8");
+    } catch {
+      continue;
+    }
+    if (/\bcron_sign_request\b/.test(stripShellComments(src))) found.push(full);
+  }
+  return found;
+}
 
 /** Thrown for anything this script cannot read confidently. */
 class ParseError extends Error {}
@@ -175,6 +196,51 @@ export function stripTsComments(src) {
 // 1. UPDATE_REQUESTS  <->  update-agent.sh case arms
 // ---------------------------------------------------------------------------
 
+/**
+ * Un-escape a JavaScript string literal's body.
+ *
+ * The naive `.replace(/\\(.)/g, "$1")` this replaced turned a real `\n` escape
+ * into the letter `n`. Today's payloads contain no escapes at all, and the error
+ * direction was a false FAILURE rather than a false pass — but a checker that
+ * reads the source wrongly is a checker whose verdict you cannot reason about,
+ * and the next payload may not be escape-free.
+ */
+export function unescapeJsString(body) {
+  const simple = {
+    n: "\n", t: "\t", r: "\r", b: "\b", f: "\f", v: "\v", "0": "\0",
+  };
+  let out = "";
+  for (let i = 0; i < body.length; i++) {
+    if (body[i] !== "\\") {
+      out += body[i];
+      continue;
+    }
+    const c = body[++i];
+    if (c === undefined) break;
+    if (c === "u" && body[i + 1] === "{") {
+      const end = body.indexOf("}", i + 2);
+      if (end > 0) {
+        out += String.fromCodePoint(parseInt(body.slice(i + 2, end), 16));
+        i = end;
+        continue;
+      }
+    }
+    if (c === "u") {
+      out += String.fromCharCode(parseInt(body.slice(i + 1, i + 5), 16));
+      i += 4;
+      continue;
+    }
+    if (c === "x") {
+      out += String.fromCharCode(parseInt(body.slice(i + 1, i + 3), 16));
+      i += 2;
+      continue;
+    }
+    // Anything else stands for itself — which is also JavaScript's rule.
+    out += Object.prototype.hasOwnProperty.call(simple, c) ? simple[c] : c;
+  }
+  return out;
+}
+
 /** The three payload strings the app can write, from the TypeScript side. */
 export function parseUpdateRequestLiterals(tsSource) {
   const src = stripTsComments(tsSource);
@@ -193,7 +259,7 @@ export function parseUpdateRequestLiterals(tsSource) {
   const entry = /(\w+)\s*:\s*(['"])((?:\\.|(?!\2).)*)\2/g;
   let e;
   while ((e = entry.exec(body)) !== null) {
-    literals.push(e[3].replace(/\\(.)/g, "$1"));
+    literals.push(unescapeJsString(e[3]));
   }
   if (literals.length === 0) {
     throw new ParseError("UPDATE_REQUESTS was found but no payload literals could be read from it.");
@@ -201,8 +267,17 @@ export function parseUpdateRequestLiterals(tsSource) {
   return literals;
 }
 
-/** The whole-string patterns the root-side agent will accept. */
-export function parseAgentCaseArms(shSource) {
+/**
+ * The agent's case arms, IN ORDER, including the catch-all.
+ *
+ * Order is not decoration here — bash takes the FIRST matching pattern. A review
+ * moved the `*)` arm to the top of this case, which makes the agent reject every
+ * request that arrives, and the previous version of this check (which compared
+ * two unordered SETS of literals) reported parity and exited 0. That is verbatim
+ * the failure this script's header claims to prevent: every update silently
+ * stops working.
+ */
+export function parseAgentCaseArmsOrdered(shSource) {
   const src = stripShellComments(shSource);
   const m = src.match(/case\s+"\$\{ACTION_RAW\}"\s+in([\s\S]*?)\besac\b/);
   if (!m) {
@@ -213,14 +288,69 @@ export function parseAgentCaseArms(shSource) {
   }
   const body = m[1];
   const arms = [];
-  // Arms are single-quoted because the payloads contain double quotes.
-  const arm = /^\s*'([^']*)'\s*\)/gm;
+  // A literal arm is single-quoted (the payloads contain double quotes); the
+  // catch-all is a bare `*)`.
+  const arm = /^[ \t]*(?:'([^']*)'|(\*))\s*\)/gm;
   let a;
-  while ((a = arm.exec(body)) !== null) arms.push(a[1]);
+  while ((a = arm.exec(body)) !== null) {
+    if (a[2] === "*") arms.push({ pattern: "*", isDefault: true });
+    else arms.push({ pattern: a[1], isDefault: false });
+  }
   if (arms.length === 0) {
-    throw new ParseError("the case block was found but no literal arms could be read from it.");
+    throw new ParseError("the case block was found but no arms could be read from it.");
+  }
+
+  // Every arm this parser can read is either a single-quoted literal or the bare
+  // `*)` catch-all, and that is the only shape the agent uses. An arm written
+  // any other way would be INVISIBLE here — and an UNQUOTED pattern is a glob,
+  // which can shadow a later literal arm (verified: bash matches a quoted
+  // `'{"action":*'` literally, an unquoted one as a glob). Rather than model a
+  // shape it has not seen, this counts the arms independently and stops if the
+  // two disagree. Same rule as everywhere else here: refuse to guess.
+  const armCount = body.split(";;").length - 1;
+  if (armCount !== arms.length) {
+    throw new ParseError(
+      `deploy/update-agent.sh's case has ${armCount} arm(s) but only ${arms.length} could be read.\n` +
+        "  An arm is written in a shape this parser does not recognise — most likely an UNQUOTED\n" +
+        "  pattern, which bash treats as a glob and which can shadow a later literal arm.\n" +
+        "  Extend the parser deliberately rather than letting an arm go unchecked."
+    );
   }
   return arms;
+}
+
+/** Just the accepted literals, for the set comparison. */
+export function parseAgentCaseArms(shSource) {
+  const arms = parseAgentCaseArmsOrdered(shSource).filter((a) => !a.isDefault);
+  if (arms.length === 0) {
+    throw new ParseError("the case block contains no literal arms — every request would be rejected.");
+  }
+  return arms.map((a) => a.pattern);
+}
+
+/**
+ * Actually run the agent's dispatch shape against each payload.
+ *
+ * Rebuilding the case with harmless bodies and executing it is the only way to
+ * be sure a payload reaches its own arm: it catches the catch-all being moved
+ * to the top, two arms being reordered, and an earlier pattern shadowing a later
+ * one (a glob such as `'{"action":*'` placed first) — none of which a comparison
+ * of literals can see. Same principle as the signing string below: compare what
+ * the two sides will DO, not what they look like.
+ *
+ * Only patterns read out of the repository's own case block are re-emitted, each
+ * inside single quotes, and every body is an `echo` of a fixed index.
+ */
+export function dispatchOf(arms, payload) {
+  const cases = arms
+    .map((a, i) =>
+      a.isDefault
+        ? `  *) printf 'DEFAULT' ;;`
+        : `  '${a.pattern.replace(/'/g, "'\\''")}') printf 'ARM${i}' ;;`
+    )
+    .join("\n");
+  const script = `case "$1" in\n${cases}\n  *) printf 'NOMATCH' ;;\nesac\n`;
+  return execFileSync("bash", ["-c", script, "_", payload], { encoding: "utf8" });
 }
 
 // ---------------------------------------------------------------------------
@@ -294,19 +424,82 @@ export function shellSign(method, path, timestamp, nonce) {
   );
 }
 
-/** The (method, path) pairs the cron scripts actually sign, read from source. */
-export function parseCronScriptCalls(path, source) {
+/**
+ * What one cron script signs, and what it then actually sends.
+ *
+ * Three things were previously unchecked and each produces a silent 401 that
+ * reads as a credentials problem:
+ *
+ *   - the curl URL was never compared with the signed path, so `/save` ->
+ *     `/saveXX` passed;
+ *   - the curl method was never compared with the signed method, so `-X POST`
+ *     -> `-X GET` passed;
+ *   - headers were collected per FILE and matched as a union, so a script
+ *     signing two paths that need two headers passed while sending only one.
+ *
+ * The last one is why this refuses a script with more than one signed call or
+ * more than one curl: with one of each the pairing is unambiguous, and with more
+ * it is a guess. Guessing is what the house style forbids, so it fails and says
+ * what to extend.
+ */
+export function analyseCronScript(relPath, source) {
   const src = stripShellComments(source);
-  const calls = [];
-  const re = /cron_sign_request\s+(\S+)\s+"?([^"\s]+)"?/g;
+
+  const signed = [];
+  const sre = /cron_sign_request\s+("?)([A-Za-z]+)\1\s+"?([^"\s]+)"?/g;
   let m;
-  while ((m = re.exec(src)) !== null) {
-    calls.push({ file: path, method: m[1], path: m[2] });
+  while ((m = sre.exec(src)) !== null) signed.push({ method: m[2], path: m[3] });
+
+  // The curl invocation spans continuation lines; take the command from `curl`
+  // up to the first line that does not end in a backslash.
+  const curls = [];
+  const lines = src.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    if (!/(^|[\s(=$])curl\b/.test(lines[i])) continue;
+    let block = lines[i];
+    let j = i;
+    while (/\\\s*$/.test(lines[j]) && j + 1 < lines.length) {
+      j++;
+      block += "\n" + lines[j];
+    }
+    curls.push(block);
+    i = j;
   }
+
+  if (signed.length !== 1 || curls.length !== 1) {
+    throw new ParseError(
+      `${relPath}: expected exactly one cron_sign_request and one curl, found ` +
+        `${signed.length} and ${curls.length}.\n` +
+        "  With one of each, the signed request and the request actually sent can be paired\n" +
+        "  unambiguously. With more, pairing them is a guess — so this stops rather than\n" +
+        "  checking the wrong pair. Extend the parser deliberately."
+    );
+  }
+
+  const block = curls[0];
+  const methodMatch = block.match(/-X\s+"?([A-Za-z]+)"?/);
+  const urlMatch = block.match(/["']?(https?:\/\/[^"'\s\\]+)["']?/);
+  if (!urlMatch) {
+    throw new ParseError(`${relPath}: could not read the curl URL.`);
+  }
+  let urlPath;
+  try {
+    urlPath = new URL(urlMatch[1]).pathname;
+  } catch {
+    throw new ParseError(`${relPath}: curl URL ${urlMatch[1]} is not parseable.`);
+  }
+
   const headers = [];
   const hre = /-H\s+"(X-Auto-[A-Za-z-]+):\s*true"/g;
-  while ((m = hre.exec(src)) !== null) headers.push(m[1]);
-  return { calls, headers };
+  while ((m = hre.exec(block)) !== null) headers.push(m[1]);
+
+  return {
+    file: relPath,
+    signed: signed[0],
+    // curl defaults to GET when -X is absent.
+    sent: { method: methodMatch ? methodMatch[1] : "GET", path: urlPath },
+    headers,
+  };
 }
 
 /** The paths the proxy will treat as cron requests, and the header each needs. */
@@ -429,10 +622,112 @@ const SELF_TESTS = [
     },
   },
   {
-    name: "cron script parser reads the call and the header",
+    name: "cron script analyser pairs the signed call with the curl that sends it",
     run: () => {
-      const r = parseCronScriptCalls("x", 'cron_sign_request POST "/api/a/b"\ncurl -H "X-Auto-Thing: true" \\\n');
-      return r.calls.length === 1 && r.calls[0].path === "/api/a/b" && r.headers[0] === "X-Auto-Thing";
+      const r = analyseCronScript("x", 'cron_sign_request POST "/api/a/b"\nRESP=$(curl -s -X POST "http://localhost:3000/api/a/b" \\\n    -H "X-Auto-Thing: true" \\\n    -H "X-Cron-Signature: ${CRON_SIGNATURE}" \\\n    2>&1)\n');
+      return (
+        r.signed.method === "POST" &&
+        r.signed.path === "/api/a/b" &&
+        r.sent.method === "POST" &&
+        r.sent.path === "/api/a/b" &&
+        r.headers[0] === "X-Auto-Thing"
+      );
+    },
+  },
+  {
+    name: "cron script analyser notices the curl path differing from the signed path",
+    run: () => {
+      const r = analyseCronScript("x", 'cron_sign_request POST "/api/a/b"\nRESP=$(curl -s -X POST "http://localhost:3000/api/a/b" \\\n    -H "X-Auto-Thing: true" \\\n    -H "X-Cron-Signature: ${CRON_SIGNATURE}" \\\n    2>&1)\n'.replace("3000/api/a/b", "3000/api/a/bXX"));
+      return r.signed.path === "/api/a/b" && r.sent.path === "/api/a/bXX";
+    },
+  },
+  {
+    name: "cron script analyser notices the curl method differing from the signed method",
+    run: () => {
+      const r = analyseCronScript("x", 'cron_sign_request POST "/api/a/b"\nRESP=$(curl -s -X POST "http://localhost:3000/api/a/b" \\\n    -H "X-Auto-Thing: true" \\\n    -H "X-Cron-Signature: ${CRON_SIGNATURE}" \\\n    2>&1)\n'.replace("-X POST", "-X GET"));
+      return r.signed.method === "POST" && r.sent.method === "GET";
+    },
+  },
+  {
+    name: "cron script analyser refuses to guess when a script has two signed calls",
+    run: () => {
+      try {
+        analyseCronScript("x", 'cron_sign_request POST "/a"\ncron_sign_request POST "/b"\ncurl "http://h/a"\n');
+        return false;
+      } catch (e) {
+        return e instanceof ParseError;
+      }
+    },
+  },
+  {
+    name: "ordered arm parser records the catch-all and its position",
+    run: () => {
+      const a = parseAgentCaseArmsOrdered(
+        `case "\${ACTION_RAW}" in\n    '{"a":1}')\n :;;\n    *)\n :;;\nesac\n`
+      );
+      return a.length === 2 && a[0].pattern === '{"a":1}' && a[1].isDefault === true;
+    },
+  },
+  {
+    name: "ordered arm parser sees a catch-all moved to the front",
+    run: () => {
+      const a = parseAgentCaseArmsOrdered(
+        `case "\${ACTION_RAW}" in\n    *)\n :;;\n    '{"a":1}')\n :;;\nesac\n`
+      );
+      return a[0].isDefault === true && a.length === 2;
+    },
+  },
+  {
+    name: "dispatch reaches the payload's own arm in a well-ordered case",
+    run: () => {
+      const arms = [
+        { pattern: '{"a":1}', isDefault: false },
+        { pattern: '{"b":2}', isDefault: false },
+        { pattern: "*", isDefault: true },
+      ];
+      return dispatchOf(arms, '{"b":2}') === "ARM1";
+    },
+  },
+  {
+    name: "dispatch reaches DEFAULT when the catch-all is first (the update-stops-silently case)",
+    run: () => {
+      const arms = [
+        { pattern: "*", isDefault: true },
+        { pattern: '{"a":1}', isDefault: false },
+      ];
+      return dispatchOf(arms, '{"a":1}') === "DEFAULT";
+    },
+  },
+  {
+    name: "ordered arm parser refuses an arm shape it cannot read (an unquoted glob)",
+    run: () => {
+      try {
+        parseAgentCaseArmsOrdered(
+          'case "${ACTION_RAW}" in\n    {x:*)\n :;;\n    \'{"a":1}\')\n :;;\n    *)\n :;;\nesac\n'
+        );
+        return false;
+      } catch (e) {
+        return e instanceof ParseError;
+      }
+    },
+  },
+  {
+    name: "unescapeJsString handles a real escape rather than dropping the backslash",
+    run: () => {
+      const bs = String.fromCharCode(92);
+      return (
+        unescapeJsString("a" + bs + "nb") === "a\nb" &&
+        unescapeJsString("it" + bs + "'s") === "it's" &&
+        unescapeJsString('{"a":1}') === '{"a":1}'
+      );
+    },
+  },
+  {
+    name: "cron script discovery finds the real scripts and not the others",
+    run: () => {
+      const found = discoverCronScripts().map((f) => f.split("/").pop());
+      return found.length >= 3 && found.every((f) => f.startsWith("auto-")) &&
+        !found.includes("install.sh");
     },
   },
   {
@@ -517,7 +812,39 @@ try {
         `    Either the app stopped writing it (remove the arm) or a payload was renamed on one side only.`
     );
   }
-  notes.push(`update requests: ${appSide.length} payload(s) matched across the boundary`);
+  // Set equality is not enough: bash takes the FIRST matching arm, so the order
+  // decides what the agent actually does. Run the dispatch.
+  const ordered = parseAgentCaseArmsOrdered(read(UPDATE_AGENT_SH));
+  const defaultIdx = ordered.findIndex((a) => a.isDefault);
+  if (defaultIdx === -1) {
+    problems.push(
+      "deploy/update-agent.sh's case has no `*)` catch-all arm, so an unrecognised request would\n" +
+        "    fall through silently instead of being rejected."
+    );
+  } else if (defaultIdx !== ordered.length - 1) {
+    problems.push(
+      `deploy/update-agent.sh's \`*)\` catch-all is arm ${defaultIdx + 1} of ${ordered.length}, not the last.\n` +
+        `    bash takes the first matching pattern, so every arm after it is dead and the agent\n` +
+        `    rejects requests it is supposed to accept. Every update silently stops working.`
+    );
+  }
+  for (let i = 0; i < appSide.length; i++) {
+    const payload = appSide[i];
+    if (!agentSide.includes(payload)) continue; // already reported above
+    const armIdx = ordered.findIndex((a) => !a.isDefault && a.pattern === payload);
+    const got = dispatchOf(ordered, payload);
+    const want = `ARM${armIdx}`;
+    if (got !== want) {
+      problems.push(
+        `deploy/update-agent.sh does not dispatch ${JSON.stringify(payload)} to its own arm ` +
+          `(reached ${got}, expected ${want}).\n` +
+          `    An earlier arm shadows it, so the agent will not do what that payload asks.`
+      );
+    }
+  }
+  notes.push(
+    `update requests: ${appSide.length} payload(s) matched and each dispatches to its own case arm`
+  );
 } catch (err) {
   problems.push(`update-request parity could not be checked: ${err.message}`);
 }
@@ -564,51 +891,72 @@ try {
   problems.push(`cron signing parity could not be checked: ${err.message}`);
 }
 
-// --- 3. the cron triangle: script -> proxy ----------------------------------
+// --- 3. the cron triangle: script -> signed -> sent -> proxy -----------------
 try {
   const proxyPairs = parseProxyCronPaths(read(PROXY_TS));
   const proxyByPath = new Map(proxyPairs.map((p) => [p.path, p.header.toLowerCase()]));
+  const scripts = discoverCronScripts();
+  if (scripts.length === 0) {
+    problems.push(
+      "no script under deploy/ calls cron_sign_request. Either the cron scripts were removed or\n" +
+        "    this check's discovery is broken — it must not pass by finding nothing."
+    );
+  }
   let callCount = 0;
 
-  for (const scriptPath of CRON_SCRIPTS) {
+  for (const scriptPath of scripts) {
     const rel = scriptPath.slice(ROOT.length + 1);
-    const { calls, headers } = parseCronScriptCalls(rel, read(scriptPath));
-    if (calls.length === 0) {
-      problems.push(`${rel} signs no request — cron_sign_request could not be found in it.`);
+    const a = analyseCronScript(rel, read(scriptPath));
+    callCount++;
+
+    // The TypeScript side uppercases the method and the shell side does not, so
+    // the two agree only while every caller passes an uppercase method.
+    if (a.signed.method !== a.signed.method.toUpperCase()) {
+      problems.push(
+        `${rel} signs with method ${JSON.stringify(a.signed.method)}.\n` +
+          `    cronSigningString uppercases the method and cron_signing_string does not, so a\n` +
+          `    lowercase method makes the two sides sign different strings and the job 401s.`
+      );
+    }
+
+    // What was signed must be what is sent. A signature covers method + path,
+    // so either mismatch is a silent 401 that reads as a credentials problem.
+    if (a.sent.path !== a.signed.path) {
+      problems.push(
+        `${rel} signs ${a.signed.path} but its curl requests ${a.sent.path}.\n` +
+          `    The signature covers the exact path, so the server recomputes a different HMAC and\n` +
+          `    rejects the call — a 401 that looks like a credentials problem.`
+      );
+    }
+    if (a.sent.method !== a.signed.method.toUpperCase()) {
+      problems.push(
+        `${rel} signs method ${a.signed.method} but its curl sends ${a.sent.method}.\n` +
+          `    The signature covers the method, so the call 401s.`
+      );
+    }
+
+    if (!proxyByPath.has(a.signed.path)) {
+      problems.push(
+        `${rel} signs ${a.signed.path}, which is not in src/proxy.ts's isCronRequest list.\n` +
+          `    The proxy would never run the signature check, so the request falls through to JWT\n` +
+          `    auth and 401s — a failure that reads like a credentials problem. This is exactly how\n` +
+          `    the daily credential check silently never ran.`
+      );
       continue;
     }
-    for (const call of calls) {
-      callCount++;
-      // The TypeScript side uppercases the method and the shell side does not,
-      // so the two agree only while every caller passes an uppercase method.
-      // That is true today; this is what keeps it true.
-      if (call.method !== call.method.toUpperCase()) {
-        problems.push(
-          `${rel} signs with method ${JSON.stringify(call.method)}.\n` +
-            `    cronSigningString uppercases the method and cron_signing_string does not, so a\n` +
-            `    lowercase method makes the two sides sign different strings and the job 401s.`
-        );
-      }
-      if (!proxyByPath.has(call.path)) {
-        problems.push(
-          `${rel} signs ${call.path}, which is not in src/proxy.ts's isCronRequest list.\n` +
-            `    The proxy would never run the signature check, so the request falls through to JWT\n` +
-            `    auth and 401s — a failure that reads like a credentials problem. This is exactly how\n` +
-            `    the daily credential check silently never ran.`
-        );
-        continue;
-      }
-      const wanted = proxyByPath.get(call.path);
-      const sent = headers.map((h) => h.toLowerCase());
-      if (!sent.includes(wanted)) {
-        problems.push(
-          `${rel} signs ${call.path} but does not send the ${wanted} header the proxy requires.\n` +
-            `    Sent: ${sent.length ? sent.join(", ") : "(none)"}. The proxy gates on path AND header.`
-        );
-      }
+    const wanted = proxyByPath.get(a.signed.path);
+    const sent = a.headers.map((h) => h.toLowerCase());
+    if (!sent.includes(wanted)) {
+      problems.push(
+        `${rel} signs ${a.signed.path} but its curl does not send the ${wanted} header the proxy requires.\n` +
+          `    Sent: ${sent.length ? sent.join(", ") : "(none)"}. The proxy gates on path AND header.`
+      );
     }
   }
-  notes.push(`cron triangle: ${callCount} signed call(s) matched a proxy path and header`);
+  notes.push(
+    `cron triangle: ${callCount} discovered script(s); signed path/method matches what curl sends, ` +
+      `and each is registered in the proxy with its header`
+  );
 } catch (err) {
   problems.push(`cron triangle could not be checked: ${err.message}`);
 }
