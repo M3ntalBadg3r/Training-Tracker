@@ -258,6 +258,30 @@ async function assertSessionCurrent(user: TokenPayload): Promise<void> {
   }
 }
 
+/**
+ * Refuse a session that has not finished forced MFA enrolment.
+ *
+ * `proxy.ts` already pins these users to `/setup-mfa`, and until now that was
+ * the *only* thing doing so: `requireAuth` did not check the claim, so the ~50
+ * route files carrying it alone were protected by the edge alone. That is the
+ * single-point-of-failure shape every other session predicate in this file was
+ * moved here to eliminate — a matcher gap or a proxy bypass and the whole
+ * authenticated API answers a half-enrolled session normally.
+ *
+ * Unlike `assertAccountActive` / `assertSessionCurrent` this needs no database
+ * read: `pendingMfaEnrollment` is a claim on the token, minted at login and
+ * cleared by `mfa/verify` issuing a fresh one.
+ *
+ * 403, not 401: the credential is valid, the session is simply not finished.
+ * A 401 would trip the client's `X-Session-Terminated` auto-logout and bounce
+ * the user out of the very flow they are being asked to complete.
+ */
+function assertMfaEnrolled(user: TokenPayload): void {
+  if (user.pendingMfaEnrollment) {
+    throw new AuthError("MFA enrollment required", 403);
+  }
+}
+
 export async function requireAuth(
   request: NextRequest,
   requiredRole?: string
@@ -268,6 +292,7 @@ export async function requireAuth(
   }
   await assertAccountActive(user.sub);
   await assertSessionCurrent(user);
+  assertMfaEnrolled(user);
   if (requiredRole) {
     // "Admin" should accept SuperAdmin too — SuperAdmin is a superset of Admin.
     // The predicate lives in lib/roles.ts so this and the proxy's /admin gate
@@ -288,21 +313,31 @@ export async function requireSuperAdmin(request: NextRequest): Promise<TokenPayl
   if (!user) throw new AuthError("Unauthorized", 401);
   await assertAccountActive(user.sub);
   await assertSessionCurrent(user);
-  if (user.pendingMfaEnrollment) throw new AuthError("MFA enrollment required", 403);
+  assertMfaEnrolled(user);
   if (!isSuperAdmin(user.role)) throw new AuthError("Forbidden", 403);
   return user;
 }
 
-// Reject sessions that are still in pending-MFA-enrolment state. Callers that
-// must interoperate with the enrolment flow itself (the MFA setup/verify
-// routes, /api/auth/me, /api/auth/logout) use `getAuthFromRequest` directly.
+/**
+ * Historically the only guard that rejected a pending-MFA-enrolment session.
+ * **`requireAuth` now does that itself**, so this is equivalent to it and is
+ * kept for the one caller that reads better saying what it means
+ * (`auth/mfa/disable`, where "a fully enrolled session" is the actual
+ * precondition) and so existing call sites keep working.
+ *
+ * It is NOT the place to add anything new: a check that belongs on every
+ * authenticated request belongs in `requireAuth`, which is the chokepoint the
+ * rest of this file uses.
+ *
+ * Callers that must interoperate with the enrolment flow itself — the MFA
+ * setup/verify routes, `/api/auth/me`, `/api/auth/ping`, `/api/auth/logout` —
+ * use `getAuthFromRequest` directly and deliberately do not inherit this.
+ */
 export async function requireFullSession(
   request: NextRequest,
   requiredRole?: string
 ): Promise<TokenPayload> {
-  const user = await requireAuth(request, requiredRole);
-  if (user.pendingMfaEnrollment) throw new AuthError("MFA enrollment required", 403);
-  return user;
+  return requireAuth(request, requiredRole);
 }
 
 export class AuthError extends Error {

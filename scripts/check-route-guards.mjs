@@ -107,7 +107,23 @@ const SELF_GUARDED_HANDLERS = {
   "auth/ping/route.ts": { POST: "Keep-alive: must stay reachable during pending-MFA enrolment." },
 };
 
-/** What a self-guarded handler must spell out, since it inherits nothing. */
+/**
+ * What a self-guarded handler must spell out, since it inherits nothing.
+ *
+ * CLAUDE.md states the standing rule: a check added to `requireAuth` must be
+ * added here in the same change, or this script keeps reporting green while
+ * asserting only part of it.
+ *
+ * **`pendingMfaEnrollment` is the documented exception, and the only one.**
+ * `requireAuth` rejects a half-enrolled session, but every handler on this list
+ * exists *because* it must stay reachable during that enrolment — the setup and
+ * verify routes that perform it, the `me` route the page reads, the keep-alive
+ * that stops the session expiring mid-flow. Adding it here would assert that
+ * the enrolment flow must refuse the enrolment flow, and the first person to
+ * satisfy the assertion would lock every forced-MFA user out of the only page
+ * they are allowed to reach. If a future check is genuinely universal, add it;
+ * this one is not.
+ */
 const SELF_GUARD_REQUIREMENTS = [
   { name: "getAuthFromRequest", re: /\bgetAuthFromRequest\s*\(/ },
   { name: "isUserDisabled", re: /\bisUserDisabled\s*\(/ },
