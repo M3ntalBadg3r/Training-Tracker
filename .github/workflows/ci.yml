@@ -108,7 +108,40 @@ jobs:
           SHELLCHECK_SHA256: 6c881ab0698e4e6ea235245f22832860544f17ba386442fe7e9d629f8cbedf87
         run: |
           set -euo pipefail
-          url="https://github.com/koalaman/shellcheck/releases/download/${SHELLCHECK_VERSION}/shellcheck-${SHELLCHECK_VERSION}.linux.x86_64.tar.xz"
+
+          # Fast path: if the image already ships the pinned version, use it.
+          # Pinning removed an image-bump vector and replaced it with a network
+          # fetch inside a required job — a better trade (loud and retryable,
+          # rather than a silent change in what gets checked), but not one worth
+          # paying on every run when the answer is already correct.
+          if command -v shellcheck >/dev/null 2>&1 &&
+             shellcheck --version | grep -qx "version: ${SHELLCHECK_VERSION#v}"; then
+            echo "Preinstalled shellcheck is already ${SHELLCHECK_VERSION}; using it."
+            shellcheck --version
+            exit 0
+          fi
+
+          # The published asset is architecture-specific. Fail here with a
+          # sentence that names the problem rather than 40 lines down with a
+          # confusing "cannot execute binary file" — moving this job to an arm64
+          # runner label is a plausible future change.
+          arch="$(uname -m)"
+          case "$arch" in
+            x86_64) asset="linux.x86_64" ;;
+            aarch64|arm64) asset="linux.aarch64" ;;
+            *)
+              echo "No pinned shellcheck asset for architecture '$arch'." >&2
+              echo "Add one (and its SHA-256) above, or run this job on x86_64." >&2
+              exit 1
+              ;;
+          esac
+          if [ "$asset" != "linux.x86_64" ]; then
+            echo "SHELLCHECK_SHA256 is the digest of the x86_64 asset only." >&2
+            echo "Add the '$asset' digest before running this job on $arch." >&2
+            exit 1
+          fi
+
+          url="https://github.com/koalaman/shellcheck/releases/download/${SHELLCHECK_VERSION}/shellcheck-${SHELLCHECK_VERSION}.${asset}.tar.xz"
           curl -fsSL --retry 3 -o /tmp/shellcheck.tar.xz "$url"
           echo "${SHELLCHECK_SHA256}  /tmp/shellcheck.tar.xz" | sha256sum -c -
           tar -xJf /tmp/shellcheck.tar.xz -C /tmp
