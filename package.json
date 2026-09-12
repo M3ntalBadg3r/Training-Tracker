@@ -1,6 +1,6 @@
 {
   "name": "training-tracker-temp",
-  "version": "3.15",
+  "version": "3.16",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -11,7 +11,10 @@
     "check:routes": "node scripts/check-route-guards.mjs",
     "routes:inventory": "node scripts/check-route-guards.mjs --inventory",
     "check:release": "node scripts/check-release-hygiene.mjs",
-    "check:deid": "node scripts/check-deidentification.mjs"
+    "check:deid": "node scripts/check-deidentification.mjs",
+    "check:deploy": "bash scripts/check-deploy-scripts.sh && node scripts/check-deploy-parity.mjs",
+    "test:deploy": "bash deploy/tests/run.sh",
+    "test:deploy:mutate": "bash deploy/tests/mutate.sh"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.5.0",

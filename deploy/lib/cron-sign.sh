@@ -52,6 +52,7 @@ cron_sign_request() {
     local method="$1" path="$2"
     CRON_TIMESTAMP=$(date -u '+%s')
     CRON_NONCE=$(openssl rand -hex 16)
+    # shellcheck disable=SC2034  # read by the auto-*.sh callers as an X-Cron-Signature header.
     CRON_SIGNATURE=$(
         cron_signing_string "${method}" "${path}" "${CRON_TIMESTAMP}" "${CRON_NONCE}" \
             | openssl dgst -sha256 -hmac "${CRON_SECRET}" \
