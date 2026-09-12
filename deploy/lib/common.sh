@@ -322,11 +322,13 @@ check_env_values() {
     fi
 
     if [ -n "${npm_config_cache:-}" ] && [ "${from_file#* npm_config_cache }" != "${from_file}" ]; then
-        checked_npm_cache "${npm_config_cache}" >/dev/null ||             echo "WARNING: npm_config_cache in ${APP_DIR}/.env is not a plain absolute path. Using it anyway." >&2
+        checked_npm_cache "${npm_config_cache}" >/dev/null || \
+            echo "WARNING: npm_config_cache in ${APP_DIR}/.env is not a plain absolute path. Using it anyway." >&2
     fi
 
     if [ -n "${DATABASE_URL:-}" ] && [ "${from_file#* DATABASE_URL }" != "${from_file}" ]; then
-        checked_database_url "${DATABASE_URL}" >/dev/null ||             echo "WARNING: DATABASE_URL in ${APP_DIR}/.env does not look like a postgres:// connection string. Using it anyway." >&2
+        checked_database_url "${DATABASE_URL}" >/dev/null || \
+            echo "WARNING: DATABASE_URL in ${APP_DIR}/.env does not look like a postgres:// connection string. Using it anyway." >&2
     fi
 }
 
@@ -537,14 +539,23 @@ require_root() {
         # one; older sudo builds without it simply carry nothing across, which
         # only means the operator is prompted for the site settings.
         #
-        # It is only asked for when there is something to carry. That matters
-        # under a restricted sudoers rule with no SETENV: tag, where sudo REFUSES
-        # the request outright rather than ignoring it — so asking unconditionally
-        # would turn "this operator may run the installer" into "this operator may
-        # not run anything", for no gain when nothing was set. With something set,
-        # the refusal is the right outcome and sudo's own message names the
-        # variables; the operator can add SETENV: to the rule, or put the setting
-        # in .env, rather than have their override silently dropped.
+        # It is only asked for when there is something to carry. Be honest about
+        # what that is worth: on sudo 1.9 it is a NO-OP, because
+        # --preserve-env=LIST simply ignores variables that are not set, so a
+        # restricted rule without SETENV: already runs correctly when the
+        # operator set nothing (measured). It is kept as defence in depth for a
+        # sudo old enough to refuse the request on sight, or a policy using
+        # env_check — neither of which could be tested here. Do not read it as
+        # load-bearing, and do not remove it on the grounds that it is not.
+        #
+        # What the closed list DID fix is the row above it: replacing `-E` with
+        # --preserve-env=<list> is what stops SVC_USER and friends crossing.
+        #
+        # When something IS set and the rule lacks SETENV:, sudo refuses and the
+        # script stops. That is the right outcome: sudo's own message names the
+        # variables, so the operator can add SETENV: or put the setting in .env,
+        # rather than have their override silently dropped and a wrong value
+        # baked into .env.
         #
         # LC_ALL=C because the probe matches sudo's help text.
         local keep="" var
@@ -821,8 +832,21 @@ ensure_ownership() {
 # nothing to unlink. O_NONBLOCK keeps a FIFO at the name from stalling the open
 # (fstat then rejects it).
 #
-# Returns 1, having changed nothing, when the path is not a plain file, cannot
-# be opened, the fchmod is refused, or node is unavailable.
+# The link count is the price of that, and it has to be paid here. Acting on the
+# inode means a HARDLINK is followed where deleting the name would not have
+# been: the same inode under another name is the same inode. So an entry with
+# more than one link is refused outright. A state file legitimately has exactly
+# one, so this costs nothing — and it is checked on the descriptor rather than
+# on the name, which is what makes it a guard rather than another race. (The
+# caller checks the link count as well, from its own lstat, so the replace path
+# is chosen for a hardlinked name before this is ever reached; this is the half
+# that closes the gap between that lstat and this open.)
+#
+# Returns 1, having changed nothing, when the path is not a plain file, has more
+# than one link, cannot be opened, the fchmod is refused, or node is
+# unavailable. Note that the open needs read permission, so a file with no owner
+# read bit cannot be repaired this way when root also lacks CAP_DAC_READ_SEARCH;
+# nothing in this system creates one, and the caller warns rather than guessing.
 set_file_mode_nofollow() {
     local path="${1:-}" mode="${2:-}"
     [ -n "${path}" ] && [ -n "${mode}" ] || return 1
@@ -837,7 +861,7 @@ set_file_mode_nofollow() {
         if (!Number.isFinite(mode)) process.exit(1);
         fd = fs.openSync(p, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
         const st = fs.fstatSync(fd);
-        if (!st.isFile()) { fs.closeSync(fd); process.exit(1); }
+        if (!st.isFile() || st.nlink !== 1) { fs.closeSync(fd); process.exit(1); }
         if ((st.mode & 0o7777) !== mode) fs.fchmodSync(fd, mode);
         fs.closeSync(fd);
       } catch (e) {
@@ -859,10 +883,18 @@ ensure_state_file() {
             # GNU stat spells a zero-length file "regular empty file", so both
             # spellings appear below. One call decides type, owner, group and
             # mode together, with nothing left to re-check on a second lookup.
-            state="$(stat -c '%F|%U:%G|%a' "${f}" 2>/dev/null || echo 'missing')"
+            # The link count is part of the decision, not an afterthought:
+            # repairing in place acts on the INODE, and a hardlink is the same
+            # inode under another name. An entry with more than one link is
+            # therefore not something to repair — it falls through to the
+            # replace branch below, which unlinks only this name and leaves
+            # whatever else points at that inode alone. (set_file_mode_nofollow
+            # re-checks on its descriptor, which is what closes the gap between
+            # this lstat and its open.)
+            state="$(stat -c '%F|%U:%G|%a|%h' "${f}" 2>/dev/null || echo 'missing')"
 
             case "${state}" in
-                "regular file|root:${SVC_GROUP}|664"|"regular empty file|root:${SVC_GROUP}|664")
+                "regular file|root:${SVC_GROUP}|664|1"|"regular empty file|root:${SVC_GROUP}|664|1")
                     ok=1
                     break
                     ;;
@@ -870,7 +902,7 @@ ensure_state_file() {
             [ "${attempt}" -lt 4 ] || break
 
             case "${state}" in
-                "regular file|"*|"regular empty file|"*)
+                "regular file|"*"|1"|"regular empty file|"*"|1")
                     # A plain file. Repair it IN PLACE — never replace it.
                     #
                     # Both halves avoid the trap that motivated this rewrite
@@ -893,7 +925,7 @@ ensure_state_file() {
                         *) chown -h "root:${SVC_GROUP}" -- "${f}" 2>/dev/null || true ;;
                     esac
                     case "${state}" in
-                        *'|664') ;;
+                        *'|664|1') ;;
                         *)
                             if ! set_file_mode_nofollow "${f}" 0664; then
                                 # Only when there is no safe mechanism at all:
@@ -915,9 +947,10 @@ ensure_state_file() {
                     ;;
             esac
 
-            # Not a plain file — a symlink, a FIFO, a directory, a socket — or
-            # missing. There is no inode here worth keeping and no safe way to
-            # adjust one, so replace it: `rm -f`, then create with `set -C`
+            # Not a plain single-linked file — a symlink, a FIFO, a directory,
+            # a socket, a hardlink to something else — or missing. There is no
+            # inode here worth keeping and no safe way to adjust one, so replace
+            # it: `rm -f`, then create with `set -C`
             # (an O_CREAT|O_EXCL open, which fails outright rather than
             # following a link planted since the rm) under `umask 0113`, so the
             # file is born 0664 and needs no chmod at all.

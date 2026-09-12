@@ -82,9 +82,19 @@ log() {
 #   fstat       the file type and the size cap are checked against the thing
 #               actually being read, so there is no second path lookup to race
 #
-# The existing `[ -f ]` test above is a fast path, not a guard: it is a separate
-# lookup, and flipping the name between a regular file and a FIFO between the
-# two was measured to hang the read in 50 of 400 attempts.
+# The `[ -f ]` test above is a fast path, not a guard. It does stop a FIFO that
+# is simply left at the name — `-f` is false for one, so the script exits before
+# reading — but it is a separate path lookup from the open, so flipping the name
+# between a regular file and a FIFO across that gap gets straight past it:
+# measured at 27 hangs in 200 attempts, and each one is a root process waiting
+# for a writer that never comes, re-armed by cron every five minutes.
+#
+# Note what does NOT save us here. fs.protected_symlinks is irrelevant, because
+# the account creates the FIFO *at* the name rather than a link to one; and
+# fs.protected_fifos restricts O_CREAT opens of FIFOs in world-writable sticky
+# directories, neither of which describes this — the open carries no O_CREAT,
+# and APP_DIR at 1775 is sticky but not world-writable. The guard has to be in
+# the open.
 #
 # The path is passed as an argument rather than spliced into the program text —
 # the same rule the rest of the deploy scripts follow (see check-update.sh) —

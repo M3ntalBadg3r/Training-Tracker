@@ -56,9 +56,10 @@ log() {
 #   fstat       the file type and the size cap are checked against the thing
 #               actually being read, so there is no second path lookup to race
 #
-# The `[ -f ]` test above is a fast path, not a guard: it is a separate lookup,
-# and flipping the name between a regular file and a FIFO between the two was
-# measured to hang the read in 50 of 400 attempts.
+# The `[ -f ]` test above is a fast path, not a guard: it stops a FIFO left at
+# the name, but it is a separate path lookup from the open, so flipping the name
+# between a regular file and a FIFO across that gap gets past it. See the fuller
+# note in auto-update.sh, where the same read runs as root.
 #
 # The path is passed as an argument rather than spliced into the program text —
 # the same rule the rest of the deploy scripts follow (see check-update.sh) —

@@ -72,6 +72,8 @@ if [ "$(id -u)" -ne 0 ]; then
                 KEEP="${KEEP:+${KEEP},}${_v}"
             fi
         done
+        # KEEP and _v are plain shell variables, never exported, so they do not
+        # cross the exec into sudo's environment; there is nothing to clean up.
         if [ -n "${KEEP}" ] && LC_ALL=C sudo --help 2>&1 | grep -q -- '--preserve-env=list'; then
             exec sudo "--preserve-env=${KEEP}" bash "$0" "$@"
         fi
