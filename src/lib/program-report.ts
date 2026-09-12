@@ -663,7 +663,12 @@ export async function getProgramStudents(opts: GetProgramStudentsOptions) {
   } else if (level === "theatre" && theatre) {
     studentFilter.theatre = theatre;
   }
-  if (companyIds && companyIds.length > 0) {
+  // Empty array = "no accessible companies", which must match nothing. Testing
+  // `length > 0` dropped the filter and returned every company's holders.
+  // `null` stays the deliberate "unrestricted" case; `[]` is truthy and yields
+  // `in: []`. The callers short-circuit on an empty scope today (see the note
+  // on BuildProgramReportOptions.companyIds), but this no longer relies on it.
+  if (companyIds) {
     studentFilter.companyId = { in: companyIds };
   }
 
