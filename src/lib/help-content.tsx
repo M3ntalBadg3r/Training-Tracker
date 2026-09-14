@@ -397,27 +397,37 @@ const helpSections: Record<string, HelpSection> = {
         <p>
           Dates in the Completed Date column are parsed against the{" "}
           <strong>system default date format</strong>{" "}(set in Admin &gt; System Settings).
-          Before any rows are committed, the import inspects the column:
+          Before any rows are committed, the import inspects the{" "}<strong>text</strong>{" "}
+          date cells in that column. Cells that Excel stores as real dates are already
+          unambiguous and take no part in this:
         </p>
         <ul>
           <li>
-            <strong>Match</strong>{" "}&mdash; every cell fits the system default. The import runs silently.
+            <strong>Match</strong>{" "}&mdash; every text cell fits the system default. The import runs silently.
           </li>
           <li>
-            <strong>Ambiguous</strong>{" "}&mdash; every cell happens to fit both{" "}
+            <strong>Nothing to decide</strong>{" "}&mdash; the column holds no text date
+            cells at all, which is the normal case for an Excel file whose dates are real
+            date cells. No format has to be chosen, so the summary says nothing about
+            date formats.
+          </li>
+          <li>
+            <strong>Ambiguous</strong>{" "}&mdash; every text cell happens to fit both{" "}
             <code>DD/MM/YYYY</code> and <code>MM/DD/YYYY</code>{" "}(e.g. all day numbers
             are 1&ndash;12). The import runs using the system default and adds a single
-            line to the summary so you know the file couldn&apos;t be disambiguated.
+            line to the summary so you know the file couldn&apos;t be disambiguated. If the
+            column mixed text dates with native Excel dates, that line names how many cells
+            it is describing.
           </li>
           <li>
-            <strong>Mismatch</strong>{" "}&mdash; at least one cell forces the other
+            <strong>Mismatch</strong>{" "}&mdash; at least one text cell forces the other
             format (e.g. month=15 in a system set to <code>DD/MM/YYYY</code>). A modal
             appears: <em>&quot;This file looks like MM/DD/YYYY. Use it for this import?&quot;</em>{" "}
             Accept to override for that import only; cancel and either fix the file
             or change the system default.
           </li>
           <li>
-            <strong>Internal conflict</strong>{" "}&mdash; different cells force different
+            <strong>Internal conflict</strong>{" "}&mdash; different text cells force different
             formats (some <code>13/01/2025</code>, others <code>01/15/2025</code>).
             The import is rejected; clean the file and retry.
           </li>
