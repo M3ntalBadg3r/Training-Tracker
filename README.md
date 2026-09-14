@@ -662,12 +662,13 @@ During import, the following cleansing rules are applied automatically:
 
 ### Date Format Detection
 
-Dates in the file are parsed strictly against the **system default date format** (set in **Admin → System Settings**). The import inspects the Completed Date column before committing any rows:
+Dates in the file are parsed strictly against the **system default date format** (set in **Admin → System Settings**). The import inspects the **text** date cells in the Completed Date column before committing any rows — native Excel date cells are already unambiguous and take no part in this (see *Native Excel dates* below):
 
-- **Match** — every cell fits the system default. The import runs silently.
-- **Ambiguous** — every cell happens to fit both `DD/MM/YYYY` and `MM/DD/YYYY` (e.g. all days are 1–12). The import runs using the system default and adds a single line to the summary so you know the file couldn't be disambiguated.
-- **Mismatch** — at least one cell forces the other format (e.g. month=15 in a system set to `DD/MM/YYYY`). The import pauses and shows a modal: **"This file looks like MM/DD/YYYY. Use it for this import?"** Accept to override for that import only; cancel and either fix the file or change the system default.
-- **Internal conflict** — different cells force different formats (some `13/01/2025`, others `01/15/2025`). The import is rejected; clean the file and retry.
+- **Match** — every text cell fits the system default. The import runs silently.
+- **Nothing to decide** — the column holds no text date cells at all (typically an Excel file whose dates are real date cells). No format has to be chosen, so the summary says nothing about date formats.
+- **Ambiguous** — every text cell happens to fit both `DD/MM/YYYY` and `MM/DD/YYYY` (e.g. all days are 1–12). The import runs using the system default and adds a single line to the summary so you know the file couldn't be disambiguated. If the column mixed text dates with native Excel dates, that line names how many cells it is describing.
+- **Mismatch** — at least one text cell forces the other format (e.g. month=15 in a system set to `DD/MM/YYYY`). The import pauses and shows a modal: **"This file looks like MM/DD/YYYY. Use it for this import?"** Accept to override for that import only; cancel and either fix the file or change the system default.
+- **Internal conflict** — different text cells force different formats (some `13/01/2025`, others `01/15/2025`). The import is rejected; clean the file and retry.
 
 Rows that fail to parse against the chosen format are reported per-row with the expected format in the error message, rather than silently producing a wrong-date row.
 
