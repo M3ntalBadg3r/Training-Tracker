@@ -792,7 +792,7 @@ Manage the definitions of all training programs in the system.
 
 **Features:**
 
-The list shows **one row per Full Title** — the first-class "record". Because several Training Titles can map to the same Full Title, the page groups them so you manage the training as a single thing. A Full Title containing an **OLX** parent shows an expand arrow and a sub-item count; expand it to see the parent's **OLX Sub-Items** nested underneath.
+The list shows **one row per Full Title** — the first-class "record". Because several Training Titles can map to the same Full Title, the page groups them so you manage the training as a single thing. A Full Title containing an **OLX** parent shows an expand arrow and a sub-item count; expand it to see the parent's **OLX Sub-Items** nested underneath — one row per Full Title, the same as the main list, with a count of how many Training Titles each one covers.
 
 While you are browsing, those sub-items are not listed as separate top-level rows. As soon as you **search**, or set the **Type** filter to **OLX Sub-Item**, matching sub-items appear as rows of their own — each with a **Sub-item of** line naming its parent OLX — so you can open and edit one directly, without first detaching it from its parent.
 
