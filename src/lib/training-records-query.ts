@@ -3,7 +3,8 @@
  *
  * Several server-side report aggregators need the same base dataset the
  * `/api/reports/training-records` route produces: every completion in scope,
- * OLX sub-items excluded, deduped to the most-recent row per
+ * OLX sub-items and unreviewed imports excluded (see reportable-training.ts),
+ * deduped to the most-recent row per
  * (email, fullTitle, trainingType), with human-readable labels and ISO date
  * strings. Centralised here so the report modules (expired, learner-scorecard, …)
  * stay in lockstep on exactly how records are fetched and shaped.
@@ -14,6 +15,7 @@
  */
 
 import prisma from "@/lib/prisma";
+import { REPORTABLE_TRAINING_DATA } from "@/lib/reportable-training";
 
 /** One deduped completion row — the same shape the training-records route returns. */
 export interface DedupedTrainingRecord {
@@ -51,9 +53,8 @@ export async function fetchDedupedTrainingRecords(
 ): Promise<DedupedTrainingRecord[]> {
   const rawRecords = await prisma.trainingTaken.findMany({
     where: {
-      // OLX sub-items aren't stand-alone completions — they roll up into the
-      // parent OLX. Exclude them from completion-counting reports.
-      trainingData: { trainingType: { not: "OLXSubItem" } },
+      // Reviewed rows only, OLX sub-items excluded — see reportable-training.ts.
+      trainingData: REPORTABLE_TRAINING_DATA,
       ...(companyFilter ? { student: { companyId: { in: companyFilter } } } : {}),
     },
     include: {

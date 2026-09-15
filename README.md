@@ -817,6 +817,8 @@ Opening a Full Title takes you to a dedicated page (like a student record) showi
 
 When a student import references a training title that doesn't exist yet, it is auto-created and highlighted in an amber **"needs attention"** section at the top of the page. The import only knows the training's name, so its **Type**, **Product** and **Function** show as *Not set* until you choose them — nothing is guessed on your behalf.
 
+Until an entry is classified it is **left out of all reporting** — the dashboard, every report, scheduled exports and the public API. Its completions are real, but filing them under a Type, Product and Function nobody chose would inflate certification counts and skew the by-product and by-function breakdowns, so they are held back rather than counted wrongly. The entry appears everywhere as soon as you complete it, and SuperAdmins see a notice on the dashboard while any are outstanding.
+
 Click **Edit** on a row to complete it. You can either **attach it to an existing Full Title** via the dropdown (it inherits that group's Type/Product/Function, still editable) or **create a new Full Title** and pick the three values yourself. **Save & Complete** stores them and moves the entry into the main list. All three are required — saving with any of them left on *Select…* reports what is missing and changes nothing, so an unreviewed entry can never slip into the catalogue.
 
 #### Certification Mapping

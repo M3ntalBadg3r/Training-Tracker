@@ -1120,6 +1120,16 @@ const helpSections: Record<string, HelpSection> = {
           them &mdash; nothing is guessed on your behalf.
         </p>
         <p>
+          Until an entry is classified it is <strong>left out of all
+          reporting</strong>{" "}&mdash; the dashboard, every report, scheduled
+          exports and the public API. Its completions are real, but filing them
+          under a Type, Product and Function nobody chose would inflate
+          certification counts and skew the by-product and by-function
+          breakdowns, so they are held back rather than counted wrongly. The
+          entry appears everywhere as soon as you complete it, and SuperAdmins
+          see a notice on the dashboard while any are outstanding.
+        </p>
+        <p>
           Click <strong>Edit</strong>{" "}on a row to complete it. You can either{" "}
           <strong>attach it to an existing Full Title</strong>{" "}via the dropdown
           (it inherits that group&rsquo;s Type/Product/Function, still editable)
