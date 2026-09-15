@@ -792,11 +792,13 @@ Manage the definitions of all training programs in the system.
 
 **Features:**
 
-The list shows **one row per Full Title** — the first-class "record". Because several Training Titles can map to the same Full Title, the page groups them so you manage the training as a single thing.
+The list shows **one row per Full Title** — the first-class "record". Because several Training Titles can map to the same Full Title, the page groups them so you manage the training as a single thing. A Full Title containing an **OLX** parent shows an expand arrow and a sub-item count; expand it to see the parent's **OLX Sub-Items** nested underneath.
+
+While you are browsing, those sub-items are not listed as separate top-level rows. As soon as you **search**, or set the **Type** filter to **OLX Sub-Item**, matching sub-items appear as rows of their own — each with a **Sub-item of** line naming its parent OLX — so you can open and edit one directly, without first detaching it from its parent.
 
 - **Add Training** — Click **Add Training** to open a modal form for creating a new training entry.
 - **Edit (open the Full Title)** — Click **Edit** on any row (or click the row) to open the **Full Title detail page**, which lists every Training Title mapped to that Full Title and offers group-wide bulk actions (see below).
-- **Search / Filter** — Search by training title or full title; filter by Type, Product, or Function. A **Show legacy only** toggle scopes the list to retired Certs/Accreds. Your search, filters, legacy toggle, and sort are **remembered when you open a training and click Back** (they are mirrored to the page URL, so the filtered view is also bookmarkable).
+- **Search / Filter** — Search by training title or full title; filter by Type, Product, or Function. Searching, or filtering Type to **OLX Sub-Item**, also surfaces matching **OLX Sub-Items** as top-level rows. A **Show legacy only** toggle scopes the list to retired Certs/Accreds. Your search, filters, legacy toggle, and sort are **remembered when you open a training and click Back** (they are mirrored to the page URL, so the filtered view is also bookmarkable).
 - **Import** — Upload a CSV or Excel file. Columns can be mapped to all fields including Certification. The system supports common aliases for type values (e.g. `ILT`, `cert`, `pre-sales`).
 - **Export** — Download all training data as CSV or Excel (one row per Training Title, so it round-trips with import).
 

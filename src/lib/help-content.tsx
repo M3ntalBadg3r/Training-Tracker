@@ -1023,7 +1023,17 @@ const helpSections: Record<string, HelpSection> = {
           training as a single thing. A Full Title that contains an{" "}
           <strong>OLX</strong>{" "}parent shows an expand arrow and a sub-item count;
           expand it to reveal the parent&rsquo;s <strong>OLX Sub-Items</strong>{" "}
-          nested underneath (they are not listed as separate top-level rows).
+          nested underneath.
+        </p>
+
+        <p>
+          While you are browsing, those sub-items aren&rsquo;t listed as separate
+          top-level rows. As soon as you <strong>search</strong>, or set the{" "}
+          <strong>Type</strong>{" "}filter to <strong>OLX Sub-Item</strong>, any
+          matching sub-items appear as rows of their own &mdash; each showing a{" "}
+          <strong>Sub-item of</strong>{" "}line naming its parent OLX &mdash; so you
+          can open and edit one directly, without first detaching it from its
+          parent.
         </p>
 
         <h3>Features</h3>
@@ -1041,7 +1051,10 @@ const helpSections: Record<string, HelpSection> = {
           </li>
           <li>
             <strong>Search / Filter</strong>{" "}&mdash; Search by training title or
-            full title; filter by Type, Product, or Function. A{" "}
+            full title; filter by Type, Product, or Function. Searching, or
+            filtering Type to <strong>OLX Sub-Item</strong>, also brings matching{" "}
+            <strong>OLX Sub-Items</strong>{" "}up as top-level rows so you can find
+            and edit them. A{" "}
             <strong>Show legacy only</strong> toggle scopes the list to retired
             Certs/Accreds. Your search, filters, legacy toggle, and sort are
             remembered when you open a training and click <strong>Back</strong>{" "}
