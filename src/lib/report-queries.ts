@@ -6,6 +6,7 @@
 import prisma from "@/lib/prisma";
 import type { ExportColumn } from "@/lib/server-export";
 import { computeLegacyGaps } from "@/lib/legacy-gap";
+import { REPORTABLE_TRAINING_DATA } from "@/lib/reportable-training";
 
 // ─── Type definitions ──────────────────────────────────────────────────────────
 
@@ -117,11 +118,11 @@ async function fetchAllTrainingRecords(
 ): Promise<TrainingRecordRow[]> {
   const ids = toCompanyIdList(companyId);
   // OLX sub-items don't represent stand-alone completions — they roll up into
-  // their parent OLX once the full set is taken. Exclude them from
-  // completion-counting reports.
+  // their parent OLX once the full set is taken. Excluded here, along with
+  // unreviewed imports — see reportable-training.ts.
   const rawRecords = await prisma.trainingTaken.findMany({
     where: {
-      trainingData: { trainingType: { not: "OLXSubItem" } },
+      trainingData: REPORTABLE_TRAINING_DATA,
       ...(completedAfter ? { completedDate: { gte: completedAfter } } : {}),
       ...(ids ? { student: { companyId: { in: ids } } } : {}),
     },
@@ -199,7 +200,7 @@ export async function fetchTrainingsWithStudents(opts: {
 
   const rawRecords = await prisma.trainingTaken.findMany({
     where: {
-      trainingData: { trainingType: { not: "OLXSubItem" } },
+      trainingData: REPORTABLE_TRAINING_DATA,
       ...(Object.keys(studentWhere).length > 0 ? { student: studentWhere } : {}),
     },
     include: {

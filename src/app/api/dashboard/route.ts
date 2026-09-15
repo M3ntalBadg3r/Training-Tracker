@@ -4,6 +4,7 @@ import { requireAuth, handleAuthError } from "@/lib/auth";
 import { getAuthorizedCompanyIds, resolveCompanyFilter } from "@/lib/company-scope";
 import { cachedReport, scopeKey } from "@/lib/report-cache";
 import { countriesInRegion } from "@/lib/program-compliance";
+import { REPORTABLE_TRAINING_DATA } from "@/lib/reportable-training";
 
 type TrainingRecord = {
   email: string;
@@ -144,6 +145,7 @@ export async function GET(request: NextRequest) {
       byFunction: [],
       expiring: [],
       monthlyAchieved: [],
+      pendingReview: 0,
     });
   }
 
@@ -206,13 +208,18 @@ async function computeDashboard(
 
   // --- Top-level metrics ---
   const totalStudents = await prisma.student.count({ where: studentWhere });
+  // Auto-created imports awaiting classification. They're excluded from every
+  // metric below (see reportable-training.ts), so the dashboard says so rather
+  // than quietly under-counting. Not company-scoped — the catalogue is global.
+  const pendingReview = await prisma.trainingData.count({ where: { isIncomplete: true } });
 
   const rawTrainingTaken = await prisma.trainingTaken.findMany({
     include: { trainingData: { include: { productType: { select: { name: true } } } } },
     where: {
-      // Sub-items roll up into the parent OLX. Exclude them from dashboard
-      // counts to avoid double-counting.
-      trainingData: { trainingType: { not: "OLXSubItem" } },
+      // Sub-items roll up into the parent OLX (excluding them avoids
+      // double-counting), and unreviewed imports carry placeholder
+      // classifications — see reportable-training.ts.
+      trainingData: REPORTABLE_TRAINING_DATA,
       ...trainingWhere,
     },
   });
@@ -281,6 +288,7 @@ async function computeDashboard(
       instructorLedTrainingStudents: iltStudents.size,
       olxStudents: olxStudents.size,
     },
+    pendingReview,
     ...chartData,
   };
 }

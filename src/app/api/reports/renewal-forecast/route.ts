@@ -4,6 +4,7 @@ import prisma from "@/lib/prisma";
 import { requireAuth, handleAuthError } from "@/lib/auth";
 import { getAuthorizedCompanyIds, resolveCompanyFilter } from "@/lib/company-scope";
 import { cachedReport, scopeKey } from "@/lib/report-cache";
+import { REPORTABLE_TRAINING_DATA } from "@/lib/reportable-training";
 
 /**
  * Renewal forecast.
@@ -77,8 +78,9 @@ async function computeRenewalForecast(
   const records = await prisma.trainingTaken.findMany({
     where: {
       // Sub-items roll up into the parent OLX, which carries the canonical
-      // expiry. Exclude them from the renewal forecast.
-      trainingData: { trainingType: { not: "OLXSubItem" } },
+      // expiry; unreviewed imports carry placeholder classifications. Both are
+      // excluded — see reportable-training.ts.
+      trainingData: REPORTABLE_TRAINING_DATA,
       ...(hasStudentFilter ? { student: studentWhere } : {}),
     },
     include: {
