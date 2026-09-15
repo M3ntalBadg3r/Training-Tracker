@@ -163,6 +163,7 @@ function TrainingDataPageInner() {
     return out;
   });
   const [legacyOnly, setLegacyOnly] = useState(() => searchParams.get("legacy") === "true");
+  const [ignoredOnly, setIgnoredOnly] = useState(() => searchParams.get("ignored") === "true");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">(() =>
     searchParams.get("sortDir") === "desc" ? "desc" : "asc"
   );
@@ -182,13 +183,14 @@ function TrainingDataPageInner() {
       if (value) params.set(`f_${key}`, value);
     }
     if (legacyOnly) params.set("legacy", "true");
+    if (ignoredOnly) params.set("ignored", "true");
     if (sortDirection === "desc") params.set("sortDir", "desc");
     const qs = params.toString();
     const next = qs ? `${pathname}?${qs}` : pathname;
     if (qs !== searchParams.toString()) {
       router.replace(next, { scroll: false });
     }
-  }, [searchTerm, searchColumn, columnFilters, legacyOnly, sortDirection, pathname, router, searchParams]);
+  }, [searchTerm, searchColumn, columnFilters, legacyOnly, ignoredOnly, sortDirection, pathname, router, searchParams]);
 
   // trainingTitle → fullTitle map covering every row, so legacy `replacedBy`
   // arrays (which store internal trainingTitle keys) can be rendered as the
@@ -258,8 +260,11 @@ function TrainingDataPageInner() {
     const surfaceSubItems =
       !!debouncedSearch || columnFilters.trainingType === "OLXSubItem";
 
+    // Unreviewed entries live in the amber table above, NOT here — unless they
+    // have been ignored, in which case the amber table has released them and
+    // this is the only place left to find (and restore) them.
     let result = trainingList.filter(
-      (t) => !t.isIncomplete && (surfaceSubItems || !subItemTitleSet.has(t.trainingTitle))
+      (t) => (!t.isIncomplete || t.isIgnored) && (surfaceSubItems || !subItemTitleSet.has(t.trainingTitle))
     );
 
     // Free-form search
@@ -288,8 +293,13 @@ function TrainingDataPageInner() {
       result = result.filter((row) => row.isLegacy);
     }
 
+    // Ignored-only toggle: when on, restrict to entries marked as not needed.
+    if (ignoredOnly) {
+      result = result.filter((row) => row.isIgnored);
+    }
+
     return result;
-  }, [trainingList, subItemTitleSet, debouncedSearch, searchColumn, columnFilters, legacyOnly, tableColumns]);
+  }, [trainingList, subItemTitleSet, debouncedSearch, searchColumn, columnFilters, legacyOnly, ignoredOnly, tableColumns]);
 
   // One row per Full Title — the first-class record. Aggregates its mapped
   // training titles' types/products/functions and legacy state.
@@ -344,14 +354,22 @@ function TrainingDataPageInner() {
           titleCount: 1,
         });
       }
+      const classified = members.filter((m) => !m.isIncomplete);
       return {
         fullTitle,
         members,
         subItems: Array.from(subMap.values()),
-        types: Array.from(new Set(members.map((m) => m.trainingType))),
-        products: Array.from(new Set(members.map((m) => m.productType))),
-        functions: Array.from(new Set(members.map((m) => m.function))),
+        // Classified members only. An ignored entry can still be unreviewed, and
+        // an unreviewed entry's Type/Product/Function are import placeholders
+        // nobody chose — surfacing them here would undo the point of showing
+        // them as "Not set" in the amber table. Empty means every member is
+        // unreviewed, which the row renders as Not set.
+        types: Array.from(new Set(classified.map((m) => m.trainingType))),
+        products: Array.from(new Set(classified.map((m) => m.productType))),
+        functions: Array.from(new Set(classified.map((m) => m.function))),
         anyLegacy: members.some((m) => m.isLegacy),
+        anyIgnored: members.some((m) => m.isIgnored),
+        allIgnored: members.every((m) => m.isIgnored),
         certTitles: Array.from(
           new Set(
             members
@@ -434,7 +452,13 @@ function TrainingDataPageInner() {
   );
 
   // Incomplete entries
-  const incompleteData = useMemo(() => trainingList.filter((t) => t.isIncomplete), [trainingList]);
+  // Entries still awaiting a decision. An ignored entry is excluded from
+  // reporting too, but the decision has been made, so it leaves this list and
+  // appears in the main table below with its Ignored badge.
+  const incompleteData = useMemo(
+    () => trainingList.filter((t) => t.isIncomplete && !t.isIgnored),
+    [trainingList],
+  );
   // Error shown under the "needs attention" banner — a missing Type/Product/
   // Function, or a rejected save. The save handler used to swallow both.
   const [incompleteError, setIncompleteError] = useState<string | null>(null);
@@ -536,6 +560,7 @@ function TrainingDataPageInner() {
     parentTrainingTitle: (t.parents ?? []).join(", "),
     legacy: t.isLegacy ? "Yes" : "",
     replacement: (t.replacedBy ?? []).join(", "),
+    ignored: t.isIgnored ? "Yes" : "",
   });
 
   const fetchProductTypes = useCallback(() => {
@@ -594,6 +619,31 @@ function TrainingDataPageInner() {
         prev.filter((t) => t.trainingTitle !== trainingTitle)
       );
     }
+  };
+
+  // Ignore / restore. The amber table acts on a single entry (its rows are one
+  // per training title); the main table acts on the whole Full Title, matching
+  // the group-wide legacy cascade, since a Full Title is what that table treats
+  // as the record.
+  const setIgnored = async (target: { trainingTitle?: string; fullTitle?: string }, ignored: boolean) => {
+    setIncompleteError(null);
+    const res = target.trainingTitle
+      ? await fetch(`/api/training-data/${encodeURIComponent(target.trainingTitle)}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ isIgnored: ignored }),
+        })
+      : await fetch(`/api/training-data/full-title/${encodeURIComponent(target.fullTitle ?? "")}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ setIgnored: ignored }),
+        });
+    if (res.ok) {
+      fetchRawTrainingData();
+      return;
+    }
+    const data = await res.json().catch(() => null);
+    setIncompleteError(data?.error || `Could not ${ignored ? "ignore" : "restore"} this entry. Please try again.`);
   };
 
   const handleUpdateTraining = async (originalTitle: string) => {
@@ -947,6 +997,7 @@ function TrainingDataPageInner() {
                         { key: "parentTrainingTitle", header: "Parent Training Title" },
                         { key: "legacy", header: "Legacy" },
                         { key: "replacement", header: "Replacement" },
+                        { key: "ignored", header: "Ignored" },
                       ], "training-data");
                       setShowExportMenu(false);
                     }}
@@ -967,6 +1018,7 @@ function TrainingDataPageInner() {
                         { key: "parentTrainingTitle", header: "Parent Training Title" },
                         { key: "legacy", header: "Legacy" },
                         { key: "replacement", header: "Replacement" },
+                        { key: "ignored", header: "Ignored" },
                       ], "training-data");
                       setShowExportMenu(false);
                     }}
@@ -987,6 +1039,7 @@ function TrainingDataPageInner() {
                         { key: "parentTrainingTitle", header: "Parent Training Title" },
                         { key: "legacy", header: "Legacy" },
                         { key: "replacement", header: "Replacement" },
+                        { key: "ignored", header: "Ignored" },
                       ], "training-data");
                       setShowExportMenu(false);
                     }}
@@ -1518,6 +1571,15 @@ function TrainingDataPageInner() {
           />
           Show legacy only
         </label>
+        <label className="flex items-center gap-2 text-sm text-gray-700 select-none cursor-pointer">
+          <input
+            type="checkbox"
+            checked={ignoredOnly}
+            onChange={(e) => setIgnoredOnly(e.target.checked)}
+            className="rounded border-gray-300 text-gray-600 focus:ring-gray-500"
+          />
+          Show ignored only
+        </label>
       </section>
 
       {/* Incomplete Training Entries */}
@@ -1551,6 +1613,9 @@ function TrainingDataPageInner() {
                     <th className="px-4 py-3 text-left font-semibold text-amber-800">Link</th>
                     <th className="px-4 py-3 text-left font-semibold text-amber-800">Product</th>
                     <th className="px-4 py-3 text-left font-semibold text-amber-800">Function</th>
+                    <th className="px-4 py-3 text-left font-semibold text-amber-800" title="Learners whose completions are left out of reporting while this entry is unreviewed">
+                      Excluded
+                    </th>
                     <th className="px-4 py-3 text-left font-semibold text-amber-800">Actions</th>
                   </tr>
                 </thead>
@@ -1649,6 +1714,19 @@ function TrainingDataPageInner() {
                           </select>
                         ) : <NotSet />}
                       </td>
+                      {/* Excluded — what leaving this entry unreviewed is costing. */}
+                      <td className="px-4 py-3">
+                        {t.excludedPeople && t.excludedPeople > 0 ? (
+                          <span
+                            className="font-medium text-amber-800"
+                            title={`${t.excludedPeople} ${t.excludedPeople === 1 ? "learner has" : "learners have"} completed this, and ${t.excludedPeople === 1 ? "is" : "are"} left out of all reporting until it is reviewed`}
+                          >
+                            {t.excludedPeople} {t.excludedPeople === 1 ? "person" : "people"}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400">None</span>
+                        )}
+                      </td>
                       {/* Actions */}
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
@@ -1665,6 +1743,13 @@ function TrainingDataPageInner() {
                                   stored values are import placeholders the admin never chose. */}
                               <button onClick={() => { setIncompleteError(null); setIncompleteFullTitleMode("new"); setEditingTitle(t.trainingTitle); setEditValues({ trainingTitle: t.trainingTitle, fullTitle: t.fullTitle, trainingType: "", productType: "", function: "", link: t.link || "", certification: t.certification || [], subItems: t.subItems || [], parents: t.parents || [], isLegacy: t.isLegacy ?? false, replacedBy: t.replacedBy || [] }); }}
                                 className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200">Edit</button>
+                              <button
+                                onClick={() => setIgnored({ trainingTitle: t.trainingTitle }, true)}
+                                title="Not needed — leave it out of reporting instead of filling it in. You can restore it later."
+                                className="px-2 py-1 text-xs bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+                              >
+                                Ignore
+                              </button>
                               <button onClick={() => handleDeleteTraining(t.trainingTitle)}
                                 className="px-2 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200">
                                 <Trash2 size={14} />
@@ -1757,6 +1842,16 @@ function TrainingDataPageInner() {
                             </button>
                           )}
                           <span className="font-medium text-gray-900">{g.fullTitle}</span>
+                          {g.anyIgnored && (
+                            <span
+                              className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-gray-200 text-gray-700"
+                              title={g.allIgnored
+                                ? "Ignored — left out of all reporting"
+                                : "Some training titles under this Full Title are ignored and left out of reporting"}
+                            >
+                              {g.allIgnored ? "Ignored" : "Partly ignored"}
+                            </span>
+                          )}
                           {g.anyLegacy && (
                             <span
                               className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800"
@@ -1790,9 +1885,18 @@ function TrainingDataPageInner() {
                         )}
                       </td>
                       <td className="px-4 py-3 text-gray-600">{g.members.length}</td>
-                      <td className="px-4 py-3 text-gray-600">{g.types.map((t) => TRAINING_TYPE_LABELS[t] || t).join(", ")}</td>
-                      <td className="px-4 py-3 text-gray-600">{g.products.join(", ")}</td>
-                      <td className="px-4 py-3 text-gray-600">{g.functions.map((f) => FUNCTION_TYPE_LABELS[f] || f).join(", ")}</td>
+                      {/* Empty when every member is still unreviewed — which only
+                          reaches this table once ignored. Its stored values are
+                          import placeholders, so say so rather than show them. */}
+                      <td className="px-4 py-3 text-gray-600">
+                        {g.types.length > 0 ? g.types.map((t) => TRAINING_TYPE_LABELS[t] || t).join(", ") : <NotSet />}
+                      </td>
+                      <td className="px-4 py-3 text-gray-600">
+                        {g.products.length > 0 ? g.products.join(", ") : <NotSet />}
+                      </td>
+                      <td className="px-4 py-3 text-gray-600">
+                        {g.functions.length > 0 ? g.functions.map((f) => FUNCTION_TYPE_LABELS[f] || f).join(", ") : <NotSet />}
+                      </td>
                       <td className="px-4 py-3">
                         <button
                           onClick={(e) => {
@@ -1802,6 +1906,18 @@ function TrainingDataPageInner() {
                           className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
                         >
                           Edit
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setIgnored({ fullTitle: g.fullTitle }, !g.allIgnored);
+                          }}
+                          title={g.allIgnored
+                            ? "Restore — count this entry in reporting again"
+                            : "Not needed — leave every training title under this Full Title out of reporting"}
+                          className="ml-2 px-2 py-1 text-xs bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+                        >
+                          {g.allIgnored ? "Restore" : "Ignore"}
                         </button>
                       </td>
                     </tr>
