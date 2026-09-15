@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSuperAdmin, handleAuthError } from "@/lib/auth";
+import { compareVersions, isNewerVersion, versionFromTag } from "@/lib/version";
 
 const GITHUB_REPO = "M3ntalBadg3r/Training-Tracker";
 
@@ -182,9 +183,11 @@ async function checkReleaseChannel(
   const release = candidates.reduce(
     (best: typeof data[0] | null, r: typeof data[0]) => {
       if (!best) return r;
-      const v = parseVersionNumber((r.tag_name || "").replace(/^v/, ""));
-      const bestV = parseVersionNumber((best.tag_name || "").replace(/^v/, ""));
-      return v > bestV ? r : best;
+      const cmp = compareVersions(
+        versionFromTag(r.tag_name),
+        versionFromTag(best.tag_name)
+      );
+      return cmp > 0 ? r : best;
     },
     null
   );
@@ -199,11 +202,8 @@ async function checkReleaseChannel(
     });
   }
 
-  const latestVersion = (release.tag_name || "").replace(/^v/, "");
-
-  const currentNum = parseVersionNumber(currentVersion);
-  const latestNum = parseVersionNumber(latestVersion);
-  const updateAvailable = latestNum > currentNum;
+  const latestVersion = versionFromTag(release.tag_name);
+  const updateAvailable = isNewerVersion(latestVersion, currentVersion);
 
   return NextResponse.json({
     currentVersion,
@@ -233,12 +233,4 @@ async function fetchJson(
   } catch {
     return null;
   }
-}
-
-function parseVersionNumber(version: string): number {
-  const clean = version.replace(/-dev$/, "");
-  const parts = clean.split(".");
-  const major = parseInt(parts[0] || "0", 10);
-  const minor = parseInt(parts[1] || "0", 10);
-  return major * 1000 + minor;
 }
