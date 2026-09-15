@@ -87,6 +87,7 @@ const TARGET_FIELDS = [
   { key: "certification", label: "Certification", required: false },
   { key: "parentTrainingTitle", label: "Parent Training Title", required: false },
   { key: "legacy", label: "Legacy", required: false },
+  { key: "ignored", label: "Ignored", required: false },
   { key: "replacement", label: "Replacement", required: false },
 ];
 

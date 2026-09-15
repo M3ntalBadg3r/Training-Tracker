@@ -60,6 +60,7 @@ interface ColumnMapping {
   parentTrainingTitle?: string;
   legacy?: string;
   replacement?: string;
+  ignored?: string;
 }
 
 export async function POST(request: NextRequest) {
@@ -209,6 +210,16 @@ export async function POST(request: NextRequest) {
       ? Array.from(new Set(replacementRaw.split(",").map((c: string) => c.trim()).filter((c) => Boolean(c) && c !== trainingTitle)))
       : [];
 
+    // "Not needed" flag. Unlike Legacy above, an UNMAPPED column must not write
+    // anything: Legacy resolves to false whenever its column is absent, so a
+    // re-import of a file without that column silently clears every legacy
+    // marker. Leaving this undefined instead means the stored value survives a
+    // partial import, and only an explicit column can change it.
+    const ignoredRaw = columnMapping.ignored ? row[columnMapping.ignored]?.trim() : undefined;
+    const isIgnored = columnMapping.ignored
+      ? /^(true|yes|y|1|ignored|ignore)$/i.test(ignoredRaw || "")
+      : undefined;
+
     try {
       const existing = await prisma.trainingData.findUnique({
         where: { trainingTitle },
@@ -223,12 +234,16 @@ export async function POST(request: NextRequest) {
           existing.link !== link ||
           JSON.stringify(existing.certification) !== JSON.stringify(certification) ||
           existing.isLegacy !== isLegacy ||
-          JSON.stringify(existing.replacedBy) !== JSON.stringify(replacedBy);
+          JSON.stringify(existing.replacedBy) !== JSON.stringify(replacedBy) ||
+          (isIgnored !== undefined && existing.isIgnored !== isIgnored);
 
         if (changed) {
           await prisma.trainingData.update({
             where: { trainingTitle },
-            data: { fullTitle, trainingType, productTypeId, function: functionType, link, certification, isLegacy, replacedBy },
+            data: {
+              fullTitle, trainingType, productTypeId, function: functionType, link, certification, isLegacy, replacedBy,
+              ...(isIgnored !== undefined && { isIgnored }),
+            },
           });
           updated++;
         } else {
@@ -246,6 +261,7 @@ export async function POST(request: NextRequest) {
             certification,
             isLegacy,
             replacedBy,
+            ...(isIgnored !== undefined && { isIgnored }),
           },
         });
         imported++;
