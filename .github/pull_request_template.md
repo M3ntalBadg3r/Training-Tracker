@@ -13,14 +13,14 @@
 Tick what applies; strike out what genuinely does not. `release-hygiene` checks
 the first two mechanically — the rest are yours.
 
-- [ ] **Version left alone** — an ordinary task does not bump it and publishes no
-      release. *Only* tick the two below instead if this PR is deliberately
-      cutting a release.
-- [ ] **If cutting a release:** `package-lock.json`'s two `version` fields match
-      `package.json`, and notes are written to `.github/releases/v<version>-dev.md`
-      (or `v<version>.md` for a stable promotion). Draft them with
-      `npm run notes:draft -- --from <last tag>`, then **edit** — the raw draft is
-      merged PR titles, not a changelog.
+- [ ] **Version left alone** — merging into `dev` publishes nothing, so an
+      ordinary task does not touch it. *Only* tick the one below instead if this
+      PR is preparing a stable release.
+- [ ] **If preparing a stable release:** `package-lock.json`'s two `version`
+      fields match `package.json`, and notes are written to
+      `.github/releases/v<version>.md`. Draft them with
+      `npm run notes:draft -- --from <last stable tag>`, then **edit** — the raw
+      draft is merged PR titles, not a changelog. No label needed.
 - [ ] **`README.md` updated** — or not needed, because this does not change how
       the system is used.
 - [ ] **`src/lib/help-content.tsx` updated** — or not needed, because no
