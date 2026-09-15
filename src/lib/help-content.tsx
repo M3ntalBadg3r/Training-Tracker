@@ -725,6 +725,7 @@ const helpSections: Record<string, HelpSection> = {
           <li><strong>Nearshore</strong>{" "}counts the rest of that country/region&apos;s <strong>theatre</strong>, with the onshore countries removed — the wider in-theatre capability available to support delivery.</li>
           <li><strong>Offshore</strong> counts everyone <strong>worldwide</strong>{" "}who holds the training, with the onshore countries removed (so it includes the nearshore people plus every other theatre). Nearshore and Offshore are informational and don&apos;t change the Met status.</li>
           <li>Figures are scoped to the offering&apos;s company. Use <strong>Export</strong> for the current view, and click <strong>View</strong> on any count to list the people behind it.</li>
+          <li>Your selection is kept in the page address, so opening someone&apos;s record and pressing <strong>Back</strong>{" "}returns you to the same country or region — and a particular view can be bookmarked or shared as a link.</li>
         </ul>
         <p className="text-sm text-gray-500">
           Offerings are configured under <strong>Admin &gt; Offerings</strong>{" "}by a
@@ -2395,6 +2396,14 @@ const helpSections: Record<string, HelpSection> = {
           region / country; hidden for Global). Picking a scope shows the{" "}
           <strong>Tier Status</strong> (for tiered programs) and the one matching
           report for that scope.
+        </p>
+        <p>
+          Your <strong>View</strong> scope and the{" "}
+          <strong>Compliance as of</strong>{" "}horizon are kept in the page address.
+          Open someone&apos;s record from a <strong>View students</strong>{" "}list and
+          press <strong>Back</strong>{" "}and you return to the same scope rather than
+          the default one, and you can bookmark or share a particular view as a
+          link.
         </p>
 
         <h3>Tier Status</h3>
