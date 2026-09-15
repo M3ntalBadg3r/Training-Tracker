@@ -95,6 +95,12 @@ Install Training Tracker on a fresh Debian-based system with a single command:
 curl -sSL https://raw.githubusercontent.com/M3ntalBadg3r/Training-Tracker/master/deploy/install-remote.sh | bash
 ```
 
+To install the **beta channel** (test builds, which move only when one is cut):
+
+```bash
+curl -sSL https://raw.githubusercontent.com/M3ntalBadg3r/Training-Tracker/master/deploy/install-remote.sh | bash -s -- --beta
+```
+
 To install the **dev channel** (tracks the `dev` branch continuously):
 
 ```bash
@@ -1055,9 +1061,10 @@ A detailed timestamped log is available via the **Update Log** section on the Up
 
 #### Update Channels
 
-The system supports two update channels, controlled by the `UPDATE_CHANNEL` variable in your `.env` file:
+The system supports three update channels, controlled by the `UPDATE_CHANNEL` variable in your `.env` file. A channel is simply a branch the installer tracks:
 
 - **`stable`** (default) — Only shows full production releases. Recommended for production systems on the `master` branch.
+- **`beta`** — Tracks the `beta` branch. It updates only when a test build is deliberately cut, so it does **not** move every time a change lands — this is the channel for a system you use to check a build before it reaches customers. Like `dev` it publishes no releases and compares commits, so its version number stays at the last release until the next promotion.
 - **`dev`** — Tracks the `dev` branch continuously, for development and testing systems. It publishes no releases: rather than comparing version numbers it compares the commit your system was built from against the branch, so it reports how many changes are waiting and lists them. A dev system's version number therefore stays put between releases, which is expected — the version moves when a build is cut, not every time a fix lands.
 
 The current channel is displayed as a clickable badge next to the version number on the Updates page. Click it to switch channels — the system will check out the target branch, pull the latest code, rebuild, and restart. When switching from dev back to stable, the system verifies that the latest stable release is at or ahead of your installed version to prevent downgrades.

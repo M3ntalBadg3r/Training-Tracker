@@ -1645,14 +1645,24 @@ const helpSections: Record<string, HelpSection> = {
 
         <h3>Update Channels</h3>
         <p>
-          The system supports two update channels controlled by the{" "}
+          The system supports three update channels controlled by the{" "}
           <code>UPDATE_CHANNEL</code> environment variable in your{" "}
-          <code>.env</code> file:
+          <code>.env</code> file. A channel is simply a branch the system
+          tracks:
         </p>
         <ul>
           <li>
             <strong>stable</strong> (default) — Only shows full production
             releases. Recommended for production systems.
+          </li>
+          <li>
+            <strong>beta</strong> — Tracks the <code>beta</code> branch. It
+            updates only when a test build is deliberately cut, so it does{" "}
+            <strong>not</strong> move every time a change lands. Use it for a
+            system where you check a build before it reaches live systems. Like
+            the dev channel it compares changes rather than version numbers, so
+            its version stays at the last release until the next one is
+            published.
           </li>
           <li>
             <strong>dev</strong> — Tracks the <code>dev</code> branch

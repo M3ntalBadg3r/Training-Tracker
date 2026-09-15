@@ -140,10 +140,10 @@ src/
 prisma/
   schema.prisma   # Data model
   migrations/     # Migration history
-deploy/           # install.sh, update.sh, install-remote.sh, perform-update.sh, check-update.sh, auto-update.sh, auto-backup.sh, auto-export.sh, auto-credential-check.sh, update-agent.sh (root side of the update boundary), lib/common.sh (shared idempotent privilege/ownership primitives), lib/cron-sign.sh (the single definition of the cron signing string, sourced by the three auto-*.sh cron scripts — mirrors `src/lib/cron-auth.ts:cronSigningString` and must stay byte-identical to it), **lib/version.mjs** (the single version comparator — semver precedence, accepting the legacy two-part and `-dev` forms. It lives on the deploy side *because* `check-update.sh` runs as **root** and `src/` is service-user-owned: root importing a module the unprivileged app can rewrite would be root code execution on demand. `src/lib/version.ts` is a thin re-export, so unlike the cron-sign pair there is ONE implementation and no parity check is needed — bash cannot call TypeScript, but node can call node), and three systemd units: training-tracker.service (the app, unprivileged + sandboxed), training-tracker-update.path + training-tracker-update.service (root-owned update helper)
+deploy/           # install.sh, update.sh, install-remote.sh, perform-update.sh, check-update.sh, auto-update.sh, auto-backup.sh, auto-export.sh, auto-credential-check.sh, update-agent.sh (root side of the update boundary), lib/common.sh (shared idempotent privilege/ownership primitives, plus `branch_for_channel` — the single channel -> branch map — and `channel_from_env_file`), lib/cron-sign.sh (the single definition of the cron signing string, sourced by the three auto-*.sh cron scripts — mirrors `src/lib/cron-auth.ts:cronSigningString` and must stay byte-identical to it), **lib/version.mjs** (the single version comparator — semver precedence, accepting the legacy two-part and `-dev` forms. It lives on the deploy side *because* `check-update.sh` runs as **root** and `src/` is service-user-owned: root importing a module the unprivileged app can rewrite would be root code execution on demand. `src/lib/version.ts` is a thin re-export, so unlike the cron-sign pair there is ONE implementation and no parity check is needed — bash cannot call TypeScript, but node can call node), and three systemd units: training-tracker.service (the app, unprivileged + sandboxed), training-tracker-update.path + training-tracker-update.service (root-owned update helper)
 scripts/          # CI-enforced checks, all dependency-free Node. check-route-guards.mjs — the per-handler auth-guard inventory (see "Writing a route handler" below); `npm run check:routes` to check, `npm run routes:inventory` for the full table. It **strips comments, string literals, template literals and regex literals before matching** (`stripNonCode`, length- and line-preserving, with `${…}` substitutions handed back to the code scanner so real code inside them still counts): every matcher is a regex, so without that a `// requireAuth(request)` inside a handler body reported it as guarded — and ESLint only *warns* on the now-unused import, so CI stayed green. The same pass fixes brace counting, which previously ran long through a stray `{` in a string and could credit one handler with a sibling's guard. Two things about it are deliberate. **A `/` directly after `)` stops the run rather than being guessed at**: reading a regex as division lets its braces into the brace count, which is a silent false pass, so the script refuses (the probe skips comment openers, so ordinary `Math.floor(x() / 2); // note` is fine; a `/` inside a *string* later on the same line still stops it, and that is the safe direction — a regex may legitimately contain a quote, so skipping strings would scan straight past one). And it carries its **own fixture suite, run on every invocation** (`SELF_TESTS`/`STRIP_TESTS`, driving the same `analyseSource` the real scan uses, so the production path is what is tested) — because the checker is the guarantee, and nothing else checked the checker. Keep the fixtures asserting *verdicts*, not internals. check-url-state.mjs — the per-page "does this page restore its view" inventory (see "View state belongs in the URL" below); `npm run check:url-state` to check, `npm run url-state:inventory` for the full table. Like the route-guard scanner it strips comments and string literals before matching (a `// router.replace(…)` must not read as a mirror) and carries its own fixtures, run on every invocation — including the three failure directions that matter: an unmirrored view page, a page that *reads* `searchParams` without writing back, and a listed gap that has since been fixed. It keeps its own small `stripComments` rather than importing the route scanner's `stripNonCode`, because that one additionally has to keep brace counting honest for per-handler body extraction and sharing it would mean refactoring a security check to serve a style check. check-jsx-whitespace.mjs — the glued-words scan (`npm run check:jsx`): a closing inline tag, a line break, then a line starting with a word character, which JSX renders with no space between them. It strips comments so prose in a JSDoc block can't read as markup, and carries its own fixtures run on every invocation — including the pair that pins down that **HTML entities make no difference**, since keying on entities is exactly the mistake the previous account of this bug made (see Common Pitfalls). No env escape hatch, unlike the PR-gated checks: a finding always has a correct in-source fix, so there is never a reason to override it. check-release-hygiene.mjs (`npm run check:release`) — lockfile / release-notes enforcement, base-branch aware (it no longer enforces a per-task version bump — see **Mandatory Post-Change Rules**). draft-release-notes.mjs (`npm run notes:draft -- --from <tag>`) — drafts release notes from the squash-merge subjects in a range, which on `dev` are exactly the merged pull request titles. It reads `git log`, not the API: no token, no rate limit, and it works offline. The output is a **draft to edit**, and notably PR titles are not scanned by check-deidentification.mjs (which only sees added diff lines), so the curated `.md` file going through a PR is what actually catches a real name. check-deidentification.mjs (`npm run check:deid`) — blocking scan of added lines for email domains + home paths; `skip-deid-scan` label to override. check-version-order.mjs (`npm run check:version`) — fixtures for `deploy/lib/version.mjs`, run on every invocation like the scanners above. Asserts semver precedence and the legacy formats, but the assertion that actually protects installs is the last one: for every pair of **real published tags** where the pre-3.30.0 comparator had a strict opinion, the new one must agree. A not-yet-updated box is still running that old comparator, so a reordering strands it — and the corpus refuses to pass if it compared fewer than 100 pairs, because a corpus that silently compares nothing reports green
 .claude/          # hooks/session-start.sh + settings.json — the SessionStart hook that fetches origin/dev, fast-forwards when it cannot lose anything, prints the version to bump from, and installs dependencies. See "Git Workflow" for why it exists and which of its properties are load-bearing
-.github/          # workflows/ci.yml (lint + typecheck + build + route guards + URL state + JSX whitespace, push & PR), workflows/pr-checks.yml (release-hygiene + the advisory deidentify scan, PR only), workflows/release.yml (tags the release on the merge push), pull_request_template.md (the post-change checklist), releases/<tag>.md (one release-notes file per tag — see "Continuous Integration" and "Git Workflow" below)
+.github/          # workflows/ci.yml (lint + typecheck + build + route guards + URL state + JSX whitespace, push & PR), workflows/pr-checks.yml (release-hygiene + the advisory deidentify scan, PR only), workflows/release.yml (tags the release on the merge push), workflows/cut-beta.yml (`workflow_dispatch` — fast-forwards `beta` to dev's tip so beta systems pick up a test build; publishes and bumps nothing, and refuses rather than force-pushing if `beta` is not an ancestor of `dev`), pull_request_template.md (the post-change checklist), releases/<tag>.md (one release-notes file per tag — see "Continuous Integration" and "Git Workflow" below)
 ```
 
 ## Data Model
@@ -623,16 +623,22 @@ notes**.
   #   -> the merge lands on dev. No release, no tag, no notes file.
   #      Dev systems see the new commits on their next update check.
 
+  # Cut a beta build — a test build, when you want one.
+  #   Actions tab -> "Cut beta build" -> "Run workflow".
+  #   -> fast-forwards `beta` to dev's tip. Publishes nothing, bumps nothing.
+  #      Beta systems report the new commits on their next check.
+
   # Stable promotion — ONLY when the user has asked for it in this session.
   # This ships to customers. Channel drift is normal; do not "tidy" it away.
-  #   1. On a branch off dev: bump package.json "version" (and
-  #      package-lock.json's two fields), then
+  #   1. On a branch off dev: bump package.json "version" to the semver the
+  #      range warrants (and package-lock.json's two fields), then
   #      npm run notes:draft -- --from <last stable tag>
   #      and EDIT the draft into .github/releases/v<version>.md.
   #   2. PR that into dev as normal. It needs no label: dev publishes
   #      nothing, so release-hygiene asks nothing of it.
-  #   3. Open a PR from dev into master.
-  #   4. Auto-merge with a MERGE COMMIT — never a squash.
+  #   3. Cut a beta so `beta` carries the bump, if it does not already.
+  #   4. Open a PR from BETA into master — not from dev. See below.
+  #   5. Auto-merge with a MERGE COMMIT — never a squash.
   #   -> release.yml creates the v<version> full release automatically.
   ```
 - **NEVER promote to stable unless the user asks for it, in that session.**
@@ -681,9 +687,16 @@ notes**.
     `release-hygiene` demanded a one-step bump into `dev` that this PR
     deliberately did not have. `dev` publishes nothing now, so the check asks
     nothing of it, and the bump + notes travel together in that PR.
+  - **The promotion PR comes from `beta`, not from `dev`.** It used to be
+    `dev → master`, which predates having a beta channel and is wrong once one
+    exists: by promotion time `dev` has normally moved on, so a `dev → master`
+    merge ships commits that never went through a test build — defeating the
+    point of having tested. `beta` only ever fast-forwards from `dev`, so it
+    stays an ancestor of it and `master` still contains every commit up to the
+    promotion point; the merge-commit rule below is unaffected.
   - The promotion PR **must merge as a merge commit**. A squash would rewrite
-    dev's commits into one new commit on master, breaking the invariant that
-    master contains every dev commit — and with it the `--ff-only` relationship
+    the branch's commits into one new commit on master, breaking the invariant
+    that master contains every dev commit — and with it the `--ff-only` relationship
     the update tooling and this document assume. Do **not** enable "Require
     linear history" on `master`; it would forbid exactly this merge.
   - Pushing the stable notes to `dev` publishes nothing: `dev` is not a
@@ -705,9 +718,17 @@ notes**.
   - The draft is merged PR titles, one per line. Edit it into prose: drop what is
     not user-facing, merge related entries, and rewrite each line for a reader who
     does not know the codebase. Ship the edit, never the raw draft.
-- **Update channels**: Systems set `UPDATE_CHANNEL` in `.env` to `"stable"` (default) or `"dev"`. **The two channels answer "is there an update?" in completely different ways**, and that is the point.
+- **Update channels**: Systems set `UPDATE_CHANNEL` in `.env` to `"stable"` (default), `"beta"` or `"dev"`. **A channel IS a branch** — the installer does `git pull origin <branch>` and nothing else, so `branch_for_channel` in `deploy/lib/common.sh` is the whole definition of what a channel is. That map has exactly one home; it used to be written out three times, and three copies of a two-way map was survivable where three copies of a three-way map is how a box ends up silently tracking the wrong channel after a failed rollback. (`update-agent.sh` deliberately does **not** call it: its arms are whole-string matches against a closed set of literals, and routing that through a shared function would put a variable where the security property depends on there being none.)
+
+  | channel | branch | moves when | how it detects an update |
+  |---|---|---|---|
+  | `dev` | `dev` | every merge | commits |
+  | `beta` | `beta` | someone cuts a build | commits |
+  | `stable` | `master` | a release is promoted | release versions |
+
+  **`dev` and `beta` are the same mechanism pointed at different branches.** The only difference is how often the branch moves — `dev` follows every merge, `beta` only when the "Cut beta build" workflow fast-forwards it. That is the entire distinction between "edge" and "a build I chose to test", and a second mechanism for the latter would just be another thing to keep in step.
   - **`stable`** pulls the `master` branch and compares **release versions**: `releases?per_page=100`, drop `prerelease`/`draft`, pick the highest by semver precedence (`deploy/lib/version.mjs`).
-  - **`dev`** pulls the `dev` branch and compares **commits**, not versions. It has no version to compare, because merging into `dev` no longer publishes a release. `src/app/api/admin/updates/check/route.ts` compares `APP_COMMIT` (the commit the running build came from, inlined by `next.config.ts`) against the branch head via the GitHub `compare` API, and reports how many commits are behind plus their subject lines. `deploy/check-update.sh` answers the same question with `git ls-remote`, deliberately **not** the API: `auto-update.sh` runs it every 5 minutes, which is 12 calls an hour against an unauthenticated budget of 60 an hour **per IP** shared by every install behind one egress address.
+  - **`dev` and `beta`** compare **commits**, not versions, because neither publishes a release. `src/app/api/admin/updates/check/route.ts` compares `APP_COMMIT` (the commit the running build came from, inlined by `next.config.ts`) against the branch head via the GitHub `compare` API, and reports how many commits are behind plus their subject lines. **A beta system's version number therefore stays put between promotions** — nothing bumps it in between. That is correct, not a bug to fix: the commit count is the live signal and the version is the last released label. `deploy/check-update.sh` answers the same question with `git ls-remote`, deliberately **not** the API: `auto-update.sh` runs it every 5 minutes, which is 12 calls an hour against an unauthenticated budget of 60 an hour **per IP** shared by every install behind one egress address.
 - **Why a patch release can be invisible to a box that has not migrated yet.** An installed system runs **its own copy** of the comparator until it takes an update, and every copy shipped before v3.30.0 read only `major*1000 + minor` — the patch component was discarded (or, in one of the two copies inside `deploy/check-update.sh`, *summed*, so `2.96.3` and `2.99` both scored 2099). Measured against both implementations:
 
   | candidate | installed | new comparator | pre-3.30.0 comparator |

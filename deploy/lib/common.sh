@@ -1091,6 +1091,48 @@ stop_app() {
     fi
 }
 
+# --- Channels ---------------------------------------------------------------
+
+# The channel -> branch map, in one place.
+#
+# Each update channel is simply a branch the installer pulls, so this mapping is
+# the whole definition of what a channel IS. It used to be written out three
+# times (perform-update.sh's detached-HEAD recovery, update.sh's copy of the
+# same, and update-agent.sh's case arms). Three copies of a two-way map was
+# survivable; three copies of a three-way map is how a box ends up checked out on
+# the wrong branch after a failed rollback — and that box then pulls the wrong
+# channel's code on every subsequent update, silently.
+#
+# update-agent.sh deliberately does NOT call this: its arms are whole-string
+# matches against a closed set of literals that scripts/check-deploy-parity.mjs
+# executes, and routing that through a shared function would put a variable where
+# the security property depends on there being none.
+#
+# Anything unrecognised resolves to master. That is the conservative answer: an
+# unreadable or misspelt channel lands the box on the release branch rather than
+# on unreleased code.
+branch_for_channel() {
+    case "${1:-}" in
+        dev)  printf 'dev' ;;
+        beta) printf 'beta' ;;
+        *)    printf 'master' ;;
+    esac
+}
+
+# Read UPDATE_CHANNEL straight out of .env without sourcing it.
+#
+# The callers need this before load_env_allowlist has run (or where it is not
+# run at all), and .env is service-user-writable, so it is parsed, never
+# evaluated — the standing rule for everything root reads from that side.
+channel_from_env_file() {
+    local env_file="${1:-${APP_DIR}/.env}"
+    [ -f "${env_file}" ] || { printf 'stable'; return 0; }
+    local value
+    value=$(grep -E "^UPDATE_CHANNEL=" "${env_file}" 2>/dev/null |
+        cut -d= -f2- | tr -d '"' | tr -d "'" | tr -d ' ' | tail -n 1)
+    printf '%s' "${value:-stable}"
+}
+
 # --- Cron -------------------------------------------------------------------
 
 # Install the fixed scheduled jobs, root-owned, so the app never has to edit a

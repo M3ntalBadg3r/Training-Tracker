@@ -98,6 +98,10 @@ case "${ACTION_RAW}" in
         TARGET_BRANCH="dev"
         log "Accepted: switch-channel -> dev"
         ;;
+    '{"action":"switch-channel","channel":"beta"}')
+        TARGET_BRANCH="beta"
+        log "Accepted: switch-channel -> beta"
+        ;;
     '{"action":"switch-channel","channel":"stable"}')
         TARGET_BRANCH="master"
         log "Accepted: switch-channel -> stable"

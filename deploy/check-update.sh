@@ -24,6 +24,14 @@ REPO="M3ntalBadg3r/Training-Tracker"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VERSION_MODULE="${SCRIPT_DIR}/lib/version.mjs"
 
+# Sourced for `branch_for_channel` — the channel -> branch map, which must have
+# exactly one definition or a box can end up tracking the wrong channel. Safe
+# from here: common.sh only assigns variables and defines functions at source
+# time (require_root is a definition, not a call), and its
+# `APP_DIR="${APP_DIR:-...}"` keeps the value set above.
+# shellcheck source=lib/common.sh
+. "${SCRIPT_DIR}/lib/common.sh"
+
 # Read current version from package.json
 if [ ! -f "${APP_DIR}/package.json" ]; then
     echo '{"error":"package.json not found"}'
@@ -58,13 +66,18 @@ if [ -n "$GITHUB_TOKEN" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Dev ("edge") channel: compare commits, not versions.
+# Branch-tracking channels (dev, beta): compare commits, not versions.
 #
-# The dev channel publishes no GitHub releases. Every merge into dev used to cut
-# a `v<version>-dev` pre-release purely so this check had a version to compare,
+# Neither publishes a GitHub release. Every merge into dev used to cut a
+# `v<version>-dev` pre-release purely so this check had a version to compare,
 # which is how the releases page — which customers read — came to carry dozens of
-# entries a week. The installer pulls the `dev` branch directly, so the head of
-# that branch is the same signal without the noise.
+# entries a week. The installer pulls the branch directly, so the head of that
+# branch is the same signal without the noise.
+#
+# dev and beta differ ONLY in which branch they track. dev follows every merge;
+# beta moves only when someone deliberately fast-forwards it. That is the whole
+# distinction between "edge" and "a build I chose to test" — there is no second
+# mechanism, and adding one would be another thing to keep in step.
 #
 # This uses `git ls-remote` rather than the GitHub API deliberately. auto-update.sh
 # runs this every 5 minutes: that is 12 API calls an hour against an
@@ -80,9 +93,10 @@ fi
 # reporting "up to date". A checker that goes quiet strands the box: nothing but
 # an update can replace this script, so a false "no update" is permanent.
 # ---------------------------------------------------------------------------
-if [ "$UPDATE_CHANNEL" = "dev" ]; then
+if [ "$UPDATE_CHANNEL" = "dev" ] || [ "$UPDATE_CHANNEL" = "beta" ]; then
+    TRACKED_BRANCH="$(branch_for_channel "${UPDATE_CHANNEL}")"
     LOCAL_COMMIT=$(git -C "${APP_DIR}" rev-parse HEAD 2>/dev/null)
-    REMOTE_COMMIT=$(git -C "${APP_DIR}" ls-remote origin refs/heads/dev 2>/dev/null | cut -f1)
+    REMOTE_COMMIT=$(git -C "${APP_DIR}" ls-remote origin "refs/heads/${TRACKED_BRANCH}" 2>/dev/null | cut -f1)
 
     if printf '%s' "${LOCAL_COMMIT}" | grep -Eq '^[0-9a-f]{40}$' &&
        printf '%s' "${REMOTE_COMMIT}" | grep -Eq '^[0-9a-f]{40}$'; then
@@ -114,11 +128,13 @@ fi
 RESPONSE=$(curl "${CURL_ARGS[@]}" "https://api.github.com/repos/${REPO}/releases?per_page=100" 2>/dev/null)
 
 if echo "$RESPONSE" | grep -q '"tag_name"'; then
-    # The dev channel only reaches here when the git comparison above failed,
-    # in which case any release — pre-release included — is a better signal
-    # than silence.
-    STABLE_ONLY="false"
-    [ "$UPDATE_CHANNEL" != "dev" ] && STABLE_ONLY="true"
+    # A branch-tracking channel only reaches here when the git comparison above
+    # failed, in which case any release — pre-release included — is a better
+    # signal than silence.
+    STABLE_ONLY="true"
+    if [ "$UPDATE_CHANNEL" = "dev" ] || [ "$UPDATE_CHANNEL" = "beta" ]; then
+        STABLE_ONLY="false"
+    fi
 
     # Single node call extracts all needed fields from the best matching release
     RELEASE_JSON=$(echo "$RESPONSE" | node --input-type=module -e '
