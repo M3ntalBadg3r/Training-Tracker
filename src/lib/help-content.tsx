@@ -1137,8 +1137,9 @@ const helpSections: Record<string, HelpSection> = {
           reviewed &mdash; what leaving the entry alone is costing. If an entry
           simply isn&rsquo;t needed, click <strong>Ignore</strong>{" "}instead:
           it leaves this list, is left out of all reporting, and is marked with
-          a grey <strong>Ignored</strong>{" "}badge in the main list, where{" "}
-          <strong>Restore</strong>{" "}brings it back. Completions are kept
+          a grey <strong>Ignored</strong>{" "}badge in the main list. Open that
+          entry&rsquo;s Full Title page to <strong>Restore</strong>{" "}it, or to
+          ignore a whole Full Title at once. Completions are kept
           either way &mdash; nothing is deleted.
         </p>
         <p>

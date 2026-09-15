@@ -202,19 +202,42 @@ export async function POST(request: NextRequest) {
         : [];
 
     // Legacy lifecycle — only meaningful for Certification/Accreditation.
+    //
+    // An UNMAPPED column must not write anything. These used to resolve to
+    // `false` / `[]` whenever their column was absent, and the update below
+    // always writes them, so importing a file that simply didn't carry a Legacy
+    // column silently cleared the legacy marker on every row it touched — data
+    // loss from an import that looked like it only changed the columns present.
+    // Resolving against the stored row instead makes an absent column a no-op,
+    // and leaves an explicit column the only thing that can change the value.
     const legacyEligible = trainingType === TrainingType.Certification || trainingType === TrainingType.Accreditation;
-    const legacyRaw = columnMapping.legacy ? row[columnMapping.legacy]?.trim() : "";
-    const isLegacy = legacyEligible && /^(true|yes|y|1|legacy)$/i.test(legacyRaw || "");
-    const replacementRaw = columnMapping.replacement ? row[columnMapping.replacement]?.trim() : "";
-    const replacedBy = isLegacy && replacementRaw
-      ? Array.from(new Set(replacementRaw.split(",").map((c: string) => c.trim()).filter((c) => Boolean(c) && c !== trainingTitle)))
-      : [];
+    const legacyRaw = columnMapping.legacy ? row[columnMapping.legacy]?.trim() : undefined;
+    const parsedIsLegacy = columnMapping.legacy
+      ? /^(true|yes|y|1|legacy)$/i.test(legacyRaw || "")
+      : undefined;
+    const replacementRaw = columnMapping.replacement ? row[columnMapping.replacement]?.trim() : undefined;
+    const parsedReplacedBy = columnMapping.replacement
+      ? Array.from(new Set((replacementRaw || "").split(",").map((c: string) => c.trim()).filter((c) => Boolean(c) && c !== trainingTitle)))
+      : undefined;
 
-    // "Not needed" flag. Unlike Legacy above, an UNMAPPED column must not write
-    // anything: Legacy resolves to false whenever its column is absent, so a
-    // re-import of a file without that column silently clears every legacy
-    // marker. Leaving this undefined instead means the stored value survives a
-    // partial import, and only an explicit column can change it.
+    /**
+     * Resolve the legacy pair against what is already stored. Writing the
+     * result unconditionally is safe: with both columns unmapped it reproduces
+     * the existing values, so the `changed` comparison sees a no-op.
+     */
+    const resolveLegacy = (
+      stored: { isLegacy: boolean; replacedBy: string[] } | null,
+    ): { isLegacy: boolean; replacedBy: string[] } => {
+      // A type that cannot be legacy clears the pair regardless of the file —
+      // that is the type change forcing it, not the import clobbering it.
+      if (!legacyEligible) return { isLegacy: false, replacedBy: [] };
+      const effective = parsedIsLegacy ?? stored?.isLegacy ?? false;
+      // Replacements only mean anything on a legacy row.
+      if (!effective) return { isLegacy: false, replacedBy: [] };
+      return { isLegacy: true, replacedBy: parsedReplacedBy ?? stored?.replacedBy ?? [] };
+    };
+
+    // Same rule for the "not needed" flag.
     const ignoredRaw = columnMapping.ignored ? row[columnMapping.ignored]?.trim() : undefined;
     const isIgnored = columnMapping.ignored
       ? /^(true|yes|y|1|ignored|ignore)$/i.test(ignoredRaw || "")
@@ -226,6 +249,7 @@ export async function POST(request: NextRequest) {
       });
 
       if (existing) {
+        const legacy = resolveLegacy(existing);
         const changed =
           existing.fullTitle !== fullTitle ||
           existing.trainingType !== trainingType ||
@@ -233,15 +257,16 @@ export async function POST(request: NextRequest) {
           existing.function !== functionType ||
           existing.link !== link ||
           JSON.stringify(existing.certification) !== JSON.stringify(certification) ||
-          existing.isLegacy !== isLegacy ||
-          JSON.stringify(existing.replacedBy) !== JSON.stringify(replacedBy) ||
+          existing.isLegacy !== legacy.isLegacy ||
+          JSON.stringify(existing.replacedBy) !== JSON.stringify(legacy.replacedBy) ||
           (isIgnored !== undefined && existing.isIgnored !== isIgnored);
 
         if (changed) {
           await prisma.trainingData.update({
             where: { trainingTitle },
             data: {
-              fullTitle, trainingType, productTypeId, function: functionType, link, certification, isLegacy, replacedBy,
+              fullTitle, trainingType, productTypeId, function: functionType, link, certification,
+              isLegacy: legacy.isLegacy, replacedBy: legacy.replacedBy,
               ...(isIgnored !== undefined && { isIgnored }),
             },
           });
@@ -250,6 +275,7 @@ export async function POST(request: NextRequest) {
           skipped++;
         }
       } else {
+        const legacy = resolveLegacy(null);
         await prisma.trainingData.create({
           data: {
             trainingTitle,
@@ -259,8 +285,8 @@ export async function POST(request: NextRequest) {
             function: functionType,
             link,
             certification,
-            isLegacy,
-            replacedBy,
+            isLegacy: legacy.isLegacy,
+            replacedBy: legacy.replacedBy,
             ...(isIgnored !== undefined && { isIgnored }),
           },
         });
