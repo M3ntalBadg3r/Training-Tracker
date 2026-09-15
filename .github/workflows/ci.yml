@@ -73,6 +73,16 @@ jobs:
       - name: URL state
         run: npm run check:url-state
 
+      # JSX removes whitespace adjacent to a tag when it contains a newline, so
+      # a line break after an inline tag renders the words either side glued
+      # together. It reads as correct in the editor, lint and typecheck are both
+      # blind to it, and it is user-facing prose — v2.83 shipped 34 of them. The
+      # cause was then misdiagnosed as an SWC/HTML-entity interaction, which
+      # sent two later passes hunting false positives; the script's header
+      # records the evidence that settles it.
+      - name: JSX whitespace
+        run: npm run check:jsx
+
   # The deploy/ layer had no automated checking of any kind: no lint, no
   # typecheck, no tests, while the app side had all three. That asymmetry was
   # backwards. These are shell scripts that run AS ROOT on customers' machines,
