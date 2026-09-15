@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import PageHeader from "@/components/layout/PageHeader";
 import KpiStrip from "@/components/ui/KpiStrip";
 import DateRangePicker, { DateRangeValue } from "@/components/ui/DateRangePicker";
@@ -74,20 +75,63 @@ function localYmd(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-export default function ComparisonPage() {
+// ── URL round-trip ────────────────────────────────────────────────────────
+// This page carries more view state than any other report, and every value
+// read back is validated against the control that renders it: a <select> fed
+// a value outside its own option list shows an empty box, and a sort key
+// naming no column would leave the table silently unsorted.
+
+const SORT_KEYS: SortKey[] = [
+  "bucket", "headcount", "cert", "accred", "ilt", "olx",
+  "total", "perStudent", "exp3", "exp6",
+];
+
+function parseGeoMode(v: string | null): GroupByMode {
+  return v === "region" || v === "country" ? v : "theatre";
+}
+
+function parseRangePreset(v: string | null): RangePreset {
+  return RANGE_PRESETS.some((r) => r.value === v) ? (v as RangePreset) : "12m";
+}
+
+function parseCompareMode(v: string | null): CompareMode {
+  return COMPARE_MODES.some((m) => m.value === v) ? (v as CompareMode) : "type";
+}
+
+function parseSortKey(v: string | null): SortKey {
+  return SORT_KEYS.includes(v as SortKey) ? (v as SortKey) : "total";
+}
+
+/** A `yyyy-mm-dd` day in local time, or null — never an Invalid Date. */
+function parseYmd(v: string | null): Date | null {
+  if (!v || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return null;
+  const [y, m, d] = v.split("-").map(Number);
+  const date = new Date(y, m - 1, d);
+  // Rejects 2026-02-31, which Date would roll forward into March.
+  return date.getFullYear() === y && date.getMonth() === m - 1 && date.getDate() === d ? date : null;
+}
+
+function ComparisonPageInner() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const chart = useChartTheme();
   const productColors = useProductTypeColors();
   const companyScope = useCompanyScope();
 
-  const [geoMode, setGeoMode] = useState<GroupByMode>("theatre");
-  const [rangePreset, setRangePreset] = useState<RangePreset>("12m");
-  const [customRange, setCustomRange] = useState<DateRangeValue>({ from: null, to: null });
-  const [filterFunction, setFilterFunction] = useState("");
-  const [filterProduct, setFilterProduct] = useState("");
-  const [filterType, setFilterType] = useState("");
-  const [compareMode, setCompareMode] = useState<CompareMode>("type");
-  const [sortKey, setSortKey] = useState<SortKey>("total");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  // Seeded from the URL, using the same param names `buildParams` writes.
+  const [geoMode, setGeoMode] = useState<GroupByMode>(() => parseGeoMode(searchParams.get("geoMode")));
+  const [rangePreset, setRangePreset] = useState<RangePreset>(() => parseRangePreset(searchParams.get("range")));
+  const [customRange, setCustomRange] = useState<DateRangeValue>(() => ({
+    from: parseYmd(searchParams.get("from")),
+    to: parseYmd(searchParams.get("to")),
+  }));
+  const [filterFunction, setFilterFunction] = useState(() => searchParams.get("func") ?? "");
+  const [filterProduct, setFilterProduct] = useState(() => searchParams.get("product") ?? "");
+  const [filterType, setFilterType] = useState(() => searchParams.get("type") ?? "");
+  const [compareMode, setCompareMode] = useState<CompareMode>(() => parseCompareMode(searchParams.get("compareMode")));
+  const [sortKey, setSortKey] = useState<SortKey>(() => parseSortKey(searchParams.get("sort")));
+  const [sortDir, setSortDir] = useState<"asc" | "desc">(() => (searchParams.get("sortDir") === "asc" ? "asc" : "desc"));
 
   const buildParams = useCallback(() => {
     const params = new URLSearchParams();
@@ -103,6 +147,19 @@ export default function ComparisonPage() {
     params.set("compareMode", compareMode);
     return params;
   }, [geoMode, rangePreset, customRange, filterFunction, filterProduct, filterType, compareMode]);
+
+  // Mirror the view to the URL. Built from the SAME `buildParams` the API
+  // query uses, so the two cannot drift; only the client-side sort, which the
+  // server never sees, is added on top.
+  useEffect(() => {
+    const params = buildParams();
+    params.set("sort", sortKey);
+    params.set("sortDir", sortDir);
+    const qs = params.toString();
+    if (qs !== searchParams.toString()) {
+      router.replace(`${pathname}?${qs}`, { scroll: false });
+    }
+  }, [buildParams, sortKey, sortDir, pathname, router, searchParams]);
 
   // Loading is derived (loaded.key !== requestKey), not set synchronously in the
   // effect, so a control change re-shows the spinner without a
@@ -356,5 +413,13 @@ export default function ComparisonPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function ComparisonPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center h-64"><div className="text-gray-500">Loading report...</div></div>}>
+      <ComparisonPageInner />
+    </Suspense>
   );
 }

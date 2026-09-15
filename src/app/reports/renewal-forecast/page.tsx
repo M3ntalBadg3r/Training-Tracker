@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import PageHeader from "@/components/layout/PageHeader";
 import KpiStrip from "@/components/ui/KpiStrip";
 import { useChartTheme, tooltipStyle } from "@/lib/chart-theme";
@@ -52,14 +53,25 @@ interface ForecastResponse {
 }
 
 
-export default function RenewalForecastPage() {
+function RenewalForecastPageInner() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const chart = useChartTheme();
   const companyScope = useCompanyScope();
-  const [filterProduct, setFilterProduct] = useState("");
+  // Seeded from the URL so a reload or a shared link reopens the same view.
+  const [filterProduct, setFilterProduct] = useState(() => searchParams.get("product") ?? "");
   const { rows: regionRows } = useRegionData();
-  const [theatre, setTheatre] = useState("");
-  const [region, setRegion] = useState("");
-  const [country, setCountry] = useState("");
+  const [theatre, setTheatre] = useState(() => searchParams.get("theatre") ?? "");
+  const [region, setRegion] = useState(() => searchParams.get("region") ?? "");
+  const [country, setCountry] = useState(() => searchParams.get("country") ?? "");
+
+  // Read once: useTableSort seeds its own state from these, and holding the
+  // snapshot keeps the mirror effect's rewrites from feeding back in.
+  const [urlSort] = useState(() => ({
+    key: searchParams.get("sort") ?? "",
+    dir: searchParams.get("sortDir") === "asc" ? ("asc" as const) : ("desc" as const),
+  }));
 
   const forecastUrl = useMemo(() => {
     const params = new URLSearchParams();
@@ -120,12 +132,34 @@ export default function RenewalForecastPage() {
     rateSource: (r) => r.rateSource,
     projectedLapsed: (r) => r.projectedLapsed,
   };
-  const { sorted: sortedTitleRows, toggleSort, sortIndicator } = useTableSort(filteredTitleRows, sortAccessors, {
-    defaultKey: "projectedLapsed",
-    defaultDir: "desc",
+  const { sorted: sortedTitleRows, sortKey, sortDir, toggleSort, sortIndicator } = useTableSort(filteredTitleRows, sortAccessors, {
+    // A seeded key naming no column would leave the table silently unsorted.
+    // `Object.hasOwn`, not `in`: `?sort=constructor` satisfies `in` via the
+    // prototype and would hand the sorter the Object constructor as an accessor.
+    defaultKey: Object.hasOwn(sortAccessors, urlSort.key) ? urlSort.key : "projectedLapsed",
+    defaultDir: urlSort.dir,
     tiebreakKey: "fullTitle",
     descFirstKeys: ["expiringCount", "rate", "projectedLapsed"],
   });
+
+  // Mirror the view to the URL so a reload, a bookmark or Back restores it.
+  const buildViewParams = useCallback(() => {
+    const params = new URLSearchParams();
+    if (filterProduct) params.set("product", filterProduct);
+    if (theatre) params.set("theatre", theatre);
+    if (region) params.set("region", region);
+    if (country) params.set("country", country);
+    params.set("sort", sortKey);
+    params.set("sortDir", sortDir);
+    return params;
+  }, [filterProduct, theatre, region, country, sortKey, sortDir]);
+
+  useEffect(() => {
+    const qs = buildViewParams().toString();
+    if (qs !== searchParams.toString()) {
+      router.replace(`${pathname}?${qs}`, { scroll: false });
+    }
+  }, [buildViewParams, pathname, router, searchParams]);
 
   const { capturePageVisuals } = useChartCapture();
   const [exporting, setExporting] = useState(false);
@@ -269,5 +303,13 @@ export default function RenewalForecastPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function RenewalForecastPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center h-64"><div className="text-gray-500">Loading report...</div></div>}>
+      <RenewalForecastPageInner />
+    </Suspense>
   );
 }

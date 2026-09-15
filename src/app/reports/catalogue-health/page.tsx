@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import PageHeader from "@/components/layout/PageHeader";
 import KpiStrip from "@/components/ui/KpiStrip";
 import { useChartTheme, tooltipStyle } from "@/lib/chart-theme";
@@ -39,9 +40,18 @@ interface CatalogueRow {
   zeroUptake: boolean;
 }
 
-// Single-line, ellipsised Y-axis tick so long training titles never wrap/overlap.
-// Full text stays available via the SVG <title> tooltip and the detail table below.
-export default function CatalogueHealthPage() {
+/** The status filter's own options — a value outside this set has no control to render. */
+const STATUS_OPTIONS = ["all", "zero", "expiring"] as const;
+type StatusFilter = (typeof STATUS_OPTIONS)[number];
+
+function parseStatus(v: string | null): StatusFilter {
+  return (STATUS_OPTIONS as readonly string[]).includes(v ?? "") ? (v as StatusFilter) : "all";
+}
+
+function CatalogueHealthPageInner() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const chart = useChartTheme();
   const productColors = useProductTypeColors();
   const companyScope = useCompanyScope();
@@ -50,9 +60,18 @@ export default function CatalogueHealthPage() {
     { enabled: !companyScope.loading }
   );
   const rows = useMemo(() => catalogueData?.rows ?? [], [catalogueData]);
-  const [filterProduct, setFilterProduct] = useState("");
-  const [filterType, setFilterType] = useState("");
-  const [filterStatus, setFilterStatus] = useState<"all" | "zero" | "expiring">("all");
+  // Seeded from the URL so a reload or a shared link reopens the same view.
+  const [filterProduct, setFilterProduct] = useState(() => searchParams.get("product") ?? "");
+  const [filterType, setFilterType] = useState(() => searchParams.get("type") ?? "");
+  const [filterStatus, setFilterStatus] = useState<StatusFilter>(() => parseStatus(searchParams.get("status")));
+
+  // Mount-time snapshot of the sort the URL asked for. `useTableSort` seeds its
+  // internal state from `defaultKey`/`defaultDir`, so this is read once; holding
+  // it in state keeps the mirror effect's rewrites from feeding back in.
+  const [urlSort] = useState(() => ({
+    key: searchParams.get("sort") ?? "",
+    dir: searchParams.get("sortDir") === "desc" ? ("desc" as const) : ("asc" as const),
+  }));
 
   const products = useMemo(() => [...new Set(rows.map((r) => r.productType))].sort(), [rows]);
   const types = useMemo(() => [...new Set(rows.map((r) => r.trainingType))].sort(), [rows]);
@@ -84,11 +103,34 @@ export default function CatalogueHealthPage() {
     expiring90d: (r) => r.expiring90d,
     uptakePct: (r) => r.uptakePct,
   };
-  const { sorted, toggleSort, sortIndicator } = useTableSort(filtered, sortAccessors, {
-    defaultKey: "fullTitle",
+  const { sorted, sortKey, sortDir, toggleSort, sortIndicator } = useTableSort(filtered, sortAccessors, {
+    // A seeded key that names no column would leave the table silently unsorted
+    // (useTableSort returns the rows untouched), so check it against the map.
+    // `Object.hasOwn`, not `in`: `?sort=constructor` satisfies `in` via the
+    // prototype and would hand the sorter the Object constructor as an accessor.
+    defaultKey: Object.hasOwn(sortAccessors, urlSort.key) ? urlSort.key : "fullTitle",
+    defaultDir: urlSort.dir,
     tiebreakKey: "fullTitle",
     descFirstKeys: ["totalCompletions", "last12mo", "activeStudents", "expiring90d", "uptakePct"],
   });
+
+  // Mirror the view to the URL so a reload, a bookmark or Back restores it.
+  const buildViewParams = useCallback(() => {
+    const params = new URLSearchParams();
+    if (filterProduct) params.set("product", filterProduct);
+    if (filterType) params.set("type", filterType);
+    if (filterStatus !== "all") params.set("status", filterStatus);
+    params.set("sort", sortKey);
+    params.set("sortDir", sortDir);
+    return params;
+  }, [filterProduct, filterType, filterStatus, sortKey, sortDir]);
+
+  useEffect(() => {
+    const qs = buildViewParams().toString();
+    if (qs !== searchParams.toString()) {
+      router.replace(`${pathname}?${qs}`, { scroll: false });
+    }
+  }, [buildViewParams, pathname, router, searchParams]);
 
   const topUptake = useMemo(() => filtered.slice().sort((a, b) => b.activeStudents - a.activeStudents).slice(0, 10), [filtered]);
   const topExpiring = useMemo(() => filtered.slice().filter((r) => r.expiring90d > 0).sort((a, b) => b.expiring90d - a.expiring90d).slice(0, 10), [filtered]);
@@ -204,7 +246,7 @@ export default function CatalogueHealthPage() {
               <option value="">All Types</option>
               {types.map((t) => <option key={t} value={t}>{t}</option>)}
             </select>
-            <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value as "all" | "zero" | "expiring")} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
+            <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value as StatusFilter)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
               <option value="all">All Titles</option>
               <option value="zero">Zero Completions Only</option>
               <option value="expiring">With 90-day Expiries</option>
@@ -250,5 +292,13 @@ export default function CatalogueHealthPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function CatalogueHealthPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center h-64"><div className="text-gray-500">Loading report...</div></div>}>
+      <CatalogueHealthPageInner />
+    </Suspense>
   );
 }

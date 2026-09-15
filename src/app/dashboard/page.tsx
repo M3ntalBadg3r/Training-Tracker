@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useState, useRef, useCallback } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import PageHeader from "@/components/layout/PageHeader";
 import CredentialHealthBanner from "@/components/admin/CredentialHealthBanner";
 import UpdateAvailableBanner from "@/components/admin/UpdateAvailableBanner";
 import { useCompanyScope } from "@/components/company/CompanyScopeProvider";
-import GeoScopeFilter, { EMPTY_GEO_SCOPE, GeoScope } from "@/components/reports/GeoScopeFilter";
+import GeoScopeFilter, { GeoScope } from "@/components/reports/GeoScopeFilter";
 import {
   Users,
   Award,
@@ -72,15 +72,23 @@ interface DashboardData {
   }[];
 }
 
-export default function DashboardPage() {
+function DashboardPageInner() {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const chart = useChartTheme();
   const productColors = useProductTypeColors();
   const companyScope = useCompanyScope();
   const [data, setData] = useState<DashboardData | null>(null);
-  const [geo, setGeo] = useState<GeoScope>(EMPTY_GEO_SCOPE);
+  // Geography and the include-expired toggle are seeded from the URL, so a
+  // reload or a shared link reopens the same scope rather than the default.
+  const [geo, setGeo] = useState<GeoScope>(() => ({
+    theatre: searchParams.get("theatre") ?? "",
+    region: searchParams.get("region") ?? "",
+    country: searchParams.get("country") ?? "",
+  }));
   // Active-only by default; tick to include inactive (expired) completions too.
-  const [includeInactive, setIncludeInactive] = useState(false);
+  const [includeInactive, setIncludeInactive] = useState(() => searchParams.get("includeInactive") === "true");
   const [geoLoading, setGeoLoading] = useState(false);
   const cache = useRef<Record<string, DashboardData>>({});
   const geoKey = `${geo.theatre}|${geo.region}|${geo.country}|${includeInactive ? "all" : "active"}`;
@@ -91,6 +99,26 @@ export default function DashboardPage() {
   const [loadedKey, setLoadedKey] = useState<string | null>(null);
   const requestKey = `${companyScope.selected}::${geoKey}`;
   const loading = loadedKey !== requestKey;
+
+  // Mirror the scope to the URL so a reload or a bookmark reopens this view.
+  // The company scope is deliberately absent: CompanyScopeProvider already
+  // persists it to localStorage, and pinning it here would stop the page
+  // following the header switcher.
+  const buildViewParams = useCallback(() => {
+    const params = new URLSearchParams();
+    if (geo.theatre) params.set("theatre", geo.theatre);
+    if (geo.region) params.set("region", geo.region);
+    if (geo.country) params.set("country", geo.country);
+    if (includeInactive) params.set("includeInactive", "true");
+    return params;
+  }, [geo, includeInactive]);
+
+  useEffect(() => {
+    const qs = buildViewParams().toString();
+    if (qs !== searchParams.toString()) {
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    }
+  }, [buildViewParams, pathname, router, searchParams]);
 
   const fetchDashboard = useCallback(async (scope: GeoScope, inactive: boolean) => {
     const params = new URLSearchParams();
@@ -375,5 +403,13 @@ export default function DashboardPage() {
         </div>
       </section>
     </div>
+  );
+}
+
+export default function DashboardPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center h-64"><div className="text-gray-500">Loading dashboard...</div></div>}>
+      <DashboardPageInner />
+    </Suspense>
   );
 }
