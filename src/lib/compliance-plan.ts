@@ -33,7 +33,7 @@
  */
 
 import prisma from "@/lib/prisma";
-import { REVIEWED_TRAINING_DATA } from "@/lib/reportable-training";
+import { ELIGIBLE_TRAINING_DATA } from "@/lib/reportable-training";
 import { addMonths } from "@/lib/utils";
 import {
   getEmailSetsByTitle,
@@ -285,7 +285,7 @@ async function buildCatalogueIndex(): Promise<CatalogueIndex> {
     // certification[] and aren't legacy), so this is defensive rather than a
     // fix — but it keeps the whole-catalogue read consistent with every other
     // reporting path. See reportable-training.ts.
-    where: REVIEWED_TRAINING_DATA,
+    where: ELIGIBLE_TRAINING_DATA,
     select: {
       trainingTitle: true,
       fullTitle: true,
