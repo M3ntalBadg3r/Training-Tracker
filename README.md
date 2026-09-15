@@ -1329,6 +1329,8 @@ All sections support export to CSV, Excel, and PDF. Alternative trainings (OR lo
 
 A **Compliance as of** selector in the dashboard header lets you look ahead and see how upcoming certificate expiry will affect compliance. Pick **+3**, **+6**, or **+12 months** and every section recomputes compliance as it will stand on that future date — any certificate expiring within the window drops out of the counts (set it back to **Now** for today's snapshot).
 
+Your **View** scope and the **Compliance as of** horizon are mirrored into the page address, so opening a person's record from a **View students** list and pressing **Back** returns you to the same scope rather than the dashboard's default one. It also makes a particular view bookmarkable and shareable as a link. A link naming a level or value the program no longer has falls back to the default view rather than showing an empty one.
+
 ### Compliance Planning
 
 **Programs > Compliance Planning** (`/programs/planning`) is the **action layer** over the program dashboards: they show *where the gaps are*, this page shows *who to move, in what order, for the least effort*. It reuses exactly the same distinct-holder counting — and the same scope rules — as the dashboards, so the two never disagree.
@@ -1433,7 +1435,11 @@ training:
 | **Offshore** | Everyone **worldwide** holding the training, with the onshore countries removed (so it includes the nearshore people plus every other theatre). Nearshore and Offshore are informational — they don't change the Met status. |
 
 Figures are scoped to the offering's company. Click **View** on any count to list
-the people behind it, and use **Export** for the current view. Offerings are
+the people behind it, and use **Export** for the current view. The selected
+level and value are mirrored into the page address, so opening a person's
+record and pressing **Back** returns you to the same country or region instead
+of an empty selector — and a view can be bookmarked or shared as a link.
+Offerings are
 included in both full and config backups (a config restore, which carries no
 companies, lands offerings on the target's oldest company for you to reassign),
 and are queryable via the public API (`GET /api/public/v1/offerings`, scoped to
