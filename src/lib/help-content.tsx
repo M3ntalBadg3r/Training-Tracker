@@ -1023,7 +1023,8 @@ const helpSections: Record<string, HelpSection> = {
           training as a single thing. A Full Title that contains an{" "}
           <strong>OLX</strong>{" "}parent shows an expand arrow and a sub-item count;
           expand it to reveal the parent&rsquo;s <strong>OLX Sub-Items</strong>{" "}
-          nested underneath.
+          nested underneath &mdash; one row per Full Title, the same as the main
+          list, with a count of how many Training Titles each one covers.
         </p>
 
         <p>

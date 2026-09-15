@@ -300,14 +300,48 @@ function TrainingDataPageInner() {
       map.set(t.fullTitle, arr);
     }
     const groups = Array.from(map.entries()).map(([fullTitle, members]) => {
-      // Union of sub-item rows across this group's OLX-parent members (deduped).
-      const subMap = new Map<string, TrainingDataRow>();
+      // Sub-item rows across this group's OLX-parent members, deduped twice over.
+      // First by trainingTitle, because one sub-item can belong to several
+      // parents in the same group. Then by Full Title, because a parent lists
+      // its sub-items as trainingTitles and several of those routinely map to
+      // ONE Full Title (an import variant, e.g. a "… [OLX]" suffix). Keying only
+      // on trainingTitle rendered that Full Title once per variant: rows with
+      // identical text, opening the same detail page, and a "(N sub-items)"
+      // count inflated to match. One row per Full Title is what the rest of this
+      // table means by a record, so the nested rows follow it.
+      const distinctSubItems = new Map<string, TrainingDataRow>();
       for (const m of members) {
         if (m.trainingType === "OLX") {
           for (const s of subItemsByParent.get(m.trainingTitle) ?? []) {
-            subMap.set(s.trainingTitle, s);
+            distinctSubItems.set(s.trainingTitle, s);
           }
         }
+      }
+      const subMap = new Map<string, {
+        fullTitle: string;
+        trainingType: string;
+        products: string[];
+        functions: string[];
+        titleCount: number;
+      }>();
+      for (const s of distinctSubItems.values()) {
+        const key = `${s.fullTitle}::${s.trainingType}`;
+        const existing = subMap.get(key);
+        if (existing) {
+          existing.titleCount++;
+          // Merged titles can disagree on product/function; show every value
+          // rather than whichever variant happened to be listed first.
+          if (!existing.products.includes(s.productType)) existing.products.push(s.productType);
+          if (!existing.functions.includes(s.function)) existing.functions.push(s.function);
+          continue;
+        }
+        subMap.set(key, {
+          fullTitle: s.fullTitle,
+          trainingType: s.trainingType,
+          products: [s.productType],
+          functions: [s.function],
+          titleCount: 1,
+        });
       }
       return {
         fullTitle,
@@ -1775,7 +1809,7 @@ function TrainingDataPageInner() {
                       for (const s of g.subItems) {
                         rows.push(
                           <tr
-                            key={`${g.fullTitle}::${s.trainingTitle}`}
+                            key={`${g.fullTitle}::${s.fullTitle}::${s.trainingType}`}
                             className="border-b border-gray-100 bg-gray-50/40 hover:bg-gray-50 transition-colors cursor-pointer"
                             onClick={() => router.push(`/admin/training-data/${encodeURIComponent(s.fullTitle)}`)}
                           >
@@ -1783,10 +1817,12 @@ function TrainingDataPageInner() {
                               <span className="text-xs text-gray-400 mr-2">↳</span>
                               {s.fullTitle}
                             </td>
-                            <td className="px-4 py-2 text-sm text-gray-400">-</td>
+                            {/* Same meaning as the Titles column on a top-level row:
+                                how many training titles this Full Title covers. */}
+                            <td className="px-4 py-2 text-sm text-gray-600">{s.titleCount}</td>
                             <td className="px-4 py-2 text-sm text-gray-600">{TRAINING_TYPE_LABELS[s.trainingType] || s.trainingType}</td>
-                            <td className="px-4 py-2 text-sm text-gray-600">{s.productType}</td>
-                            <td className="px-4 py-2 text-sm text-gray-600">{FUNCTION_TYPE_LABELS[s.function] || s.function}</td>
+                            <td className="px-4 py-2 text-sm text-gray-600">{s.products.join(", ")}</td>
+                            <td className="px-4 py-2 text-sm text-gray-600">{s.functions.map((f) => FUNCTION_TYPE_LABELS[f] || f).join(", ")}</td>
                             <td className="px-4 py-2 text-sm">
                               <button
                                 onClick={(e) => {
