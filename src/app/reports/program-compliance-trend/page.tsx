@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import PageHeader from "@/components/layout/PageHeader";
 import KpiStrip from "@/components/ui/KpiStrip";
 import { useChartTheme, tooltipStyle } from "@/lib/chart-theme";
@@ -45,14 +46,25 @@ interface TrendResponse {
 }
 
 
-export default function ProgramComplianceTrendPage() {
+function ProgramComplianceTrendPageInner() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const chart = useChartTheme();
   const companyScope = useCompanyScope();
-  const [program, setProgram] = useState("");
+  // Seeded from the URL so a reload or a shared link reopens the same view.
+  const [program, setProgram] = useState(() => searchParams.get("program") ?? "");
   const { rows: regionRows } = useRegionData();
-  const [theatre, setTheatre] = useState("");
-  const [region, setRegion] = useState("");
-  const [country, setCountry] = useState("");
+  const [theatre, setTheatre] = useState(() => searchParams.get("theatre") ?? "");
+  const [region, setRegion] = useState(() => searchParams.get("region") ?? "");
+  const [country, setCountry] = useState(() => searchParams.get("country") ?? "");
+
+  // Read once: useTableSort seeds its own state from these, and holding the
+  // snapshot keeps the mirror effect's rewrites from feeding back in.
+  const [urlSort] = useState(() => ({
+    key: searchParams.get("sort") ?? "",
+    dir: searchParams.get("sortDir") === "desc" ? ("desc" as const) : ("asc" as const),
+  }));
 
   const trendUrl = useMemo(() => {
     const params = new URLSearchParams();
@@ -153,11 +165,38 @@ export default function ProgramComplianceTrendPage() {
     required: (s) => s.required,
     compliancePct: (s) => s.compliancePct,
   };
-  const { sorted: sortedSnapshots, toggleSort, sortIndicator } = useTableSort(
+  const { sorted: sortedSnapshots, sortKey, sortDir, toggleSort, sortIndicator } = useTableSort(
     data?.snapshots ?? [],
     snapshotSortAccessors,
-    { defaultKey: "monthKey", tiebreakKey: "specialisation", descFirstKeys: ["attained", "required", "compliancePct"] },
+    {
+      // A seeded key naming no column would leave the table silently unsorted.
+      // `Object.hasOwn`, not `in`: `?sort=constructor` satisfies `in` via the
+      // prototype and would hand the sorter the Object constructor as an accessor.
+      defaultKey: Object.hasOwn(snapshotSortAccessors, urlSort.key) ? urlSort.key : "monthKey",
+      defaultDir: urlSort.dir,
+      tiebreakKey: "specialisation",
+      descFirstKeys: ["attained", "required", "compliancePct"],
+    },
   );
+
+  // Mirror the view to the URL so a reload, a bookmark or Back restores it.
+  const buildViewParams = useCallback(() => {
+    const params = new URLSearchParams();
+    if (program) params.set("program", program);
+    if (theatre) params.set("theatre", theatre);
+    if (region) params.set("region", region);
+    if (country) params.set("country", country);
+    params.set("sort", sortKey);
+    params.set("sortDir", sortDir);
+    return params;
+  }, [program, theatre, region, country, sortKey, sortDir]);
+
+  useEffect(() => {
+    const qs = buildViewParams().toString();
+    if (qs !== searchParams.toString()) {
+      router.replace(`${pathname}?${qs}`, { scroll: false });
+    }
+  }, [buildViewParams, pathname, router, searchParams]);
 
   const { capturePageVisuals } = useChartCapture();
   const [exporting, setExporting] = useState(false);
@@ -309,5 +348,13 @@ export default function ProgramComplianceTrendPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function ProgramComplianceTrendPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center h-64"><div className="text-gray-500">Loading report...</div></div>}>
+      <ProgramComplianceTrendPageInner />
+    </Suspense>
   );
 }

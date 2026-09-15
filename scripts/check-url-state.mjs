@@ -94,12 +94,8 @@ const EXEMPT = {
  * check. Fix one and delete its line — never add to this list.
  */
 const KNOWN_GAPS = {
-  "dashboard/page.tsx": "Geography scope + the include-expired toggle are lost on reload.",
-  "reports/comparison/page.tsx":
-    "Eight pieces of view state (geoMode, range, three filters, compare mode, sort) are lost on reload.",
-  "reports/catalogue-health/page.tsx": "Product, type and status filters are lost on reload.",
-  "reports/program-compliance-trend/page.tsx": "Theatre/region/country scope is lost on reload.",
-  "reports/renewal-forecast/page.tsx": "Product filter and geography scope are lost on reload.",
+  // Empty, and the check keeps it that way: a new page can never be added
+  // here, and a listed gap that starts mirroring fails until its line goes.
 };
 
 /**
