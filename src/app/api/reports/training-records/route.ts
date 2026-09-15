@@ -3,6 +3,7 @@ import prisma from "@/lib/prisma";
 import { requireAuth, handleAuthError } from "@/lib/auth";
 import { getAuthorizedCompanyIds, resolveCompanyFilter } from "@/lib/company-scope";
 import { cachedReport, scopeKey } from "@/lib/report-cache";
+import { REPORTABLE_TRAINING_DATA } from "@/lib/reportable-training";
 
 export async function GET(request: NextRequest) {
   let auth;
@@ -27,9 +28,8 @@ export async function GET(request: NextRequest) {
 async function computeTrainingRecords(companyFilter: number[] | null) {
   const rawRecords = await prisma.trainingTaken.findMany({
     where: {
-      // OLX sub-items aren't stand-alone completions — they roll up into the
-      // parent OLX. Exclude them from completion-counting reports.
-      trainingData: { trainingType: { not: "OLXSubItem" } },
+      // Reviewed rows only, OLX sub-items excluded — see reportable-training.ts.
+      trainingData: REPORTABLE_TRAINING_DATA,
       ...(companyFilter ? { student: { companyId: { in: companyFilter } } } : {}),
     },
     include: {

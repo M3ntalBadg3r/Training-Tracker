@@ -33,6 +33,7 @@
  */
 
 import prisma from "@/lib/prisma";
+import { ELIGIBLE_TRAINING_DATA } from "@/lib/reportable-training";
 import { addMonths } from "@/lib/utils";
 import {
   getEmailSetsByTitle,
@@ -280,6 +281,11 @@ interface CatalogueIndex {
 
 async function buildCatalogueIndex(): Promise<CatalogueIndex> {
   const rows = await prisma.trainingData.findMany({
+    // Unreviewed imports can't satisfy either index (they have no
+    // certification[] and aren't legacy), so this is defensive rather than a
+    // fix — but it keeps the whole-catalogue read consistent with every other
+    // reporting path. See reportable-training.ts.
+    where: ELIGIBLE_TRAINING_DATA,
     select: {
       trainingTitle: true,
       fullTitle: true,

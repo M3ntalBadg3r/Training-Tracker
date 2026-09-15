@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import PageHeader from "@/components/layout/PageHeader";
 import CredentialHealthBanner from "@/components/admin/CredentialHealthBanner";
 import UpdateAvailableBanner from "@/components/admin/UpdateAvailableBanner";
+import PendingReviewNotice from "@/components/admin/PendingReviewNotice";
 import { useCompanyScope } from "@/components/company/CompanyScopeProvider";
 import GeoScopeFilter, { GeoScope } from "@/components/reports/GeoScopeFilter";
 import {
@@ -42,6 +43,8 @@ interface DashboardData {
     instructorLedTrainingStudents?: number;
     olxStudents?: number;
   };
+  /** Auto-created imports awaiting classification — excluded from every metric. */
+  pendingReview?: number;
   byProductType: {
     name: string;
     Certification: number;
@@ -271,6 +274,7 @@ function DashboardPageInner() {
 
       <UpdateAvailableBanner />
       <CredentialHealthBanner />
+      <PendingReviewNotice count={data.pendingReview ?? 0} />
 
       {/* Metric Cards */}
       <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">

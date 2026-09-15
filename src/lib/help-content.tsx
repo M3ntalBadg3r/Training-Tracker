@@ -1023,7 +1023,18 @@ const helpSections: Record<string, HelpSection> = {
           training as a single thing. A Full Title that contains an{" "}
           <strong>OLX</strong>{" "}parent shows an expand arrow and a sub-item count;
           expand it to reveal the parent&rsquo;s <strong>OLX Sub-Items</strong>{" "}
-          nested underneath (they are not listed as separate top-level rows).
+          nested underneath &mdash; one row per Full Title, the same as the main
+          list, with a count of how many Training Titles each one covers.
+        </p>
+
+        <p>
+          While you are browsing, those sub-items aren&rsquo;t listed as separate
+          top-level rows. As soon as you <strong>search</strong>, or set the{" "}
+          <strong>Type</strong>{" "}filter to <strong>OLX Sub-Item</strong>, any
+          matching sub-items appear as rows of their own &mdash; each showing a{" "}
+          <strong>Sub-item of</strong>{" "}line naming its parent OLX &mdash; so you
+          can open and edit one directly, without first detaching it from its
+          parent.
         </p>
 
         <h3>Features</h3>
@@ -1041,9 +1052,13 @@ const helpSections: Record<string, HelpSection> = {
           </li>
           <li>
             <strong>Search / Filter</strong>{" "}&mdash; Search by training title or
-            full title; filter by Type, Product, or Function. A{" "}
+            full title; filter by Type, Product, or Function. Searching, or
+            filtering Type to <strong>OLX Sub-Item</strong>, also brings matching{" "}
+            <strong>OLX Sub-Items</strong>{" "}up as top-level rows so you can find
+            and edit them. A{" "}
             <strong>Show legacy only</strong> toggle scopes the list to retired
-            Certs/Accreds. Your search, filters, legacy toggle, and sort are
+            Certs/Accreds, and <strong>Show ignored only</strong>{" "}to entries
+            marked as not needed. Your search, filters, legacy toggle, and sort are
             remembered when you open a training and click <strong>Back</strong>{" "}
             (they&rsquo;re kept in the page URL, so the view is bookmarkable too).
           </li>
@@ -1100,12 +1115,43 @@ const helpSections: Record<string, HelpSection> = {
         <p>
           When a student import references a training title that doesn&rsquo;t
           exist yet, it is auto-created and highlighted in an amber{" "}
-          <strong>&ldquo;needs attention&rdquo;</strong> section at the top of
-          the page. When completing one, you can either{" "}
-          <strong>attach it to an existing Full Title</strong>{" "}via a dropdown
-          (it inherits that group&rsquo;s Type/Product/Function as editable
-          defaults) or <strong>create a new Full Title</strong>, then click{" "}
-          <strong>Mark as Complete</strong>.
+          <strong>&ldquo;needs attention&rdquo;</strong>{" "}section at the top of
+          the page. The import only knows the training&rsquo;s name, so its{" "}
+          <strong>Type</strong>, <strong>Product</strong> and{" "}
+          <strong>Function</strong> show as <em>Not set</em>{" "}until you choose
+          them &mdash; nothing is guessed on your behalf.
+        </p>
+        <p>
+          Until an entry is classified it is <strong>left out of all
+          reporting</strong>{" "}&mdash; the dashboard, every report, scheduled
+          exports and the public API. Its completions are real, but filing them
+          under a Type, Product and Function nobody chose would inflate
+          certification counts and skew the by-product and by-function
+          breakdowns, so they are held back rather than counted wrongly. The
+          entry appears everywhere as soon as you complete it, and SuperAdmins
+          see a notice on the dashboard while any are outstanding.
+        </p>
+        <p>
+          The <strong>Excluded</strong>{" "}column shows how many learners have
+          completed the training and are being held out of reporting until it is
+          reviewed &mdash; what leaving the entry alone is costing. If an entry
+          simply isn&rsquo;t needed, click <strong>Ignore</strong>{" "}instead:
+          it leaves this list, is left out of all reporting, and is marked with
+          a grey <strong>Ignored</strong>{" "}badge in the main list. Open that
+          entry&rsquo;s Full Title page to <strong>Restore</strong>{" "}it, or to
+          ignore a whole Full Title at once. Completions are kept
+          either way &mdash; nothing is deleted.
+        </p>
+        <p>
+          Click <strong>Edit</strong>{" "}on a row to complete it. You can either{" "}
+          <strong>attach it to an existing Full Title</strong>{" "}via the dropdown
+          (it inherits that group&rsquo;s Type/Product/Function, still editable)
+          or <strong>create a new Full Title</strong>{" "}and pick the three values
+          yourself. <strong>Save &amp; Complete</strong>{" "}then stores them and
+          moves the entry into the main list. All three are required: saving
+          with any of them left on <em>Select&hellip;</em>{" "}reports what is
+          missing and changes nothing, so an unreviewed entry can never slip
+          into the catalogue.
         </p>
 
         <h3>Certification Mapping</h3>

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { requireAuth, handleAuthError } from "@/lib/auth";
+import { ELIGIBLE_TRAINING_DATA } from "@/lib/reportable-training";
 
 export async function GET(request: NextRequest) {
   try {
@@ -17,7 +18,14 @@ export async function GET(request: NextRequest) {
   }
 
   const trainings = await prisma.trainingData.findMany({
-    where: { trainingType: type as "Certification" | "Accreditation" | "InstructorLedTraining" | "OLX" },
+    // Reviewed rows only. This feeds the Program/Offering requirement picker,
+    // and an unreviewed import would be offered under its placeholder type —
+    // which is how one ends up configured into a requirement and counted for
+    // real. It reappears here as soon as an admin classifies it.
+    where: {
+      ...ELIGIBLE_TRAINING_DATA,
+      trainingType: type as "Certification" | "Accreditation" | "InstructorLedTraining" | "OLX",
+    },
     select: {
       trainingTitle: true,
       fullTitle: true,

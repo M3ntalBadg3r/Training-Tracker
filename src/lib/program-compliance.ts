@@ -11,6 +11,7 @@
  */
 
 import prisma from "@/lib/prisma";
+import { ELIGIBLE_TRAINING_DATA } from "@/lib/reportable-training";
 
 export interface ComplianceScope {
   country?: string;
@@ -94,8 +95,15 @@ export async function resolveSiblingTitles(trainingTitles: string[]): Promise<{
     }
   }
 
+  // Reviewed rows only. Sibling expansion matches on (fullTitle, trainingType)
+  // rather than on a configured title, so an unreviewed import can be pulled in
+  // without anyone having configured it: the auto-create sets
+  // `fullTitle = trainingTitle` and a placeholder type of `Certification`, so a
+  // freshly-imported title that happens to equal a configured certification's
+  // Full Title would join that requirement's group and contribute its holders
+  // to the attained count and the roster drill-down.
   const siblings = await prisma.trainingData.findMany({
-    where: { OR: orPairs },
+    where: { AND: [ELIGIBLE_TRAINING_DATA, { OR: orPairs }] },
     select: { trainingTitle: true, fullTitle: true, trainingType: true },
   });
 

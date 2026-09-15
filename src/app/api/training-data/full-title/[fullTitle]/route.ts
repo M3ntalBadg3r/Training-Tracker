@@ -55,6 +55,7 @@ export async function GET(
     isLegacy: t.isLegacy,
     replacedBy: t.replacedBy,
     isIncomplete: t.isIncomplete,
+    isIgnored: t.isIgnored,
     subItems: t.subItemMemberships.map((m) => m.subItemTrainingTitle),
     parents: t.parentMemberships.map((m) => m.parentTrainingTitle),
   }));
@@ -79,6 +80,7 @@ export async function GET(
  *        the chosen replacement Full Titles to their underlying training titles.
  *  - setProductType: string   → apply a product type to every member
  *  - setFunction: string      → apply a function to every member
+ *  - setIgnored: boolean      → mark/unmark the whole group as not needed
  */
 export async function PATCH(
   request: NextRequest,
@@ -160,6 +162,11 @@ export async function PATCH(
     if (typeof body.setFunction === "string" && body.setFunction.trim()) {
       data.function = body.setFunction as FunctionType;
     }
+    // Ignoring applies to every member whatever its type and has no companion
+    // field, so it rides the bulk update rather than the per-member legacy loop
+    // below. Explicit boolean check: `false` is a meaningful value here
+    // (restore), which a truthiness test would drop.
+    if (typeof body.setIgnored === "boolean") data.isIgnored = body.setIgnored;
     if (Object.keys(data).length > 0) {
       await tx.trainingData.updateMany({ where: { fullTitle: decoded }, data });
     }
