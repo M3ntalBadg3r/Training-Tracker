@@ -92,6 +92,17 @@ const TARGET_FIELDS = [
 
 type ImportStep = "upload" | "mapping" | "resolve" | "importing" | "summary";
 
+/**
+ * Placeholder for a field on an auto-created ("needs attention") training that
+ * the admin has not chosen yet. The columns are NOT NULL, so the import has to
+ * store *something* for Type/Product/Function — showing those invented values
+ * made the row look curated and finished. This is what the amber table renders
+ * instead, so the work left to do is visible.
+ */
+function NotSet() {
+  return <span className="italic text-amber-700">Not set</span>;
+}
+
 interface ImportSummary {
   imported: number;
   updated: number;
@@ -389,7 +400,9 @@ function TrainingDataPageInner() {
 
   // Incomplete entries
   const incompleteData = useMemo(() => trainingList.filter((t) => t.isIncomplete), [trainingList]);
-  const [markingComplete, setMarkingComplete] = useState<string | null>(null);
+  // Error shown under the "needs attention" banner — a missing Type/Product/
+  // Function, or a rejected save. The save handler used to swallow both.
+  const [incompleteError, setIncompleteError] = useState<string | null>(null);
   // "new" = type a brand-new Full Title; "existing" = attach to a group below.
   const [incompleteFullTitleMode, setIncompleteFullTitleMode] = useState<"new" | "existing">("new");
 
@@ -411,13 +424,6 @@ function TrainingDataPageInner() {
       })
       .catch(() => {});
   }, []);
-
-  const handleMarkComplete = async (trainingTitle: string) => {
-    setMarkingComplete(trainingTitle);
-    await fetch(`/api/training-data/${encodeURIComponent(trainingTitle)}`, { method: "PATCH" });
-    setMarkingComplete(null);
-    fetchRawTrainingData();
-  };
 
   // Import state
   const [showImport, setShowImport] = useState(false);
@@ -556,17 +562,41 @@ function TrainingDataPageInner() {
   };
 
   const handleUpdateTraining = async (originalTitle: string) => {
+    // Auto-created rows carry import placeholders for Type/Product/Function
+    // that the "needs attention" table deliberately shows as unset, so saving
+    // one is what supplies those values AND completes it. Require all three
+    // rather than letting a blank ride the placeholder through.
+    const isIncompleteRow = incompleteData.some((t) => t.trainingTitle === originalTitle);
+    if (isIncompleteRow) {
+      const missing = [
+        !editValues.trainingType && "Type",
+        !editValues.productType && "Product",
+        !editValues.function && "Function",
+      ].filter((m): m is string => typeof m === "string");
+      if (missing.length > 0) {
+        setIncompleteError(`Choose a value for ${missing.join(", ")} before completing this entry.`);
+        return;
+      }
+    }
+
     const res = await fetch(
       `/api/training-data/${encodeURIComponent(originalTitle)}`,
       {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(editValues),
+        body: JSON.stringify(
+          isIncompleteRow ? { ...editValues, isIncomplete: false } : editValues
+        ),
       }
     );
     if (res.ok) {
+      setIncompleteError(null);
       setEditingTitle(null);
       fetchRawTrainingData();
+    } else if (isIncompleteRow) {
+      // Previously a rejected save looked identical to a successful one.
+      const data = await res.json().catch(() => null);
+      setIncompleteError(data?.error || "Could not save this entry. Please try again.");
     }
   };
 
@@ -1466,10 +1496,16 @@ function TrainingDataPageInner() {
                   {incompleteData.length} training {incompleteData.length === 1 ? "entry" : "entries"} need attention
                 </p>
                 <p className="text-xs text-amber-700">
-                  These were auto-created during import. Fill in the details and click &quot;Mark as Complete&quot; for each.
+                  These were auto-created during import, so their Type, Product and Function are not
+                  set yet. Click Edit on each, choose those values, then Save &amp; Complete.
                 </p>
               </div>
             </div>
+            {incompleteError && (
+              <div className="bg-red-50 border-b border-red-200 px-4 py-2 text-xs text-red-700">
+                {incompleteError}
+              </div>
+            )}
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
@@ -1541,9 +1577,10 @@ function TrainingDataPageInner() {
                           <select value={editValues.trainingType}
                             onChange={(e) => { const val = e.target.value; setEditValues((prev) => ({ ...prev, trainingType: val, certification: (val === "InstructorLedTraining" || val === "OLX") ? prev.certification : [] })); }}
                             className="border border-gray-300 rounded px-2 py-1 text-sm">
+                            <option value="">Select…</option>
                             {TRAINING_TYPES.map((tt) => <option key={tt} value={tt}>{TRAINING_TYPE_LABELS[tt]}</option>)}
                           </select>
-                        ) : (TRAINING_TYPE_LABELS[t.trainingType] || t.trainingType)}
+                        ) : <NotSet />}
                       </td>
                       {/* Link */}
                       <td className="px-4 py-3">
@@ -1561,9 +1598,10 @@ function TrainingDataPageInner() {
                           <select value={editValues.productType}
                             onChange={(e) => setEditValues((prev) => ({ ...prev, productType: e.target.value }))}
                             className="border border-gray-300 rounded px-2 py-1 text-sm">
+                            <option value="">Select…</option>
                             {productTypes.map((pt) => <option key={pt} value={pt}>{pt}</option>)}
                           </select>
-                        ) : t.productType}
+                        ) : <NotSet />}
                       </td>
                       {/* Function */}
                       <td className="px-4 py-3">
@@ -1571,9 +1609,10 @@ function TrainingDataPageInner() {
                           <select value={editValues.function}
                             onChange={(e) => setEditValues((prev) => ({ ...prev, function: e.target.value }))}
                             className="border border-gray-300 rounded px-2 py-1 text-sm">
+                            <option value="">Select…</option>
                             {FUNCTION_TYPES.map((ft) => <option key={ft} value={ft}>{FUNCTION_TYPE_LABELS[ft]}</option>)}
                           </select>
-                        ) : (FUNCTION_TYPE_LABELS[t.function] || t.function)}
+                        ) : <NotSet />}
                       </td>
                       {/* Actions */}
                       <td className="px-4 py-3">
@@ -1581,19 +1620,16 @@ function TrainingDataPageInner() {
                           {editingTitle === t.trainingTitle ? (
                             <>
                               <button onClick={() => handleUpdateTraining(t.trainingTitle)}
-                                className="px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700">Save</button>
-                              <button onClick={() => setEditingTitle(null)}
+                                className="px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700">Save &amp; Complete</button>
+                              <button onClick={() => { setEditingTitle(null); setIncompleteError(null); }}
                                 className="px-2 py-1 text-xs bg-gray-200 text-gray-700 rounded hover:bg-gray-300">Cancel</button>
                             </>
                           ) : (
                             <>
-                              <button onClick={() => { setIncompleteFullTitleMode("new"); setEditingTitle(t.trainingTitle); setEditValues({ trainingTitle: t.trainingTitle, fullTitle: t.fullTitle, trainingType: t.trainingType, productType: t.productType, function: t.function, link: t.link || "", certification: t.certification || [], subItems: t.subItems || [], parents: t.parents || [], isLegacy: t.isLegacy ?? false, replacedBy: t.replacedBy || [] }); }}
+                              {/* Type/Product/Function are seeded EMPTY, not from the row: the
+                                  stored values are import placeholders the admin never chose. */}
+                              <button onClick={() => { setIncompleteError(null); setIncompleteFullTitleMode("new"); setEditingTitle(t.trainingTitle); setEditValues({ trainingTitle: t.trainingTitle, fullTitle: t.fullTitle, trainingType: "", productType: "", function: "", link: t.link || "", certification: t.certification || [], subItems: t.subItems || [], parents: t.parents || [], isLegacy: t.isLegacy ?? false, replacedBy: t.replacedBy || [] }); }}
                                 className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200">Edit</button>
-                              <button onClick={() => handleMarkComplete(t.trainingTitle)}
-                                disabled={markingComplete === t.trainingTitle}
-                                className="px-2 py-1 text-xs bg-amber-500 text-white rounded hover:bg-amber-600 disabled:opacity-50">
-                                {markingComplete === t.trainingTitle ? "..." : "Mark as Complete"}
-                              </button>
                               <button onClick={() => handleDeleteTraining(t.trainingTitle)}
                                 className="px-2 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200">
                                 <Trash2 size={14} />

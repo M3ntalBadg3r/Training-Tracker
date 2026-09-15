@@ -388,6 +388,12 @@ export async function POST(request: NextRequest) {
         if (cachedDefaultProductTypeId === undefined) {
           cachedDefaultProductTypeId = await ensureDefaultProductTypeId();
         }
+        // trainingType/productTypeId/function are PLACEHOLDERS, not guesses to
+        // be trusted: the columns are NOT NULL so a value must be written, but
+        // nobody has chosen one. `isIncomplete: true` is what marks them as
+        // unsupplied — /admin/training-data renders those three as "Not set" in
+        // its amber table and refuses to clear the flag until an admin picks
+        // real values. Don't surface these anywhere as if they were curated.
         await prisma.trainingData.upsert({
           where: { trainingTitle: row.title },
           update: {},

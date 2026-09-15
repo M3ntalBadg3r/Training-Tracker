@@ -1113,12 +1113,22 @@ const helpSections: Record<string, HelpSection> = {
         <p>
           When a student import references a training title that doesn&rsquo;t
           exist yet, it is auto-created and highlighted in an amber{" "}
-          <strong>&ldquo;needs attention&rdquo;</strong> section at the top of
-          the page. When completing one, you can either{" "}
-          <strong>attach it to an existing Full Title</strong>{" "}via a dropdown
-          (it inherits that group&rsquo;s Type/Product/Function as editable
-          defaults) or <strong>create a new Full Title</strong>, then click{" "}
-          <strong>Mark as Complete</strong>.
+          <strong>&ldquo;needs attention&rdquo;</strong>{" "}section at the top of
+          the page. The import only knows the training&rsquo;s name, so its{" "}
+          <strong>Type</strong>, <strong>Product</strong> and{" "}
+          <strong>Function</strong> show as <em>Not set</em>{" "}until you choose
+          them &mdash; nothing is guessed on your behalf.
+        </p>
+        <p>
+          Click <strong>Edit</strong>{" "}on a row to complete it. You can either{" "}
+          <strong>attach it to an existing Full Title</strong>{" "}via the dropdown
+          (it inherits that group&rsquo;s Type/Product/Function, still editable)
+          or <strong>create a new Full Title</strong>{" "}and pick the three values
+          yourself. <strong>Save &amp; Complete</strong>{" "}then stores them and
+          moves the entry into the main list. All three are required: saving
+          with any of them left on <em>Select&hellip;</em>{" "}reports what is
+          missing and changes nothing, so an unreviewed entry can never slip
+          into the catalogue.
         </p>
 
         <h3>Certification Mapping</h3>

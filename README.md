@@ -815,7 +815,9 @@ Opening a Full Title takes you to a dedicated page (like a student record) showi
 
 #### Newly-discovered trainings (import)
 
-When a student import references a training title that doesn't exist yet, it is auto-created and highlighted in an amber **"needs attention"** section at the top of the page. When completing one, you can either **attach it to an existing Full Title** via a dropdown (it inherits that group's Type/Product/Function as editable defaults) or **create a new Full Title**, then click **Mark as Complete**.
+When a student import references a training title that doesn't exist yet, it is auto-created and highlighted in an amber **"needs attention"** section at the top of the page. The import only knows the training's name, so its **Type**, **Product** and **Function** show as *Not set* until you choose them — nothing is guessed on your behalf.
+
+Click **Edit** on a row to complete it. You can either **attach it to an existing Full Title** via the dropdown (it inherits that group's Type/Product/Function, still editable) or **create a new Full Title** and pick the three values yourself. **Save & Complete** stores them and moves the entry into the main list. All three are required — saving with any of them left on *Select…* reports what is missing and changes nothing, so an unreviewed entry can never slip into the catalogue.
 
 #### Certification Mapping
 
