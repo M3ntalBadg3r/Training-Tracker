@@ -621,29 +621,26 @@ function TrainingDataPageInner() {
     }
   };
 
-  // Ignore / restore. The amber table acts on a single entry (its rows are one
-  // per training title); the main table acts on the whole Full Title, matching
-  // the group-wide legacy cascade, since a Full Title is what that table treats
-  // as the record.
-  const setIgnored = async (target: { trainingTitle?: string; fullTitle?: string }, ignored: boolean) => {
+  /**
+   * Ignore an entry from the "needs attention" table, which is the one place on
+   * this page that offers it. The main table deliberately does not: its rows
+   * are one click from opening, so a destructive-looking button sits too close
+   * to an everyday one — ignoring a whole Full Title belongs on the Full Title
+   * page, next to the other group-wide actions, where it is a deliberate act.
+   */
+  const ignoreEntry = async (trainingTitle: string) => {
     setIncompleteError(null);
-    const res = target.trainingTitle
-      ? await fetch(`/api/training-data/${encodeURIComponent(target.trainingTitle)}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ isIgnored: ignored }),
-        })
-      : await fetch(`/api/training-data/full-title/${encodeURIComponent(target.fullTitle ?? "")}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ setIgnored: ignored }),
-        });
+    const res = await fetch(`/api/training-data/${encodeURIComponent(trainingTitle)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ isIgnored: true }),
+    });
     if (res.ok) {
       fetchRawTrainingData();
       return;
     }
     const data = await res.json().catch(() => null);
-    setIncompleteError(data?.error || `Could not ${ignored ? "ignore" : "restore"} this entry. Please try again.`);
+    setIncompleteError(data?.error || "Could not ignore this entry. Please try again.");
   };
 
   const handleUpdateTraining = async (originalTitle: string) => {
@@ -1744,7 +1741,7 @@ function TrainingDataPageInner() {
                               <button onClick={() => { setIncompleteError(null); setIncompleteFullTitleMode("new"); setEditingTitle(t.trainingTitle); setEditValues({ trainingTitle: t.trainingTitle, fullTitle: t.fullTitle, trainingType: "", productType: "", function: "", link: t.link || "", certification: t.certification || [], subItems: t.subItems || [], parents: t.parents || [], isLegacy: t.isLegacy ?? false, replacedBy: t.replacedBy || [] }); }}
                                 className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200">Edit</button>
                               <button
-                                onClick={() => setIgnored({ trainingTitle: t.trainingTitle }, true)}
+                                onClick={() => ignoreEntry(t.trainingTitle)}
                                 title="Not needed — leave it out of reporting instead of filling it in. You can restore it later."
                                 className="px-2 py-1 text-xs bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
                               >
@@ -1906,18 +1903,6 @@ function TrainingDataPageInner() {
                           className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
                         >
                           Edit
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setIgnored({ fullTitle: g.fullTitle }, !g.allIgnored);
-                          }}
-                          title={g.allIgnored
-                            ? "Restore — count this entry in reporting again"
-                            : "Not needed — leave every training title under this Full Title out of reporting"}
-                          className="ml-2 px-2 py-1 text-xs bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
-                        >
-                          {g.allIgnored ? "Restore" : "Ignore"}
                         </button>
                       </td>
                     </tr>
