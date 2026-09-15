@@ -232,11 +232,23 @@ function TrainingDataPageInner() {
   }, [subItemsByParent]);
 
   // Members (individual training titles) passing the active search + filters.
-  // The table groups these by fullTitle; OLX sub-items are excluded here so they
-  // don't form their own top-level groups — they appear nested under their
-  // parent OLX instead.
+  // The table groups these by fullTitle; while browsing, OLX sub-items are
+  // excluded here so they don't form their own top-level groups — they appear
+  // nested under their parent OLX instead.
+  //
+  // A search term or an explicit Type = OLX Sub-Item filter is a request to
+  // FIND one, though, so the exclusion lifts for those: without this a parented
+  // sub-item was unreachable from the list entirely (the type filter also
+  // removes its OLX parent, taking the nested rows with it), and the only way
+  // to edit one was to detach it from its parent first.
   const filteredMembers = useMemo(() => {
-    let result = trainingList.filter((t) => !t.isIncomplete && !subItemTitleSet.has(t.trainingTitle));
+    // columnFilters stores the raw enum, not the "OLX Sub-Item" display label.
+    const surfaceSubItems =
+      !!debouncedSearch || columnFilters.trainingType === "OLXSubItem";
+
+    let result = trainingList.filter(
+      (t) => !t.isIncomplete && (surfaceSubItems || !subItemTitleSet.has(t.trainingTitle))
+    );
 
     // Free-form search
     if (debouncedSearch) {
@@ -307,6 +319,15 @@ function TrainingDataPageInner() {
             members
               .filter((m) => m.isLegacy)
               .flatMap((m) => (m.replacedBy ?? []).map((rt) => trainingTitleToFullTitle.get(rt) ?? rt))
+          )
+        ),
+        // Parent OLX(es) of any sub-item member, so a sub-item surfaced by a
+        // search or the type filter still shows where it belongs.
+        parentFulls: Array.from(
+          new Set(
+            members
+              .filter((m) => m.trainingType === "OLXSubItem")
+              .flatMap((m) => (m.parents ?? []).map((pt) => trainingTitleToFullTitle.get(pt) ?? pt))
           )
         ),
       };
@@ -1689,6 +1710,11 @@ function TrainingDataPageInner() {
                         {g.certTitles.length > 0 && (
                           <div className="text-xs text-gray-500 mt-0.5">
                             → Leads to: <span className="text-gray-700">{g.certTitles.join(", ")}</span>
+                          </div>
+                        )}
+                        {g.parentFulls.length > 0 && (
+                          <div className="text-xs text-gray-500 mt-0.5">
+                            ↳ Sub-item of: <span className="text-gray-700">{g.parentFulls.join(", ")}</span>
                           </div>
                         )}
                       </td>
