@@ -8,6 +8,11 @@ import { resolveProductTypeId } from "@/lib/product-types";
 import { sanitizeLegacyFields, isLegacyEligible } from "@/lib/legacy-training";
 import { invalidateReportCache } from "@/lib/report-cache";
 
+const isTrainingType = (v: unknown): v is TrainingType =>
+  typeof v === "string" && Object.values(TrainingType).includes(v as TrainingType);
+const isFunctionType = (v: unknown): v is FunctionType =>
+  typeof v === "string" && Object.values(FunctionType).includes(v as FunctionType);
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ title: string }> }
@@ -164,6 +169,40 @@ export async function PUT(
   const subItems = body.subItems !== undefined ? dedupeStrings(body.subItems) : undefined;
   const parents = body.parents !== undefined ? dedupeStrings(body.parents) : undefined;
 
+  // Enum validation. These used to be blind casts, so a bad value surfaced as a
+  // 500 from Prisma rather than a 400 — and the completion gate below has to be
+  // able to trust them.
+  if (body.trainingType !== undefined && body.trainingType !== "" &&
+      !isTrainingType(body.trainingType)) {
+    return NextResponse.json({ error: "Invalid training type" }, { status: 400 });
+  }
+  if (body.function !== undefined && body.function !== "" &&
+      !isFunctionType(body.function)) {
+    return NextResponse.json({ error: "Invalid function" }, { status: 400 });
+  }
+
+  // Completing an auto-created ("needs attention") row. Its stored
+  // type/product/function are import placeholders that the admin never chose,
+  // so clearing the flag is only legitimate once all three are actually
+  // supplied. The update spreads below are truthiness-guarded, so without this
+  // check an empty value would be silently dropped — keeping the placeholder
+  // while still marking the row complete, which is the exact failure this
+  // gate exists to prevent.
+  const completing = body.isIncomplete === false;
+  if (completing) {
+    const missing = [
+      !body.trainingType && "Type",
+      !body.productType && "Product",
+      !body.function && "Function",
+    ].filter((m): m is string => typeof m === "string");
+    if (missing.length > 0) {
+      return NextResponse.json(
+        { error: `Choose a value for ${missing.join(", ")} before completing this entry` },
+        { status: 400 }
+      );
+    }
+  }
+
   // If trainingTitle changed, need to delete + recreate since it's the PK
   if (newTitle && newTitle !== decodedTitle) {
     const existing = await prisma.trainingData.findUnique({
@@ -183,7 +222,7 @@ export async function PUT(
       where: { trainingTitle: decodedTitle },
       select: { trainingType: true, isLegacy: true, replacedBy: true },
     });
-    const effectiveType = (body.trainingType as string | undefined)
+    const effectiveType = (isTrainingType(body.trainingType) ? body.trainingType : undefined)
       ?? oldForLegacy?.trainingType ?? "Certification";
     const legacyRename = await sanitizeLegacyFields(
       newTitle,
@@ -213,7 +252,10 @@ export async function PUT(
         where: { trainingTitle: decodedTitle },
       });
       await tx.trainingData.delete({ where: { trainingTitle: decodedTitle } });
-      const trainingType = (body.trainingType as TrainingType) ?? old?.trainingType ?? "Certification";
+      // `??` alone would let an empty string through onto an enum column; only
+      // a value that actually parses counts as supplied.
+      const trainingType = (isTrainingType(body.trainingType) ? body.trainingType : undefined)
+        ?? old?.trainingType ?? "Certification";
       const resolvedProductTypeId = body.productType !== undefined
         ? await resolveProductTypeId(body.productType)
         : null;
@@ -227,7 +269,8 @@ export async function PUT(
           fullTitle: body.fullTitle ?? old?.fullTitle ?? "",
           trainingType,
           productTypeId,
-          function: (body.function as FunctionType) ?? old?.function ?? "Sales",
+          function: (isFunctionType(body.function) ? body.function : undefined)
+            ?? old?.function ?? "Sales",
           link: body.link !== undefined ? safeExternalUrl(body.link) : old?.link ?? null,
           certification: trainingType === "OLXSubItem"
             ? []
@@ -311,6 +354,8 @@ export async function PUT(
           isLegacy: legacyUpdate.isLegacy,
           replacedBy: legacyUpdate.replacedBy,
         }),
+        // Guarded above: only reachable with all three fields supplied.
+        ...(completing && { isIncomplete: false }),
       },
     });
     const sync = await syncMemberships(tx, decodedTitle, updated.trainingType, subItems, parents);
@@ -325,30 +370,12 @@ export async function PUT(
   return NextResponse.json(training);
 }
 
-export async function PATCH(
-  request: NextRequest,
-  { params }: { params: Promise<{ title: string }> }
-) {
-  try {
-    await requireSuperAdmin(request);
-  } catch (error) {
-    return handleAuthError(error);
-  }
-  const { title } = await params;
-  const decodedTitleMaybe = safeDecodeParam(title);
-  if (decodedTitleMaybe === null) {
-    return NextResponse.json({ error: "Invalid title parameter" }, { status: 400 });
-  }
-  const decodedTitle = decodedTitleMaybe;
-
-  const training = await prisma.trainingData.update({
-    where: { trainingTitle: decodedTitle },
-    data: { isIncomplete: false },
-  });
-
-  invalidateReportCache();
-  return NextResponse.json(training);
-}
+// There is deliberately no PATCH here. It used to be a bodyless
+// "flip isIncomplete to false" that the old "Mark as Complete" button called
+// without the admin ever opening the editor, which promoted the import's
+// placeholder type/product/function into the catalogue as if they had been
+// chosen. Completion now runs through PUT, which supplies the real values and
+// validates them together — see the completion gate there.
 
 export async function DELETE(
   request: NextRequest,
