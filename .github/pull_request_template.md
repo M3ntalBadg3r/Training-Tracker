@@ -11,14 +11,16 @@
 ### Post-change rules (CLAUDE.md)
 
 Tick what applies; strike out what genuinely does not. `release-hygiene` checks
-the first three mechanically — the rest are yours.
+the first two mechanically — the rest are yours.
 
-- [ ] **Version bumped by exactly 0.01** in `package.json` — one task, one bump,
-      no skipped numbers.
-- [ ] **`package-lock.json`'s two `version` fields** match `package.json`.
-- [ ] **Release notes written** to `.github/releases/v<version>-dev.md` (or
-      `v<version>.md` for a stable promotion, aggregating every dev pre-release
-      since the last stable).
+- [ ] **Version left alone** — an ordinary task does not bump it and publishes no
+      release. *Only* tick the two below instead if this PR is deliberately
+      cutting a release.
+- [ ] **If cutting a release:** `package-lock.json`'s two `version` fields match
+      `package.json`, and notes are written to `.github/releases/v<version>-dev.md`
+      (or `v<version>.md` for a stable promotion). Draft them with
+      `npm run notes:draft -- --from <last tag>`, then **edit** — the raw draft is
+      merged PR titles, not a changelog.
 - [ ] **`README.md` updated** — or not needed, because this does not change how
       the system is used.
 - [ ] **`src/lib/help-content.tsx` updated** — or not needed, because no
@@ -33,6 +35,9 @@ the first three mechanically — the rest are yours.
       home-directory paths — names are a human check, and passing it is not a
       de-identification review. Label `skip-deid-scan` to override a false
       positive.)*
+- [ ] **This PR's title is safe to publish.** It becomes a line in the drafted
+      release notes for whichever release picks this change up, and nothing
+      scans PR titles.
 
 ### Security
 

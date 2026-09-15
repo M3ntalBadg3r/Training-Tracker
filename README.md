@@ -95,7 +95,7 @@ Install Training Tracker on a fresh Debian-based system with a single command:
 curl -sSL https://raw.githubusercontent.com/M3ntalBadg3r/Training-Tracker/master/deploy/install-remote.sh | bash
 ```
 
-To install the **dev channel** (tracks the `dev` branch and receives pre-releases):
+To install the **dev channel** (tracks the `dev` branch continuously):
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/M3ntalBadg3r/Training-Tracker/master/deploy/install-remote.sh | bash -s -- --dev
@@ -1058,7 +1058,7 @@ A detailed timestamped log is available via the **Update Log** section on the Up
 The system supports two update channels, controlled by the `UPDATE_CHANNEL` variable in your `.env` file:
 
 - **`stable`** (default) — Only shows full production releases. Recommended for production systems on the `master` branch.
-- **`dev`** — Shows all releases including pre-releases. Use this for development/testing systems that track the `dev` branch.
+- **`dev`** — Tracks the `dev` branch continuously, for development and testing systems. It publishes no releases: rather than comparing version numbers it compares the commit your system was built from against the branch, so it reports how many changes are waiting and lists them. A dev system's version number therefore stays put between releases, which is expected — the version moves when a build is cut, not every time a fix lands.
 
 The current channel is displayed as a clickable badge next to the version number on the Updates page. Click it to switch channels — the system will check out the target branch, pull the latest code, rebuild, and restart. When switching from dev back to stable, the system verifies that the latest stable release is at or ahead of your installed version to prevent downgrades.
 

@@ -25,6 +25,17 @@ interface UpdateInfo {
   latestVersion: string | null;
   updateAvailable: boolean;
   prerelease?: boolean;
+  /**
+   * "release" compares version numbers against GitHub releases; "commits"
+   * compares the installed commit against the head of the tracked branch. The
+   * dev channel publishes no releases, so it has no version to compare.
+   */
+  mode?: "release" | "commits";
+  branch?: string;
+  /** Commits on the tracked branch this install does not have — null if unknown. */
+  commitsBehind?: number | null;
+  /** Subject lines of those commits, newest first. */
+  changes?: string[];
   releaseName?: string;
   releaseNotes?: string;
   publishedAt?: string;
@@ -644,7 +655,13 @@ export default function UpdatesPage() {
                   Update Available
                 </h2>
                 <span className="px-2 py-0.5 text-sm font-medium bg-green-100 text-green-700 rounded-full">
-                  v{updateInfo.latestVersion}
+                  {updateInfo.mode === "commits"
+                    ? updateInfo.commitsBehind == null
+                      ? `New commits on ${updateInfo.branch || "dev"}`
+                      : `${updateInfo.commitsBehind} new commit${
+                          updateInfo.commitsBehind === 1 ? "" : "s"
+                        }`
+                    : `v${updateInfo.latestVersion}`}
                 </span>
                 {updateInfo.prerelease && (
                   <span className="px-2 py-0.5 text-xs font-medium bg-amber-100 text-amber-700 rounded-full">
@@ -668,6 +685,20 @@ export default function UpdatesPage() {
                   )}
                 </p>
               )}
+
+              {updateInfo.mode === "commits" &&
+                (updateInfo.changes?.length ?? 0) > 0 && (
+                  <div className="mb-4 p-4 bg-gray-50 rounded-lg border border-gray-100">
+                    <h4 className="text-sm font-semibold text-gray-700 mb-2">
+                      Changes on {updateInfo.branch || "dev"}
+                    </h4>
+                    <ul className="text-sm text-gray-600 list-disc pl-5 space-y-1">
+                      {updateInfo.changes?.map((c, i) => (
+                        <li key={i}>{c}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
 
               {updateInfo.releaseNotes && (
                 <div className="mb-4 p-4 bg-gray-50 rounded-lg border border-gray-100">
@@ -708,7 +739,11 @@ export default function UpdatesPage() {
               <span className="text-sm font-medium">
                 {updateInfo.message === "No releases found"
                   ? "No releases found on GitHub"
-                  : "You are running the latest version"}
+                  : updateInfo.mode === "commits"
+                    ? `You are up to date with the ${
+                        updateInfo.branch || "dev"
+                      } branch`
+                    : "You are running the latest version"}
               </span>
             </div>
           )}

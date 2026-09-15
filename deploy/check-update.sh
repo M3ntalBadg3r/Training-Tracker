@@ -37,22 +37,74 @@ fi
 # Default to stable channel
 UPDATE_CHANNEL="${UPDATE_CHANNEL:-stable}"
 
-# Query GitHub releases API.
-#
-# The optional auth header goes in an array, not through `eval`: GITHUB_TOKEN
-# comes from a file the service account can write, so an eval'd command line
-# would be root command injection.
+# Query GitHub. The optional auth header goes in an array, not through `eval`:
+# GITHUB_TOKEN comes from a file the service account can write, so an eval'd
+# command line would be root command injection.
 CURL_ARGS=(-s --max-time 10)
 if [ -n "$GITHUB_TOKEN" ]; then
     CURL_ARGS+=(-H "Authorization: Bearer ${GITHUB_TOKEN}")
 fi
 
+# ---------------------------------------------------------------------------
+# Dev ("edge") channel: compare commits, not versions.
+#
+# The dev channel publishes no GitHub releases. Every merge into dev used to cut
+# a `v<version>-dev` pre-release purely so this check had a version to compare,
+# which is how the releases page — which customers read — came to carry dozens of
+# entries a week. The installer pulls the `dev` branch directly, so the head of
+# that branch is the same signal without the noise.
+#
+# This uses `git ls-remote` rather than the GitHub API deliberately. auto-update.sh
+# runs this every 5 minutes: that is 12 API calls an hour against an
+# unauthenticated budget of 60 an hour PER IP, shared by every install behind the
+# same egress address, plus every load of /admin/updates. `ls-remote` costs
+# nothing, needs no token, and is exact. It is also read-only — it writes nothing
+# into .git, so it cannot race the updater or corrupt state.
+#
+# Safe to run git as root here: APP_DIR/.git is root-owned (see the ownership
+# invariant in CLAUDE.md), which is also why perform-update.sh can `git pull`.
+#
+# On ANY failure this falls through to the release check below rather than
+# reporting "up to date". A checker that goes quiet strands the box: nothing but
+# an update can replace this script, so a false "no update" is permanent.
+# ---------------------------------------------------------------------------
+if [ "$UPDATE_CHANNEL" = "dev" ]; then
+    LOCAL_COMMIT=$(git -C "${APP_DIR}" rev-parse HEAD 2>/dev/null)
+    REMOTE_COMMIT=$(git -C "${APP_DIR}" ls-remote origin refs/heads/dev 2>/dev/null | cut -f1)
+
+    if printf '%s' "${LOCAL_COMMIT}" | grep -Eq '^[0-9a-f]{40}$' &&
+       printf '%s' "${REMOTE_COMMIT}" | grep -Eq '^[0-9a-f]{40}$'; then
+        DEV_UPDATE="false"
+        [ "${LOCAL_COMMIT}" != "${REMOTE_COMMIT}" ] && DEV_UPDATE="true"
+
+        # Values are passed as argv elements and serialised by JSON.stringify —
+        # never spliced into the program text. See the header.
+        if node -e '
+            const [current,channel,updateAvailable,local,remote]=process.argv.slice(1);
+            console.log(JSON.stringify({
+                current,
+                latest: updateAvailable==="true" ? remote.slice(0,7) : current,
+                channel,
+                updateAvailable: updateAvailable==="true",
+                localCommit: local,
+                remoteCommit: remote,
+            }));
+        ' "${CURRENT}" "${UPDATE_CHANNEL}" "${DEV_UPDATE}" "${LOCAL_COMMIT}" "${REMOTE_COMMIT}" 2>/dev/null; then
+            exit 0
+        fi
+    fi
+    # Fell through: git could not answer. The release check below still runs.
+fi
+
 # Always fetch the releases list and pick the highest version ourselves.
 # /releases/latest relies on created_at ordering which breaks when a pre-release
 # is promoted to stable after a newer pre-release has been created.
-RESPONSE=$(curl "${CURL_ARGS[@]}" "https://api.github.com/repos/${REPO}/releases?per_page=20" 2>/dev/null)
+RESPONSE=$(curl "${CURL_ARGS[@]}" "https://api.github.com/repos/${REPO}/releases?per_page=100" 2>/dev/null)
 
 if echo "$RESPONSE" | grep -q '"tag_name"'; then
+    # The dev channel only reaches here when the git comparison above failed,
+    # in which case any release — pre-release included — is a better signal
+    # than silence.
     STABLE_ONLY="false"
     [ "$UPDATE_CHANNEL" != "dev" ] && STABLE_ONLY="true"
 
