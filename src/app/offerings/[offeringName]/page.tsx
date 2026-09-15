@@ -1,7 +1,7 @@
 "use client";
 
-import { Suspense, useMemo, useState } from "react";
-import { useParams, useSearchParams } from "next/navigation";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import PageHeader from "@/components/layout/PageHeader";
 import Modal from "@/components/ui/Modal";
@@ -80,9 +80,35 @@ function OfferingDashboardInner() {
   }, [urlCompanyId, scope.selected, scope.companies]);
   const companyQS = companyId != null ? `&companyId=${companyId}` : "";
 
-  const [level, setLevel] = useState<"country" | "region">("country");
-  const [value, setValue] = useState("");
+  // Scope, seeded from the URL so Back from a student record restores the view
+  // (mirrored back by the effect below).
+  const [level, setLevel] = useState<"country" | "region">(() =>
+    searchParams.get("level") === "region" ? "region" : "country"
+  );
+  const [value, setValue] = useState(() => searchParams.get("value") ?? "");
   const [showExport, setShowExport] = useState(false);
+
+  const router = useRouter();
+  const pathname = usePathname();
+
+  // `companyId` is preserved exactly as it arrived rather than written from the
+  // derived value: it identifies which company's offering this is, and pinning
+  // a derived one into the URL would stop the page following the header
+  // switcher on every later visit.
+  const buildViewParams = useCallback(() => {
+    const params = new URLSearchParams();
+    if (urlCompanyId) params.set("companyId", urlCompanyId);
+    params.set("level", level);
+    if (value) params.set("value", value);
+    return params;
+  }, [urlCompanyId, level, value]);
+
+  useEffect(() => {
+    const qs = buildViewParams().toString();
+    if (qs !== searchParams.toString()) {
+      router.replace(`${pathname}?${qs}`, { scroll: false });
+    }
+  }, [buildViewParams, pathname, router, searchParams]);
 
   // Students modal
   const [students, setStudents] = useState<StudentRow[] | null>(null);

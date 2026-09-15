@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useFetchJson } from "@/hooks/useFetchJson";
-import { useParams } from "next/navigation";
+import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import PageHeader from "@/components/layout/PageHeader";
 import Modal from "@/components/ui/Modal";
@@ -37,6 +37,35 @@ interface ProgramMeta {
 
 type ScopeLevel = "global" | "theatre" | "region" | "country";
 
+// ── URL round-trip for the view ──
+// Scope and horizon are mirrored to the query string so Back from a student
+// record restores the view (see the mirror effect below). Values read back are
+// validated rather than trusted: the horizon must be one the selector can
+// render, and a seeded scope is additionally checked against the program's own
+// configured levels before it is accepted.
+
+/** The "Compliance as of" options — a value outside this set has no option to render. */
+const HORIZON_OPTIONS = [0, 3, 6, 12];
+
+function parseScopeLevel(v: string | null): ScopeLevel | null {
+  return v === "global" || v === "theatre" || v === "region" || v === "country" ? v : null;
+}
+
+function parseHorizon(v: string | null): number {
+  const n = parseInt(v ?? "", 10);
+  return HORIZON_OPTIONS.includes(n) ? n : 0;
+}
+
+/**
+ * Whether the program offers a level. Region is not a configured level of its
+ * own — it is derived from Country-level requirements, so it rides on Country.
+ */
+function levelOffered(level: ScopeLevel, levels: string[]): boolean {
+  if (level === "global") return levels.includes("Global");
+  if (level === "theatre") return levels.includes("Theatre");
+  return levels.includes("Country");
+}
+
 /** True when an ISO (YYYY-MM-DD) expiry date falls within the next 3 months. */
 function isExpiringSoon(iso: string | undefined): boolean {
   if (!iso) return false;
@@ -47,7 +76,10 @@ function isExpiringSoon(iso: string | undefined): boolean {
   return expiry <= threshold;
 }
 
-export default function ProgramDetailPage() {
+function ProgramDetailPageInner() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const params = useParams<{ programName: string }>();
   const programName = useMemo(() => {
     try {
@@ -80,8 +112,17 @@ export default function ProgramDetailPage() {
 
   // Forward-looking projection horizon (0 = today). When > 0 the dashboard shows
   // how compliance will stand once certs expiring within the window drop out.
-  const [horizonMonths, setHorizonMonths] = useState(0);
+  const [horizonMonths, setHorizonMonths] = useState(() => parseHorizon(searchParams.get("horizon")));
   const horizonQS = horizonMonths > 0 ? `&horizonMonths=${horizonMonths}` : "";
+
+  // Mount-time snapshot of the scope the URL asked for. Held in state rather
+  // than read from `searchParams` at the point of use because the mirror effect
+  // below rewrites the URL, and the default-scope pass must weigh what the user
+  // arrived with — not what this page has since written.
+  const [urlScope] = useState(() => ({
+    level: parseScopeLevel(searchParams.get("level")),
+    value: searchParams.get("scope") ?? "",
+  }));
 
   const [meta, setMeta] = useState<ProgramMeta | null>(null);
   const [countries, setCountries] = useState<string[]>([]);
@@ -91,8 +132,8 @@ export default function ProgramDetailPage() {
   // Single page-level scope: a level plus (for non-global levels) a value. This
   // one selection drives BOTH the Tier Status block and the matching report,
   // which the API returns together in a single response per level.
-  const [scopeLevel, setScopeLevel] = useState<ScopeLevel>("global");
-  const [scopeValue, setScopeValue] = useState("");
+  const [scopeLevel, setScopeLevel] = useState<ScopeLevel>(urlScope.level ?? "global");
+  const [scopeValue, setScopeValue] = useState(urlScope.value);
   const [scopeInitialised, setScopeInitialised] = useState(false);
 
 
@@ -130,7 +171,8 @@ export default function ProgramDetailPage() {
   const isTiered = meta?.isTiered ?? false;
 
   const needsValue = scopeLevel !== "global";
-  const scopeValues = scopeLevel === "theatre" ? theatres : scopeLevel === "region" ? regions : countries;
+  const valuesForLevel = (l: ScopeLevel) => (l === "theatre" ? theatres : l === "region" ? regions : countries);
+  const scopeValues = valuesForLevel(scopeLevel);
   const scopeMissing = needsValue && !scopeValue;
 
   // Initial load — fetch metadata + available countries/regions/theatres.
@@ -151,16 +193,27 @@ export default function ProgramDetailPage() {
   // configured level, and auto-select the first value for value-requiring
   // levels. Done while rendering (the `scopeInitialised` latch makes it
   // one-shot) rather than in an effect, since the user owns the scope after.
+  // A scope seeded from the URL (back-navigation, a shared link) wins over that
+  // default — but only once it has been checked against this program, which is
+  // what `meta` arriving makes possible. A stale link naming a level the
+  // program no longer configures, or a value no longer in its list, falls back
+  // to the default rather than parking the page on a scope with no data.
   if (meta && !scopeInitialised && meta.levels.length > 0) {
-    if (meta.levels.includes("Global")) {
-      setScopeLevel("global");
-      setScopeValue("");
-    } else if (meta.levels.includes("Theatre")) {
-      setScopeLevel("theatre");
-      setScopeValue(theatres[0] ?? "");
-    } else if (meta.levels.includes("Country")) {
-      setScopeLevel("country");
-      setScopeValue(countries[0] ?? "");
+    const seedUsable =
+      urlScope.level !== null &&
+      levelOffered(urlScope.level, meta.levels) &&
+      (urlScope.level === "global" || valuesForLevel(urlScope.level).includes(urlScope.value));
+    if (!seedUsable) {
+      if (meta.levels.includes("Global")) {
+        setScopeLevel("global");
+        setScopeValue("");
+      } else if (meta.levels.includes("Theatre")) {
+        setScopeLevel("theatre");
+        setScopeValue(theatres[0] ?? "");
+      } else if (meta.levels.includes("Country")) {
+        setScopeLevel("country");
+        setScopeValue(countries[0] ?? "");
+      }
     }
     setScopeInitialised(true);
   }
@@ -172,6 +225,26 @@ export default function ProgramDetailPage() {
     else if (level === "region") setScopeValue(regions[0] ?? "");
     else setScopeValue(countries[0] ?? "");
   };
+
+  // Mirror the view to the URL so Back from a student record restores it.
+  // Gated on `scopeInitialised` because until the default pass has run the
+  // scope is provisional — writing it would mirror "global" over a seeded
+  // level and defeat the very restore this exists for.
+  const buildViewParams = useCallback(() => {
+    const params = new URLSearchParams();
+    params.set("level", scopeLevel);
+    if (scopeLevel !== "global" && scopeValue) params.set("scope", scopeValue);
+    if (horizonMonths > 0) params.set("horizon", String(horizonMonths));
+    return params;
+  }, [scopeLevel, scopeValue, horizonMonths]);
+
+  useEffect(() => {
+    if (!scopeInitialised) return;
+    const qs = buildViewParams().toString();
+    if (qs !== searchParams.toString()) {
+      router.replace(`${pathname}?${qs}`, { scroll: false });
+    }
+  }, [scopeInitialised, buildViewParams, pathname, router, searchParams]);
 
   // Single scoped fetch — returns both the specialisations report and the tier
   // block for the selected scope. `loading` is derived by useFetchJson
@@ -592,5 +665,13 @@ export default function ProgramDetailPage() {
         )}
       </Modal>
     </div>
+  );
+}
+
+export default function ProgramDetailPage() {
+  return (
+    <Suspense fallback={<LoadingSpinner />}>
+      <ProgramDetailPageInner />
+    </Suspense>
   );
 }

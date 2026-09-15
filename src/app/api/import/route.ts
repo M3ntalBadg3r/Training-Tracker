@@ -151,13 +151,23 @@ export async function POST(request: NextRequest) {
     trainingsAutoCreated: 0,
     companiesCreated: 0,
     companyConflicts: 0,
-    dateFormatUsed: effectiveFormat,
+    // Only claim a format when a cell actually needed one. Native Excel date
+    // cells reach us as ISO and are parsed verbatim, so saying they were
+    // "parsed as DD/MM/YYYY" would describe a decision that never happened.
+    dateFormatUsed: detection.examined > 0 ? effectiveFormat : null,
     errors: [] as string[],
   };
 
-  if (detection.ambiguous && sampledValues.length > 0) {
+  // `ambiguous` now implies at least one text date cell was read, so no
+  // row-count guard is needed. Name how many cells the note is about when the
+  // column also held unambiguous ISO dates, so "All dates" stays truthful.
+  if (detection.ambiguous) {
+    const scope =
+      detection.iso > 0
+        ? `${detection.examined} text ${detection.examined === 1 ? "date" : "dates"}`
+        : "All dates";
     summary.errors.push(
-      `All dates fit both DD/MM/YYYY and MM/DD/YYYY — parsed as ${effectiveFormat} (the ${overrideFormat ? "override for this import" : "system default"}).`
+      `${scope} fit both DD/MM/YYYY and MM/DD/YYYY — parsed as ${effectiveFormat} (the ${overrideFormat ? "override for this import" : "system default"}).`
     );
   }
 

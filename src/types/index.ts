@@ -97,7 +97,7 @@ export interface ImportSummary {
   trainingsAutoCreated: number;
   companiesCreated?: number;
   companyConflicts?: number;
-  dateFormatUsed?: string;
+  dateFormatUsed?: string | null;
   errors: string[];
 }
 

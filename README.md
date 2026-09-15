@@ -662,12 +662,13 @@ During import, the following cleansing rules are applied automatically:
 
 ### Date Format Detection
 
-Dates in the file are parsed strictly against the **system default date format** (set in **Admin → System Settings**). The import inspects the Completed Date column before committing any rows:
+Dates in the file are parsed strictly against the **system default date format** (set in **Admin → System Settings**). The import inspects the **text** date cells in the Completed Date column before committing any rows — native Excel date cells are already unambiguous and take no part in this (see *Native Excel dates* below):
 
-- **Match** — every cell fits the system default. The import runs silently.
-- **Ambiguous** — every cell happens to fit both `DD/MM/YYYY` and `MM/DD/YYYY` (e.g. all days are 1–12). The import runs using the system default and adds a single line to the summary so you know the file couldn't be disambiguated.
-- **Mismatch** — at least one cell forces the other format (e.g. month=15 in a system set to `DD/MM/YYYY`). The import pauses and shows a modal: **"This file looks like MM/DD/YYYY. Use it for this import?"** Accept to override for that import only; cancel and either fix the file or change the system default.
-- **Internal conflict** — different cells force different formats (some `13/01/2025`, others `01/15/2025`). The import is rejected; clean the file and retry.
+- **Match** — every text cell fits the system default. The import runs silently.
+- **Nothing to decide** — the column holds no text date cells at all (typically an Excel file whose dates are real date cells). No format has to be chosen, so the summary says nothing about date formats.
+- **Ambiguous** — every text cell happens to fit both `DD/MM/YYYY` and `MM/DD/YYYY` (e.g. all days are 1–12). The import runs using the system default and adds a single line to the summary so you know the file couldn't be disambiguated. If the column mixed text dates with native Excel dates, that line names how many cells it is describing.
+- **Mismatch** — at least one text cell forces the other format (e.g. month=15 in a system set to `DD/MM/YYYY`). The import pauses and shows a modal: **"This file looks like MM/DD/YYYY. Use it for this import?"** Accept to override for that import only; cancel and either fix the file or change the system default.
+- **Internal conflict** — different text cells force different formats (some `13/01/2025`, others `01/15/2025`). The import is rejected; clean the file and retry.
 
 Rows that fail to parse against the chosen format are reported per-row with the expected format in the error message, rather than silently producing a wrong-date row.
 
@@ -1328,6 +1329,8 @@ All sections support export to CSV, Excel, and PDF. Alternative trainings (OR lo
 
 A **Compliance as of** selector in the dashboard header lets you look ahead and see how upcoming certificate expiry will affect compliance. Pick **+3**, **+6**, or **+12 months** and every section recomputes compliance as it will stand on that future date — any certificate expiring within the window drops out of the counts (set it back to **Now** for today's snapshot).
 
+Your **View** scope and the **Compliance as of** horizon are mirrored into the page address, so opening a person's record from a **View students** list and pressing **Back** returns you to the same scope rather than the dashboard's default one. It also makes a particular view bookmarkable and shareable as a link. A link naming a level or value the program no longer has falls back to the default view rather than showing an empty one.
+
 ### Compliance Planning
 
 **Programs > Compliance Planning** (`/programs/planning`) is the **action layer** over the program dashboards: they show *where the gaps are*, this page shows *who to move, in what order, for the least effort*. It reuses exactly the same distinct-holder counting — and the same scope rules — as the dashboards, so the two never disagree.
@@ -1357,6 +1360,8 @@ The **Renewal window** selector (Off / 1 / 3 / 6 / 12 months) projects complianc
 By default the window is **informational**: the KPIs and "Who to certify" still answer *what is broken today*. Tick **Plan for this window** to fold it in — gaps are sized from the projected figure, **People to certify** includes the renewals needed to hold compliance through the window, and those people appear in "Who to certify" as **Renewal (expiring)** candidates. For a tiered program this can change which specialisations are **Recommended**, since one that lapses inside the window no longer counts toward the tier.
 
 Each scope plans against **only its own-level requirements**, exactly like the dashboards: planning one country shows that country's Country-level requirements, not the theatre-wide requirement above it (select the theatre to plan against theatre-level requirements). An **Export report** button in the page header downloads the **whole plan** as one file — a KPI summary, the aggregate roadmap, the "Who to certify" list, a **Requirements at risk** section, and the renewals-at-risk list — as CSV, Excel (one sheet per section), or PDF (each section a headed table). With a window selected the roadmap gains **Projected**, **Expiring**, **Projected gap** and **Projected achieved** columns, and the file name carries a `-plusNmo` suffix (plus `-planned` when planning for the window). The candidate list and the renewals list also keep their own per-section export buttons for a quick single-table download. This release is a **live view** (no saved plans yet).
+
+Your selection — scope, programs and targets, the renewal window and **Plan for this window** — is mirrored into the page address, so opening a person's record from "Who to certify" or "Renewals at risk" and pressing **Back** returns you to the same plan instead of an empty one. It also makes a plan bookmarkable and shareable as a link.
 
 - Attained figures display as **current → projected** (e.g. `5 → 3`), with a **▼N expiring** note showing how many people lose a qualifying certificate within the window.
 - Requirements (and theatres) that are compliant today but will fall below their requirement by the chosen horizon are shaded **amber** with an **At Risk** status — an early warning to schedule renewals before compliance breaks. Green stays compliant through the horizon; red is already non-compliant today.
@@ -1430,7 +1435,11 @@ training:
 | **Offshore** | Everyone **worldwide** holding the training, with the onshore countries removed (so it includes the nearshore people plus every other theatre). Nearshore and Offshore are informational — they don't change the Met status. |
 
 Figures are scoped to the offering's company. Click **View** on any count to list
-the people behind it, and use **Export** for the current view. Offerings are
+the people behind it, and use **Export** for the current view. The selected
+level and value are mirrored into the page address, so opening a person's
+record and pressing **Back** returns you to the same country or region instead
+of an empty selector — and a view can be bookmarked or shared as a link.
+Offerings are
 included in both full and config backups (a config restore, which carries no
 companies, lands offerings on the target's oldest company for you to reassign),
 and are queryable via the public API (`GET /api/public/v1/offerings`, scoped to

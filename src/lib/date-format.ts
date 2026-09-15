@@ -88,6 +88,10 @@ export interface FormatDetectionResult {
   ambiguous: boolean;
   conflicts: DateFormat[];
   unparseable: string[];
+  /** Cells actually read as d/m/yyyy text — the only ones a format choice applies to. */
+  examined: number;
+  /** Cells already unambiguous as ISO yyyy-mm-dd (native Excel date cells, decoded client-side). */
+  iso: number;
 }
 
 /**
@@ -96,20 +100,30 @@ export interface FormatDetectionResult {
  *   we can name the format with confidence.
  * - If both interpretations work for every cell, we report ambiguous.
  * - If different cells force different formats, we report conflicts.
- * ISO yyyy-mm-dd values are ignored (they're always unambiguous).
+ * ISO yyyy-mm-dd values never vote (they're already unambiguous) but are
+ * counted, so a caller can tell a mixed column from a wholly-ISO one.
+ * A column with no text date cells at all — native Excel dates, blanks, or
+ * values we can't read — decides nothing: it returns `format: null` and
+ * `ambiguous: false`. Reporting ambiguity there would be an assertion made
+ * from zero evidence, which is what `examined` exists to prevent.
  */
 export function detectFormat(values: readonly string[]): FormatDetectionResult {
   let fitsDdMm = true;
   let fitsMmDd = true;
   let sawDdOnly = false;
   let sawMmOnly = false;
+  let examined = 0;
+  let iso = 0;
   const unparseable: string[] = [];
 
   for (const raw of values) {
     if (!raw) continue;
     const trimmed = raw.trim();
     if (!trimmed) continue;
-    if (ISO_DATE_RE.test(trimmed)) continue;
+    if (ISO_DATE_RE.test(trimmed)) {
+      iso++;
+      continue;
+    }
 
     const m = SLASH_DATE_RE.exec(trimmed);
     if (!m) {
@@ -128,25 +142,34 @@ export function detectFormat(values: readonly string[]): FormatDetectionResult {
       unparseable.push(trimmed);
       continue;
     }
+    examined++;
     if (!fitsAsDd) sawMmOnly = true;
     if (!fitsAsMm) sawDdOnly = true;
     fitsDdMm = fitsDdMm && fitsAsDd;
     fitsMmDd = fitsMmDd && fitsAsMm;
   }
 
-  if (sawDdOnly && sawMmOnly) {
-    return { format: null, ambiguous: false, conflicts: ["DD/MM/YYYY", "MM/DD/YYYY"], unparseable };
+  // Nothing was interpreted, so there is nothing to decide. fitsDdMm/fitsMmDd
+  // are still at their `true` seeds here, and falling through to the "both fit"
+  // branch below would claim ambiguity no cell ever demonstrated — which is
+  // exactly what reported a bogus mismatch on every native-Excel-date import.
+  if (examined === 0) {
+    return { format: null, ambiguous: false, conflicts: [], unparseable, examined, iso };
   }
-  if (sawDdOnly) return { format: "DD/MM/YYYY", ambiguous: false, conflicts: [], unparseable };
-  if (sawMmOnly) return { format: "MM/DD/YYYY", ambiguous: false, conflicts: [], unparseable };
+
+  if (sawDdOnly && sawMmOnly) {
+    return { format: null, ambiguous: false, conflicts: ["DD/MM/YYYY", "MM/DD/YYYY"], unparseable, examined, iso };
+  }
+  if (sawDdOnly) return { format: "DD/MM/YYYY", ambiguous: false, conflicts: [], unparseable, examined, iso };
+  if (sawMmOnly) return { format: "MM/DD/YYYY", ambiguous: false, conflicts: [], unparseable, examined, iso };
 
   if (fitsDdMm && fitsMmDd) {
-    return { format: null, ambiguous: true, conflicts: [], unparseable };
+    return { format: null, ambiguous: true, conflicts: [], unparseable, examined, iso };
   }
-  if (fitsDdMm) return { format: "DD/MM/YYYY", ambiguous: false, conflicts: [], unparseable };
-  if (fitsMmDd) return { format: "MM/DD/YYYY", ambiguous: false, conflicts: [], unparseable };
+  if (fitsDdMm) return { format: "DD/MM/YYYY", ambiguous: false, conflicts: [], unparseable, examined, iso };
+  if (fitsMmDd) return { format: "MM/DD/YYYY", ambiguous: false, conflicts: [], unparseable, examined, iso };
 
-  return { format: null, ambiguous: false, conflicts: [], unparseable };
+  return { format: null, ambiguous: false, conflicts: [], unparseable, examined, iso };
 }
 
 /** Serialise a Date as yyyy-mm-dd (no time, no timezone). */

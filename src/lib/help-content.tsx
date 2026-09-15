@@ -397,27 +397,37 @@ const helpSections: Record<string, HelpSection> = {
         <p>
           Dates in the Completed Date column are parsed against the{" "}
           <strong>system default date format</strong>{" "}(set in Admin &gt; System Settings).
-          Before any rows are committed, the import inspects the column:
+          Before any rows are committed, the import inspects the{" "}<strong>text</strong>{" "}
+          date cells in that column. Cells that Excel stores as real dates are already
+          unambiguous and take no part in this:
         </p>
         <ul>
           <li>
-            <strong>Match</strong>{" "}&mdash; every cell fits the system default. The import runs silently.
+            <strong>Match</strong>{" "}&mdash; every text cell fits the system default. The import runs silently.
           </li>
           <li>
-            <strong>Ambiguous</strong>{" "}&mdash; every cell happens to fit both{" "}
+            <strong>Nothing to decide</strong>{" "}&mdash; the column holds no text date
+            cells at all, which is the normal case for an Excel file whose dates are real
+            date cells. No format has to be chosen, so the summary says nothing about
+            date formats.
+          </li>
+          <li>
+            <strong>Ambiguous</strong>{" "}&mdash; every text cell happens to fit both{" "}
             <code>DD/MM/YYYY</code> and <code>MM/DD/YYYY</code>{" "}(e.g. all day numbers
             are 1&ndash;12). The import runs using the system default and adds a single
-            line to the summary so you know the file couldn&apos;t be disambiguated.
+            line to the summary so you know the file couldn&apos;t be disambiguated. If the
+            column mixed text dates with native Excel dates, that line names how many cells
+            it is describing.
           </li>
           <li>
-            <strong>Mismatch</strong>{" "}&mdash; at least one cell forces the other
+            <strong>Mismatch</strong>{" "}&mdash; at least one text cell forces the other
             format (e.g. month=15 in a system set to <code>DD/MM/YYYY</code>). A modal
             appears: <em>&quot;This file looks like MM/DD/YYYY. Use it for this import?&quot;</em>{" "}
             Accept to override for that import only; cancel and either fix the file
             or change the system default.
           </li>
           <li>
-            <strong>Internal conflict</strong>{" "}&mdash; different cells force different
+            <strong>Internal conflict</strong>{" "}&mdash; different text cells force different
             formats (some <code>13/01/2025</code>, others <code>01/15/2025</code>).
             The import is rejected; clean the file and retry.
           </li>
@@ -715,6 +725,7 @@ const helpSections: Record<string, HelpSection> = {
           <li><strong>Nearshore</strong>{" "}counts the rest of that country/region&apos;s <strong>theatre</strong>, with the onshore countries removed — the wider in-theatre capability available to support delivery.</li>
           <li><strong>Offshore</strong> counts everyone <strong>worldwide</strong>{" "}who holds the training, with the onshore countries removed (so it includes the nearshore people plus every other theatre). Nearshore and Offshore are informational and don&apos;t change the Met status.</li>
           <li>Figures are scoped to the offering&apos;s company. Use <strong>Export</strong> for the current view, and click <strong>View</strong> on any count to list the people behind it.</li>
+          <li>Your selection is kept in the page address, so opening someone&apos;s record and pressing <strong>Back</strong>{" "}returns you to the same country or region — and a particular view can be bookmarked or shared as a link.</li>
         </ul>
         <p className="text-sm text-gray-500">
           Offerings are configured under <strong>Admin &gt; Offerings</strong>{" "}by a
@@ -2261,6 +2272,13 @@ const helpSections: Record<string, HelpSection> = {
           Mixed selections are supported (e.g. a tier in one program plus all
           specialisations in another) in a single plan.
         </p>
+        <p>
+          Your selection — scope, programs, targets and the renewal window — is
+          kept in the page address. Open someone&apos;s record from any of the
+          tables below and press <strong>Back</strong>{" "}and you return to the
+          same plan rather than a blank one, and you can bookmark or share a
+          plan as a link.
+        </p>
 
         <h3>Candidate ranking</h3>
         <p>For each gap, candidates are ranked cheapest-first:</p>
@@ -2378,6 +2396,14 @@ const helpSections: Record<string, HelpSection> = {
           region / country; hidden for Global). Picking a scope shows the{" "}
           <strong>Tier Status</strong> (for tiered programs) and the one matching
           report for that scope.
+        </p>
+        <p>
+          Your <strong>View</strong> scope and the{" "}
+          <strong>Compliance as of</strong>{" "}horizon are kept in the page address.
+          Open someone&apos;s record from a <strong>View students</strong>{" "}list and
+          press <strong>Back</strong>{" "}and you return to the same scope rather than
+          the default one, and you can bookmark or share a particular view as a
+          link.
         </p>
 
         <h3>Tier Status</h3>

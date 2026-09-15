@@ -65,6 +65,14 @@ jobs:
       - name: Route guards
         run: npm run check:routes
 
+      # Same shape of problem as the route guards, in the UI layer: mirroring
+      # view state to the URL was a convention eight report pages followed and
+      # the next three pages written did not, each shipping a "I clicked a name
+      # and lost my filters" bug. A convention nothing checks applies only to
+      # whoever remembers it.
+      - name: URL state
+        run: npm run check:url-state
+
   # The deploy/ layer had no automated checking of any kind: no lint, no
   # typecheck, no tests, while the app side had all three. That asymmetry was
   # backwards. These are shell scripts that run AS ROOT on customers' machines,
