@@ -279,6 +279,14 @@ export async function PUT(
                 : (old?.certification ?? [])),
           isLegacy: legacyRename.isLegacy,
           replacedBy: legacyRename.replacedBy,
+          // Renaming the training title is a delete + recreate, so every flag
+          // not named here is silently reset. `isIncomplete` was already being
+          // dropped that way, which quietly completed an unreviewed entry the
+          // moment someone renamed it, bypassing the gate above.
+          isIncomplete: completing ? false : (old?.isIncomplete ?? false),
+          isIgnored: typeof body.isIgnored === "boolean"
+            ? body.isIgnored
+            : (old?.isIgnored ?? false),
         },
       });
       const sync = await syncMemberships(tx, newTitle, trainingType, subItems, parents);
@@ -356,6 +364,9 @@ export async function PUT(
         }),
         // Guarded above: only reachable with all three fields supplied.
         ...(completing && { isIncomplete: false }),
+        // Explicit boolean check, not truthiness: `false` means restore, and a
+        // truthiness guard would silently drop it.
+        ...(typeof body.isIgnored === "boolean" && { isIgnored: body.isIgnored }),
       },
     });
     const sync = await syncMemberships(tx, decodedTitle, updated.trainingType, subItems, parents);

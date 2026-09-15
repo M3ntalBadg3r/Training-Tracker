@@ -1243,6 +1243,7 @@ async function restoreConfigArchive(zip: JSZip): Promise<NextResponse> {
           link: row.link ?? null,
           certification: row.certification ?? [],
           isIncomplete: row.isIncomplete ?? false,
+          isIgnored: row.isIgnored ?? false,
           isLegacy: row.isLegacy ?? false,
           replacedBy: row.replacedBy ?? [],
         };

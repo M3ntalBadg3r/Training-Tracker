@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { requireAuth, handleAuthError } from "@/lib/auth";
-import { REVIEWED_TRAINING_DATA } from "@/lib/reportable-training";
+import { ELIGIBLE_TRAINING_DATA } from "@/lib/reportable-training";
 
 export async function GET(request: NextRequest) {
   try {
@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
     // which is how one ends up configured into a requirement and counted for
     // real. It reappears here as soon as an admin classifies it.
     where: {
-      ...REVIEWED_TRAINING_DATA,
+      ...ELIGIBLE_TRAINING_DATA,
       trainingType: type as "Certification" | "Accreditation" | "InstructorLedTraining" | "OLX",
     },
     select: {

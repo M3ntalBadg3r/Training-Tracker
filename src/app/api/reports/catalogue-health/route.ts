@@ -3,7 +3,7 @@ import prisma from "@/lib/prisma";
 import { requireAuth, handleAuthError } from "@/lib/auth";
 import { getAuthorizedCompanyIds, resolveCompanyFilter } from "@/lib/company-scope";
 import { cachedReport, scopeKey } from "@/lib/report-cache";
-import { REVIEWED_TRAINING_DATA } from "@/lib/reportable-training";
+import { ELIGIBLE_TRAINING_DATA } from "@/lib/reportable-training";
 
 /**
  * Per-fullTitle catalogue health metrics:
@@ -51,7 +51,7 @@ async function computeCatalogueHealth(companyFilter: number[] | null) {
       // can't be bucketed honestly — see reportable-training.ts. (This query
       // deliberately keeps counting OLX sub-items, unlike the completion
       // reports: catalogue health is about catalogue items themselves.)
-      trainingData: REVIEWED_TRAINING_DATA,
+      trainingData: ELIGIBLE_TRAINING_DATA,
       ...(companyFilter ? { student: { companyId: { in: companyFilter } } } : {}),
     },
     include: {
@@ -117,7 +117,7 @@ async function computeCatalogueHealth(companyFilter: number[] | null) {
 
   // Also include trainings with zero completions, so admins can spot dead catalogue items.
   const allTrainings = await prisma.trainingData.findMany({
-    where: REVIEWED_TRAINING_DATA,
+    where: ELIGIBLE_TRAINING_DATA,
     select: { fullTitle: true, productType: { select: { name: true } }, trainingType: true, function: true },
   });
   const seen = new Set<string>(map.keys());

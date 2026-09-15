@@ -1057,7 +1057,8 @@ const helpSections: Record<string, HelpSection> = {
             <strong>OLX Sub-Items</strong>{" "}up as top-level rows so you can find
             and edit them. A{" "}
             <strong>Show legacy only</strong> toggle scopes the list to retired
-            Certs/Accreds. Your search, filters, legacy toggle, and sort are
+            Certs/Accreds, and <strong>Show ignored only</strong>{" "}to entries
+            marked as not needed. Your search, filters, legacy toggle, and sort are
             remembered when you open a training and click <strong>Back</strong>{" "}
             (they&rsquo;re kept in the page URL, so the view is bookmarkable too).
           </li>
@@ -1129,6 +1130,16 @@ const helpSections: Record<string, HelpSection> = {
           breakdowns, so they are held back rather than counted wrongly. The
           entry appears everywhere as soon as you complete it, and SuperAdmins
           see a notice on the dashboard while any are outstanding.
+        </p>
+        <p>
+          The <strong>Excluded</strong>{" "}column shows how many learners have
+          completed the training and are being held out of reporting until it is
+          reviewed &mdash; what leaving the entry alone is costing. If an entry
+          simply isn&rsquo;t needed, click <strong>Ignore</strong>{" "}instead:
+          it leaves this list, is left out of all reporting, and is marked with
+          a grey <strong>Ignored</strong>{" "}badge in the main list, where{" "}
+          <strong>Restore</strong>{" "}brings it back. Completions are kept
+          either way &mdash; nothing is deleted.
         </p>
         <p>
           Click <strong>Edit</strong>{" "}on a row to complete it. You can either{" "}

@@ -211,7 +211,12 @@ async function computeDashboard(
   // Auto-created imports awaiting classification. They're excluded from every
   // metric below (see reportable-training.ts), so the dashboard says so rather
   // than quietly under-counting. Not company-scoped — the catalogue is global.
-  const pendingReview = await prisma.trainingData.count({ where: { isIncomplete: true } });
+  const pendingReview = await prisma.trainingData.count({
+    // An ignored entry is excluded from reporting too, but deliberately — it
+    // is not awaiting anyone's attention, so counting it here would nag about
+    // work that has already been decided.
+    where: { isIncomplete: true, isIgnored: false },
+  });
 
   const rawTrainingTaken = await prisma.trainingTaken.findMany({
     include: { trainingData: { include: { productType: { select: { name: true } } } } },

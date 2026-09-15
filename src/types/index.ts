@@ -82,6 +82,12 @@ export interface TrainingDataRow {
   isLegacy: boolean;
   replacedBy: string[];
   isIncomplete: boolean;
+  // Admin has marked this entry as not needed: badged in the catalogue and
+  // excluded from reporting, but its completions are left untouched.
+  isIgnored?: boolean;
+  // Distinct learners whose completions are excluded from reporting because
+  // this entry is unreviewed or ignored. 0 on entries that do count.
+  excludedPeople?: number;
   // OLX parent ↔ sub-item relationships. Both empty for non-OLX entries.
   // For an OLX parent: subItems lists the sub-item training titles.
   // For an OLX sub-item: parents lists the parent training titles it belongs to.
