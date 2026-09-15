@@ -1,7 +1,8 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   Sparkles,
   Users,
@@ -146,6 +147,54 @@ interface TargetSelection {
   mode: "tier" | "specialisations" | "all";
   tier: string;
   specialisations: string[];
+}
+
+// ── URL round-trip for the selection ──
+// The whole plan setup is mirrored to the query string so Back from a student
+// record restores it (see the mirror effect below). Every value read back is
+// validated rather than trusted: it is editable text in a URL, and an
+// unrecognised one must fall back to the default rather than reach the API or
+// leave a <select> showing a value it has no option for.
+
+/** The renewal-window <select>'s options — a value outside this set has no option to render. */
+const WINDOW_OPTIONS = [0, 1, 3, 6, 12];
+const DEFAULT_WINDOW_MONTHS = 3;
+
+function parseLevel(v: string | null): ScopeLevel {
+  return v === "theatre" || v === "region" || v === "country" ? v : "global";
+}
+
+function parseWindowMonths(v: string | null): number {
+  const n = parseInt(v ?? "", 10);
+  return WINDOW_OPTIONS.includes(n) ? n : DEFAULT_WINDOW_MONTHS;
+}
+
+function parseTargets(raw: string | null): Record<string, TargetSelection> {
+  if (!raw) return {};
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return {};
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+  const out: Record<string, TargetSelection> = {};
+  for (const [program, value] of Object.entries(parsed as Record<string, unknown>)) {
+    // `__proto__` survives JSON.parse as an own property but assigning it onto an
+    // object literal below would re-point the prototype instead of adding a key.
+    if (!program || program === "__proto__" || !value || typeof value !== "object") continue;
+    const sel = value as Partial<TargetSelection>;
+    const mode = sel.mode === "tier" || sel.mode === "specialisations" || sel.mode === "all" ? sel.mode : null;
+    if (!mode) continue;
+    out[program] = {
+      mode,
+      tier: typeof sel.tier === "string" ? sel.tier : "",
+      specialisations: Array.isArray(sel.specialisations)
+        ? sel.specialisations.filter((s): s is string => typeof s === "string")
+        : [],
+    };
+  }
+  return out;
 }
 
 const TIER_LABEL: Record<CandidateTier, string> = {
@@ -430,7 +479,10 @@ function buildPlanDocument(plan: CompliancePlanResult, level: ScopeLevel): Repor
   };
 }
 
-export default function CompliancePlanningPage() {
+function CompliancePlanningPageInner() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const companyScope = useCompanyScope();
   const { rows: regionRows } = useRegionData();
 
@@ -451,19 +503,42 @@ export default function CompliancePlanningPage() {
       .catch(() => {});
   }, []);
 
-  // Scope.
-  const [level, setLevel] = useState<ScopeLevel>("global");
-  const [scopeValue, setScopeValue] = useState("");
+  // Scope. Seeded from the URL so Back from a record restores the view.
+  const [level, setLevel] = useState<ScopeLevel>(() => parseLevel(searchParams.get("level")));
+  const [scopeValue, setScopeValue] = useState(() => searchParams.get("scope") ?? "");
   const theatres = useMemo(() => [...new Set(regionRows.map((r) => r.theatre).filter((t): t is string => !!t))].sort(), [regionRows]);
   const regions = useMemo(() => [...new Set(regionRows.map((r) => r.region).filter(Boolean))].sort(), [regionRows]);
   const countries = useMemo(() => [...new Set(regionRows.map((r) => r.country))].sort(), [regionRows]);
   const scopeOptions = level === "theatre" ? theatres : level === "region" ? regions : level === "country" ? countries : [];
 
   // Targets: program name → selection (only selected programs are keys).
-  const [targets, setTargets] = useState<Record<string, TargetSelection>>({});
-  const [renewalWindowMonths, setRenewalWindowMonths] = useState(3);
-  const [planForWindow, setPlanForWindow] = useState(false);
+  const [targets, setTargets] = useState<Record<string, TargetSelection>>(() => parseTargets(searchParams.get("targets")));
+  const [renewalWindowMonths, setRenewalWindowMonths] = useState(() => parseWindowMonths(searchParams.get("window")));
+  // Kept false when the window is off, matching the invariant the window <select> enforces.
+  const [planForWindow, setPlanForWindow] = useState(
+    () => searchParams.get("planForWindow") === "true" && parseWindowMonths(searchParams.get("window")) > 0
+  );
   const [showReportExport, setShowReportExport] = useState(false);
+
+  // Mirror the whole selection back to the URL. Without this, clicking a student
+  // from the candidate or renewals table and pressing Back remounted the page at
+  // its defaults, losing the scope, programs and targets the user had set up.
+  const buildViewParams = useCallback(() => {
+    const params = new URLSearchParams();
+    params.set("level", level);
+    if (level !== "global" && scopeValue) params.set("scope", scopeValue);
+    params.set("window", String(renewalWindowMonths));
+    if (planForWindow) params.set("planForWindow", "true");
+    if (Object.keys(targets).length > 0) params.set("targets", JSON.stringify(targets));
+    return params;
+  }, [level, scopeValue, renewalWindowMonths, planForWindow, targets]);
+
+  useEffect(() => {
+    const qs = buildViewParams().toString();
+    if (qs !== searchParams.toString()) {
+      router.replace(`${pathname}?${qs}`, { scroll: false });
+    }
+  }, [buildViewParams, pathname, router, searchParams]);
 
   const toggleProgram = (name: string, isTiered: boolean) => {
     setTargets((prev) => {
@@ -771,6 +846,14 @@ export default function CompliancePlanningPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function CompliancePlanningPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center h-64"><div className="text-gray-500">Loading planner...</div></div>}>
+      <CompliancePlanningPageInner />
+    </Suspense>
   );
 }
 

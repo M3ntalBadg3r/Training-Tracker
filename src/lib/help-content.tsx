@@ -2271,6 +2271,13 @@ const helpSections: Record<string, HelpSection> = {
           Mixed selections are supported (e.g. a tier in one program plus all
           specialisations in another) in a single plan.
         </p>
+        <p>
+          Your selection — scope, programs, targets and the renewal window — is
+          kept in the page address. Open someone&apos;s record from any of the
+          tables below and press <strong>Back</strong>{" "}and you return to the
+          same plan rather than a blank one, and you can bookmark or share a
+          plan as a link.
+        </p>
 
         <h3>Candidate ranking</h3>
         <p>For each gap, candidates are ranked cheapest-first:</p>
