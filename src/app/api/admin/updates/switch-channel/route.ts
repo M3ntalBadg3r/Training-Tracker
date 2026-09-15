@@ -8,15 +8,9 @@ import {
   updateHelperInstalled,
   UPDATE_HELPER_MISSING,
 } from "@/lib/update-request";
+import { isNewerVersion, versionFromTag } from "@/lib/version";
 
 const GITHUB_REPO = "M3ntalBadg3r/Training-Tracker";
-
-function parseVersionNumber(version: string): number {
-  const parts = version.split(".");
-  const major = parseInt(parts[0] || "0", 10);
-  const minor = parseInt(parts[1] || "0", 10);
-  return major * 1000 + minor;
-}
 
 export async function POST(request: NextRequest) {
   try {
@@ -43,7 +37,6 @@ export async function POST(request: NextRequest) {
     }
 
     const currentVersion = process.env.APP_VERSION || "0.0";
-    const currentNum = parseVersionNumber(currentVersion);
 
     // If switching dev → stable, verify stable has caught up
     if (channel === "stable") {
@@ -68,10 +61,9 @@ export async function POST(request: NextRequest) {
       }
 
       const release = await response.json();
-      const latestStable = (release.tag_name || "").replace(/^v/, "");
-      const latestStableNum = parseVersionNumber(latestStable);
+      const latestStable = versionFromTag(release.tag_name);
 
-      if (currentNum > latestStableNum) {
+      if (isNewerVersion(currentVersion, latestStable)) {
         return NextResponse.json(
           {
             error: "blocked",

@@ -51,6 +51,7 @@
 import { readFileSync, existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
+import { compareVersions, parseVersion } from "../deploy/lib/version.mjs";
 
 const ROOT = process.cwd();
 
@@ -77,23 +78,16 @@ if (base !== "dev" && base !== "master") {
 }
 
 /**
- * Mirrors parseVersionNumber in src/app/api/admin/updates/check/route.ts: the
- * app compares versions as major*1000 + minor. Keep the two in step — a version
- * this script accepts but the comparator orders differently would ship an update
- * clients never see.
+ * Ordering comes from the SAME module the app and the root update scripts use
+ * (`deploy/lib/version.mjs`), rather than a fourth hand-rolled copy of it. This
+ * file used to carry its own `major*1000 + minor` with a comment asking the next
+ * person to keep it in step with `updates/check/route.ts` — which is precisely
+ * the arrangement that let five copies drift apart.
  *
- * This is an *ordering* function and nothing more. It used to sit alongside a
- * `stepProblem` helper that defined "exactly one 0.01 task step", including the
- * x.99 -> (x+1).00 rollover. That rule is gone: merging into `dev` no longer
- * cuts a release, so there is no per-task step to enforce.
+ * It used to sit alongside a `stepProblem` helper defining "exactly one 0.01
+ * task step", including the x.99 -> (x+1).00 rollover. That rule is gone:
+ * merging into `dev` no longer cuts a release, so there is no per-task step.
  */
-function versionNumber(version) {
-  const clean = String(version).replace(/-dev$/, "");
-  const parts = clean.split(".");
-  const major = parseInt(parts[0] || "0", 10);
-  const minor = parseInt(parts[1] || "0", 10);
-  return major * 1000 + minor;
-}
 
 /** Read a path as it exists on the base branch, or null when unavailable. */
 function showFromBase(path) {
@@ -119,11 +113,21 @@ const errors = [];
 const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
 const version = pkg.version;
 
-if (!/^\d+\.\d{2}$/.test(String(version))) {
+// Semver: MAJOR.MINOR.PATCH. The old gate demanded a two-digit minor
+// (`/^\d+\.\d{2}$/`) because the comparator encoded `major*1000 + minor`, which
+// could not express a patch release at all and capped the minor at 99.
+if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(String(version))) {
   errors.push(
-    `package.json version is "${version}". This project uses a two-component ` +
-      `major.minor scheme with a two-digit minor (e.g. "2.95"), because the ` +
-      `update comparator parses exactly that.`
+    `package.json version is "${version}". This project uses semver ` +
+      `(MAJOR.MINOR.PATCH, e.g. "3.30.0") — patch for fixes, minor for ` +
+      `features, major for breaking changes.`
+  );
+} else if (parseVersion(version) === null) {
+  // Belt and braces: the gate above and the comparator must agree on what a
+  // version is, or this check could pass something the updater cannot order.
+  errors.push(
+    `package.json version "${version}" matched the format gate but could not ` +
+      `be parsed by deploy/lib/version.mjs. The two must agree.`
   );
 }
 
@@ -163,13 +167,13 @@ if (!baseVersion) {
 } else if (base === "dev") {
   // No bump required. Merging into dev cuts no release, so there is nothing to
   // version — but going backwards is still always a mistake.
-  if (versionNumber(version) < versionNumber(baseVersion)) {
+  if (compareVersions(version, baseVersion) < 0) {
     errors.push(
       `Version "${version}" is behind dev's "${baseVersion}". A change must ` +
         `not move the version backwards.`
     );
   }
-} else if (versionNumber(version) <= versionNumber(baseVersion)) {
+} else if (compareVersions(version, baseVersion) <= 0) {
   errors.push(
     `Version "${version}" does not move past master's "${baseVersion}". A ` +
       `release must bump the version — release.yml would otherwise find tag ` +
