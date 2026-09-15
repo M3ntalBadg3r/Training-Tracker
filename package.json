@@ -1,6 +1,6 @@
 {
   "name": "training-tracker-temp",
-  "version": "3.29",
+  "version": "3.30",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -14,6 +14,7 @@
     "url-state:inventory": "node scripts/check-url-state.mjs --inventory",
     "check:release": "node scripts/check-release-hygiene.mjs",
     "check:deid": "node scripts/check-deidentification.mjs",
+    "notes:draft": "node scripts/draft-release-notes.mjs",
     "check:jsx": "node scripts/check-jsx-whitespace.mjs",
     "check:deploy": "bash scripts/check-deploy-scripts.sh && node scripts/check-deploy-parity.mjs",
     "test:deploy": "bash deploy/tests/run.sh",
