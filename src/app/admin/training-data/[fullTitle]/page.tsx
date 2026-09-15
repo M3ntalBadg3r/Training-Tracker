@@ -254,6 +254,14 @@ export default function FullTitleDetailPage() {
     if (ok) { setBulkFunction(""); fetchAll(); }
   };
 
+  // Every member ignored, so the button offers Restore rather than Ignore.
+  const allIgnored = members.length > 0 && members.every((m) => m.isIgnored);
+
+  const handleBulkIgnored = async () => {
+    const ok = await patchGroup({ setIgnored: !allIgnored });
+    if (ok) fetchAll();
+  };
+
   const handleDeleteGroup = async () => {
     setBusy(true);
     const res = await fetch(`/api/training-data/full-title/${encodeURIComponent(fullTitle)}`, { method: "DELETE" });
@@ -502,6 +510,25 @@ export default function FullTitleDetailPage() {
               </select>
               <button onClick={handleBulkFunction} disabled={busy || !bulkFunction} className="px-3 py-2 text-sm bg-gray-700 text-white rounded-lg hover:bg-gray-800 disabled:opacity-50">Apply</button>
             </div>
+          </div>
+        </div>
+
+        {/* Ignore / restore the whole group */}
+        <div className="border-t border-gray-100 pt-4">
+          <label className="block text-xs font-semibold text-gray-600 mb-1">Reporting</label>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleBulkIgnored}
+              disabled={busy || members.length === 0}
+              className="px-3 py-2 text-sm bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 disabled:opacity-50"
+            >
+              {allIgnored ? "Restore this Full Title" : "Ignore this Full Title"}
+            </button>
+            <p className="text-xs text-gray-500">
+              {allIgnored
+                ? "Currently ignored — left out of the dashboard, every report and exports."
+                : "Not needed? Ignoring leaves it out of the dashboard, every report and exports. Completions are kept and it can be restored."}
+            </p>
           </div>
         </div>
 

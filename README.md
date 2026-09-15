@@ -798,7 +798,7 @@ While you are browsing, those sub-items are not listed as separate top-level row
 
 - **Add Training** — Click **Add Training** to open a modal form for creating a new training entry.
 - **Edit (open the Full Title)** — Click **Edit** on any row (or click the row) to open the **Full Title detail page**, which lists every Training Title mapped to that Full Title and offers group-wide bulk actions (see below).
-- **Search / Filter** — Search by training title or full title; filter by Type, Product, or Function. Searching, or filtering Type to **OLX Sub-Item**, also surfaces matching **OLX Sub-Items** as top-level rows. A **Show legacy only** toggle scopes the list to retired Certs/Accreds. Your search, filters, legacy toggle, and sort are **remembered when you open a training and click Back** (they are mirrored to the page URL, so the filtered view is also bookmarkable).
+- **Search / Filter** — Search by training title or full title; filter by Type, Product, or Function. A **Show ignored only** toggle narrows the list to entries marked as not needed. Searching, or filtering Type to **OLX Sub-Item**, also surfaces matching **OLX Sub-Items** as top-level rows. A **Show legacy only** toggle scopes the list to retired Certs/Accreds. Your search, filters, legacy toggle, and sort are **remembered when you open a training and click Back** (they are mirrored to the page URL, so the filtered view is also bookmarkable).
 - **Import** — Upload a CSV or Excel file. Columns can be mapped to all fields including Certification. The system supports common aliases for type values (e.g. `ILT`, `cert`, `pre-sales`).
 - **Export** — Download all training data as CSV or Excel (one row per Training Title, so it round-trips with import).
 
@@ -817,7 +817,11 @@ Opening a Full Title takes you to a dedicated page (like a student record) showi
 
 When a student import references a training title that doesn't exist yet, it is auto-created and highlighted in an amber **"needs attention"** section at the top of the page. The import only knows the training's name, so its **Type**, **Product** and **Function** show as *Not set* until you choose them — nothing is guessed on your behalf.
 
+You can also **Ignore** an entry that simply isn't needed, from the "needs attention" list or from any row in the main list (and **Restore** it later). An ignored entry is left out of the dashboard, every report, scheduled exports and the public API, is no longer offered when configuring program and offering requirements, and is marked with a grey **Ignored** badge. Its completions are kept, so a learner's own record still shows the training, and nothing is deleted.
+
 Until an entry is classified it is **left out of all reporting** — the dashboard, every report, scheduled exports and the public API. Its completions are real, but filing them under a Type, Product and Function nobody chose would inflate certification counts and skew the by-product and by-function breakdowns, so they are held back rather than counted wrongly. The entry appears everywhere as soon as you complete it, and SuperAdmins see a notice on the dashboard while any are outstanding.
+
+The **Excluded** column shows how many learners have completed the training and are being held out of reporting until it is reviewed — what leaving the entry alone is costing.
 
 Click **Edit** on a row to complete it. You can either **attach it to an existing Full Title** via the dropdown (it inherits that group's Type/Product/Function, still editable) or **create a new Full Title** and pick the three values yourself. **Save & Complete** stores them and moves the entry into the main list. All three are required — saving with any of them left on *Select…* reports what is missing and changes nothing, so an unreviewed entry can never slip into the catalogue.
 
