@@ -19,6 +19,52 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/components/auth/AuthProvider";
 
+/**
+ * The three update channels. Each IS a branch the installer pulls — `dev`
+ * follows every merge, `beta` moves only when someone deliberately
+ * fast-forwards it, `stable` moves on a release.
+ *
+ * This replaced a two-way ternary repeated at five sites
+ * (`channel === "stable" ? "dev" : "stable"` and friends). Two copies of a
+ * two-way toggle were survivable; five copies of a three-way choice would not
+ * be, and one of them already read as a bug — the "branch" label was rendering
+ * the TARGET branch while sitting beside the CURRENT channel.
+ */
+const CHANNELS = {
+  dev: {
+    label: "Dev",
+    badge: "Dev Channel",
+    branch: "dev",
+    tone: "bg-amber-100 text-amber-700",
+    blurb:
+      "Follows every change as it lands. For development systems only — work here has not been through a test build.",
+  },
+  beta: {
+    label: "Beta",
+    badge: "Beta Channel",
+    branch: "beta",
+    tone: "bg-blue-100 text-blue-700",
+    blurb:
+      "Takes test builds only when one is deliberately cut, so it does not move every time a change lands. For systems you use to check a build before it reaches customers.",
+  },
+  stable: {
+    label: "Stable",
+    badge: "Stable",
+    branch: "master",
+    tone: "bg-green-100 text-green-700",
+    blurb:
+      "Production releases only. Recommended for live systems.",
+  },
+} as const;
+
+type ChannelKey = keyof typeof CHANNELS;
+
+const CHANNEL_ORDER: ChannelKey[] = ["stable", "beta", "dev"];
+
+function channelInfo(value: string) {
+  return CHANNELS[value as ChannelKey] ?? CHANNELS.stable;
+}
+
 interface UpdateInfo {
   currentVersion: string;
   channel?: string;
@@ -314,8 +360,7 @@ export default function UpdatesPage() {
     }
   };
 
-  const switchChannel = async () => {
-    const targetChannel = channel === "stable" ? "dev" : "stable";
+  const switchChannel = async (targetChannel: ChannelKey) => {
     setSwitchingChannel(true);
     setChannelSwitchError(null);
     try {
@@ -453,26 +498,41 @@ export default function UpdatesPage() {
             <div className="flex items-center gap-2 mb-4">
               <ArrowRightLeft size={20} className="text-blue-600" />
               <h3 className="text-lg font-semibold text-gray-900">
-                Switch to {channel === "stable" ? "Dev" : "Stable"} Channel
+                Change update channel
               </h3>
             </div>
 
             <p className="text-sm text-gray-600 mb-4">
-              This will check out the{" "}
-              <strong>{channel === "stable" ? "dev" : "master"}</strong> branch,
-              pull the latest code, rebuild the application, and restart the
-              service.
+              Switching checks out that channel&apos;s branch, pulls the latest
+              code, rebuilds the application and restarts the service. This
+              system is currently on{" "}
+              <strong>{channelInfo(channel).label}</strong>.
             </p>
 
-            {channel === "stable" ? (
-              <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg mb-4">
-                <p className="text-sm text-amber-700">
-                  The dev channel includes pre-release versions that may contain
-                  untested features. Only switch if this is a development or
-                  testing system.
-                </p>
-              </div>
-            ) : null}
+            <div className="space-y-2 mb-4">
+              {CHANNEL_ORDER.filter((key) => key !== channel).map((key) => (
+                <button
+                  key={key}
+                  onClick={() => switchChannel(key)}
+                  disabled={switchingChannel}
+                  className="w-full text-left p-3 border border-gray-200 rounded-lg hover:border-blue-400 hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  <span className="flex items-center gap-2">
+                    <span
+                      className={`px-2 py-0.5 text-xs font-medium rounded-full ${CHANNELS[key].tone}`}
+                    >
+                      {CHANNELS[key].label}
+                    </span>
+                    <span className="text-xs text-gray-500">
+                      {CHANNELS[key].branch} branch
+                    </span>
+                  </span>
+                  <span className="block mt-1.5 text-sm text-gray-600">
+                    {CHANNELS[key].blurb}
+                  </span>
+                </button>
+              ))}
+            </div>
 
             {channelSwitchError && (
               <div className="p-3 bg-red-50 border border-red-200 rounded-lg mb-4">
@@ -480,7 +540,7 @@ export default function UpdatesPage() {
               </div>
             )}
 
-            <div className="flex justify-end gap-3">
+            <div className="flex justify-end">
               <button
                 onClick={() => {
                   setShowChannelSwitch(false);
@@ -488,17 +548,7 @@ export default function UpdatesPage() {
                 }}
                 className="px-4 py-2 text-sm text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
               >
-                Cancel
-              </button>
-              <button
-                onClick={switchChannel}
-                disabled={switchingChannel}
-                className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
-              >
-                <ArrowRightLeft size={14} />
-                {switchingChannel
-                  ? "Switching..."
-                  : `Switch to ${channel === "stable" ? "Dev" : "Stable"}`}
+                {switchingChannel ? "Switching..." : "Cancel"}
               </button>
             </div>
           </div>
@@ -614,14 +664,10 @@ export default function UpdatesPage() {
                   setShowChannelSwitch(true);
                 }}
                 disabled={updateStatus.status === "in_progress"}
-                className={`px-2.5 py-0.5 text-sm font-medium rounded-full cursor-pointer hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-50 transition-opacity ${
-                  channel === "dev"
-                    ? "bg-amber-100 text-amber-700"
-                    : "bg-green-100 text-green-700"
-                }`}
+                className={`px-2.5 py-0.5 text-sm font-medium rounded-full cursor-pointer hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-50 transition-opacity ${channelInfo(channel).tone}`}
                 title="Click to switch update channel"
               >
-                {channel === "dev" ? "Dev Channel" : "Stable"}
+                {channelInfo(channel).badge}
               </button>
             </div>
           </div>

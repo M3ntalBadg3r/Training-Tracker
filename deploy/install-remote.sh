@@ -3,7 +3,10 @@ set -e
 
 # Training Tracker - Remote Installation Script
 # Usage: curl -sSL https://raw.githubusercontent.com/M3ntalBadg3r/Training-Tracker/master/deploy/install-remote.sh | bash
-#   Add --dev flag to install the dev channel (tracks the dev branch with pre-releases):
+#   --beta installs the beta channel (tracks the beta branch — test builds, which
+#   move only when one is deliberately cut):
+#   curl -sSL https://raw.githubusercontent.com/M3ntalBadg3r/Training-Tracker/master/deploy/install-remote.sh | bash -s -- --beta
+#   --dev installs the dev channel (tracks the dev branch — every change as it lands):
 #   curl -sSL https://raw.githubusercontent.com/M3ntalBadg3r/Training-Tracker/master/deploy/install-remote.sh | bash -s -- --dev
 # Run as root on a Debian-based system or LXC container.
 
@@ -44,6 +47,10 @@ for arg in "$@"; do
         --dev)
             BRANCH="dev"
             UPDATE_CHANNEL="dev"
+            ;;
+        --beta)
+            BRANCH="beta"
+            UPDATE_CHANNEL="beta"
             ;;
     esac
 done

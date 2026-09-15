@@ -16,7 +16,11 @@ name: CI
 
 on:
   push:
-    branches: [dev, master]
+    # `beta` is included so a cut build is still linted, typechecked and built.
+    # It carries no pull_request trigger because no PR ever targets it: `beta`
+    # is only ever fast-forwarded from `dev` by the "Cut beta build" workflow,
+    # never committed to directly.
+    branches: [dev, beta, master]
   pull_request:
     branches: [dev, master]
   workflow_dispatch: {}

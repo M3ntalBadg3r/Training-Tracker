@@ -4,11 +4,24 @@ import { compareVersions, isNewerVersion, versionFromTag } from "@/lib/version";
 
 const GITHUB_REPO = "M3ntalBadg3r/Training-Tracker";
 
-/** The branch each update channel tracks — the same map the installer uses. */
+/**
+ * The branch each update channel tracks — the same map the installer uses
+ * (`branch_for_channel` in deploy/lib/common.sh).
+ *
+ * A channel IS a branch: `dev` follows every merge, `beta` moves only when
+ * someone deliberately fast-forwards it, `stable` moves on a release.
+ */
 const CHANNEL_BRANCH: Record<string, string> = {
   dev: "dev",
+  beta: "beta",
   stable: "master",
 };
+
+/**
+ * Channels that publish no releases and so have no version to compare. They
+ * compare the commit this build came from against the head of their branch.
+ */
+const BRANCH_TRACKING_CHANNELS = new Set(["dev", "beta"]);
 
 export async function GET(request: NextRequest) {
   try {
@@ -29,10 +42,10 @@ export async function GET(request: NextRequest) {
       headers["Authorization"] = `Bearer ${githubToken}`;
     }
 
-    // The dev channel publishes no releases, so there is no version to compare.
-    // It tracks the `dev` branch directly and reports how far behind it is.
-    if (channel === "dev") {
-      return await checkDevChannel(currentVersion, headers);
+    // dev and beta publish no releases, so there is no version to compare. They
+    // track a branch directly and report how far behind it is.
+    if (BRANCH_TRACKING_CHANNELS.has(channel)) {
+      return await checkBranchChannel(currentVersion, channel, headers);
     }
 
     return await checkReleaseChannel(currentVersion, channel, headers);
@@ -45,23 +58,32 @@ export async function GET(request: NextRequest) {
 }
 
 /**
- * Dev ("edge") channel: compare the commit this build came from against the head
- * of the branch the installer pulls.
+ * A branch-tracking channel: compare the commit this build came from against the
+ * head of the branch the installer pulls.
  *
  * Every merge into `dev` used to publish a GitHub pre-release purely so this
  * check had a version to compare — 64 releases in a week, on a page customers
  * read. The branch head is the same signal without the noise.
+ *
+ * `beta` uses this identically; only the branch differs. That is deliberate —
+ * a second mechanism for "is there a new test build" would be a second thing to
+ * keep in step with this one.
+ *
+ * Note a beta box's VERSION stays put between promotions, because nothing bumps
+ * it in between. The commit count is the live signal; the version is the last
+ * released label.
  */
-async function checkDevChannel(
+async function checkBranchChannel(
   currentVersion: string,
+  channel: string,
   headers: Record<string, string>
 ) {
-  const branch = CHANNEL_BRANCH.dev;
+  const branch = CHANNEL_BRANCH[channel] || "dev";
   const currentCommit = process.env.APP_COMMIT || "";
 
   const base = {
     currentVersion,
-    channel: "dev",
+    channel,
     branch,
     mode: "commits" as const,
     currentCommit,
@@ -75,7 +97,7 @@ async function checkDevChannel(
       latestVersion: null,
       updateAvailable: false,
       error:
-        "Could not determine which commit this build came from, so it cannot be compared with the dev branch.",
+        `Could not determine which commit this build came from, so it cannot be compared with the ${branch} branch.`,
     });
   }
 
@@ -128,7 +150,7 @@ async function checkDevChannel(
     ...base,
     latestVersion: null,
     updateAvailable: false,
-    error: "Could not reach GitHub to compare with the dev branch.",
+    error: `Could not reach GitHub to compare with the ${branch} branch.`,
   });
 }
 
