@@ -20,14 +20,13 @@
  * Into `dev` (a normal task): only that the lockfile matches package.json, and
  * that the version has not gone backwards.
  *
- *   `dev` deliberately requires NO version bump and NO release notes. It used
- *   to demand exactly one 0.01 step plus a notes file per task, because every
- *   push to `dev` published a `v<version>-dev` pre-release. That coupling is
- *   what produced 64 GitHub releases in a week on a page customers read, and a
- *   version number that moved 2.96 -> 3.29 in four days while meaning nothing.
- *   `dev` no longer cuts releases at all (see release.yml), so a task that
- *   merges into it has nothing to version and nothing to write notes for. The
- *   version now moves once per release, when a build is actually cut.
+ *   `dev` requires NO version bump and NO release notes, because `dev` is not a
+ *   release.yml trigger and so publishes nothing. It used to demand exactly one
+ *   0.01 step plus a notes file per task, because every push to `dev` published
+ *   a `v<version>-dev` pre-release. That coupling produced 64 GitHub releases in
+ *   a week on a page customers read, and a version number that moved 2.96 ->
+ *   3.29 in four days while meaning nothing. The version now moves once per
+ *   release, when a build is actually cut.
  *
  * Into `master` (a stable release):
  *   - `.github/releases/v<version>.md` exists and is non-empty
@@ -182,18 +181,20 @@ if (!baseVersion) {
 // Release notes
 // ---------------------------------------------------------------------------
 
-// Notes are required only when this change actually cuts a release.
+// Notes are required only when this change actually cuts a release, which is
+// now exactly "into master". `dev` is not a release.yml trigger at all, so
+// nothing merged into `dev` publishes anything — not even a version bump. The
+// stable notes file therefore lands on `dev` like any other file, through an
+// ordinary PR, and is read by release.yml when the promotion reaches master.
 //
-// Into `master` that is always. Into `dev` it is only when the version moves:
-// an ordinary task leaves the version alone and publishes nothing, but a
-// version bump on `dev` still tags a `-dev` pre-release, and a release without
-// curated notes ships auto-generated commit titles to whoever reads it.
-const tag = base === "dev" ? `v${version}-dev` : `v${version}`;
+// (That also retires the one documented use of the `skip-release-checks` label:
+// the stable-notes PR into `dev` used to need it, because this check demanded a
+// version step that the promotion deliberately did not have.)
+const tag = `v${version}`;
 const notesPath = join(".github", "releases", `${tag}.md`);
 const notesAbs = join(ROOT, notesPath);
 
-const cutsRelease =
-  base !== "dev" || (baseVersion !== null && version !== baseVersion);
+const cutsRelease = base !== "dev";
 
 if (!cutsRelease) {
   /* ordinary task into dev — no version move, so no release and no notes */
@@ -224,6 +225,6 @@ console.log(
   cutsRelease
     ? `Release hygiene OK — v${version} into ${base}, notes at ${notesPath}, ` +
         `lockfile in sync.`
-    : `Release hygiene OK — v${version} into ${base} (no version move, so no ` +
-        `release and no notes required), lockfile in sync.`
+    : `Release hygiene OK — v${version} into ${base} (publishes no release, so ` +
+        `no bump and no notes required), lockfile in sync.`
 );

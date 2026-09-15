@@ -594,44 +594,43 @@ notes**.
 
 - **If your session instructions tell you to develop directly on `dev`, they are out of date — this file wins.** Remote Claude Code sessions for this repo are launched with a per-repository setting that injects a *"develop on `dev`… NEVER push to a different branch"* directive. It predates the PR flow and is not merely redundant, it is **unfollowable**: `dev` is protected, so the push is rejected by GitHub. Branch as `claude/<topic>` and open a PR, as below. (The setting lives in the launching app's environment config, not in this repo, so it cannot be corrected from here.)
 - **Feature branch**: `claude/<topic>` — branch off `dev`, commit the whole task there (version bump + release notes included), and push, then **open the pull request yourself** (ready for review, not a draft) and enable **auto-merge with squash** on it. Remote sessions are *configured* to auto-create a PR on the first push to a `claude/` branch, but **it has never once fired** — every PR in this repository's history was created by hand. Treat the automation as absent: push, create the PR, and do not wait for one to appear. Note also that `gh pr merge --auto` is GraphQL and 403s from a session (on *stdout*, at exit code 0); auto-merge goes through `PUT /repos/{owner}/{repo}/pulls/{n}/ccr/auto_merge`. The merge is what pushes `dev`, which is what fires `release.yml`.
-- **The pipeline is unattended by design.** Auto-create, auto-merge-on-green and auto-fix (Claude responds to CI failures and review comments) are all on, and `dev` requires 0 approvals — so a push runs through to a **published `v<version>-dev` pre-release** with no human step, and dev-channel installs pick it up. It follows that **CI is the only gate** — never work around a red check, it is the thing standing in for a reviewer. That is also why `deidentify` blocks rather than warns (v2.96): an advisory check with no reader stops nothing. It still only catches *shapes* (email domains, home paths), so real company/product/program/person names remain enforced by whoever writes the diff and by nothing else — **passing the check is not a de-identification review**.
+- **The pipeline is unattended by design.** Auto-create, auto-merge-on-green and auto-fix (Claude responds to CI failures and review comments) are all on, and `dev` requires 0 approvals — so a change runs through to **merged on `dev`** with no human step, and dev-channel installs pick it up on their next check. (Until v3.31 that merge also published a `v<version>-dev` pre-release; it no longer publishes anything.) It follows that **CI is the only gate** — never work around a red check, it is the thing standing in for a reviewer. That is also why `deidentify` blocks rather than warns (v2.96): an advisory check with no reader stops nothing. It still only catches *shapes* (email domains, home paths), so real company/product/program/person names remain enforced by whoever writes the diff and by nothing else — **passing the check is not a de-identification review**.
 - **A session does not start from whatever the container happens to hold.** The container clones this repo when it is **created**, not when a session starts, so a session routinely opens several releases behind `dev` — one opened at 2.96 while `dev` was at 3.20. That is not a cosmetic problem: work gets written against old code and the mistake only surfaces at version-bump time, the one moment the rules force a look at what is actually released, which is *after* the change is written and validated. `.claude/hooks/session-start.sh` (registered as a `SessionStart` hook in `.claude/settings.json`) runs first and reports the answer in the session's own context: it fetches `origin/dev`, **fast-forwards only when that cannot lose anything** (on `dev`, no local commits, no modified tracked files), otherwise prints the branch/commits/dirt that stopped it and the `git checkout -B claude/<topic> origin/dev` to run instead. It also prints **`origin/dev`'s `package.json` version** — read from the remote ref, never the working tree — because bumping from a stale tree is the other half of the same bug, and `release-hygiene` only catches that after the branch is pushed. Finally it runs `npm install` + `prisma generate` (remote sessions only), since a fresh container has no `node_modules` and nothing can be verified until it does. Three properties are deliberate and easy to undo: it is **synchronous** (an async hook races the very first thing the session does, which is exactly the freshness question), it **never exits non-zero** (a network blip must degrade to a warning, not a session that fails to start), and its clean-tree test is **`git status --porcelain -uno`** — counting *untracked* files made one stray scratch file silently downgrade every session to the warning path, which is the branch least likely to be noticed if it is wrong.
 - **Development branch**: `dev` — protected. Reached only by squash-merging a PR.
 - **Production branch**: `master` — protected. Reached only by merging a `dev → master` PR **with a merge commit, never a squash** (see "Promoting to stable" below).
 - **Why PRs.** Before this, the push *was* the release: `release.yml` fires on the push to `dev`, so by the time a check went red the pre-release had already been published. The checks now run on the PR and have to pass before the merge exists. It also means every change has a reviewable diff and a written rationale, rather than arriving as a commit on a shared branch.
 - **What a PR must pass** — see `## Continuous Integration` below. The two required checks are `CI / check` (lint, typecheck, build, route guards) and `release-hygiene` (version bump, lockfile, release notes); `deidentify (advisory)` reports but never blocks.
 - **Releases are automated by GitHub Actions** (`.github/workflows/release.yml`). On a push to `dev` or `master`, the workflow reads `package.json`'s `version`, derives the tag/channel, and creates the release (running on GitHub's runners with `GITHUB_TOKEN`). You do **not** create releases by hand. **A push that does not move the version cuts nothing** — the workflow is idempotent (`gh release view` → skip), which is what makes "no bump for an ordinary task" work rather than erroring.
-  - **Dev releases**: push to `dev` with a moved version → a **pre-release** tagged `v<version>-dev`. Ordinary tasks do not move the version and so publish nothing. Dev systems do not need one anyway — see **Update channels** below.
+  - **Dev: no releases at all.** `dev` is not a `release.yml` trigger. Nothing merged into it publishes anything, a version bump included. Dev systems do not need a release — they compare commits against the branch (see **Update channels** below). `workflow_dispatch` run from `dev` still tags a `v<version>-dev` pre-release, kept as the manual recovery path for a box that missed the v3.30 changeover.
   - **Stable releases**: push to `master` → the workflow creates a **full release** tagged `v<version>`. Production systems (`UPDATE_CHANNEL=stable`) will see these.
-  - **Release notes** come from `.github/releases/<tag>.md` (e.g. `.github/releases/v2.16-dev.md`). Write this file **in the same commit** as the version bump so the notes ship with the release; if it's missing the workflow falls back to auto-generated notes. The workflow is idempotent — if the release/tag already exists it skips, so re-pushing the same version is safe.
+  - **Release notes** come from `.github/releases/<tag>.md` (e.g. `.github/releases/v3.31.md`). Draft them with `npm run notes:draft -- --from <last tag>` and **edit the result** — the raw draft is merged PR titles, not a changelog. The file lands on `dev` through an ordinary PR and is read when the promotion reaches `master`; if it's missing the workflow falls back to auto-generated notes. The workflow is idempotent — if the release/tag already exists it skips, so re-pushing the same version is safe.
 - **Why not `gh api`/`gh release create` from a session**: Claude Code on the web runs behind an egress proxy that **blocks the GitHub releases API** (`403 "Creating, editing, or deleting releases is not permitted for this session type."`) regardless of token. `git push` still works, so pushing the notes file + version bump is the whole job — the workflow does the release. Do not retry the blocked API or route around the proxy.
 - **The same proxy blocks GitHub's GraphQL API** (`403 "GitHub GraphQL is not available from Claude Code sessions; use the REST API"`). That rules out `gh pr checks`, `gh pr view --json` and most other `gh pr`/`gh issue` subcommands, which are GraphQL underneath. Use REST — `gh api repos/{owner}/{repo}/commits/{sha}/check-runs` for CI status — or the GitHub MCP tools. **Watch the failure mode**: the 403 arrives on *stdout* as ordinary text with exit code 0, so a poll loop that greps the output for `pending` reads the error message as "no checks pending" and reports success instantly. Match on the state you want, not on the absence of a state.
 - **Release tag conventions** (mandatory — the update comparator depends on these):
   - **Stable**: tag = `v<version>`, e.g. `v1.38`. The version (after stripping the leading `v`) MUST equal `package.json`'s `version` field.
-  - **Dev pre-release**: tag = `v<version>-dev`, e.g. `v1.38-dev`. The `-dev` suffix is the only suffix the update comparator strips before numeric comparison.
+  - **Dev pre-release**: `v<version>-dev`, now only ever produced by a manual `workflow_dispatch`. Routine work on `dev` publishes nothing. The `-dev` suffix is the only suffix the update comparator strips before numeric comparison.
   - **Do NOT use** any other suffix (`-stable`, `-rc`, `-beta`, `-hotfix`, …). The version comparator (`parseVersionNumber` in `src/app/api/admin/updates/check/route.ts` and the inline regex in `deploy/check-update.sh`) only strips `-dev`; any other suffix is folded into the minor parse and produces ties or unintended ordering.
   - **Same numeric version on both channels is fine but ties on the dev channel**: the comparator uses strict `>` so when `v1.38` (stable) and `v1.38-dev` (pre-release) both parse to `1038`, whichever GitHub returns first wins. Both tags should always reference functionally equivalent code (the promotion PR merges the dev tip as a merge commit), so this is harmless. If you need the dev channel to clearly diverge, bump `package.json` ahead on dev (e.g. cut `v1.39-dev` while stable is still on `v1.38`). Note that under the "never promote unless asked" rule above **the channels are normally apart, often by several releases** — dev runs ahead and stable moves only when the user says so. That gap is the expected state, not drift to be corrected, and the tie described here therefore only arises in the moments just after a promotion.
 - **Creating a release** (the flow):
   ```bash
-  # Dev pre-release — one task
+  # An ordinary task — the common case. Publishes nothing.
   #   1. git checkout -b claude/<topic> origin/dev
-  #   2. Bump package.json "version" (and package-lock.json's two fields).
-  #   3. Write .github/releases/v<version>-dev.md with the notes.
-  #   4. Commit, then: git push -u origin claude/<topic>
-  #   5. The PR into dev opens automatically on that push. Enable
-  #      auto-merge with SQUASH; it lands itself once checks are green.
-  #   -> the merge pushes dev, and release.yml creates the v<version>-dev
-  #      pre-release automatically. No human step anywhere in this.
+  #   2. Do the work. Do NOT touch package.json's version.
+  #   3. Commit, then: git push -u origin claude/<topic>
+  #   4. The PR into dev opens automatically. Enable auto-merge with SQUASH.
+  #   -> the merge lands on dev. No release, no tag, no notes file.
+  #      Dev systems see the new commits on their next update check.
 
   # Stable promotion — ONLY when the user has asked for it in this session.
   # This ships to customers. Channel drift is normal; do not "tidy" it away.
-  #   1. Write .github/releases/v<version>.md with the AGGREGATED notes and
-  #      land it on dev through a PR first (see below for why). That PR
-  #      carries NO version bump — the version is already the one being
-  #      promoted — so it needs the `skip-release-checks` label, or
-  #      release-hygiene fails it for not moving the version.
-  #   2. Open a PR from dev into master.
-  #   3. Auto-merge with a MERGE COMMIT — never a squash.
+  #   1. On a branch off dev: bump package.json "version" (and
+  #      package-lock.json's two fields), then
+  #      npm run notes:draft -- --from <last stable tag>
+  #      and EDIT the draft into .github/releases/v<version>.md.
+  #   2. PR that into dev as normal. It needs no label: dev publishes
+  #      nothing, so release-hygiene asks nothing of it.
+  #   3. Open a PR from dev into master.
+  #   4. Auto-merge with a MERGE COMMIT — never a squash.
   #   -> release.yml creates the v<version> full release automatically.
   ```
 - **NEVER promote to stable unless the user asks for it, in that session.**
@@ -675,34 +674,35 @@ notes**.
   `git push origin dev` the old re-sync required.
 
   Three consequences to preserve:
-  - The stable-notes PR into `dev` is **the** intended use of the
-    `skip-release-checks` label. `release-hygiene` demands a one-step bump into
-    `dev`, and this PR deliberately has none: bumping would promote a version
-    whose stable notes file does not exist. Label it rather than inventing a
-    version for it.
+  - The stable-notes PR into `dev` is now an **ordinary PR and needs no label**.
+    It used to be the one intended use of `skip-release-checks`, because
+    `release-hygiene` demanded a one-step bump into `dev` that this PR
+    deliberately did not have. `dev` publishes nothing now, so the check asks
+    nothing of it, and the bump + notes travel together in that PR.
   - The promotion PR **must merge as a merge commit**. A squash would rewrite
     dev's commits into one new commit on master, breaking the invariant that
     master contains every dev commit — and with it the `--ff-only` relationship
     the update tooling and this document assume. Do **not** enable "Require
     linear history" on `master`; it would forbid exactly this merge.
-  - Pushing the stable notes to `dev` re-triggers `release.yml` for the dev
-    channel, which finds `v<version>-dev` already tagged and skips (it is
-    idempotent). No spurious release is cut.
+  - Pushing the stable notes to `dev` publishes nothing: `dev` is not a
+    `release.yml` trigger. (It previously relied on the workflow's idempotent
+    `gh release view` skip to avoid cutting a spurious release; now the workflow
+    does not run at all.)
 
-- **Stable release notes MUST aggregate every dev pre-release since the previous stable.** Dev systems already saw each `-dev` entry individually, but stable systems only ever see one set of notes per stable bump — so anything that shipped only on `-dev` releases between the last stable and this one needs to be folded into this stable's body. Skipping this means stable users see an incomplete changelog (e.g. v2.00 originally documented only the v2.00 work and silently dropped v1.99-dev's import-aliases feature).
-  - Before writing the stable body, list the pre-releases tagged since the previous stable and read their bodies:
+- **Stable release notes MUST cover everything since the previous stable.** A stable release is the only notes a stable user ever sees. Start from `npm run notes:draft -- --from <previous stable tag>`, which lists every change merged since that tag, and edit it down — dropping what is not user-facing and rewriting the rest for someone who does not know the codebase. This used to mean re-reading and de-duplicating a dozen `-dev` release bodies; there are no dev pre-releases to aggregate any more, so the range is the source of truth. Skipping this means stable users see an incomplete changelog (e.g. v2.00 originally documented only the v2.00 work and silently dropped v1.99-dev's import-aliases feature).
+  - Get the range with the drafter, which reads the merge history rather than
+    the releases list:
     ```bash
     PREV_STABLE=$(gh api 'repos/M3ntalBadg3r/Training-Tracker/releases/latest' --jq .tag_name)
-    gh api 'repos/M3ntalBadg3r/Training-Tracker/releases?per_page=30' \
-      --jq ".[] | select(.prerelease==true) | select(.tag_name > \"$PREV_STABLE\") | {tag: .tag_name, body}"
+    npm run notes:draft -- --from "$PREV_STABLE" --to dev
     ```
-    **That filter is a string comparison, so read its output with care**: `-dev`
-    sorts after the bare tag, so `v3.06-dev` is listed as "since v3.06" even
-    though it shipped *inside* that stable release. It over-selects rather than
-    under-selects, which is the safe direction, but confirm against the actual
-    commit range (`git log --oneline <prev-stable-tag>..dev`) before deciding
-    what belongs in the rollup.
-  - Concatenate the relevant "What's new / Updated / Fixed" bullets into the stable body, de-duplicating items that were superseded by later dev releases. Lead with a one-line "this stable release rolls up dev pre-releases vX.YY-dev … vZ.WW-dev" sentence so readers know what's in scope.
+    This replaced a `gh api` filter over pre-release bodies that compared tags as
+    **strings**, so `v3.06-dev` sorted after `v3.06` and was listed as "since
+    v3.06" despite having shipped *inside* it. The commit range has no such
+    ambiguity.
+  - The draft is merged PR titles, one per line. Edit it into prose: drop what is
+    not user-facing, merge related entries, and rewrite each line for a reader who
+    does not know the codebase. Ship the edit, never the raw draft.
 - **Update channels**: Systems set `UPDATE_CHANNEL` in `.env` to `"stable"` (default) or `"dev"`. **The two channels answer "is there an update?" in completely different ways**, and that is the point.
   - **`stable`** pulls the `master` branch and compares **release versions**: `releases?per_page=100`, drop `prerelease`/`draft`, pick the highest by `major*1000 + minor` after stripping `v` and `-dev`.
   - **`dev`** pulls the `dev` branch and compares **commits**, not versions. It has no version to compare, because merging into `dev` no longer publishes a release. `src/app/api/admin/updates/check/route.ts` compares `APP_COMMIT` (the commit the running build came from, inlined by `next.config.ts`) against the branch head via the GitHub `compare` API, and reports how many commits are behind plus their subject lines. `deploy/check-update.sh` answers the same question with `git ls-remote`, deliberately **not** the API: `auto-update.sh` runs it every 5 minutes, which is 12 calls an hour against an unauthenticated budget of 60 an hour **per IP** shared by every install behind one egress address.
@@ -717,7 +717,7 @@ Three workflows, and it matters which runs when.
 - **`deploy` job in `ci.yml`** — on every push and PR, in parallel with `check` (it needs no `npm ci`, Prisma or build, so a two-second answer does not queue behind one). `bash -n` on every script, `shellcheck` at `--severity=warning` pinned to a specific version with a SHA-256 (unpinned, a runner image bump turns CI red with no code change), the `deploy/tests/` fixtures, and `scripts/check-deploy-parity.mjs`. That last one guards what `check-route-guards.mjs` structurally cannot see: it compares proxy↔handler but never sees the **cron scripts**, so a signed path missing its `isCronRequest` entry — the documented failure where the daily credential check silently 401'd for twenty releases — was invisible to it. Parity now **executes** both sides rather than reading them: the agent's `case` dispatch is run against each payload, and it refuses to proceed unless exactly one `case "${ACTION_RAW}"` block exists, because a decoy in a helper function or a heredoc otherwise gets read instead of the program.
 
 - **`.github/workflows/pr-checks.yml`** — pull requests only, because both jobs compare against the base branch:
-  - `release-hygiene` (**required**) — runs `scripts/check-release-hygiene.mjs`, which enforces the mechanical half of the Mandatory Post-Change Rules below. Into `dev`: the version must not go **backwards**, and `.github/releases/v<version>-dev.md` must exist and be non-empty **only if the version moved** — an ordinary task moves nothing, publishes nothing, and needs neither. Into `master`: the version must move past the base (or `release.yml` finds the tag already exists and cuts nothing) and `v<version>.md` must exist and be non-empty. Both ways, `package-lock.json`'s two `version` fields must match `package.json`. `versionNumber` here **mirrors `parseVersionNumber`** in `src/app/api/admin/updates/check/route.ts` and is used for *ordering* only — keep the two in step, or this check will pass a version the update comparator orders differently. It used to also enforce "exactly one 0.01 step per task" via a `stepProblem` helper (including the `x.99 → (x+1).00` rollover that a naive `+1` over `major*1000 + minor` got wrong); that rule is gone with the per-task release. Escape hatch: the `skip-release-checks` label sets `SKIP_RELEASE_CHECKS` and the script passes with a notice. It **exits 0 rather than being `if:`-skipped on purpose** — a skipped required check blocks a PR just as firmly as a failing one.
+  - `release-hygiene` (**required**) — runs `scripts/check-release-hygiene.mjs`, which enforces the mechanical half of the Mandatory Post-Change Rules below. Into `dev`: only that the version has not gone **backwards** — `dev` is not a `release.yml` trigger, so nothing merged into it publishes anything and neither a bump nor a notes file is required. Into `master`: the version must move past the base (or `release.yml` finds the tag already exists and cuts nothing) and `v<version>.md` must exist and be non-empty. Both ways, `package-lock.json`'s two `version` fields must match `package.json`. `versionNumber` here **mirrors `parseVersionNumber`** in `src/app/api/admin/updates/check/route.ts` and is used for *ordering* only — keep the two in step, or this check will pass a version the update comparator orders differently. It used to also enforce "exactly one 0.01 step per task" via a `stepProblem` helper (including the `x.99 → (x+1).00` rollover that a naive `+1` over `major*1000 + minor` got wrong); that rule is gone with the per-task release. The `skip-release-checks` label remains as a general escape hatch, but its one documented use (the stable-notes PR into `dev`) no longer needs it. Escape hatch: the `skip-release-checks` label sets `SKIP_RELEASE_CHECKS` and the script passes with a notice. It **exits 0 rather than being `if:`-skipped on purpose** — a skipped required check blocks a PR just as firmly as a failing one.
   - `deidentify` (**required** since v2.96) — runs `scripts/check-deidentification.mjs` over the **added** lines only, flagging email addresses outside the fictional domains (`co.com`, `company.com`, `example.com`, …) and absolute home-directory paths that name a real account. It shipped *advisory* on the reasoning that a heuristic should never block a release — which assumed a person would read its findings on the PR. Nobody does: the pipeline is unattended end to end, so an advisory check has no reader and stops nothing, while its findings ride out to a public GitHub release. It now fails the job, and a false positive gets past it with the **`skip-deid-scan`** label (`SKIP_DEID_SCAN`), which exits 0 rather than being `if:`-skipped, for the same reason `release-hygiene` does. Two matcher details worth keeping: an `@` inside a URL authority (`https://x-access-token:${TOKEN}@github.com/…`, all over `deploy/`) is credentials, not a person, and is suppressed via `insideUrlAuthority`; and a failed `git diff` against the base **exits 1**, because on a required check "I could not look" must not read as "I looked and it was clean". It deliberately does **not** detect real company/product/program/person names: the only way to grep for those is a denylist file containing them, which would put the exact identifiers the policy exists to keep out of this repo *into* it, permanently and publicly. Those stay a human check, via the PR template.
 
 - **`.github/workflows/release.yml`** — on push to `dev`/`master` (i.e. on the merge). Re-runs lint + typecheck **before it tags**, so a release cannot be cut from a tree that does not lint or typecheck, then creates the release. **A red check now blocks the release**, so fix it rather than re-pushing.
