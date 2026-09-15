@@ -139,7 +139,7 @@ prisma/
   schema.prisma   # Data model
   migrations/     # Migration history
 deploy/           # install.sh, update.sh, install-remote.sh, perform-update.sh, check-update.sh, auto-update.sh, auto-backup.sh, auto-export.sh, auto-credential-check.sh, update-agent.sh (root side of the update boundary), lib/common.sh (shared idempotent privilege/ownership primitives), lib/cron-sign.sh (the single definition of the cron signing string, sourced by the three auto-*.sh cron scripts — mirrors `src/lib/cron-auth.ts:cronSigningString` and must stay byte-identical to it), and three systemd units: training-tracker.service (the app, unprivileged + sandboxed), training-tracker-update.path + training-tracker-update.service (root-owned update helper)
-scripts/          # CI-enforced checks, all dependency-free Node. check-route-guards.mjs — the per-handler auth-guard inventory (see "Writing a route handler" below); `npm run check:routes` to check, `npm run routes:inventory` for the full table. It **strips comments, string literals, template literals and regex literals before matching** (`stripNonCode`, length- and line-preserving, with `${…}` substitutions handed back to the code scanner so real code inside them still counts): every matcher is a regex, so without that a `// requireAuth(request)` inside a handler body reported it as guarded — and ESLint only *warns* on the now-unused import, so CI stayed green. The same pass fixes brace counting, which previously ran long through a stray `{` in a string and could credit one handler with a sibling's guard. Two things about it are deliberate. **A `/` directly after `)` stops the run rather than being guessed at**: reading a regex as division lets its braces into the brace count, which is a silent false pass, so the script refuses (the probe skips comment openers, so ordinary `Math.floor(x() / 2); // note` is fine; a `/` inside a *string* later on the same line still stops it, and that is the safe direction — a regex may legitimately contain a quote, so skipping strings would scan straight past one). And it carries its **own fixture suite, run on every invocation** (`SELF_TESTS`/`STRIP_TESTS`, driving the same `analyseSource` the real scan uses, so the production path is what is tested) — because the checker is the guarantee, and nothing else checked the checker. Keep the fixtures asserting *verdicts*, not internals. check-release-hygiene.mjs (`npm run check:release`) — version bump / lockfile / release-notes enforcement, base-branch aware. check-deidentification.mjs (`npm run check:deid`) — blocking scan of added lines for email domains + home paths; `skip-deid-scan` label to override
+scripts/          # CI-enforced checks, all dependency-free Node. check-route-guards.mjs — the per-handler auth-guard inventory (see "Writing a route handler" below); `npm run check:routes` to check, `npm run routes:inventory` for the full table. It **strips comments, string literals, template literals and regex literals before matching** (`stripNonCode`, length- and line-preserving, with `${…}` substitutions handed back to the code scanner so real code inside them still counts): every matcher is a regex, so without that a `// requireAuth(request)` inside a handler body reported it as guarded — and ESLint only *warns* on the now-unused import, so CI stayed green. The same pass fixes brace counting, which previously ran long through a stray `{` in a string and could credit one handler with a sibling's guard. Two things about it are deliberate. **A `/` directly after `)` stops the run rather than being guessed at**: reading a regex as division lets its braces into the brace count, which is a silent false pass, so the script refuses (the probe skips comment openers, so ordinary `Math.floor(x() / 2); // note` is fine; a `/` inside a *string* later on the same line still stops it, and that is the safe direction — a regex may legitimately contain a quote, so skipping strings would scan straight past one). And it carries its **own fixture suite, run on every invocation** (`SELF_TESTS`/`STRIP_TESTS`, driving the same `analyseSource` the real scan uses, so the production path is what is tested) — because the checker is the guarantee, and nothing else checked the checker. Keep the fixtures asserting *verdicts*, not internals. check-url-state.mjs — the per-page "does this page restore its view" inventory (see "View state belongs in the URL" below); `npm run check:url-state` to check, `npm run url-state:inventory` for the full table. Like the route-guard scanner it strips comments and string literals before matching (a `// router.replace(…)` must not read as a mirror) and carries its own fixtures, run on every invocation — including the three failure directions that matter: an unmirrored view page, a page that *reads* `searchParams` without writing back, and a listed gap that has since been fixed. It keeps its own small `stripComments` rather than importing the route scanner's `stripNonCode`, because that one additionally has to keep brace counting honest for per-handler body extraction and sharing it would mean refactoring a security check to serve a style check. check-release-hygiene.mjs (`npm run check:release`) — version bump / lockfile / release-notes enforcement, base-branch aware. check-deidentification.mjs (`npm run check:deid`) — blocking scan of added lines for email domains + home paths; `skip-deid-scan` label to override
 .github/          # workflows/ci.yml (lint + typecheck + build + route guards, push & PR), workflows/pr-checks.yml (release-hygiene + the advisory deidentify scan, PR only), workflows/release.yml (tags the release on the merge push), pull_request_template.md (the post-change checklist), releases/<tag>.md (one release-notes file per tag — see "Continuous Integration" and "Git Workflow" below)
 ```
 
@@ -317,6 +317,72 @@ Worth knowing, so nobody mistakes a green pipeline for a clean review:
 - **Whether a generic error message is generic enough.**
 - **Anything about the deployment scripts' behaviour on a platform CI does not
   run** — an unprivileged LXC, ARM64, a host without systemd.
+
+## View state belongs in the URL
+
+**A page that holds a view must be able to restore it.** Filters, search, sort,
+grouping, geography scope, pagination, a projection horizon — anything the user
+adjusts to build the view they are looking at — is mirrored to the query string
+and seeded back from it on mount. Leaving the page and pressing Back returns the
+view, not the defaults.
+
+**`npm run check:url-state` fails CI otherwise** (`scripts/check-url-state.mjs`),
+and that is deliberate rather than decorative: this was a documented convention
+that eight report pages followed, and the next three pages written — Compliance
+Planning, the program dashboard, the offering dashboard — each shipped without
+it and each came back as a user-reported bug ("I clicked a name in Renewals at
+risk, went back, and lost my settings"). A convention nothing checks is a
+convention that applies to whoever remembers it.
+
+**The pattern**, copied from any of the server-paginated report pages:
+
+1. Seed each piece of state with a **lazy `useState` initialiser** reading
+   `useSearchParams()`. Do not use `useMemo` — that discards the user's edits.
+2. Build the query string in one `useCallback` (`buildParams`/`buildViewParams`)
+   and use that same function for the mirror effect, so the write and the read
+   cannot drift.
+3. Mirror with `router.replace(`…`, { scroll: false })`, guarded by
+   `if (qs !== searchParams.toString())` so the effect converges instead of
+   looping.
+4. Split the page into an inner component plus a **`Suspense` wrapper** —
+   `useSearchParams` requires one.
+5. **Re-validate everything read back.** A query string is user-editable text. A
+   value that feeds a `<select>` must land on one of that control's own options
+   or the control renders a value it has no option for; a value naming a scope,
+   level or program must be checked against what actually exists, falling back
+   to the default rather than parking the page on an empty view. `parseTargets`
+   in `programs/planning` also skips a `__proto__` key — it survives
+   `JSON.parse` as an own property and would re-point the prototype on
+   assignment.
+6. A reset-to-page-1 effect needs a `didMountRef` guard, or it clears the page
+   number the URL just supplied.
+
+**What the check asserts, and why it asserts it that way.** A page is in scope
+if it lives in a view area (`reports/`, `programs/`, `offerings/`) **or** imports
+a view-state primitive (`useTableSort`, `Pagination`, `GeoScopeFilter`,
+`DataTable`, `useDebounce`). Both rules are load-bearing: `reports/comparison`
+carries eight pieces of view state and matches no primitive (it predates
+`useTableSort`), while the dashboard sits outside every view area and is caught
+only by its `GeoScopeFilter` import. Compliance requires **both**
+`useSearchParams` *and* `router.replace(` — asking only for the former would
+have passed `offerings/[offeringName]`, which read `?companyId=` as an
+identifier while mirroring nothing, i.e. the exact page whose missing mirror was
+the reported bug.
+
+**Two lists, and the difference is the point.** `EXEMPT` is a decision — this
+page has no view worth restoring — and each entry carries its reason in writing.
+`KNOWN_GAPS` is *owed work*: pages that predate the check and should mirror.
+They are separated so the check can ship green without dressing a gap up as
+intentional, which is the "a comment then made the remainder look intentional"
+failure named under **Security → Three rules**. **The gap list only ever
+shrinks**; a new page must never be added to it, and the check fails if a listed
+gap starts mirroring (delete the line) or names a file that no longer exists.
+
+Deliberately **not** covered: transient UI state — an open modal, an expanded
+row, a collapsed card. Those are re-derived on mount and nobody expects them
+back. The company scope is also excluded, because `CompanyScopeProvider` already
+persists it to `localStorage`; mirroring it as well would pin a page to one
+company and stop it following the header switcher.
 
 ## Writing a route handler
 
@@ -620,7 +686,7 @@ notes**.
 
 Three workflows, and it matters which runs when.
 
-- **`.github/workflows/ci.yml`** (job `check`) — on every push AND pull request to `dev`/`master`: `npm ci`, `npx prisma generate` (needed for the model types; it does not connect), `npm run lint`, `npm run typecheck`, `npm run build`, `npm run check:routes`. Lint and typecheck exist because nothing else ran them — Next 16's `next build` no longer runs ESLint and no `deploy/` script calls it, which is how 44 lint errors accumulated unnoticed before v2.87. **The build step is here for a different reason**: `npm run build` is the step that actually fails during a production update, on the customer's machine, after the new code has already been pulled — and it catches what `tsc` cannot, such as a server-only module reached from a client component. It needs a dummy `DATABASE_URL` (`src/lib/prisma.ts` reads it at module scope) but never connects; the root layout's `force-dynamic` keeps prerendering off the database.
+- **`.github/workflows/ci.yml`** (job `check`) — on every push AND pull request to `dev`/`master`: `npm ci`, `npx prisma generate` (needed for the model types; it does not connect), `npm run lint`, `npm run typecheck`, `npm run build`, `npm run check:routes`, `npm run check:url-state`. Lint and typecheck exist because nothing else ran them — Next 16's `next build` no longer runs ESLint and no `deploy/` script calls it, which is how 44 lint errors accumulated unnoticed before v2.87. `check:url-state` is here for the same reason one step down: mirroring view state to the URL was a convention, and a convention nothing runs is one that holds until the next person writes a page (see "View state belongs in the URL"). **The build step is here for a different reason**: `npm run build` is the step that actually fails during a production update, on the customer's machine, after the new code has already been pulled — and it catches what `tsc` cannot, such as a server-only module reached from a client component. It needs a dummy `DATABASE_URL` (`src/lib/prisma.ts` reads it at module scope) but never connects; the root layout's `force-dynamic` keeps prerendering off the database.
 
 - **`deploy` job in `ci.yml`** — on every push and PR, in parallel with `check` (it needs no `npm ci`, Prisma or build, so a two-second answer does not queue behind one). `bash -n` on every script, `shellcheck` at `--severity=warning` pinned to a specific version with a SHA-256 (unpinned, a runner image bump turns CI red with no code change), the `deploy/tests/` fixtures, and `scripts/check-deploy-parity.mjs`. That last one guards what `check-route-guards.mjs` structurally cannot see: it compares proxy↔handler but never sees the **cron scripts**, so a signed path missing its `isCronRequest` entry — the documented failure where the daily credential check silently 401'd for twenty releases — was invisible to it. Parity now **executes** both sides rather than reading them: the agent's `case` dispatch is run against each payload, and it refuses to proceed unless exactly one `case "${ACTION_RAW}"` block exists, because a decoy in a helper function or a heredoc otherwise gets read instead of the program.
 
