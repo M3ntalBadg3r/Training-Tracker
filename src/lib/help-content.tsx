@@ -1068,7 +1068,7 @@ const helpSections: Record<string, HelpSection> = {
             app match your country names to a map, or to any other system that
             identifies countries by code &mdash; matching on the name alone fails
             quietly, so {"\u201C"}UK{"\u201D"} and {"\u201C"}United Kingdom
-            {"\u201D"} would not line up. Leaving it blank is fine and means
+            {"\u201D"} would not line up. Leaving it blank is fine and means{" "}
             <em>unmapped</em>; the page shows how many countries still have no
             code. Codes do <strong>not</strong>{" "}have to be unique &mdash; if
             you list sub-national geographies separately they can share a code,

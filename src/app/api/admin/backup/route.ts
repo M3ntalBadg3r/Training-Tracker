@@ -1237,7 +1237,17 @@ async function restoreConfigArchive(zip: JSZip): Promise<NextResponse> {
           update: {
             region: row.region,
             theatre: row.theatre ?? null,
-            isoCode: row.isoCode ?? null,
+            // An archive written before this column existed carries no key at
+            // all, and this restore is an upsert-MERGE (it never deletes rows
+            // the archive omits), so it is not authoritative about a field it
+            // does not mention. `isoCode: row.isoCode ?? null` would coerce
+            // that absence into an explicit NULL and wipe every operator-set
+            // code on the countries the archive names — silently, while the
+            // response still reports them restored. Same shape as the import
+            // route's unmapped-column rule, and the same reason.
+            ...(Object.prototype.hasOwnProperty.call(row, "isoCode")
+              ? { isoCode: row.isoCode ?? null }
+              : {}),
           },
         });
       }
