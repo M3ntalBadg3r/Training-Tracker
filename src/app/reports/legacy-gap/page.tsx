@@ -337,7 +337,7 @@ function LegacyGapPageInner() {
         description="Learners holding a retired certification without an active replacement."
         backHref="/reports"
         backLabel="Reports"
-        helpSlug="reports"
+        helpSlug="reports-legacy-gap"
         rightContent={<ExportMenu onExport={handleExport} busy={exporting} />}
       />
 

@@ -341,7 +341,7 @@ function ByProductTypePageInner() {
         description="All training records broken down by product type."
         backHref="/reports"
         backLabel="Reports"
-        helpSlug="reports"
+        helpSlug="reports-by-product-type"
         rightContent={<ExportMenu onExport={handleExport} busy={exporting} />}
       />
 

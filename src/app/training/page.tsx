@@ -5,18 +5,15 @@ import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { useFetchJson } from "@/hooks/useFetchJson";
 import PageHeader from "@/components/layout/PageHeader";
 import ExportMenu from "@/components/ui/ExportMenu";
+import FilterBar from "@/components/ui/FilterBar";
+import GeoScopeFilter from "@/components/reports/GeoScopeFilter";
+import { CHECKBOX_LABEL_CLASS } from "@/components/ui/FormControls";
 import LoadingState from "@/components/ui/LoadingState";
 import DataTable, { DataTableState } from "@/components/data-table/DataTable";
 import { ColumnDef, TrainingAvailableRow } from "@/types";
 import { functionTypeLabel, safeExternalUrl, trainingTypeLabel } from "@/lib/utils";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
-
-interface FilterOptions {
-  theatres: string[];
-  regions: string[];
-  countries: string[];
-}
 
 const columns: ColumnDef<TrainingAvailableRow>[] = [
   { key: "fullTitle", header: "Full Title" },
@@ -64,7 +61,6 @@ function TrainingPageInner() {
   const { selected, loading: scopeLoading } = useCompanyScope();
   const [visibleRows, setVisibleRows] = useState<TrainingAvailableRow[]>([]);
   const [lastImport, setLastImport] = useState<string | null>(null);
-  const [filterOptions, setFilterOptions] = useState<FilterOptions>({ theatres: [], regions: [], countries: [] });
 
   // Filters are mirrored to the URL so that navigating into a training and
   // back (router.back()) restores them.
@@ -175,10 +171,6 @@ function TrainingPageInner() {
   );
 
   useEffect(() => {
-    fetch("/api/training-data/filters")
-      .then((res) => res.json())
-      .then((data) => setFilterOptions(data))
-      .catch(() => {});
     fetch("/api/import-metadata?key=training-data")
       .then((res) => res.json())
       .then((data) => {
@@ -310,46 +302,52 @@ function TrainingPageInner() {
         title="Training"
         helpSlug="training"
         rightContent={
-          lastImport && (
-            <span className="text-sm text-gray-500">
-              Last imported: {new Date(lastImport).toLocaleString()}
-            </span>
-          )
+          <div className="flex items-center gap-3">
+            {lastImport && (
+              <span className="text-sm text-gray-500">
+                Last imported: {new Date(lastImport).toLocaleString()}
+              </span>
+            )}
+            {visibleRows.length > 0 && (
+              <ExportMenu
+                show={showExportMenu}
+                setShow={setShowExportMenu}
+                groups={[
+                  {
+                    label: "Catalogue",
+                    onExport: (fmt) => {
+                      if (fmt === "csv") exportToCsv(exportData, exportColumns, "training");
+                      else if (fmt === "excel") exportToExcel(exportData, exportColumns, "training");
+                      else exportToPdf(exportData, exportColumns, "training");
+                    },
+                  },
+                  {
+                    label: "Catalogue with students",
+                    busy: exportLoading,
+                    onExport: (fmt) => runExportWithStudents(fmt),
+                  },
+                ]}
+              />
+            )}
+          </div>
         }
       />
-      <div className="flex items-center justify-between gap-3 mb-4">
-        <div className="flex items-center gap-3 flex-wrap">
-          <select
-            value={theatre}
-            onChange={(e) => updateFilter({ theatre: e.target.value || null })}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="">All Theatres</option>
-            {filterOptions.theatres.map((t) => (
-              <option key={t} value={t}>{t}</option>
-            ))}
-          </select>
-          <select
-            value={region}
-            onChange={(e) => updateFilter({ region: e.target.value || null })}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="">All Regions</option>
-            {filterOptions.regions.map((r) => (
-              <option key={r} value={r}>{r}</option>
-            ))}
-          </select>
-          <select
-            value={country}
-            onChange={(e) => updateFilter({ country: e.target.value || null })}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="">All Countries</option>
-            {filterOptions.countries.map((c) => (
-              <option key={c} value={c}>{c}</option>
-            ))}
-          </select>
-          <label className="flex items-center gap-2 text-sm text-gray-700 select-none">
+      <FilterBar>
+        <FilterBar.Row>
+          <GeoScopeFilter
+            value={{ theatre, region, country }}
+            onChange={(next) =>
+              // One atomic write: the cascade clears the descendants it
+              // invalidates, where three independent selects left a stale
+              // region or country in the URL after changing theatre.
+              updateFilter({
+                theatre: next.theatre || null,
+                region: next.region || null,
+                country: next.country || null,
+              })
+            }
+          />
+          <label className={CHECKBOX_LABEL_CLASS}>
             <input
               type="checkbox"
               checked={activeOnly}
@@ -366,29 +364,8 @@ function TrainingPageInner() {
               Clear filters
             </button>
           )}
-        </div>
-        {visibleRows.length > 0 && (
-          <ExportMenu
-            show={showExportMenu}
-            setShow={setShowExportMenu}
-            groups={[
-              {
-                label: "Catalogue",
-                onExport: (fmt) => {
-                  if (fmt === "csv") exportToCsv(exportData, exportColumns, "training");
-                  else if (fmt === "excel") exportToExcel(exportData, exportColumns, "training");
-                  else exportToPdf(exportData, exportColumns, "training");
-                },
-              },
-              {
-                label: "Catalogue with students",
-                busy: exportLoading,
-                onExport: (fmt) => runExportWithStudents(fmt),
-              },
-            ]}
-          />
-        )}
-      </div>
+        </FilterBar.Row>
+      </FilterBar>
 
       <DataTable<TrainingAvailableRow>
         data={training}

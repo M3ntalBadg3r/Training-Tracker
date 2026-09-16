@@ -337,7 +337,7 @@ function ByFunctionPageInner() {
         description="All training records broken down by function (Sales, Pre-Sales, Deployments)."
         backHref="/reports"
         backLabel="Reports"
-        helpSlug="reports"
+        helpSlug="reports-by-function"
         rightContent={<ExportMenu onExport={handleExport} busy={exporting} />}
       />
 
