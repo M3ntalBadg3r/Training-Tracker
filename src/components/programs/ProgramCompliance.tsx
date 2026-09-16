@@ -4,10 +4,11 @@ import { useState } from "react";
 import {
   ChevronDown,
   ChevronRight,
-  Download,
   Users,
 } from "lucide-react";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
+import SharedExportMenu, { type ExportFormat } from "@/components/ui/ExportMenu";
+import LoadingState from "@/components/ui/LoadingState";
 
 export const TRAINING_TYPE_LABELS: Record<string, string> = {
   Certification: "Certification",
@@ -607,6 +608,17 @@ function RequirementRows({ req }: { req: Requirement }) {
   );
 }
 
+/**
+ * The program/offering dashboards' export menu.
+ *
+ * This used to be a private second implementation of the same dropdown, and it
+ * was missing the outside-click handler `ui/ExportMenu` has — so the panel
+ * stayed open until you clicked the trigger again. It is now a thin adapter:
+ * the flat `data`/`columns`/`filename` call shape these three pages use is
+ * mapped onto the shared component's `onExport` callback, and the open flag is
+ * passed straight through (a page renders several of these at once and owns
+ * the state so only one is open at a time).
+ */
 export function ExportMenu({
   show,
   setShow,
@@ -622,46 +634,20 @@ export function ExportMenu({
   filename: string;
   align?: "left" | "right";
 }) {
+  const handleExport = (fmt: ExportFormat) => {
+    if (fmt === "csv") exportToCsv(data as never[], columns as never[], filename);
+    else if (fmt === "excel") exportToExcel(data as never[], columns as never[], filename);
+    else exportToPdf(data as never[], columns as never[], filename);
+  };
+
   return (
-    <div className="relative">
-      <button
-        onClick={() => setShow(!show)}
-        className="flex items-center gap-1 px-3 py-2 text-sm bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
-      >
-        <Download size={16} /> Export
-      </button>
-      {show && (
-        <div className={`absolute ${align === "right" ? "right-0" : "left-0"} mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[140px]`}>
-          <button
-            className="w-full px-4 py-2 text-sm text-left hover:bg-gray-100"
-            onClick={() => { exportToCsv(data as never[], columns as never[], filename); setShow(false); }}
-          >
-            Export as CSV
-          </button>
-          <button
-            className="w-full px-4 py-2 text-sm text-left hover:bg-gray-100"
-            onClick={() => { exportToExcel(data as never[], columns as never[], filename); setShow(false); }}
-          >
-            Export as Excel
-          </button>
-          <button
-            className="w-full px-4 py-2 text-sm text-left hover:bg-gray-100"
-            onClick={() => { exportToPdf(data as never[], columns as never[], filename); setShow(false); }}
-          >
-            Export as PDF
-          </button>
-        </div>
-      )}
-    </div>
+    <SharedExportMenu show={show} setShow={setShow} align={align} onExport={handleExport} />
   );
 }
 
+/** @deprecated Use `components/ui/LoadingState`. Kept so existing call sites compile. */
 export function LoadingSpinner() {
-  return (
-    <div className="flex items-center justify-center py-8">
-      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600" />
-    </div>
-  );
+  return <LoadingState size="section" label="Loading…" />;
 }
 
 /** One deployment requirement row inside a tier card (with per-theatre expand). */

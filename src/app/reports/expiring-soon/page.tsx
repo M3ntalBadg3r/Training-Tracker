@@ -390,7 +390,7 @@ function ExpiringSoonPageInner() {
                 <option value="">All Types</option>
                 {types.map((t) => <option key={t} value={t}>{t}</option>)}
               </select>
-              <GeoScopeFilter value={geo} onChange={setGeo} selectClassName="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white" />
+              <GeoScopeFilter value={geo} onChange={setGeo} />
               <select value={groupBy ?? ""} onChange={(e) => setGroupBy((e.target.value as GroupByMode) || null)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
                 <option value="">No Grouping</option>
                 <option value="theatre">Group by Theatre</option>

@@ -356,7 +356,10 @@ function ComparisonPageInner() {
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-wrap gap-2">
           <p className="text-sm text-gray-500">Counts reflect the selected time range and filters; expiring counts look forward from today.</p>
-          <ExportMenu onExport={handleExport} busy={exporting} />
+          <div className="flex items-center gap-3">
+            <span className="text-sm font-medium text-gray-500">{sortedMetrics.length} result{sortedMetrics.length !== 1 ? "s" : ""}</span>
+            <ExportMenu onExport={handleExport} busy={exporting} />
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
