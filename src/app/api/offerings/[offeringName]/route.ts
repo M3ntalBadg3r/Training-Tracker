@@ -6,6 +6,8 @@ import { safeDecodeParam, safeExternalUrl } from "@/lib/utils";
 import {
   resolveOfferingGeo,
   computeOfferingCounts,
+  computeOfferingCountryBreakdown,
+  type HoldersByCountry,
   type OfferingLevel,
 } from "@/lib/offering-compliance";
 
@@ -14,8 +16,9 @@ import {
  * Data-driven offering dashboard. Returns the offering definition + the
  * countries/regions available for the scope selector, and — when a country or
  * region is selected — per-specialisation requirements with Onshore + Nearshore
- * + Offshore distinct-holder counts and Met flags. Company-scoped (compliance =
- * students).
+ * + Offshore distinct-holder counts and Met flags, plus a per-country
+ * distinct-holder breakdown of the same numbers (`holdersByCountry`, keyed by
+ * the app's own country name). Company-scoped (compliance = students).
  *
  * `?students=true&scope=onshore|nearshore|offshore&trainingTitle=<csv>&level=&country=|region=`
  * returns the drill-down student list for a requirement.
@@ -109,6 +112,14 @@ export async function GET(
     nearshore: number | null;
     offshore: number | null;
     met: boolean | null;
+    /**
+     * Distinct holders of this requirement per country, keyed by the app's own
+     * country name. A DISTRIBUTION of the three band counts, not a per-country
+     * verdict: `met` is decided on the Onshore set as a whole, so three holders
+     * in three countries meet a requirement of 3 that no single country meets.
+     * Countries with no holders are omitted. Null until a scope is selected.
+     */
+    holdersByCountry: HoldersByCountry | null;
   }
   const specMap = new Map<number, { name: string; requirements: ReqOut[] }>();
   for (const link of offering.specialisations) {
@@ -134,11 +145,13 @@ export async function GET(
       nearshore: null,
       offshore: null,
       met: null,
+      holdersByCountry: null,
     });
   }
 
   // Resolve compliance when a scope value is selected + companies are in scope.
   let geoOut: Awaited<ReturnType<typeof resolveOfferingGeo>> | null = null;
+  let holdersByCountry: HoldersByCountry | null = null;
   if (value && !noCompanies) {
     geoOut = await resolveOfferingGeo(level, value);
     const allReqs = [...specMap.values()].flatMap((s) =>
@@ -149,7 +162,13 @@ export async function GET(
         quantityRequired: r.quantityRequired,
       }))
     );
-    const counts = await computeOfferingCounts(allReqs, geoOut, companyFilter);
+    // Two passes over the same scope: the band totals the table shows, and the
+    // per-country decomposition of those same totals for a map. Both go through
+    // the shared compliance engine, so they cannot disagree.
+    const [counts, breakdown] = await Promise.all([
+      computeOfferingCounts(allReqs, geoOut, companyFilter),
+      computeOfferingCountryBreakdown(allReqs, geoOut, companyFilter),
+    ]);
     for (const spec of specMap.values()) {
       for (const req of spec.requirements) {
         const c = counts.get(req.id) ?? { onshore: 0, nearshore: 0, offshore: 0 };
@@ -157,8 +176,10 @@ export async function GET(
         req.nearshore = geoOut.hasNearshore ? c.nearshore : null;
         req.offshore = geoOut.hasOffshore ? c.offshore : null;
         req.met = c.onshore >= req.quantityRequired;
+        req.holdersByCountry = breakdown.byRequirement.get(req.id) ?? {};
       }
     }
+    holdersByCountry = breakdown.overall;
   }
 
   const specialisations = [...specMap.values()]
@@ -180,6 +201,11 @@ export async function GET(
     regions,
     specialisations,
     geo: geoOut,
+    // Whole-offering distribution: distinct holders per country of ANY
+    // qualifying training in this offering. Not the sum of the per-requirement
+    // maps (one person may hold several), and not a compliance verdict — see
+    // `HoldersByCountry`. Null until a scope value is selected.
+    holdersByCountry,
   });
 }
 
