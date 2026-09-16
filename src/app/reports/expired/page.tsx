@@ -335,7 +335,7 @@ function ExpiredPageInner() {
         description="Every record whose latest completion has already lapsed, bucketed by how long ago."
         backHref="/reports"
         backLabel="Reports"
-        helpSlug="reports"
+        helpSlug="reports-expired"
         rightContent={<ExportMenu onExport={handleExport} busy={exporting} />}
       />
 

@@ -355,7 +355,7 @@ function AchievementOverTimePageInner() {
         description="Achievements over time, compared against the preceding period."
         backHref="/reports"
         backLabel="Reports"
-        helpSlug="reports"
+        helpSlug="reports-last-12-months"
         rightContent={<ExportMenu onExport={handleExport} busy={exporting} />}
       />
 

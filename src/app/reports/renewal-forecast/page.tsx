@@ -3,6 +3,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import PageHeader from "@/components/layout/PageHeader";
+import GeoScopeFilter from "@/components/reports/GeoScopeFilter";
 import FilterBar from "@/components/ui/FilterBar";
 import { SELECT_CLASS } from "@/components/ui/FormControls";
 import LoadingState from "@/components/ui/LoadingState";
@@ -15,7 +16,6 @@ import ExportMenu, { type ExportFormat } from "@/components/ui/ExportMenu";
 import { ExportableChart, useChartCapture } from "@/components/reports/ChartCaptureProvider";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
 import { useFetchJson } from "@/hooks/useFetchJson";
-import { useRegionData } from "@/hooks/useRegionData";
 import { RefreshCw, AlertTriangle, TrendingUp, RotateCcw } from "lucide-react";
 import {
   BarChart,
@@ -63,7 +63,6 @@ function RenewalForecastPageInner() {
   const companyScope = useCompanyScope();
   // Seeded from the URL so a reload or a shared link reopens the same view.
   const [filterProduct, setFilterProduct] = useState(() => searchParams.get("product") ?? "");
-  const { rows: regionRows } = useRegionData();
   const [theatre, setTheatre] = useState(() => searchParams.get("theatre") ?? "");
   const [region, setRegion] = useState(() => searchParams.get("region") ?? "");
   const [country, setCountry] = useState(() => searchParams.get("country") ?? "");
@@ -86,21 +85,6 @@ function RenewalForecastPageInner() {
   }, [country, region, theatre, companyScope.selected]);
   const { data, loading } = useFetchJson<ForecastResponse>(forecastUrl, { enabled: !companyScope.loading });
 
-  // Cascading filter option lists (theatre → region → country).
-  const theatreOptions = useMemo(
-    () => [...new Set(regionRows.map((r) => r.theatre).filter((t): t is string => !!t))].sort(),
-    [regionRows]
-  );
-  const regionOptions = useMemo(
-    () => [...new Set(regionRows.filter((r) => !theatre || r.theatre === theatre).map((r) => r.region).filter(Boolean))].sort(),
-    [regionRows, theatre]
-  );
-  const countryOptions = useMemo(
-    () => [...new Set(regionRows
-      .filter((r) => (!theatre || r.theatre === theatre) && (!region || r.region === region))
-      .map((r) => r.country))].sort(),
-    [regionRows, theatre, region]
-  );
 
   const scoped = !!(country || region || theatre);
 
@@ -211,18 +195,14 @@ function RenewalForecastPageInner() {
 
       <FilterBar>
         <FilterBar.Row>
-          <select value={theatre} onChange={(e) => { setTheatre(e.target.value); setRegion(""); setCountry(""); }} className={SELECT_CLASS}>
-            <option value="">All Theatres</option>
-            {theatreOptions.map((t) => <option key={t} value={t}>{t}</option>)}
-          </select>
-          <select value={region} onChange={(e) => { setRegion(e.target.value); setCountry(""); }} className={SELECT_CLASS}>
-            <option value="">All Regions</option>
-            {regionOptions.map((r) => <option key={r} value={r}>{r}</option>)}
-          </select>
-          <select value={country} onChange={(e) => setCountry(e.target.value)} className={SELECT_CLASS}>
-            <option value="">All Countries</option>
-            {countryOptions.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
+          <GeoScopeFilter
+            value={{ theatre, region, country }}
+            onChange={(next) => {
+              setTheatre(next.theatre);
+              setRegion(next.region);
+              setCountry(next.country);
+            }}
+          />
           <select value={filterProduct} onChange={(e) => setFilterProduct(e.target.value)} className={SELECT_CLASS}>
             <option value="">All Products</option>
             {products.map((p) => <option key={p} value={p}>{p}</option>)}

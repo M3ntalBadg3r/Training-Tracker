@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState, Suspense } from "react";
 import * as React from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import PageHeader from "@/components/layout/PageHeader";
+import GeoScopeFilter from "@/components/reports/GeoScopeFilter";
 import FilterBar from "@/components/ui/FilterBar";
 import SearchInput, { SELECT_CLASS } from "@/components/ui/FormControls";
 import LoadingState from "@/components/ui/LoadingState";
@@ -301,7 +302,7 @@ function TrainedNotCertifiedPageInner() {
         description="Learners who completed the training but never earned the matching certification."
         backHref="/reports"
         backLabel="Reports"
-        helpSlug="reports"
+        helpSlug="reports-trained-not-certified"
         rightContent={<ExportMenu onExport={handleExport} busy={exporting} />}
       />
 
@@ -310,18 +311,14 @@ function TrainedNotCertifiedPageInner() {
           <SearchInput value={search} onChange={setSearch} placeholder="Search by name or email…" />
         </FilterBar.Row>
         <FilterBar.Row>
-          <select value={filterTheatre} onChange={(e) => setFilterTheatre(e.target.value)} className={SELECT_CLASS}>
-            <option value="">All Theatres</option>
-            {opts.theatres.map((t) => <option key={t} value={t}>{t}</option>)}
-          </select>
-          <select value={filterRegion} onChange={(e) => setFilterRegion(e.target.value)} className={SELECT_CLASS}>
-            <option value="">All Regions</option>
-            {opts.regions.map((r) => <option key={r} value={r}>{r}</option>)}
-          </select>
-          <select value={filterCountry} onChange={(e) => setFilterCountry(e.target.value)} className={SELECT_CLASS}>
-            <option value="">All Countries</option>
-            {opts.countries.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
+          <GeoScopeFilter
+            value={{ theatre: filterTheatre, region: filterRegion, country: filterCountry }}
+            onChange={(next) => {
+              setFilterTheatre(next.theatre);
+              setFilterRegion(next.region);
+              setFilterCountry(next.country);
+            }}
+          />
           <select value={filterProduct} onChange={(e) => setFilterProduct(e.target.value)} className={SELECT_CLASS}>
             <option value="">All Products</option>
             {opts.productTypes.map((p) => <option key={p} value={p}>{p}</option>)}

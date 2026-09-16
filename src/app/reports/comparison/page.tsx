@@ -276,7 +276,7 @@ function ComparisonPageInner() {
         description="Theatres, regions or countries side by side. Counts reflect the selected time range and filters; expiring counts look forward from today."
         backHref="/reports"
         backLabel="Reports"
-        helpSlug="reports"
+        helpSlug="reports-comparison"
         rightContent={<ExportMenu onExport={handleExport} busy={exporting} />}
       />
 

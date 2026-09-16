@@ -317,7 +317,7 @@ function ExpiringSoonPageInner() {
         description="Records approaching their expiry date, bucketed by how soon they lapse."
         backHref="/reports"
         backLabel="Reports"
-        helpSlug="reports"
+        helpSlug="reports-expiring-soon"
         rightContent={<ExportMenu onExport={handleExport} busy={exporting} />}
       />
 
