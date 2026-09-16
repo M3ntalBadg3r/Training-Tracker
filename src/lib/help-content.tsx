@@ -2443,6 +2443,44 @@ const helpSections: Record<string, HelpSection> = {
       </>
     ),
   },
+  programs: {
+    title: "Programs",
+    content: (
+      <>
+        <p>
+          <strong>Programs</strong>{" "}lists every partner program set up on this
+          system. Each card opens a compliance dashboard showing how the program
+          is tracking against its requirements.
+        </p>
+        <p>
+          The list is data-driven: a program appears here once it has
+          requirements defined in <strong>Admin &rsaquo; Program Data</strong>{" "}
+          (or, for a tiered program, once it has tiers). If a program you expect
+          is missing, its requirements have not been added yet.
+        </p>
+
+        <h3>Compliance Planning</h3>
+        <p>
+          The <strong>Compliance Planning</strong>{" "}link is the action layer over
+          these dashboards. Where a dashboard tells you <em>where</em>{" "}you fall
+          short, planning tells you <em>who</em>{" "}to certify to close the gap —
+          and picks the cheapest route, so one person&apos;s exam that satisfies
+          several requirements is only counted once.
+        </p>
+
+        <h3>What a card shows</h3>
+        <ul>
+          <li>
+            <strong>Program name</strong>{" "}— opens that program&apos;s dashboard.
+          </li>
+          <li>
+            A summary line describing how the program is configured, including
+            whether it is <strong>tiered</strong>.
+          </li>
+        </ul>
+      </>
+    ),
+  },
   "programs-detail": {
     title: "Program Compliance Dashboard",
     content: (

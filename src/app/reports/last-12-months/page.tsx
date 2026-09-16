@@ -485,7 +485,7 @@ function AchievementOverTimePageInner() {
                 <option value="">All Types</option>
                 {types.map((t) => <option key={t} value={t}>{t}</option>)}
               </select>
-              <GeoScopeFilter value={geo} onChange={setGeo} selectClassName="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white" />
+              <GeoScopeFilter value={geo} onChange={setGeo} />
               <select value={filterFunction} onChange={(e) => setFilterFunction(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
                 <option value="">All Functions</option>
                 {functions.map((f) => <option key={f} value={f}>{f}</option>)}

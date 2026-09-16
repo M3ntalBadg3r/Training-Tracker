@@ -19,9 +19,25 @@ const TONE: Record<NonNullable<KpiCard["tone"]>, { bg: string; icon: string }> =
   emerald: { bg: "bg-emerald-50 text-emerald-700", icon: "text-emerald-500" },
 };
 
+/**
+ * Column count by card count. Written out as literal class strings because
+ * Tailwind scans source text — an interpolated `lg:grid-cols-${n}` is never
+ * emitted. Five-card strips used to fall through a hardcoded `lg:grid-cols-4`
+ * and strand the fifth card alone on a second row.
+ */
+const COLUMNS: Record<number, string> = {
+  1: "lg:grid-cols-1",
+  2: "lg:grid-cols-2",
+  3: "lg:grid-cols-3",
+  4: "lg:grid-cols-4",
+  5: "lg:grid-cols-5",
+  6: "lg:grid-cols-6",
+};
+
 export default function KpiStrip({ cards }: { cards: KpiCard[] }) {
+  const columns = COLUMNS[cards.length] ?? "lg:grid-cols-4";
   return (
-    <section className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+    <section className={`grid grid-cols-2 ${columns} gap-4 mb-6`}>
       {cards.map((c) => {
         const Icon = c.icon;
         const tone = TONE[c.tone ?? "blue"];

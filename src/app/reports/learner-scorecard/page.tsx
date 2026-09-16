@@ -283,7 +283,10 @@ function LearnerScorecardPageInner() {
           <p className="text-sm text-gray-500">
             One row per learner. Counts are {includeExpired ? "all completions" : "active only"}; expiring-soon and gap counts always look forward from today.
           </p>
-          <ExportMenu onExport={handleExport} busy={exporting} />
+          <div className="flex items-center gap-3">
+            <span className="text-sm font-medium text-gray-500">{total} result{total !== 1 ? "s" : ""}</span>
+            <ExportMenu onExport={handleExport} busy={exporting} />
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">

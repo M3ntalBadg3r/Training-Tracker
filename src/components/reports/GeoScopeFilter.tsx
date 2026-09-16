@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import { useRegionData } from "@/hooks/useRegionData";
+import { SELECT_CLASS } from "@/components/ui/FormControls";
 
 export interface GeoScope {
   theatre: string;
@@ -54,7 +55,12 @@ export default function GeoScopeFilter({ value, onChange, selectClassName }: Pro
     [regionRows, theatre, region]
   );
 
-  const cls = selectClassName ?? "border border-gray-300 rounded-lg px-3 py-1.5 text-sm bg-white";
+  // The default used to be `py-1.5`, which every one of the six report call
+  // sites overrode with the `py-2` form below — leaving the dashboard, the only
+  // caller that took the default, rendering shorter selects than everywhere
+  // else. The default is now what the callers actually wanted, so they pass
+  // nothing.
+  const cls = selectClassName ?? SELECT_CLASS;
 
   return (
     <>

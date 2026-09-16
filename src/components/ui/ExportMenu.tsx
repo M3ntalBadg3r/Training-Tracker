@@ -26,13 +26,24 @@ export default function ExportMenu({
   busy = false,
   label = "Export",
   align = "right",
+  show: controlledShow,
+  setShow: setControlledShow,
 }: {
   onExport: (fmt: ExportFormat, opts: { includeCharts: boolean }) => void | Promise<void>;
   busy?: boolean;
   label?: string;
   align?: "left" | "right";
+  /**
+   * Optional controlled open state. The program/offering dashboards own the
+   * flag themselves (one page renders several of these menus), so they pass it
+   * in; every other caller leaves it alone and the internal state is used.
+   */
+  show?: boolean;
+  setShow?: (v: boolean) => void;
 }) {
-  const [show, setShow] = useState(false);
+  const [internalShow, setInternalShow] = useState(false);
+  const show = controlledShow ?? internalShow;
+  const setShow = setControlledShow ?? setInternalShow;
   const [includeCharts, setIncludeCharts] = useIncludeCharts();
   const { chartCount } = useChartCapture();
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -47,7 +58,7 @@ export default function ExportMenu({
     };
     document.addEventListener("pointerdown", onPointerDown);
     return () => document.removeEventListener("pointerdown", onPointerDown);
-  }, [show]);
+  }, [show, setShow]);
 
   const offerCharts = chartCount > 0;
 
@@ -59,7 +70,7 @@ export default function ExportMenu({
   return (
     <div className="relative" ref={wrapperRef}>
       <button
-        onClick={() => setShow((p) => !p)}
+        onClick={() => setShow(!show)}
         disabled={busy}
         className="flex items-center gap-2 px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300 disabled:opacity-50"
       >
