@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState, use } from "react";
 import { useRouter } from "next/navigation";
 import PageHeader from "@/components/layout/PageHeader";
+import KpiStrip, { type KpiCard } from "@/components/ui/KpiStrip";
+import LoadingState from "@/components/ui/LoadingState";
 import DataTable from "@/components/data-table/DataTable";
 import Badge from "@/components/ui/Badge";
 import Modal from "@/components/ui/Modal";
@@ -580,16 +582,14 @@ export default function StudentRecordPage({
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-gray-500">Loading student record...</div>
-      </div>
+      <LoadingState label="Loading student record…" />
     );
   }
 
   if (!student) {
     return (
       <div>
-        <PageHeader title="Student Not Found" showBack />
+        <PageHeader title="Student Not Found" backHref="/students" backLabel="Students" />
         <p className="text-gray-500">The requested student could not be found.</p>
       </div>
     );
@@ -630,47 +630,18 @@ export default function StudentRecordPage({
       new Date(t.expiryDate) <= sixMonthsOut
   ).length;
 
-  const statCards = [
-    {
-      label: "Certifications Earned",
-      value: activeCerts,
-      icon: Award,
-      color: "bg-indigo-50",
-      iconColor: "text-indigo-500",
-      note: legacyCerts > 0 ? `${legacyCerts} legacy` : null,
-    },
-    {
-      label: "Accreditations Earned",
-      value: activeAccred,
-      icon: ShieldCheck,
-      color: "bg-emerald-50",
-      iconColor: "text-emerald-500",
-      note: legacyAccred > 0 ? `${legacyAccred} legacy` : null,
-    },
-    {
-      label: "Instructor-Led Trainings",
-      value: activeILT,
-      icon: GraduationCap,
-      color: "bg-amber-50",
-      iconColor: "text-amber-500",
-      note: legacyILT > 0 ? `${legacyILT} legacy` : null,
-    },
-    {
-      label: "OLX Completed",
-      value: activeOLX,
-      icon: GraduationCap,
-      color: "bg-sky-50",
-      iconColor: "text-sky-500",
-      note: legacyOLX > 0 ? `${legacyOLX} legacy` : null,
-    },
-    {
-      label: "Expiring in 6 Months",
-      value: expiringSoon,
-      icon: CalendarClock,
-      color: "bg-rose-50",
-      iconColor: "text-rose-500",
-      note: null,
-    },
+  // The legacy count used to be an orange badge with an explanatory tooltip.
+  // The shared card carries a plain hint, so the wording does the work the
+  // colour did: say what the number means rather than just flagging it.
+  const legacyHint = (n: number) =>
+    n > 0 ? `${n} legacy — retired, renew or replace` : undefined;
+
+  const statCards: KpiCard[] = [
+    { label: "Certifications Earned", value: activeCerts, icon: Award, tone: "indigo", hint: legacyHint(legacyCerts) },
+    { label: "Accreditations Earned", value: activeAccred, icon: ShieldCheck, tone: "emerald", hint: legacyHint(legacyAccred) },
+    { label: "Instructor-Led Trainings", value: activeILT, icon: GraduationCap, tone: "amber", hint: legacyHint(legacyILT) },
+    { label: "OLX Completed", value: activeOLX, icon: GraduationCap, tone: "blue", hint: legacyHint(legacyOLX) },
+    { label: "Expiring in 6 Months", value: expiringSoon, icon: CalendarClock, tone: "red" },
   ];
 
   const pendingChangesCount =
@@ -680,7 +651,7 @@ export default function StudentRecordPage({
 
   return (
     <div>
-      <PageHeader title="Student Record" showBack helpSlug="student-detail" />
+      <PageHeader title={student.fullName} backHref="/students" backLabel="Students" helpSlug="student-detail" />
 
       {/* Contact Card */}
       <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6">
@@ -789,10 +760,7 @@ export default function StudentRecordPage({
               </div>
             ) : (
               <>
-                <h2 className="text-2xl font-bold text-gray-900">
-                  {student.fullName}
-                </h2>
-                <div className="mt-2 flex flex-wrap gap-4 text-sm text-gray-600">
+                <div className="flex flex-wrap gap-4 text-sm text-gray-600">
                   <span>{student.email}</span>
                   <span className="text-gray-300">|</span>
                   <span>{student.theatre}</span>
@@ -843,34 +811,7 @@ export default function StudentRecordPage({
         </div>
       </div>
 
-      {/* Stat Cards */}
-      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
-        {statCards.map((card) => {
-          const Icon = card.icon;
-          return (
-            <div
-              key={card.label}
-              className="bg-white rounded-lg border border-gray-200 p-5 flex items-center gap-4"
-            >
-              <div className={`p-3 rounded-lg ${card.color}`}>
-                <Icon size={24} className={card.iconColor} />
-              </div>
-              <div>
-                <div className="text-2xl font-bold text-gray-900">{card.value}</div>
-                <div className="text-sm text-gray-500">{card.label}</div>
-                {card.note && (
-                  <span
-                    className="mt-1 inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800"
-                    title="Legacy certifications counted above — these are retired/superseded and should be renewed or replaced"
-                  >
-                    {card.note}
-                  </span>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </section>
+      <KpiStrip cards={statCards} />
 
       {/* Achievement Over Time */}
       <section className="bg-white rounded-lg border border-gray-200 p-5 mb-6">

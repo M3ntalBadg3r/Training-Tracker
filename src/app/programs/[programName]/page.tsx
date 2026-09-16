@@ -5,6 +5,8 @@ import { useFetchJson } from "@/hooks/useFetchJson";
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import PageHeader from "@/components/layout/PageHeader";
+import FilterBar from "@/components/ui/FilterBar";
+import { SELECT_CLASS } from "@/components/ui/FormControls";
 import Modal from "@/components/ui/Modal";
 import {
   Globe,
@@ -517,29 +519,36 @@ function ProgramDetailPageInner() {
       {meta && meta.levels.length > 0 && (
         <>
           {/* Page-level scope selector — drives both the tier status and report. */}
-          <div className="mb-6 flex flex-wrap items-center gap-3 bg-white rounded-lg border border-gray-200 p-4">
-            <label className="text-sm font-medium text-gray-700">View</label>
-            <select
-              value={scopeLevel}
-              onChange={(e) => changeScopeLevel(e.target.value as ScopeLevel)}
-              className="px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
-            >
-              {hasGlobal && <option value="global">Global</option>}
-              {hasTheatre && <option value="theatre">By Theatre</option>}
-              {hasCountry && <option value="region">By Region</option>}
-              {hasCountry && <option value="country">By Country</option>}
-            </select>
-            {needsValue && (
+          <FilterBar>
+            <FilterBar.Row>
+              <label className="text-sm font-medium text-gray-700" htmlFor="program-level">View by</label>
               <select
-                value={scopeValue}
-                onChange={(e) => setScopeValue(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm min-w-[200px]"
+                id="program-level"
+                value={scopeLevel}
+                onChange={(e) => changeScopeLevel(e.target.value as ScopeLevel)}
+                className={SELECT_CLASS}
               >
-                <option value="">Select a {scopeLevel}...</option>
-                {scopeValues.map((v) => <option key={v} value={v}>{v}</option>)}
+                {hasGlobal && <option value="global">Global</option>}
+                {hasTheatre && <option value="theatre">By Theatre</option>}
+                {hasCountry && <option value="region">By Region</option>}
+                {hasCountry && <option value="country">By Country</option>}
               </select>
-            )}
-          </div>
+              {needsValue && (
+                <>
+                  <label className="text-sm font-medium text-gray-700 capitalize" htmlFor="program-value">{scopeLevel}</label>
+                  <select
+                    id="program-value"
+                    value={scopeValue}
+                    onChange={(e) => setScopeValue(e.target.value)}
+                    className={`${SELECT_CLASS} min-w-[200px]`}
+                  >
+                    <option value="">Select a {scopeLevel}…</option>
+                    {scopeValues.map((v) => <option key={v} value={v}>{v}</option>)}
+                  </select>
+                </>
+              )}
+            </FilterBar.Row>
+          </FilterBar>
 
           {/* Tier Status (tiered programs) */}
           {isTiered && (

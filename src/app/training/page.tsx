@@ -3,8 +3,9 @@
 import { useEffect, useState, useCallback, useMemo, Suspense } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { useFetchJson } from "@/hooks/useFetchJson";
-import { Download } from "lucide-react";
 import PageHeader from "@/components/layout/PageHeader";
+import ExportMenu from "@/components/ui/ExportMenu";
+import LoadingState from "@/components/ui/LoadingState";
 import DataTable, { DataTableState } from "@/components/data-table/DataTable";
 import { ColumnDef, TrainingAvailableRow } from "@/types";
 import { functionTypeLabel, safeExternalUrl, trainingTypeLabel } from "@/lib/utils";
@@ -297,9 +298,7 @@ function TrainingPageInner() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-gray-500">Loading training data...</div>
-      </div>
+      <LoadingState label="Loading training catalogue…" />
     );
   }
 
@@ -369,73 +368,25 @@ function TrainingPageInner() {
           )}
         </div>
         {visibleRows.length > 0 && (
-          <div className="relative">
-            <button
-              onClick={() => setShowExportMenu((prev) => !prev)}
-              className="flex items-center gap-2 px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300"
-            >
-              <Download size={16} /> Export
-            </button>
-            {showExportMenu && (
-              <div className="absolute right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[220px] py-1">
-                <div className="text-xs uppercase tracking-wide text-gray-500 px-4 pt-2 pb-1">
-                  Catalogue
-                </div>
-                <button
-                  onClick={() => {
-                    exportToCsv(exportData, exportColumns, "training");
-                    setShowExportMenu(false);
-                  }}
-                  className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100"
-                >
-                  Export as CSV
-                </button>
-                <button
-                  onClick={() => {
-                    exportToExcel(exportData, exportColumns, "training");
-                    setShowExportMenu(false);
-                  }}
-                  className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100"
-                >
-                  Export as Excel
-                </button>
-                <button
-                  onClick={() => {
-                    exportToPdf(exportData, exportColumns, "training");
-                    setShowExportMenu(false);
-                  }}
-                  className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100"
-                >
-                  Export as PDF
-                </button>
-                <div className="border-t border-gray-100 my-1" />
-                <div className="text-xs uppercase tracking-wide text-gray-500 px-4 pt-2 pb-1">
-                  Catalogue with students
-                </div>
-                <button
-                  disabled={exportLoading}
-                  onClick={() => runExportWithStudents("csv")}
-                  className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 disabled:opacity-50 disabled:cursor-wait"
-                >
-                  {exportLoading ? "Preparing…" : "Export as CSV"}
-                </button>
-                <button
-                  disabled={exportLoading}
-                  onClick={() => runExportWithStudents("excel")}
-                  className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 disabled:opacity-50 disabled:cursor-wait"
-                >
-                  {exportLoading ? "Preparing…" : "Export as Excel"}
-                </button>
-                <button
-                  disabled={exportLoading}
-                  onClick={() => runExportWithStudents("pdf")}
-                  className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 disabled:opacity-50 disabled:cursor-wait"
-                >
-                  {exportLoading ? "Preparing…" : "Export as PDF"}
-                </button>
-              </div>
-            )}
-          </div>
+          <ExportMenu
+            show={showExportMenu}
+            setShow={setShowExportMenu}
+            groups={[
+              {
+                label: "Catalogue",
+                onExport: (fmt) => {
+                  if (fmt === "csv") exportToCsv(exportData, exportColumns, "training");
+                  else if (fmt === "excel") exportToExcel(exportData, exportColumns, "training");
+                  else exportToPdf(exportData, exportColumns, "training");
+                },
+              },
+              {
+                label: "Catalogue with students",
+                busy: exportLoading,
+                onExport: (fmt) => runExportWithStudents(fmt),
+              },
+            ]}
+          />
         )}
       </div>
 
@@ -472,9 +423,7 @@ export default function TrainingPage() {
   return (
     <Suspense
       fallback={
-        <div className="flex items-center justify-center h-64">
-          <div className="text-gray-500">Loading training data...</div>
-        </div>
+        <LoadingState label="Loading training catalogue…" />
       }
     >
       <TrainingPageInner />

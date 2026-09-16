@@ -96,7 +96,11 @@ const TILES = [
 export default function ReportsPage() {
   return (
     <div>
-      <PageHeader title="Reports" helpSlug="reports" />
+      <PageHeader
+        title="Reports"
+        description="Training, certification and compliance reporting across your learners."
+        helpSlug="reports"
+      />
 
       <section className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {TILES.map(({ href, title, description, Icon }) => (
