@@ -1,9 +1,11 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import PageHeader from "@/components/layout/PageHeader";
+import FilterBar from "@/components/ui/FilterBar";
+import { SELECT_CLASS } from "@/components/ui/FormControls";
+import LoadingState from "@/components/ui/LoadingState";
 import KpiStrip from "@/components/ui/KpiStrip";
 import { useChartTheme, tooltipStyle } from "@/lib/chart-theme";
 import { useTableSort, SortAccessor } from "@/hooks/useTableSort";
@@ -14,7 +16,7 @@ import { ExportableChart, useChartCapture } from "@/components/reports/ChartCapt
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
 import { useFetchJson } from "@/hooks/useFetchJson";
 import { useRegionData } from "@/hooks/useRegionData";
-import { ArrowLeft, TrendingUp, ShieldCheck, Award, BarChart3 } from "lucide-react";
+import { TrendingUp, ShieldCheck, Award, BarChart3 } from "lucide-react";
 import {
   LineChart,
   Line,
@@ -231,17 +233,40 @@ function ProgramComplianceTrendPageInner() {
   };
 
   if (loading || !data) {
-    return <div className="flex items-center justify-center h-64"><div className="text-gray-500">Loading report...</div></div>;
+    return <LoadingState label="Loading report…" />;
   }
 
   return (
     <div>
-      <div className="flex items-center gap-2 mb-2">
-        <Link href="/reports" className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700">
-          <ArrowLeft size={14} /> Reports
-        </Link>
-      </div>
-      <PageHeader title="Program Compliance Trend" helpSlug="reports-program-compliance-trend" />
+      <PageHeader
+        title="Program Compliance Trend"
+        description="Twelve months of point-in-time compliance history, plus a twelve-month expiry-driven forecast."
+        backHref="/reports"
+        backLabel="Reports"
+        helpSlug="reports-program-compliance-trend"
+        rightContent={<ExportMenu onExport={handleExport} busy={exporting} />}
+      />
+
+      <FilterBar>
+        <FilterBar.Row>
+          <select value={program} onChange={(e) => setProgram(e.target.value)} className={SELECT_CLASS}>
+            <option value="">All Programs</option>
+            {data.programs.map((p) => <option key={p} value={p}>{p}</option>)}
+          </select>
+          <select value={theatre} onChange={(e) => { setTheatre(e.target.value); setRegion(""); setCountry(""); }} className={SELECT_CLASS}>
+            <option value="">All Theatres</option>
+            {theatreOptions.map((t) => <option key={t} value={t}>{t}</option>)}
+          </select>
+          <select value={region} onChange={(e) => { setRegion(e.target.value); setCountry(""); }} className={SELECT_CLASS}>
+            <option value="">All Regions</option>
+            {regionOptions.map((r) => <option key={r} value={r}>{r}</option>)}
+          </select>
+          <select value={country} onChange={(e) => setCountry(e.target.value)} className={SELECT_CLASS}>
+            <option value="">All Countries</option>
+            {countryOptions.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </FilterBar.Row>
+      </FilterBar>
 
       <KpiStrip
         cards={[
@@ -252,33 +277,13 @@ function ProgramComplianceTrendPageInner() {
         ]}
       />
 
-      <section className="bg-white rounded-lg border border-gray-200 p-5 mb-6">
+      <ExportableChart as="section" className="bg-white rounded-lg border border-gray-200 p-5 mb-6">
         <div className="flex items-start justify-between mb-1 gap-4 flex-wrap">
           <h3 className="text-base font-semibold text-gray-900">Compliance % by Specialisation — 12-Month History &amp; Forecast</h3>
-          <div className="flex gap-2 items-center flex-wrap">
-            <select value={program} onChange={(e) => setProgram(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm">
-              <option value="">All Programs</option>
-              {data.programs.map((p) => <option key={p} value={p}>{p}</option>)}
-            </select>
-            <select value={theatre} onChange={(e) => { setTheatre(e.target.value); setRegion(""); setCountry(""); }} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm">
-              <option value="">All Theatres</option>
-              {theatreOptions.map((t) => <option key={t} value={t}>{t}</option>)}
-            </select>
-            <select value={region} onChange={(e) => { setRegion(e.target.value); setCountry(""); }} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm">
-              <option value="">All Regions</option>
-              {regionOptions.map((r) => <option key={r} value={r}>{r}</option>)}
-            </select>
-            <select value={country} onChange={(e) => setCountry(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm">
-              <option value="">All Countries</option>
-              {countryOptions.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
-            <ExportMenu onExport={handleExport} busy={exporting} />
-          </div>
         </div>
         <p className="text-xs text-gray-500 mb-4">
           Showing: <span className="font-medium text-gray-700">{data.scopeLabel}</span> · scoped to the company selected above. Solid = history, dashed = forecast (assumes no new completions — only existing certifications expiring).
         </p>
-        <ExportableChart title="Compliance Trend">
           <ResponsiveContainer width="100%" height={350}>
             <LineChart data={chartData}>
               <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
@@ -297,11 +302,10 @@ function ProgramComplianceTrendPageInner() {
               ))}
             </LineChart>
           </ResponsiveContainer>
-        </ExportableChart>
         {seriesKeys.length === 0 && (
           <div className="text-sm text-gray-500 mt-4 text-center">No program compliance data — set up specialisations and program data in Admin first.</div>
         )}
-      </section>
+      </ExportableChart>
 
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-200">
@@ -353,7 +357,7 @@ function ProgramComplianceTrendPageInner() {
 
 export default function ProgramComplianceTrendPage() {
   return (
-    <Suspense fallback={<div className="flex items-center justify-center h-64"><div className="text-gray-500">Loading report...</div></div>}>
+    <Suspense fallback={<LoadingState label="Loading report…" />}>
       <ProgramComplianceTrendPageInner />
     </Suspense>
   );

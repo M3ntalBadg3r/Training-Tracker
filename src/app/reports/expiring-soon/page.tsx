@@ -3,8 +3,10 @@
 import { useCallback, useEffect, useRef, useState, Suspense } from "react";
 import * as React from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
-import Link from "next/link";
 import PageHeader from "@/components/layout/PageHeader";
+import FilterBar from "@/components/ui/FilterBar";
+import SearchInput, { SELECT_CLASS } from "@/components/ui/FormControls";
+import LoadingState from "@/components/ui/LoadingState";
 import KpiStrip from "@/components/ui/KpiStrip";
 import { useChartTheme, tooltipStyle } from "@/lib/chart-theme";
 import { resolveBucket, GROUP_BY_LABEL, GroupByMode } from "@/lib/group-by";
@@ -17,7 +19,7 @@ import { useDebounce } from "@/hooks/useDebounce";
 import { useFetchJson } from "@/hooks/useFetchJson";
 import { useDateFormat } from "@/components/date-format/DateFormatProvider";
 import GeoScopeFilter, { GeoScope } from "@/components/reports/GeoScopeFilter";
-import { Search, ArrowLeft, Clock, AlertTriangle, AlertCircle, CalendarClock } from "lucide-react";
+import { Clock, AlertTriangle, AlertCircle, CalendarClock } from "lucide-react";
 import Pagination from "@/components/data-table/Pagination";
 import {
   BarChart,
@@ -227,7 +229,7 @@ function ExpiringSoonPageInner() {
   };
 
   if (loading && !data) {
-    return <div className="flex items-center justify-center h-64"><div className="text-gray-500">Loading report...</div></div>;
+    return <LoadingState label="Loading report…" />;
   }
 
   const renderRow = (row: ExpiringRow, idx: number) => (
@@ -310,12 +312,39 @@ function ExpiringSoonPageInner() {
 
   return (
     <div>
-      <div className="flex items-center gap-2 mb-2">
-        <Link href="/reports" className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700">
-          <ArrowLeft size={14} /> Reports
-        </Link>
-      </div>
-      <PageHeader title="Expiring Soon" helpSlug="reports" />
+      <PageHeader
+        title="Expiring Soon"
+        description="Records approaching their expiry date, bucketed by how soon they lapse."
+        backHref="/reports"
+        backLabel="Reports"
+        helpSlug="reports"
+        rightContent={<ExportMenu onExport={handleExport} busy={exporting} />}
+      />
+
+      <FilterBar>
+        <FilterBar.Row>
+          <SearchInput value={search} onChange={setSearch} placeholder="Search by name or email…" />
+          <GeoScopeFilter value={geo} onChange={setGeo} />
+        </FilterBar.Row>
+        <FilterBar.Row>
+          <select value={filterWindow} onChange={(e) => setFilterWindow(e.target.value)} className={SELECT_CLASS}>
+            <option value="1">Within 1 Month</option>
+            <option value="3">Within 3 Months</option>
+            <option value="6">Within 6 Months</option>
+            <option value="12">Within 12 Months</option>
+          </select>
+          <select value={filterType} onChange={(e) => setFilterType(e.target.value)} className={SELECT_CLASS}>
+            <option value="">All Types</option>
+            {types.map((t) => <option key={t} value={t}>{t}</option>)}
+          </select>
+          <select value={groupBy ?? ""} onChange={(e) => setGroupBy((e.target.value as GroupByMode) || null)} className={SELECT_CLASS}>
+            <option value="">No Grouping</option>
+            <option value="theatre">Group by Theatre</option>
+            <option value="region">Group by Region</option>
+            <option value="country">Group by Country</option>
+          </select>
+        </FilterBar.Row>
+      </FilterBar>
 
       <KpiStrip
         cards={[
@@ -371,34 +400,6 @@ function ExpiringSoonPageInner() {
           <span className="text-sm font-medium text-gray-500">{total} result{total !== 1 ? "s" : ""}</span>
         </div>
         <div className="px-6 py-4">
-          <div className="flex flex-col gap-3 mb-4">
-            <div className="flex flex-col sm:flex-row gap-3">
-              <div className="relative flex-1">
-                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                <input type="text" placeholder="Search by name or email..." value={search} onChange={(e) => setSearch(e.target.value)} className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg" />
-              </div>
-              <ExportMenu onExport={handleExport} busy={exporting} />
-            </div>
-            <div className="flex flex-wrap gap-3">
-              <select value={filterWindow} onChange={(e) => setFilterWindow(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
-                <option value="1">Within 1 Month</option>
-                <option value="3">Within 3 Months</option>
-                <option value="6">Within 6 Months</option>
-                <option value="12">Within 12 Months</option>
-              </select>
-              <select value={filterType} onChange={(e) => setFilterType(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
-                <option value="">All Types</option>
-                {types.map((t) => <option key={t} value={t}>{t}</option>)}
-              </select>
-              <GeoScopeFilter value={geo} onChange={setGeo} />
-              <select value={groupBy ?? ""} onChange={(e) => setGroupBy((e.target.value as GroupByMode) || null)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
-                <option value="">No Grouping</option>
-                <option value="theatre">Group by Theatre</option>
-                <option value="region">Group by Region</option>
-                <option value="country">Group by Country</option>
-              </select>
-            </div>
-          </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -440,7 +441,7 @@ function ExpiringSoonPageInner() {
 
 export default function ExpiringSoonPage() {
   return (
-    <Suspense fallback={<div className="flex items-center justify-center h-64"><div className="text-gray-500">Loading report...</div></div>}>
+    <Suspense fallback={<LoadingState label="Loading report…" />}>
       <ExpiringSoonPageInner />
     </Suspense>
   );
