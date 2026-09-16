@@ -145,9 +145,16 @@ model OlxSubItemRelation {
 }
 
 model RegionData {
-  country  String    @id
-  region   String
-  theatre  String?
+  country String  @id
+  region  String
+  theatre String?
+  /// ISO 3166-1 alpha-2, uppercase. Null = unmapped, which is a first-class
+  /// state (reported, never dropped or coerced to a guess). Deliberately NOT
+  /// unique: a sales geography may carry several sub-national rows that all map
+  /// to one code. A CHECK constraint enforces ^[A-Z]{2}$ — see the migration
+  /// 20260916000000_region_data_iso_code; the write routes enforce it too.
+  isoCode String? @map("iso_code") @db.VarChar(2)
+
   students Student[]
 
   @@map("region_data")

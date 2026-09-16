@@ -763,8 +763,10 @@ Manage the mapping between countries, regions, and theatres. This page is the so
 - **Add** — Add a new country with its region and (optionally) theatre. A country without a theatre cannot be selected for new students — set the theatre before assigning students.
 - **Edit** — Click **Edit** on any row to modify the country, region, or theatre inline, then **Save** or **Cancel**.
 - **Delete** — Remove a country/region mapping.
-- **Import** — Upload a CSV or Excel file with `Country`, `Region`, and (optionally) `Theatre` columns. The system auto-maps columns and shows a preview before importing.
-- **Export** — Download all region data (including theatre) as CSV, Excel, or PDF.
+- **ISO Code** — Each country can carry its two-letter **ISO 3166-1** country code (`GB`, `US`, `DE`). It is optional: a country with no code shows as *(unmapped)*, and the page keeps a running count of how many are still unset. The code is what lets the app line your country names up with a map, or with any other system that identifies countries by code, so it is worth setting even before anything visibly uses it. Two things are worth knowing. The code does **not** have to be unique — if your geography lists England and Scotland separately, both are `GB`, and anything using the code adds those rows together. And leaving it blank is a real answer rather than an oversight: a geography that is not a single country genuinely has no code.
+- **Suggest ISO codes** — Looks at every country that has no code yet and tries to match it by name against the official ISO list. It shows you what it found, **including the name it matched against**, and applies nothing until you tick the rows you agree with. Anything it cannot match confidently is listed as *no suggestion* rather than guessed at. Treat the matches as proposals to check — a wrong code is worse than a blank one, because a blank one is visibly blank.
+- **Import** — Upload a CSV or Excel file with `Country`, `Region`, and (optionally) `Theatre` and `ISO Code` columns. The system auto-maps columns and shows a preview before importing. As with Theatre, **a column you do not map is not written at all**, so importing a file without an ISO Code column leaves every existing code exactly as it was.
+- **Export** — Download all region data (including theatre and ISO code) as CSV, Excel, or PDF.
 
 #### Import size limits
 

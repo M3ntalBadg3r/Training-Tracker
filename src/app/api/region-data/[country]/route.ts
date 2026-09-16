@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma, { type PrismaTransactionClient } from "@/lib/prisma";
 import { handleAuthError, requireSuperAdmin } from "@/lib/auth";
 import { safeDecodeParam } from "@/lib/utils";
+import { normaliseIsoCode } from "@/lib/iso-countries";
 
 export async function PUT(
   request: NextRequest,
@@ -31,8 +32,22 @@ export async function PUT(
         : null)
     : undefined;
 
+  // isoCode follows the same rule as theatre: only touched when the key is
+  // present. An explicit empty string means "clear it" (store NULL, the
+  // first-class "unmapped" state); omitting the key leaves the stored value
+  // alone. Shape is enforced here as well as by the DB CHECK because this is
+  // input reaching a sink, and case is normalised up rather than refused.
+  const isoProvided = Object.prototype.hasOwnProperty.call(body, "isoCode");
+  const newIsoCode = isoProvided ? normaliseIsoCode(body.isoCode) : undefined;
+
   if (!newRegion) {
     return NextResponse.json({ error: "Region is required" }, { status: 400 });
+  }
+  if (isoProvided && newIsoCode === undefined) {
+    return NextResponse.json(
+      { error: "ISO code must be two letters (ISO 3166-1 alpha-2)" },
+      { status: 400 }
+    );
   }
 
   // If country name changed, we need to delete + recreate since country is the PK
@@ -48,11 +63,12 @@ export async function PUT(
       );
     }
 
-    // Preserve existing theatre when the body didn't include one.
+    // Preserve the existing theatre / ISO code when the body didn't include one.
     const oldRow = await prisma.regionData.findUnique({
       where: { country: decodedCountry },
     });
     const theatreToStore = theatreProvided ? newTheatre : oldRow?.theatre ?? null;
+    const isoToStore = isoProvided ? newIsoCode ?? null : oldRow?.isoCode ?? null;
 
     // Use a transaction: update students to new country, delete old, create new
     const regionData = await prisma.$transaction(async (tx: PrismaTransactionClient) => {
@@ -62,7 +78,12 @@ export async function PUT(
       });
       await tx.regionData.delete({ where: { country: decodedCountry } });
       return tx.regionData.create({
-        data: { country: newCountry, region: newRegion, theatre: theatreToStore },
+        data: {
+          country: newCountry,
+          region: newRegion,
+          theatre: theatreToStore,
+          isoCode: isoToStore,
+        },
       });
     });
 
@@ -74,6 +95,7 @@ export async function PUT(
     data: {
       region: newRegion,
       ...(theatreProvided ? { theatre: newTheatre } : {}),
+      ...(isoProvided ? { isoCode: newIsoCode ?? null } : {}),
     },
   });
 

@@ -232,6 +232,9 @@ export default function StudentRecordPage({
         country: student.country,
         region: student.region ?? "",
         theatre: null,
+        // Not in the Region Data catalogue at all, so there is no ISO code to
+        // read. null is the "unmapped" state, not a placeholder for one.
+        isoCode: null,
       };
       result.unshift({ option: synthetic, needsTheatre: true });
     }
