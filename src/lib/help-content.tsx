@@ -2460,6 +2460,22 @@ const helpSections: Record<string, HelpSection> = {
           It&apos;s <em>deduplicated</em>{" "}— if one person&apos;s single exam
           satisfies several requirements at once, they count once.
         </p>
+        <p>
+          That dedup applies to <em>certifications</em>{" "}as well as to named
+          people. Where several specialisations require the{" "}
+          <strong>same</strong>{" "}certification over the same population, one
+          group of people earning it closes all of them — so three
+          specialisations each needing 2 holders of one certification cost{" "}
+          <strong>2</strong>{" "}people, not 6. Those requirements are tagged{" "}
+          <strong>shared</strong>{" "}in the roadmap, with the other specialisations
+          named on hover.
+        </p>
+        <p>
+          The consequence is worth expecting: each specialisation block shows what
+          it costs <em>on its own</em>, so the blocks can add up to more than the
+          program&apos;s headline. The headline is the one that counts a shared
+          certification once, and it is the number of people you actually need.
+        </p>
 
         <h3>Choosing a target</h3>
         <p>

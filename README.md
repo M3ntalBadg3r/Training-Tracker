@@ -1354,6 +1354,8 @@ Your **View** scope and the **Compliance as of** horizon are mirrored into the p
 
 The headline metric is **People to certify**: how many people still need to earn a certification to close the plan's gaps, deduplicated so one person whose single exam satisfies several requirements counts once.
 
+The dedup applies to **certifications** as well as to named people. Where several specialisations require the *same* certification over the same population, one group of people earning it closes all of them — so three specialisations each needing 2 holders of one certification cost **2** people, not 6. Those requirements are tagged **shared** in the roadmap (and in the exported Roadmap sheet's *Shared with* column), with the other specialisations named on hover. The consequence is worth expecting: each specialisation block shows what it costs *on its own*, so the blocks can add up to more than the program's headline — the headline is the figure that counts a shared certification once.
+
 Pick a **scope** (Global / Theatre / Region / Country) and one or more **programs**, then choose a target per program:
 
 - **Tiered program** → target a **tier** (the tool picks the cheapest specialisations to reach it) or specific specialisation(s). Reaching a tier only needs as many specialisations as the tier requires, so its cost reflects just the cheapest path — and any **equally-cheap** alternatives are flagged **Recommended** so you can choose between them.
