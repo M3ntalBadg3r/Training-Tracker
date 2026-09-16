@@ -168,12 +168,7 @@ BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null) || {
 
 # Recover from detached HEAD (can occur after a previous failed rollback)
 if [ "$BRANCH" = "HEAD" ]; then
-    _CHANNEL=$(grep -E "^UPDATE_CHANNEL=" "${APP_DIR}/.env" 2>/dev/null | cut -d= -f2 | tr -d '"' | tr -d "'" | tr -d ' ')
-    if [ "$_CHANNEL" = "dev" ]; then
-        BRANCH="dev"
-    else
-        BRANCH="master"
-    fi
+    BRANCH=$(branch_for_channel "$(channel_from_env_file "${APP_DIR}/.env")")
     log "Detected detached HEAD — restoring to branch ${BRANCH}"
     git checkout "${BRANCH}" 2>/dev/null || {
         write_error 1 "Failed to restore branch" "Git is in detached HEAD state and could not checkout branch ${BRANCH}. Run: cd ${APP_DIR} && git checkout ${BRANCH}"

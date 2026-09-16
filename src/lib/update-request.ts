@@ -25,6 +25,7 @@ import path from "path";
 export const UPDATE_REQUESTS = {
   update: '{"action":"update"}',
   switchToDev: '{"action":"switch-channel","channel":"dev"}',
+  switchToBeta: '{"action":"switch-channel","channel":"beta"}',
   switchToStable: '{"action":"switch-channel","channel":"stable"}',
 } as const;
 

@@ -1,17 +1,39 @@
 name: Create Release
 
-# Creates the GitHub release for a push to dev or master. This runs on GitHub's
-# own runners (with the built-in GITHUB_TOKEN), so it works even from sessions
-# that cannot call the GitHub releases API directly (e.g. Claude Code on the web).
+# Creates the GitHub release for a push to a release branch. This runs on
+# GitHub's own runners (with the built-in GITHUB_TOKEN), so it works even from
+# sessions that cannot call the GitHub releases API directly (e.g. Claude Code
+# on the web).
 #
 # The tag/channel is derived from package.json:
-#   - push to dev    -> tag v<version>-dev  (pre-release)
 #   - push to master -> tag v<version>      (stable release)
+#
+# `dev` is deliberately NOT a trigger. Every merge into dev used to publish a
+# `v<version>-dev` pre-release, which is how this repo cut 13 releases in a day
+# and 64 in a week on a page customers read, and why the version number climbed
+# 2.96 -> 3.29 in four days while meaning nothing.
+#
+# Dev systems never needed the release, only the signal. They install by pulling
+# the `dev` branch directly, and since v3.30 they compare the commit they were
+# built from against the branch head instead of comparing version numbers. See
+# "Update channels" in CLAUDE.md.
+#
+# Ordering note, because it is not recoverable if done the other way round: this
+# trigger could only be removed AFTER the commit-based checker had shipped in a
+# dev release and reached the boxes. A box still running the old checker needs a
+# dev release to learn about the change that removes dev releases; without one it
+# reports "up to date" forever, never pulls, and nothing but a pull replaces its
+# copy of deploy/check-update.sh.
+#
+# `workflow_dispatch` is kept as the manual escape hatch: running it from `dev`
+# still tags a `v<version>-dev` pre-release, which is the recovery path for a box
+# that missed the changeover.
+#
 # Release notes are read from .github/releases/<tag>.md when present.
 
 on:
   push:
-    branches: [dev, master]
+    branches: [master]
   workflow_dispatch: {}
 
 permissions:

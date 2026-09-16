@@ -16,7 +16,11 @@ name: CI
 
 on:
   push:
-    branches: [dev, master]
+    # `beta` is included so a cut build is still linted, typechecked and built.
+    # It carries no pull_request trigger because no PR ever targets it: `beta`
+    # is only ever fast-forwarded from `dev` by the "Cut beta build" workflow,
+    # never committed to directly.
+    branches: [dev, beta, master]
   pull_request:
     branches: [dev, master]
   workflow_dispatch: {}
@@ -82,6 +86,16 @@ jobs:
       # records the evidence that settles it.
       - name: JSX whitespace
         run: npm run check:jsx
+
+      # The comparator in deploy/lib/version.mjs decides whether an installed
+      # system is ever offered an update, and it replaced five hand-rolled
+      # copies of `major*1000 + minor` that had already drifted apart. The
+      # fixtures assert semver precedence AND that the ~100 already-published
+      # tags keep the order the old comparator gave them — a box that has not
+      # updated yet is still running that one, so a reordering strands it, and
+      # the failure is silent by construction: updates simply stop arriving.
+      - name: Version ordering
+        run: npm run check:version
 
   # The deploy/ layer had no automated checking of any kind: no lint, no
   # typecheck, no tests, while the app side had all three. That asymmetry was

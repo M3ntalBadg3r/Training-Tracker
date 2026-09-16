@@ -1,6 +1,70 @@
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
 import type { NextConfig } from "next";
 import pkg from "./package.json" with { type: "json" };
 import { buildCsp, resolveCspMode, staticAssetHeaderSources } from "./src/lib/csp";
+
+/**
+ * The commit this build was produced from, resolved from `.git` with plain fs.
+ *
+ * This is what the dev ("edge") update channel compares against the head of the
+ * `dev` branch, because that channel publishes no releases and so has no version
+ * number to compare. Every update rebuilds, so the value is always the commit
+ * the running code was built from.
+ *
+ * Read with fs rather than by shelling out to `git`: this runs during the
+ * production build on a customer's machine, and the project deliberately
+ * contains no shell execution outside `deploy/`.
+ *
+ * Returns "" when it cannot be determined (a tarball with no `.git`, a build
+ * from a source export). Callers must treat "" as "unknown", never as "up to
+ * date" — see `src/app/api/admin/updates/check/route.ts`.
+ */
+function resolveBuildCommit(): string {
+  // An explicit value wins, so a build that has no usable `.git` (a source
+  // export, a container that strips it) can still be told which commit it is.
+  const fromEnv = (process.env.APP_COMMIT || "").trim();
+  if (/^[0-9a-f]{40}$/i.test(fromEnv)) return fromEnv;
+
+  try {
+    const gitDir = join(process.cwd(), ".git");
+    // `.git` is a FILE in a worktree ("gitdir: <path>"), not a directory.
+    // Resolving that is not worth it here: the fallback is an empty string,
+    // which the update check treats as "unknown" rather than "up to date".
+    if (!existsSync(gitDir) || !statSync(gitDir).isDirectory()) return "";
+
+    const head = readFileSync(join(gitDir, "HEAD"), "utf8").trim();
+
+    // Detached HEAD: the file holds the sha itself.
+    if (!head.startsWith("ref:")) {
+      return /^[0-9a-f]{40}$/i.test(head) ? head : "";
+    }
+
+    const ref = head.slice(4).trim();
+
+    // The usual case: a loose ref file.
+    const looseRef = join(gitDir, ref);
+    if (existsSync(looseRef)) {
+      const sha = readFileSync(looseRef, "utf8").trim();
+      if (/^[0-9a-f]{40}$/i.test(sha)) return sha;
+    }
+
+    // Falls back to packed-refs, which is where a freshly cloned repo keeps
+    // refs it has not yet had reason to write out loose.
+    const packed = join(gitDir, "packed-refs");
+    if (existsSync(packed)) {
+      for (const line of readFileSync(packed, "utf8").split("\n")) {
+        if (!line || line.startsWith("#") || line.startsWith("^")) continue;
+        const [sha, name] = line.trim().split(/\s+/);
+        if (name === ref && /^[0-9a-f]{40}$/i.test(sha)) return sha;
+      }
+    }
+
+    return "";
+  } catch {
+    return "";
+  }
+}
 
 const nextConfig: NextConfig = {
   // Stop `next dev` appending its own block to CLAUDE.md on every start.
@@ -20,6 +84,7 @@ const nextConfig: NextConfig = {
   agentRules: false,
   env: {
     APP_VERSION: pkg.version,
+    APP_COMMIT: resolveBuildCommit(),
     UPDATE_CHANNEL: process.env.UPDATE_CHANNEL || "stable",
   },
   async headers() {

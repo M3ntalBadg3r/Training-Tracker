@@ -1645,9 +1645,10 @@ const helpSections: Record<string, HelpSection> = {
 
         <h3>Update Channels</h3>
         <p>
-          The system supports two update channels controlled by the{" "}
+          The system supports three update channels controlled by the{" "}
           <code>UPDATE_CHANNEL</code> environment variable in your{" "}
-          <code>.env</code> file:
+          <code>.env</code> file. A channel is simply a branch the system
+          tracks:
         </p>
         <ul>
           <li>
@@ -1655,9 +1656,21 @@ const helpSections: Record<string, HelpSection> = {
             releases. Recommended for production systems.
           </li>
           <li>
-            <strong>dev</strong> — Shows all releases including pre-releases.
-            Use this for development/testing systems that track the{" "}
-            <code>dev</code> branch.
+            <strong>beta</strong> — Tracks the <code>beta</code> branch. It
+            updates only when a test build is deliberately cut, so it does{" "}
+            <strong>not</strong> move every time a change lands. Use it for a
+            system where you check a build before it reaches live systems. Like
+            the dev channel it compares changes rather than version numbers, so
+            its version stays at the last release until the next one is
+            published.
+          </li>
+          <li>
+            <strong>dev</strong> — Tracks the <code>dev</code> branch
+            continuously, for development and testing systems. It does not
+            wait for a release to be published: instead of comparing version
+            numbers it compares the exact code your system was built from
+            against the branch, so it tells you how many changes are waiting
+            and lists them. Not recommended for production.
           </li>
         </ul>
         <p>
@@ -1668,6 +1681,11 @@ const helpSections: Record<string, HelpSection> = {
           stable release is at or ahead of your installed version to prevent
           downgrades. Pre-releases are marked with an amber{" "}
           <strong>Pre-release</strong> badge in the releases list.
+        </p>
+        <p>
+          Because a dev system reports changes rather than a version, its
+          version number stays put between releases. That is expected — the
+          version now moves when a build is cut, not every time a fix lands.
         </p>
 
         <h3>Recent Releases</h3>

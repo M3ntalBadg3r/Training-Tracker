@@ -1,0 +1,84 @@
+name: Cut beta build
+
+# Move the `beta` branch to the current tip of `dev`, so beta systems pick up a
+# test build. Run it from the Actions tab: "Cut beta build" -> "Run workflow".
+#
+# THIS IS THE WHOLE WORKFLOW. It publishes nothing, tags nothing and bumps
+# nothing, and that is deliberate on two counts.
+#
+#   A beta system detects new work by comparing the commit it was BUILT from
+#   against the head of `beta` (the same mechanism the dev channel uses, pointed
+#   at a different branch). A version attached to the build would do no work —
+#   it would be a label with no mechanism behind it.
+#
+#   And bumping package.json would mean COMMITTING to `beta`, which is worse
+#   than useless: `beta` would stop being an ancestor of `dev`, the next cut's
+#   fast-forward would fail, and `master` would stop containing every dev commit
+#   — the property the promotion merge and the update tooling both rely on.
+#
+# So the version moves exactly once, at promotion to stable, where semver can
+# mean something. The releases page then holds only stable releases, which is
+# what customers should see.
+#
+# Nothing is ever committed directly to `beta`. If something has been, the
+# ancestry check below refuses rather than force-pushing over it — that state
+# needs looking at, not overwriting.
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  # Pushing a branch is the only thing this needs. No release permissions,
+  # because it creates no release.
+  contents: write
+
+jobs:
+  cut:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Both branches, with history, so the ancestry check is meaningful.
+          fetch-depth: 0
+
+      - name: Move beta to the current tip of dev
+        run: |
+          set -euo pipefail
+
+          git fetch --no-tags origin +refs/heads/dev:refs/remotes/origin/dev
+          DEV_SHA=$(git rev-parse origin/dev)
+
+          if git rev-parse --verify --quiet origin/beta >/dev/null; then
+            BETA_SHA=$(git rev-parse origin/beta)
+
+            if [ "$BETA_SHA" = "$DEV_SHA" ]; then
+              echo "beta is already at dev ($DEV_SHA) — nothing to cut."
+              exit 0
+            fi
+
+            # Refuse rather than force-push. A beta that is not an ancestor of
+            # dev means someone committed to it directly, or dev was rewritten;
+            # either way the fix is to look, not to discard commits.
+            if ! git merge-base --is-ancestor "$BETA_SHA" "$DEV_SHA"; then
+              echo "::error::beta ($BETA_SHA) is not an ancestor of dev ($DEV_SHA)."
+              echo "::error::Refusing to force-push. Something was committed directly to beta,"
+              echo "::error::or dev's history was rewritten. Investigate before cutting again."
+              exit 1
+            fi
+
+            echo "Fast-forwarding beta: $BETA_SHA -> $DEV_SHA"
+            git log --no-merges --oneline "$BETA_SHA..$DEV_SHA" | sed 's/^/  /'
+          else
+            echo "Creating beta at $DEV_SHA"
+          fi
+
+          git push origin "$DEV_SHA:refs/heads/beta"
+          echo "beta is now at $DEV_SHA"
+
+          {
+            echo "### Beta build cut"
+            echo ""
+            echo "\`beta\` now points at \`$DEV_SHA\`."
+            echo ""
+            echo "Beta systems will report the new commits on their next update check."
+          } >> "$GITHUB_STEP_SUMMARY"
