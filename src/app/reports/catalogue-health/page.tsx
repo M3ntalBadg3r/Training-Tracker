@@ -1,9 +1,11 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import PageHeader from "@/components/layout/PageHeader";
+import FilterBar from "@/components/ui/FilterBar";
+import { SELECT_CLASS } from "@/components/ui/FormControls";
+import LoadingState from "@/components/ui/LoadingState";
 import KpiStrip from "@/components/ui/KpiStrip";
 import { useChartTheme, tooltipStyle } from "@/lib/chart-theme";
 import { useProductTypeColors } from "@/hooks/useProductTypeColors";
@@ -15,7 +17,7 @@ import { ExportableChart, useChartCapture } from "@/components/reports/ChartCapt
 import { TitleYAxisTick } from "@/components/reports/ChartTicks";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
 import { useFetchJson } from "@/hooks/useFetchJson";
-import { ArrowLeft, BookOpen, AlertOctagon, AlertTriangle, TrendingDown } from "lucide-react";
+import { BookOpen, AlertOctagon, AlertTriangle, TrendingDown } from "lucide-react";
 import {
   BarChart,
   Bar,
@@ -171,17 +173,37 @@ function CatalogueHealthPageInner() {
   };
 
   if (loading) {
-    return <div className="flex items-center justify-center h-64"><div className="text-gray-500">Loading report...</div></div>;
+    return <LoadingState label="Loading report…" />;
   }
 
   return (
     <div>
-      <div className="flex items-center gap-2 mb-2">
-        <Link href="/reports" className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700">
-          <ArrowLeft size={14} /> Reports
-        </Link>
-      </div>
-      <PageHeader title="Training Catalogue Health" helpSlug="reports-catalogue-health" />
+      <PageHeader
+        title="Training Catalogue Health"
+        description="Uptake, coverage and mass-expiry risk across the training catalogue."
+        backHref="/reports"
+        backLabel="Reports"
+        helpSlug="reports-catalogue-health"
+        rightContent={<ExportMenu onExport={handleExport} busy={exporting} />}
+      />
+
+      <FilterBar>
+        <FilterBar.Row>
+          <select value={filterProduct} onChange={(e) => setFilterProduct(e.target.value)} className={SELECT_CLASS}>
+            <option value="">All Products</option>
+            {products.map((p) => <option key={p} value={p}>{p}</option>)}
+          </select>
+          <select value={filterType} onChange={(e) => setFilterType(e.target.value)} className={SELECT_CLASS}>
+            <option value="">All Types</option>
+            {types.map((t) => <option key={t} value={t}>{t}</option>)}
+          </select>
+          <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value as StatusFilter)} className={SELECT_CLASS}>
+            <option value="all">All Titles</option>
+            <option value="zero">Zero Completions Only</option>
+            <option value="expiring">With 90-day Expiries</option>
+          </select>
+        </FilterBar.Row>
+      </FilterBar>
 
       <KpiStrip
         cards={[
@@ -237,22 +259,6 @@ function CatalogueHealthPageInner() {
           <span className="text-sm font-medium text-gray-500">{filtered.length} title{filtered.length !== 1 ? "s" : ""}</span>
         </div>
         <div className="px-6 py-4">
-          <div className="flex flex-wrap gap-3 mb-4">
-            <select value={filterProduct} onChange={(e) => setFilterProduct(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
-              <option value="">All Products</option>
-              {products.map((p) => <option key={p} value={p}>{p}</option>)}
-            </select>
-            <select value={filterType} onChange={(e) => setFilterType(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
-              <option value="">All Types</option>
-              {types.map((t) => <option key={t} value={t}>{t}</option>)}
-            </select>
-            <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value as StatusFilter)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
-              <option value="all">All Titles</option>
-              <option value="zero">Zero Completions Only</option>
-              <option value="expiring">With 90-day Expiries</option>
-            </select>
-            <ExportMenu onExport={handleExport} busy={exporting} />
-          </div>
 
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -297,7 +303,7 @@ function CatalogueHealthPageInner() {
 
 export default function CatalogueHealthPage() {
   return (
-    <Suspense fallback={<div className="flex items-center justify-center h-64"><div className="text-gray-500">Loading report...</div></div>}>
+    <Suspense fallback={<LoadingState label="Loading report…" />}>
       <CatalogueHealthPageInner />
     </Suspense>
   );
