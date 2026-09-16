@@ -165,8 +165,12 @@ function buildStudentFilter(scope: ComplianceScope): Record<string, unknown> {
 /**
  * Merge each requested title's sibling group into one union per bucket, keyed
  * by the *requested* title, so `unionAttained*` lookups see every catalogue
- * variant's holders (see `resolveSiblingTitles`). Shared by the bucketed query
- * so the flat and bucketed paths cannot drift.
+ * variant's holders (see `resolveSiblingTitles`).
+ *
+ * Used by the bucketed query only. `getEmailSetsByTitle` still carries its own
+ * inline merge over a flat set, so there really are two implementations of this
+ * rule — do not read this helper as the single definition and skip checking the
+ * other one. (`buildStudentFilter` genuinely is shared by both.)
  */
 function mergeSiblingBuckets(
   groupMembers: Map<string, string[]>,

@@ -163,8 +163,14 @@ export async function GET(
       }))
     );
     // Two passes over the same scope: the band totals the table shows, and the
-    // per-country decomposition of those same totals for a map. Both go through
-    // the shared compliance engine, so they cannot disagree.
+    // per-country decomposition of those same totals for a map. They share the
+    // counting LOGIC but not a snapshot — each takes its own `new Date()` and
+    // issues its own queries, in separate transactions. So a completion that
+    // expires, or an import that commits, between the two round-trips can leave
+    // the table reading `onshore: 7` while the map sums to 6. Vanishingly
+    // unlikely, but worth knowing before chasing it: verify the "per-country
+    // sums to the band total" property against a quiesced dataset, or hoist a
+    // single `now` through both.
     const [counts, breakdown] = await Promise.all([
       computeOfferingCounts(allReqs, geoOut, companyFilter),
       computeOfferingCountryBreakdown(allReqs, geoOut, companyFilter),
