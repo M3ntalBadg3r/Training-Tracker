@@ -55,6 +55,8 @@ interface PlanRequirement {
   lapsedPool: number;
   legacyPool: number;
   netNew: number;
+  /** Other specialisations needing the same cert — the totals count it once. */
+  sharedWith: string[];
   expiringSoon: number;
 }
 interface PlanSpecialisation {
@@ -337,6 +339,8 @@ function buildSummarySection(plan: CompliancePlanResult): ReportTableSection {
       { Metric: "Easy wins", Value: plan.totals.easyWins },
       { Metric: "Lapsed (renew)", Value: plan.totals.lapsed },
       { Metric: "Legacy upgrade", Value: plan.totals.legacy },
+      // Deduped: a certification several specialisations require is one cohort of
+      // people, so this can be less than the Roadmap sheet's Net-new column adds to.
       { Metric: "Net-new training", Value: plan.totals.netNew },
       // Two different things: holders whose training lapses in the window, vs the
       // subset the plan has costed as renewals. Labelled so they don't read as additive.
@@ -381,6 +385,9 @@ function buildRoadmapSection(
           lapsed: r.lapsedPool,
           legacy: r.legacyPool,
           netNew: r.netNew,
+          // Why the Net-new column can total more than the Summary sheet's
+          // "Net-new training": these rows want the same certification.
+          shared: r.sharedWith.join("; "),
         });
       }
     }
@@ -411,6 +418,7 @@ function buildRoadmapSection(
       { key: "lapsed", header: "Lapsed" },
       { key: "legacy", header: "Legacy" },
       { key: "netNew", header: "Net-new" },
+      { key: "shared", header: "Shared with" },
     ],
     rows,
   };
@@ -912,6 +920,15 @@ function SpecBlock({
   // exactly the problem this is here to fix.
   const [open, setOpen] = useState(state !== "compliant");
   const dim = tiered && spec.chosen === false && state === "compliant";
+  // Only explain the shared-cert arithmetic where a shared requirement actually
+  // carries a gap — that is the only case where this block's cost overstates its
+  // contribution to the program total. The predicate mirrors ReqRow's
+  // `hasCandidates` so the note appears exactly when a row renders the chip.
+  const hasShared = spec.requirements.some(
+    (r) =>
+      r.sharedWith.length > 0 &&
+      (r.renewalPool > 0 || r.easyWinPool > 0 || r.lapsedPool > 0 || r.legacyPool > 0 || r.netNew > 0),
+  );
   const tint =
     state === "compliant"
       ? "border-green-200 bg-green-50/50"
@@ -956,6 +973,17 @@ function SpecBlock({
               </tbody>
             </table>
           </div>
+          {hasShared && (
+            <p className="mt-2 text-[11px] text-gray-500">
+              This specialisation costs{" "}
+              <span className="font-medium">{spec.cost}</span>{" "}
+              on its own, but a requirement marked{" "}
+              <span className="font-medium text-blue-700">shared</span>{" "}
+              is the same certification another specialisation needs. Certifying those
+              people closes both, so the figures at the top of this program count them
+              once and can be lower than these blocks added together.
+            </p>
+          )}
         </div>
       )}
     </div>
@@ -968,6 +996,16 @@ function ReqRow({ r, windowMonths }: { r: PlanRequirement; windowMonths: number 
   const projectedGap = r.projectedShortfall ?? r.shortfall;
   const hasCandidates =
     r.renewalPool > 0 || r.easyWinPool > 0 || r.lapsedPool > 0 || r.legacyPool > 0 || r.netNew > 0;
+  // Why this row's numbers can add up to more than the headline: the same cert
+  // covers other specialisations too, and the totals charge for it once. Only
+  // worth saying where there is still a gap — a met requirement costs nothing to
+  // share. Long lists collapse to a count, with the full names on hover.
+  const sharedLabel =
+    r.sharedWith.length === 0
+      ? null
+      : r.sharedWith.length <= 2
+        ? `shared with ${r.sharedWith.join(" & ")}`
+        : `shared with ${r.sharedWith.length} other specialisations`;
   return (
     <tr className={`border-b border-gray-50 ${ROW_BG[state]}`}>
       <td className="py-1.5 pr-3">{r.cert}</td>
@@ -1004,6 +1042,14 @@ function ReqRow({ r, windowMonths }: { r: PlanRequirement; windowMonths: number 
             {r.lapsedPool > 0 && <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">{r.lapsedPool} lapsed</span>}
             {r.legacyPool > 0 && <span className="px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-800">{r.legacyPool} legacy</span>}
             {r.netNew > 0 && <span className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">{r.netNew} net-new</span>}
+            {sharedLabel && (
+              <span
+                className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-100"
+                title={`Also required by: ${r.sharedWith.join(", ")}`}
+              >
+                {sharedLabel}
+              </span>
+            )}
           </span>
         )}
       </td>
