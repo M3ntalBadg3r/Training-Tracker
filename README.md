@@ -1455,6 +1455,42 @@ training:
 | **Nearshore** | The rest of that country/region's **theatre** — every other country in the theatre, with the onshore countries removed. The wider in-theatre capability available to support delivery. |
 | **Offshore** | Everyone **worldwide** holding the training, with the onshore countries removed (so it includes the nearshore people plus every other theatre). Nearshore and Offshore are informational — they don't change the Met status. |
 
+#### The delivery-geography map
+
+Above those tables the page draws a **world map** of the same three
+geographies, so you can see how far away your delivery capability is without
+holding a map in your head. The tables are always shown underneath it &mdash;
+the map is an addition, not an alternative view, and nothing is hidden behind a
+toggle.
+
+Because the three geographies **overlap** &mdash; Offshore is everyone
+worldwide minus Onshore, so it already contains everyone Nearshore &mdash; a
+country cannot be given two colours. The map therefore shades three
+non-overlapping groups, and the legend says how they relate:
+
+| Shade | Meaning |
+| --- | --- |
+| **Onshore** | The selected country, or the countries in the selected region. |
+| **Nearshore = Offshore in theatre** | The rest of that theatre. Part of Offshore. |
+| **Rest of world = Offshore elsewhere** | Everywhere else. The other part of Offshore. |
+| **No data** | A country your Region Data does not list. |
+
+Take the two Offshore shades together and you have the Offshore figure from the
+table.
+
+Two things the map deliberately does **not** do. It does not say whether a
+requirement is met: a requirement is met by the onshore countries
+**collectively**, so people spread across several countries can satisfy one
+that no single country meets on its own. That is why nothing on it is red or
+green &mdash; a country's shade is a distance, never a verdict. And it never
+quietly leaves a country out: any country in scope without an **ISO Code** in
+Region Data (or with a code the map has no outline for) is counted in an amber
+notice under the map, with a list you can expand. Filling those codes in on
+**Admin &rarr; Region Data** is what completes the picture.
+
+The map is included in the PDF export when **Include charts &amp; metrics in
+PDF** is ticked in the Export menu, legend and all.
+
 Figures are scoped to the offering's company. Click **View** on any count to list
 the people behind it, and use **Export** for the current view. The selected
 level and value are mirrored into the page address, so opening a person's

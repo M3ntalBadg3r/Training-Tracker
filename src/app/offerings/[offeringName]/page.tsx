@@ -8,10 +8,17 @@ import FilterBar from "@/components/ui/FilterBar";
 import { SELECT_CLASS } from "@/components/ui/FormControls";
 import LoadingState from "@/components/ui/LoadingState";
 import Modal from "@/components/ui/Modal";
-import { ExportMenu } from "@/components/programs/ProgramCompliance";
+import ExportMenu, { type ExportFormat } from "@/components/ui/ExportMenu";
+import GeoMap from "@/components/geo/GeoMap";
+import { ExportableChart, useChartCapture } from "@/components/reports/ChartCaptureProvider";
 import { useCompanyScope } from "@/components/company/CompanyScopeProvider";
 import { safeExternalUrl, trainingTypeLabel } from "@/lib/utils";
+import { useChartTheme } from "@/lib/chart-theme";
+import { exportToCsv, exportToExcel } from "@/lib/export";
+import { exportReportTablePdf } from "@/lib/report-export";
 import { useFetchJson } from "@/hooks/useFetchJson";
+import { useRegionData } from "@/hooks/useRegionData";
+import { buildOfferingBandMap } from "./band-map";
 import { ExternalLink, Users, Ship, Anchor, Globe } from "lucide-react";
 
 interface AltOut {
@@ -90,6 +97,13 @@ function OfferingDashboardInner() {
   );
   const [value, setValue] = useState(() => searchParams.get("value") ?? "");
   const [showExport, setShowExport] = useState(false);
+  const [exporting, setExporting] = useState(false);
+
+  const theme = useChartTheme();
+  const { capturePageVisuals } = useChartCapture();
+  // The country -> ISO join for the map. Shared, session-cached and global
+  // reference data, so this is one fetch for the whole session.
+  const { rows: regionRows, loading: regionLoading } = useRegionData();
 
   const router = useRouter();
   const pathname = usePathname();
@@ -189,6 +203,58 @@ function OfferingDashboardInner() {
   );
   const exportFilename = `offering-${offeringName}-${level}${value ? `-${value}` : ""}`.replace(/\s+/g, "-");
 
+  const geo = data?.geo ?? null;
+
+  // Geometry only — no colour. A theme-dependent value living in here would
+  // change this array's identity when `ForceLightChartsContext` flips for a PDF
+  // capture, which is the documented way to get a half-drawn chart photographed.
+  // The band fills are resolved below, at render.
+  const bandMap = useMemo(
+    () => (geo ? buildOfferingBandMap(geo, regionRows) : null),
+    [geo, regionRows]
+  );
+
+  // Three mutually exclusive fills for a pair of bands that genuinely overlap:
+  // Offshore is Nearshore plus everywhere else, so each label names the part of
+  // Offshore it is. The legend is the only place that statement reaches a PDF,
+  // which is why it lives in the labels rather than only in the note below.
+  //
+  // Cool hues from the shared categorical palette, deliberately not the
+  // green/amber/red status colours: a country's shade here is a distance, never
+  // a verdict (see the note under the map).
+  const mapBands = [
+    { key: "onshore", label: "Onshore", color: theme.series(0) },
+    { key: "nearshore", label: "Nearshore = Offshore in theatre", color: theme.series(5) },
+    { key: "rest", label: "Rest of world = Offshore elsewhere", color: theme.series(3) },
+  ];
+
+  const handleExport = async (fmt: ExportFormat, { includeCharts }: { includeCharts: boolean }) => {
+    setExporting(true);
+    try {
+      if (fmt === "csv") exportToCsv(exportData, exportColumns, exportFilename);
+      else if (fmt === "excel") exportToExcel(exportData, exportColumns, exportFilename);
+      else {
+        // Always through `exportReportTablePdf`, tickbox or not: falling back to
+        // `export.ts:exportToPdf` when it is unticked would restyle the title and
+        // flip the orientation threshold off a checkbox.
+        exportReportTablePdf({
+          title: `${data?.name ?? offeringName} — ${geo?.scopeLabel ?? value}`,
+          filename: exportFilename,
+          columns: exportColumns,
+          rows: exportData,
+          meta: [
+            { label: "Offering", value: data?.name ?? offeringName },
+            { label: "Scope", value: geo?.scopeLabel ?? value },
+          ],
+          // Charts and the KPI strip travel together: one tickbox governs both.
+          ...(includeCharts ? await capturePageVisuals() : {}),
+        });
+      }
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <div>
       <PageHeader
@@ -196,7 +262,7 @@ function OfferingDashboardInner() {
         showBack
         helpSlug="offerings"
         rightContent={hasScope && exportData.length > 0 ? (
-          <ExportMenu show={showExport} setShow={setShowExport} data={exportData} columns={exportColumns} filename={exportFilename} align="right" />
+          <ExportMenu show={showExport} setShow={setShowExport} onExport={handleExport} busy={exporting} align="right" />
         ) : undefined}
       />
 
@@ -239,13 +305,51 @@ function OfferingDashboardInner() {
         <div className="bg-white rounded-lg border border-dashed border-gray-200 p-10 text-center text-gray-500">
           Select a country or region to view Onshore, Nearshore &amp; Offshore capability.
         </div>
-      ) : (data?.specialisations.length ?? 0) === 0 ? (
-        <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-500">
-          This offering has no specialisations configured yet.
-        </div>
       ) : (
         <div className="space-y-5">
-          {data!.specialisations.map((spec) => (
+          {/*
+            The band map.
+
+            Nothing inside this card may render an `<svg>` above the map:
+            `chart-capture.ts:findSurface` takes the FIRST `<svg>` in the card,
+            so a lucide icon in the heading would be rasterised into the PDF in
+            the map's place. The heading and both notes are therefore text only,
+            and the icons this page uses elsewhere stay in the tables below.
+          */}
+          {geo && bandMap && (
+            <ExportableChart className="border border-gray-200 rounded-lg bg-white p-4">
+              <h3 className="font-semibold text-gray-900">Delivery geography — {geo.scopeLabel}</h3>
+              <p className="mt-1 text-sm text-gray-600">
+                Where this offering can be delivered from — not per-country compliance. A
+                requirement is met by the onshore countries collectively, so holders spread across
+                several countries can satisfy one that no single country meets on its own.
+              </p>
+              <p className="mt-1 text-sm text-gray-600">
+                Offshore has no shade of its own because it overlaps the others: Offshore is
+                Nearshore plus the rest of the world, so those two bands together are the Offshore
+                set.
+              </p>
+              {regionLoading ? (
+                <div className="flex h-60 items-center justify-center text-sm text-gray-500">
+                  Loading country codes…
+                </div>
+              ) : (
+                <GeoMap
+                  data={bandMap.data}
+                  mode="categorical"
+                  bands={mapBands}
+                  unmapped={bandMap.unmapped}
+                />
+              )}
+            </ExportableChart>
+          )}
+
+          {(data?.specialisations.length ?? 0) === 0 ? (
+            <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-500">
+              This offering has no specialisations configured yet.
+            </div>
+          ) : (
+            data!.specialisations.map((spec) => (
             <div key={spec.name} className="border border-gray-200 rounded-lg bg-white overflow-hidden">
               <div className="flex items-center justify-between px-4 py-3 bg-gray-50 border-b border-gray-200">
                 <h3 className="font-semibold text-gray-900">{spec.name}</h3>
@@ -324,7 +428,8 @@ function OfferingDashboardInner() {
                 </div>
               )}
             </div>
-          ))}
+            ))
+          )}
         </div>
       )}
 
