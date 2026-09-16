@@ -3,6 +3,7 @@
 import { Suspense, useCallback, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import PageHeader from "@/components/layout/PageHeader";
+import LoadingState from "@/components/ui/LoadingState";
 import DataTable, { type DataTableState } from "@/components/data-table/DataTable";
 import Modal from "@/components/ui/Modal";
 import { ColumnDef, StudentRow } from "@/types";
@@ -181,9 +182,7 @@ function StudentsPageInner() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-gray-500">Loading students...</div>
-      </div>
+      <LoadingState label="Loading students…" />
     );
   }
 
@@ -350,9 +349,7 @@ export default function StudentsPage() {
   return (
     <Suspense
       fallback={
-        <div className="flex items-center justify-center h-64">
-          <div className="text-gray-500">Loading students...</div>
-        </div>
+        <LoadingState label="Loading students…" />
       }
     >
       <StudentsPageInner />

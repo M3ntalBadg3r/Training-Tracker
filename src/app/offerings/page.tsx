@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import PageHeader from "@/components/layout/PageHeader";
+import LoadingState from "@/components/ui/LoadingState";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
 import { Package, ChevronRight } from "lucide-react";
 
@@ -37,12 +38,14 @@ export default function OfferingsPage() {
 
   return (
     <div>
-      <PageHeader title="Offerings" helpSlug="offerings" />
+      <PageHeader
+        title="Offerings"
+        description="Joint product offerings and the specialisations behind them."
+        helpSlug="offerings"
+      />
 
       {loading ? (
-        <div className="flex items-center justify-center py-20">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
-        </div>
+        <LoadingState label="Loading offerings…" />
       ) : offerings.length === 0 ? (
         <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-500">
           No offerings configured yet. Add them in{" "}
@@ -57,12 +60,12 @@ export default function OfferingsPage() {
               <Link
                 key={`${o.companyId}:${o.name}`}
                 href={`/offerings/${encodeURIComponent(o.name)}?companyId=${o.companyId}`}
-                className="block border border-gray-200 rounded-xl p-4 bg-white hover:shadow-md transition-shadow"
+                className="block p-4 bg-white rounded-lg border border-gray-200 hover:border-blue-300 hover:shadow-sm transition-all"
               >
                 <div className="flex items-start justify-between">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <Package size={18} className="text-blue-600 shrink-0" />
+                      <Package size={20} className="text-blue-600 shrink-0" />
                       <h3 className="font-semibold text-gray-900 truncate">{o.name}</h3>
                     </div>
                     {showCompany && companyName && (

@@ -3,8 +3,11 @@
 import { useCallback, useEffect, useRef, useState, Suspense } from "react";
 import * as React from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
-import Link from "next/link";
 import PageHeader from "@/components/layout/PageHeader";
+import GeoScopeFilter from "@/components/reports/GeoScopeFilter";
+import FilterBar from "@/components/ui/FilterBar";
+import SearchInput, { SELECT_CLASS } from "@/components/ui/FormControls";
+import LoadingState from "@/components/ui/LoadingState";
 import KpiStrip from "@/components/ui/KpiStrip";
 import { useChartTheme, tooltipStyle } from "@/lib/chart-theme";
 import { useProductTypeColors } from "@/hooks/useProductTypeColors";
@@ -17,7 +20,7 @@ import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeP
 import { useDebounce } from "@/hooks/useDebounce";
 import { useFetchJson } from "@/hooks/useFetchJson";
 import { useDateFormat } from "@/components/date-format/DateFormatProvider";
-import { Search, ArrowLeft, AlertCircle, Award, GraduationCap, Users } from "lucide-react";
+import { AlertCircle, Award, GraduationCap, Users } from "lucide-react";
 import Pagination from "@/components/data-table/Pagination";
 import {
   BarChart,
@@ -217,7 +220,7 @@ function TrainedNotCertifiedPageInner() {
   };
 
   if (loading && !data) {
-    return <div className="flex items-center justify-center h-64"><div className="text-gray-500">Loading report...</div></div>;
+    return <LoadingState label="Loading report…" />;
   }
 
   const renderRow = (row: TrainedNotCertifiedRow, idx: number) => (
@@ -294,12 +297,53 @@ function TrainedNotCertifiedPageInner() {
 
   return (
     <div>
-      <div className="flex items-center gap-2 mb-2">
-        <Link href="/reports" className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700">
-          <ArrowLeft size={14} /> Reports
-        </Link>
-      </div>
-      <PageHeader title="Trained But Not Certified" helpSlug="reports" />
+      <PageHeader
+        title="Trained But Not Certified"
+        description="Learners who completed the training but never earned the matching certification."
+        backHref="/reports"
+        backLabel="Reports"
+        helpSlug="reports-trained-not-certified"
+        rightContent={<ExportMenu onExport={handleExport} busy={exporting} />}
+      />
+
+      <FilterBar>
+        <FilterBar.Row>
+          <SearchInput value={search} onChange={setSearch} placeholder="Search by name or email…" />
+        </FilterBar.Row>
+        <FilterBar.Row>
+          <GeoScopeFilter
+            value={{ theatre: filterTheatre, region: filterRegion, country: filterCountry }}
+            onChange={(next) => {
+              setFilterTheatre(next.theatre);
+              setFilterRegion(next.region);
+              setFilterCountry(next.country);
+            }}
+          />
+          <select value={filterProduct} onChange={(e) => setFilterProduct(e.target.value)} className={SELECT_CLASS}>
+            <option value="">All Products</option>
+            {opts.productTypes.map((p) => <option key={p} value={p}>{p}</option>)}
+          </select>
+          <select value={filterIlt} onChange={(e) => setFilterIlt(e.target.value)} className={SELECT_CLASS}>
+            <option value="">All Trainings</option>
+            {opts.iltTitles.map((t) => <option key={t} value={t}>{t}</option>)}
+          </select>
+          <select value={filterCert} onChange={(e) => setFilterCert(e.target.value)} className={SELECT_CLASS}>
+            <option value="">All Certifications</option>
+            {opts.certTitles.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+          <select value={filterActive} onChange={(e) => setFilterActive(e.target.value)} className={SELECT_CLASS}>
+            <option value="">All Active Status</option>
+            <option value="yes">Active</option>
+            <option value="no">Not Active</option>
+          </select>
+          <select value={groupBy ?? ""} onChange={(e) => setGroupBy((e.target.value as GroupByMode) || null)} className={SELECT_CLASS}>
+            <option value="">No Grouping</option>
+            <option value="theatre">Group by Theatre</option>
+            <option value="region">Group by Region</option>
+            <option value="country">Group by Country</option>
+          </select>
+        </FilterBar.Row>
+      </FilterBar>
 
       <KpiStrip
         cards={[
@@ -364,53 +408,6 @@ function TrainedNotCertifiedPageInner() {
           <span className="text-sm font-medium text-gray-500">{total} result{total !== 1 ? "s" : ""}</span>
         </div>
         <div className="px-6 py-4">
-          <div className="flex flex-col gap-3 mb-4">
-            <div className="flex flex-col sm:flex-row gap-3">
-              <div className="relative flex-1">
-                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                <input type="text" placeholder="Search by name or email..." value={search} onChange={(e) => setSearch(e.target.value)} className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg" />
-              </div>
-              <ExportMenu onExport={handleExport} busy={exporting} />
-            </div>
-            <div className="flex flex-wrap gap-3">
-              <select value={filterTheatre} onChange={(e) => setFilterTheatre(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
-                <option value="">All Theatres</option>
-                {opts.theatres.map((t) => <option key={t} value={t}>{t}</option>)}
-              </select>
-              <select value={filterRegion} onChange={(e) => setFilterRegion(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
-                <option value="">All Regions</option>
-                {opts.regions.map((r) => <option key={r} value={r}>{r}</option>)}
-              </select>
-              <select value={filterCountry} onChange={(e) => setFilterCountry(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
-                <option value="">All Countries</option>
-                {opts.countries.map((c) => <option key={c} value={c}>{c}</option>)}
-              </select>
-              <select value={filterProduct} onChange={(e) => setFilterProduct(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
-                <option value="">All Products</option>
-                {opts.productTypes.map((p) => <option key={p} value={p}>{p}</option>)}
-              </select>
-              <select value={filterIlt} onChange={(e) => setFilterIlt(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
-                <option value="">All Trainings</option>
-                {opts.iltTitles.map((t) => <option key={t} value={t}>{t}</option>)}
-              </select>
-              <select value={filterCert} onChange={(e) => setFilterCert(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
-                <option value="">All Certifications</option>
-                {opts.certTitles.map((c) => <option key={c} value={c}>{c}</option>)}
-              </select>
-              <select value={filterActive} onChange={(e) => setFilterActive(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
-                <option value="">All Active Status</option>
-                <option value="yes">Active</option>
-                <option value="no">Not Active</option>
-              </select>
-              <select value={groupBy ?? ""} onChange={(e) => setGroupBy((e.target.value as GroupByMode) || null)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
-                <option value="">No Grouping</option>
-                <option value="theatre">Group by Theatre</option>
-                <option value="region">Group by Region</option>
-                <option value="country">Group by Country</option>
-              </select>
-            </div>
-          </div>
-
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -450,7 +447,7 @@ function TrainedNotCertifiedPageInner() {
 
 export default function TrainedNotCertifiedPage() {
   return (
-    <Suspense fallback={<div className="flex items-center justify-center h-64"><div className="text-gray-500">Loading report...</div></div>}>
+    <Suspense fallback={<LoadingState label="Loading report…" />}>
       <TrainedNotCertifiedPageInner />
     </Suspense>
   );

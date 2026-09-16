@@ -1,9 +1,11 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import PageHeader from "@/components/layout/PageHeader";
+import FilterBar from "@/components/ui/FilterBar";
+import { SELECT_CLASS } from "@/components/ui/FormControls";
+import LoadingState from "@/components/ui/LoadingState";
 import KpiStrip from "@/components/ui/KpiStrip";
 import DateRangePicker, { DateRangeValue } from "@/components/ui/DateRangePicker";
 import { useChartTheme, tooltipStyle } from "@/lib/chart-theme";
@@ -14,7 +16,7 @@ import { exportReportTablePdf } from "@/lib/report-export";
 import ExportMenu, { type ExportFormat } from "@/components/ui/ExportMenu";
 import { ExportableChart, useChartCapture } from "@/components/reports/ChartCaptureProvider";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
-import { ArrowLeft, Users, GraduationCap, Map as MapIcon, AlertTriangle } from "lucide-react";
+import { Users, GraduationCap, Map as MapIcon, AlertTriangle } from "lucide-react";
 import {
   BarChart,
   Bar,
@@ -264,44 +266,49 @@ function ComparisonPageInner() {
   );
 
   if (loading && !data) {
-    return <div className="flex items-center justify-center h-64"><div className="text-gray-500">Loading report...</div></div>;
+    return <LoadingState label="Loading report…" />;
   }
 
   return (
     <div>
-      <div className="flex items-center gap-2 mb-2">
-        <Link href="/reports" className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700">
-          <ArrowLeft size={14} /> Reports
-        </Link>
-      </div>
-      <PageHeader title="Theatre / Region / Country Comparison" helpSlug="reports" />
+      <PageHeader
+        title="Theatre / Region / Country Comparison"
+        description="Theatres, regions or countries side by side. Counts reflect the selected time range and filters; expiring counts look forward from today."
+        backHref="/reports"
+        backLabel="Reports"
+        helpSlug="reports-comparison"
+        rightContent={<ExportMenu onExport={handleExport} busy={exporting} />}
+      />
 
-      <div className="flex flex-wrap items-center gap-3 mb-4">
-        <span className="text-sm font-medium text-gray-700">Compare by:</span>
-        <select value={geoMode} onChange={(e) => setGeoMode(e.target.value as GroupByMode)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white">
-          <option value="theatre">Theatre</option>
-          <option value="region">Region</option>
-          <option value="country">Country</option>
-        </select>
-        <select value={rangePreset} onChange={(e) => setRangePreset(e.target.value as RangePreset)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white">
-          {RANGE_PRESETS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
-        </select>
-        {rangePreset === "custom" && (
+      <FilterBar>
+        <FilterBar.Row>
+          <span className="text-sm font-medium text-gray-700">Compare by:</span>
+          <select value={geoMode} onChange={(e) => setGeoMode(e.target.value as GroupByMode)} className={SELECT_CLASS}>
+            <option value="theatre">Theatre</option>
+            <option value="region">Region</option>
+            <option value="country">Country</option>
+          </select>
+          <select value={rangePreset} onChange={(e) => setRangePreset(e.target.value as RangePreset)} className={SELECT_CLASS}>
+            {RANGE_PRESETS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
+          </select>
+          {rangePreset === "custom" && (
           <DateRangePicker value={customRange} onChange={setCustomRange} placeholder="Pick a date range" align="start" />
-        )}
-        <select value={filterFunction} onChange={(e) => setFilterFunction(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
-          <option value="">All Functions</option>
-          {functions.map((f) => <option key={f} value={f}>{f}</option>)}
-        </select>
-        <select value={filterProduct} onChange={(e) => setFilterProduct(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
-          <option value="">All Products</option>
-          {products.map((p) => <option key={p} value={p}>{p}</option>)}
-        </select>
-        <select value={filterType} onChange={(e) => setFilterType(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
-          <option value="">All Types</option>
-          {types.map((t) => <option key={t} value={t}>{t}</option>)}
-        </select>
-      </div>
+          )}
+          <select value={filterFunction} onChange={(e) => setFilterFunction(e.target.value)} className={SELECT_CLASS}>
+            <option value="">All Functions</option>
+            {functions.map((f) => <option key={f} value={f}>{f}</option>)}
+          </select>
+          <select value={filterProduct} onChange={(e) => setFilterProduct(e.target.value)} className={SELECT_CLASS}>
+            <option value="">All Products</option>
+            {products.map((p) => <option key={p} value={p}>{p}</option>)}
+          </select>
+          <select value={filterType} onChange={(e) => setFilterType(e.target.value)} className={SELECT_CLASS}>
+            <option value="">All Types</option>
+            {types.map((t) => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </FilterBar.Row>
+      </FilterBar>
+
 
       <KpiStrip
         cards={[
@@ -356,7 +363,7 @@ function ComparisonPageInner() {
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-wrap gap-2">
           <p className="text-sm text-gray-500">Counts reflect the selected time range and filters; expiring counts look forward from today.</p>
-          <ExportMenu onExport={handleExport} busy={exporting} />
+          <span className="text-sm font-medium text-gray-500">{sortedMetrics.length} result{sortedMetrics.length !== 1 ? "s" : ""}</span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -418,7 +425,7 @@ function ComparisonPageInner() {
 
 export default function ComparisonPage() {
   return (
-    <Suspense fallback={<div className="flex items-center justify-center h-64"><div className="text-gray-500">Loading report...</div></div>}>
+    <Suspense fallback={<LoadingState label="Loading report…" />}>
       <ComparisonPageInner />
     </Suspense>
   );

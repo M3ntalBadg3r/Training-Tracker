@@ -14,6 +14,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import PageHeader from "@/components/layout/PageHeader";
+import LoadingState from "@/components/ui/LoadingState";
 import KpiStrip from "@/components/ui/KpiStrip";
 import {
   ExportMenu,
@@ -769,9 +770,7 @@ function CompliancePlanningPageInner() {
 
       {/* Results */}
       {active && loading && (
-        <div className="flex items-center justify-center py-16">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
-        </div>
+        <LoadingState label="Loading planner…" />
       )}
 
       {active && !loading && plan && (
@@ -851,7 +850,7 @@ function CompliancePlanningPageInner() {
 
 export default function CompliancePlanningPage() {
   return (
-    <Suspense fallback={<div className="flex items-center justify-center h-64"><div className="text-gray-500">Loading planner...</div></div>}>
+    <Suspense fallback={<LoadingState label="Loading planner…" />}>
       <CompliancePlanningPageInner />
     </Suspense>
   );

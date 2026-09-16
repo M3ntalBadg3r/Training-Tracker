@@ -4,6 +4,10 @@ import { useCallback, useEffect, useRef, useState, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import PageHeader from "@/components/layout/PageHeader";
+import GeoScopeFilter from "@/components/reports/GeoScopeFilter";
+import FilterBar from "@/components/ui/FilterBar";
+import SearchInput, { SELECT_CLASS, CHECKBOX_LABEL_CLASS } from "@/components/ui/FormControls";
+import LoadingState from "@/components/ui/LoadingState";
 import KpiStrip from "@/components/ui/KpiStrip";
 import { useChartTheme, tooltipStyle } from "@/lib/chart-theme";
 import { exportToCsv, exportToExcel } from "@/lib/export";
@@ -14,7 +18,7 @@ import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeP
 import { useDebounce } from "@/hooks/useDebounce";
 import { useFetchJson } from "@/hooks/useFetchJson";
 import { useDateFormat } from "@/components/date-format/DateFormatProvider";
-import { ArrowLeft, Users, Award, AlertTriangle, Clock } from "lucide-react";
+import { Users, Award, AlertTriangle, Clock } from "lucide-react";
 import Pagination from "@/components/data-table/Pagination";
 import {
   BarChart,
@@ -146,10 +150,6 @@ function LearnerScorecardPageInner() {
   const leaderboard = data?.leaderboard ?? [];
   const rows = data?.rows ?? [];
   const total = data?.total ?? 0;
-  const theatres = data?.filterOptions.theatres ?? [];
-  const regions = data?.filterOptions.regions ?? [];
-  const countries = data?.filterOptions.countries ?? [];
-
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -209,46 +209,41 @@ function LearnerScorecardPageInner() {
   };
 
   if (loading && !data) {
-    return <div className="flex items-center justify-center h-64"><div className="text-gray-500">Loading report...</div></div>;
+    return <LoadingState label="Loading report…" />;
   }
 
   return (
     <div>
-      <div className="flex items-center gap-2 mb-2">
-        <Link href="/reports" className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700">
-          <ArrowLeft size={14} /> Reports
-        </Link>
-      </div>
-      <PageHeader title="Learner Achievement Scorecard" helpSlug="reports-learner-scorecard" />
+      <PageHeader
+        title="Learner Achievement Scorecard"
+        description="One row per learner. Counts are active-only unless expired records are included; expiring-soon and gap counts always look forward from today."
+        backHref="/reports"
+        backLabel="Reports"
+        helpSlug="reports-learner-scorecard"
+        rightContent={<ExportMenu onExport={handleExport} busy={exporting} />}
+      />
 
-      <div className="flex flex-wrap items-center gap-3 mb-4">
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search name or email…"
-          className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white min-w-[200px]"
-        />
-        <select value={filterTheatre} onChange={(e) => setFilterTheatre(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white">
-          <option value="">All Theatres</option>
-          {theatres.map((t) => <option key={t} value={t}>{t}</option>)}
-        </select>
-        <select value={filterRegion} onChange={(e) => setFilterRegion(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white">
-          <option value="">All Regions</option>
-          {regions.map((r) => <option key={r} value={r}>{r}</option>)}
-        </select>
-        <select value={filterCountry} onChange={(e) => setFilterCountry(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white">
-          <option value="">All Countries</option>
-          {countries.map((c) => <option key={c} value={c}>{c}</option>)}
-        </select>
-        <select value={windowMonths} onChange={(e) => setWindowMonths(Number(e.target.value))} className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white">
-          {WINDOW_OPTIONS.map((w) => <option key={w.value} value={w.value}>{w.label}</option>)}
-        </select>
-        <label className="flex items-center gap-2 text-sm text-gray-700">
-          <input type="checkbox" checked={includeExpired} onChange={(e) => setIncludeExpired(e.target.checked)} className="rounded border-gray-300" />
-          Include expired in counts
-        </label>
-      </div>
+      <FilterBar>
+        <FilterBar.Row>
+          <SearchInput value={search} onChange={setSearch} placeholder="Search name or email…" />
+          <GeoScopeFilter
+            value={{ theatre: filterTheatre, region: filterRegion, country: filterCountry }}
+            onChange={(next) => {
+              setFilterTheatre(next.theatre);
+              setFilterRegion(next.region);
+              setFilterCountry(next.country);
+            }}
+          />
+          <select value={windowMonths} onChange={(e) => setWindowMonths(Number(e.target.value))} className={SELECT_CLASS}>
+            {WINDOW_OPTIONS.map((w) => <option key={w.value} value={w.value}>{w.label}</option>)}
+          </select>
+          <label className={CHECKBOX_LABEL_CLASS}>
+            <input type="checkbox" checked={includeExpired} onChange={(e) => setIncludeExpired(e.target.checked)} className="rounded border-gray-300" />
+            Include expired in counts
+          </label>
+        </FilterBar.Row>
+      </FilterBar>
+
 
       <KpiStrip
         cards={[
@@ -283,7 +278,7 @@ function LearnerScorecardPageInner() {
           <p className="text-sm text-gray-500">
             One row per learner. Counts are {includeExpired ? "all completions" : "active only"}; expiring-soon and gap counts always look forward from today.
           </p>
-          <ExportMenu onExport={handleExport} busy={exporting} />
+          <span className="text-sm font-medium text-gray-500">{total} result{total !== 1 ? "s" : ""}</span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -348,7 +343,7 @@ function LearnerScorecardPageInner() {
 
 export default function LearnerScorecardPage() {
   return (
-    <Suspense fallback={<div className="flex items-center justify-center h-64"><div className="text-gray-500">Loading report...</div></div>}>
+    <Suspense fallback={<LoadingState label="Loading report…" />}>
       <LearnerScorecardPageInner />
     </Suspense>
   );

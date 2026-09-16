@@ -8,6 +8,12 @@ export interface KpiCard {
   icon: LucideIcon;
   tone?: "blue" | "green" | "amber" | "red" | "indigo" | "emerald";
   hint?: string;
+  /**
+   * A short coloured pill under the label, for a state the grey `hint` line
+   * cannot carry — a warning the user is meant to notice rather than read.
+   * The student record uses it for a legacy-certification count.
+   */
+  badge?: { text: string; title?: string };
 }
 
 const TONE: Record<NonNullable<KpiCard["tone"]>, { bg: string; icon: string }> = {
@@ -19,9 +25,25 @@ const TONE: Record<NonNullable<KpiCard["tone"]>, { bg: string; icon: string }> =
   emerald: { bg: "bg-emerald-50 text-emerald-700", icon: "text-emerald-500" },
 };
 
+/**
+ * Column count by card count. Written out as literal class strings because
+ * Tailwind scans source text — an interpolated `lg:grid-cols-${n}` is never
+ * emitted. Five-card strips used to fall through a hardcoded `lg:grid-cols-4`
+ * and strand the fifth card alone on a second row.
+ */
+const COLUMNS: Record<number, string> = {
+  1: "lg:grid-cols-1",
+  2: "lg:grid-cols-2",
+  3: "lg:grid-cols-3",
+  4: "lg:grid-cols-4",
+  5: "lg:grid-cols-5",
+  6: "lg:grid-cols-6",
+};
+
 export default function KpiStrip({ cards }: { cards: KpiCard[] }) {
+  const columns = COLUMNS[cards.length] ?? "lg:grid-cols-4";
   return (
-    <section className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+    <section className={`grid grid-cols-2 ${columns} gap-4 mb-6`}>
       {cards.map((c) => {
         const Icon = c.icon;
         const tone = TONE[c.tone ?? "blue"];
@@ -37,7 +59,7 @@ export default function KpiStrip({ cards }: { cards: KpiCard[] }) {
             data-kpi-label={c.label}
             data-kpi-value={value}
             data-kpi-tone={c.tone ?? "blue"}
-            {...(c.hint ? { "data-kpi-hint": c.hint } : {})}
+            {...(c.hint ?? c.badge ? { "data-kpi-hint": c.hint ?? c.badge!.text } : {})}
           >
             <div className={`p-2.5 rounded-lg ${tone.bg}`}>
               <Icon size={20} className={tone.icon} />
@@ -46,6 +68,14 @@ export default function KpiStrip({ cards }: { cards: KpiCard[] }) {
               <div className="text-xl font-bold text-gray-900">{value}</div>
               <div className="text-xs text-gray-500 truncate">{c.label}</div>
               {c.hint && <div className="text-xs text-gray-400 truncate">{c.hint}</div>}
+              {c.badge && (
+                <span
+                  className="mt-1 inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800"
+                  title={c.badge.title}
+                >
+                  {c.badge.text}
+                </span>
+              )}
             </div>
           </div>
         );

@@ -3,6 +3,8 @@
 import { Suspense, useEffect, useState, useRef, useCallback } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import PageHeader from "@/components/layout/PageHeader";
+import KpiStrip, { type KpiCard } from "@/components/ui/KpiStrip";
+import LoadingState from "@/components/ui/LoadingState";
 import CredentialHealthBanner from "@/components/admin/CredentialHealthBanner";
 import UpdateAvailableBanner from "@/components/admin/UpdateAvailableBanner";
 import PendingReviewNotice from "@/components/admin/PendingReviewNotice";
@@ -181,11 +183,7 @@ function DashboardPageInner() {
   const handleInactiveToggle = (next: boolean) => applyScopeChange(geo, next);
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-gray-500">Loading dashboard...</div>
-      </div>
-    );
+    return <LoadingState label="Loading dashboard…" />;
   }
 
   if (!data) {
@@ -198,52 +196,40 @@ function DashboardPageInner() {
 
   const { metrics } = data;
 
-  const metricCards: {
-    label: string;
-    value: number;
-    subCount?: number;
-    icon: typeof Users;
-    color: string;
-    iconColor: string;
-  }[] = [
-    {
-      label: "Total Students",
-      value: metrics.totalStudents,
-      icon: Users,
-      color: "bg-blue-50 text-blue-700",
-      iconColor: "text-blue-500",
-    },
+  // `hint` is a plain string on KpiStrip, so the old emerald-bold sub-count
+  // renders as ordinary hint text now. The counts are optional on the payload.
+  const heldBy = (n?: number) =>
+    n == null ? undefined : `Held by ${n.toLocaleString()} students`;
+
+  const metricCards: KpiCard[] = [
+    { label: "Total Students", value: metrics.totalStudents, icon: Users, tone: "blue" },
     {
       label: "Certifications Earned",
       value: metrics.certifications,
-      subCount: metrics.certificationStudents,
       icon: Award,
-      color: "bg-indigo-50 text-indigo-700",
-      iconColor: "text-indigo-500",
+      tone: "indigo",
+      hint: heldBy(metrics.certificationStudents),
     },
     {
       label: "Accreditations Earned",
       value: metrics.accreditations,
-      subCount: metrics.accreditationStudents,
       icon: ShieldCheck,
-      color: "bg-emerald-50 text-emerald-700",
-      iconColor: "text-emerald-500",
+      tone: "emerald",
+      hint: heldBy(metrics.accreditationStudents),
     },
     {
       label: "Instructor-Led Trainings",
       value: metrics.instructorLedTraining,
-      subCount: metrics.instructorLedTrainingStudents,
       icon: GraduationCap,
-      color: "bg-amber-50 text-amber-700",
-      iconColor: "text-amber-500",
+      tone: "amber",
+      hint: heldBy(metrics.instructorLedTrainingStudents),
     },
     {
       label: "OLX Completed",
       value: metrics.olx,
-      subCount: metrics.olxStudents,
       icon: GraduationCap,
-      color: "bg-sky-50 text-sky-700",
-      iconColor: "text-sky-500",
+      tone: "blue",
+      hint: heldBy(metrics.olxStudents),
     },
   ];
 
@@ -276,33 +262,7 @@ function DashboardPageInner() {
       <CredentialHealthBanner />
       <PendingReviewNotice count={data.pendingReview ?? 0} />
 
-      {/* Metric Cards */}
-      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
-        {metricCards.map((card) => {
-          const Icon = card.icon;
-          return (
-            <div
-              key={card.label}
-              className="bg-white rounded-lg border border-gray-200 p-5 flex items-center gap-4"
-            >
-              <div className={`p-3 rounded-lg ${card.color}`}>
-                <Icon size={24} className={card.iconColor} />
-              </div>
-              <div className="min-w-0">
-                <div className="text-2xl font-bold text-gray-900">{card.value.toLocaleString()}</div>
-                <div className="text-sm text-gray-500">{card.label}</div>
-                {card.subCount != null && (
-                  <div className="text-xs text-gray-400 truncate">
-                    Held by{" "}
-                    <span className="font-bold text-emerald-600">{card.subCount.toLocaleString()}</span>{" "}
-                    students
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </section>
+      <KpiStrip cards={metricCards} />
 
       {/* Charts Row 1: By Product Type & By Function */}
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
@@ -412,7 +372,7 @@ function DashboardPageInner() {
 
 export default function DashboardPage() {
   return (
-    <Suspense fallback={<div className="flex items-center justify-center h-64"><div className="text-gray-500">Loading dashboard...</div></div>}>
+    <Suspense fallback={<LoadingState label="Loading dashboard…" />}>
       <DashboardPageInner />
     </Suspense>
   );

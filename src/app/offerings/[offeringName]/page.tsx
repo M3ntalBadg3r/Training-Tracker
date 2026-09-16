@@ -4,6 +4,9 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import PageHeader from "@/components/layout/PageHeader";
+import FilterBar from "@/components/ui/FilterBar";
+import { SELECT_CLASS } from "@/components/ui/FormControls";
+import LoadingState from "@/components/ui/LoadingState";
 import Modal from "@/components/ui/Modal";
 import { ExportMenu } from "@/components/programs/ProgramCompliance";
 import { useCompanyScope } from "@/components/company/CompanyScopeProvider";
@@ -199,7 +202,7 @@ function OfferingDashboardInner() {
 
       {/* Offering details */}
       {data && (
-        <div className="mb-4 border border-gray-200 rounded-xl p-4 bg-white">
+        <div className="mb-4 border border-gray-200 rounded-lg p-4 bg-white">
           {data.description ? <p className="text-sm text-gray-700">{data.description}</p> : <p className="text-sm text-gray-400 italic">No description</p>}
           {safeExternalUrl(data.link) && (
             <a href={safeExternalUrl(data.link) ?? undefined} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800">
@@ -210,32 +213,28 @@ function OfferingDashboardInner() {
       )}
 
       {/* Scope selector */}
-      <div className="mb-6 flex flex-wrap items-end gap-3 bg-white border border-gray-200 rounded-xl p-4">
-        <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">View by</label>
-          <select value={level} onChange={(e) => changeLevel(e.target.value as "country" | "region")} className="px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm">
+      <FilterBar>
+        <FilterBar.Row>
+          <label className="text-sm font-medium text-gray-700" htmlFor="offering-level">View by</label>
+          <select id="offering-level" value={level} onChange={(e) => changeLevel(e.target.value as "country" | "region")} className={SELECT_CLASS}>
             <option value="country">Country</option>
             <option value="region">Region</option>
           </select>
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">{level === "country" ? "Country" : "Region"}</label>
-          <select value={value} onChange={(e) => setValue(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm min-w-[200px]">
+          <label className="text-sm font-medium text-gray-700" htmlFor="offering-value">{level === "country" ? "Country" : "Region"}</label>
+          <select id="offering-value" value={value} onChange={(e) => setValue(e.target.value)} className={`${SELECT_CLASS} min-w-[200px]`}>
             <option value="">Select a {level}…</option>
             {scopeValues.map((v) => <option key={v} value={v}>{v}</option>)}
           </select>
-        </div>
+        </FilterBar.Row>
         {hasScope && data?.geo && (
-          <p className="text-xs text-gray-500 pb-2">
-            Onshore: {data.geo.onshoreCountries.length} country(ies) · Nearshore: {data.geo.hasNearshore ? `${data.geo.nearshoreCountries.length} country(ies) in ${data.geo.theatres.join(", ")}` : "theatre unknown"} · Offshore: {data.geo.offshoreCountries.length} country(ies) worldwide
+          <p className="text-xs text-gray-500">
+            Onshore: {data.geo.onshoreCountries.length} country(ies) &middot; Nearshore: {data.geo.hasNearshore ? `${data.geo.nearshoreCountries.length} country(ies) in ${data.geo.theatres.join(", ")}` : "theatre unknown"} &middot; Offshore: {data.geo.offshoreCountries.length} country(ies) worldwide
           </p>
         )}
-      </div>
+      </FilterBar>
 
       {loading ? (
-        <div className="flex items-center justify-center py-20">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
-        </div>
+        <LoadingState label="Loading offering…" />
       ) : !hasScope ? (
         <div className="bg-white rounded-lg border border-dashed border-gray-200 p-10 text-center text-gray-500">
           Select a country or region to view Onshore, Nearshore &amp; Offshore capability.
@@ -247,7 +246,7 @@ function OfferingDashboardInner() {
       ) : (
         <div className="space-y-5">
           {data!.specialisations.map((spec) => (
-            <div key={spec.name} className="border border-gray-200 rounded-xl bg-white overflow-hidden">
+            <div key={spec.name} className="border border-gray-200 rounded-lg bg-white overflow-hidden">
               <div className="flex items-center justify-between px-4 py-3 bg-gray-50 border-b border-gray-200">
                 <h3 className="font-semibold text-gray-900">{spec.name}</h3>
                 {spec.met !== null && (
@@ -366,7 +365,7 @@ function OfferingDashboardInner() {
 
 export default function OfferingDashboardPage() {
   return (
-    <Suspense fallback={<div className="flex items-center justify-center py-20"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>}>
+    <Suspense fallback={<LoadingState label="Loading offering…" />}>
       <OfferingDashboardInner />
     </Suspense>
   );

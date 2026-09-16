@@ -605,6 +605,154 @@ const helpSections: Record<string, HelpSection> = {
     ),
   },
 
+  "reports-by-product-type": {
+    title: "By Product Type",
+    content: (
+      <>
+        <p>
+          Every training record broken down by the product type its training
+          belongs to. Use it to see where completions are concentrated and which
+          products have thin coverage.
+        </p>
+        <ul>
+          <li><strong>Count people, not records</strong> — by default the chart and metric cards count <em>records</em>, so a learner holding three certifications in one product counts three times. Tick this and they count once per product: the figures become distinct active holders.</li>
+          <li>The toggle deliberately does <strong>not</strong> change the table, the exports, or the active-vs-expired donut. Those stay record-based, so the table still lists every completion behind the number.</li>
+          <li><strong>Grouping</strong> — group the table by theatre, region or country to get per-group subtotals.</li>
+        </ul>
+        <p>
+          Filters apply to the whole page, not just the table: the metric cards
+          and both charts redraw with them.
+        </p>
+      </>
+    ),
+  },
+  "reports-by-function": {
+    title: "By Function",
+    content: (
+      <>
+        <p>
+          The same view as <strong>By Product Type</strong>, keyed on the job
+          function a training serves — Sales, Pre-Sales or Deployments — rather
+          than on the product.
+        </p>
+        <ul>
+          <li><strong>Count people, not records</strong> — counts distinct active holders instead of raw completions, so someone with several certifications in one function counts once. The table, exports and the active-vs-expired donut stay record-based.</li>
+          <li>Click a bar to filter the table to that function; a <strong>Clear function filter</strong> link appears beside the chart title.</li>
+        </ul>
+      </>
+    ),
+  },
+  "reports-expiring-soon": {
+    title: "Expiring Soon",
+    content: (
+      <>
+        <p>
+          Records approaching their expiry date, so you can plan renewals before
+          anything lapses. The inverse of <strong>Currently Expired</strong>.
+        </p>
+        <ul>
+          <li><strong>Window</strong> — how far ahead to look: 1, 3, 6 or 12 months.</li>
+          <li><strong>Horizon bands</strong> — the stacked bar splits the window into how soon each record lapses, so the most urgent band is visible at a glance.</li>
+          <li><strong>Heatmap</strong> — expiries by theatre against month, for spotting a region facing a cluster in one month.</li>
+        </ul>
+      </>
+    ),
+  },
+  "reports-expired": {
+    title: "Currently Expired",
+    content: (
+      <>
+        <p>
+          Every record whose latest completion has already lapsed — the inverse
+          of <strong>Expiring Soon</strong>. A learner appears here only if they
+          have no newer completion of the same training.
+        </p>
+        <ul>
+          <li><strong>Lapse age</strong> — records are bucketed by how long ago they expired: up to 1 month, 1&ndash;3, 3&ndash;6, 6&ndash;12, and over 12 months.</li>
+          <li><strong>Lapsed</strong> — narrows the report to recent lapses. Its edges line up exactly with the chart bands, so at 3 months the 1&ndash;3 band is the last populated one and the bands still sum to the total.</li>
+          <li><strong>Exclude retired (legacy) certs</strong> — hides records for trainings marked legacy, which are expected to lapse because they have been superseded. See <strong>Legacy Replacement Gap</strong> for those.</li>
+        </ul>
+      </>
+    ),
+  },
+  "reports-last-12-months": {
+    title: "Achievement Over Time",
+    content: (
+      <>
+        <p>
+          Completions over a chosen period, compared against the period
+          immediately before it, so you can see whether achievement is rising or
+          falling rather than just how much of it there is.
+        </p>
+        <ul>
+          <li><strong>Time range</strong> — a preset, or a custom date range. The chart picks day, week or month buckets to suit the span.</li>
+          <li><strong>This vs prior period</strong> — the metric cards show the percentage change against the preceding period of equal length.</li>
+          <li><strong>Top 10 Trainings</strong> — the most-completed titles in the range, coloured by product type.</li>
+        </ul>
+      </>
+    ),
+  },
+  "reports-legacy-gap": {
+    title: "Legacy Replacement Gap",
+    content: (
+      <>
+        <p>
+          Learners holding a <strong>legacy</strong> certification or
+          accreditation — one marked retired or superseded in the catalogue —
+          without the replacement that supersedes it. This is the report that
+          tells you who needs to re-qualify before their old credential lapses.
+        </p>
+        <ul>
+          <li><strong>Include legacy with no replacement</strong> — some legacy trainings are retired outright with nothing named to replace them. Off by default, since there is no action to take on them.</li>
+          <li><strong>Replacement must be active</strong> — on, a replacement only counts while it is unexpired. Off, any completion ever counts, which answers &ldquo;have they sat it at all?&rdquo; rather than &ldquo;are they covered today?&rdquo;.</li>
+          <li><strong>Expiry buckets</strong> — keyed on the <em>legacy</em> training&rsquo;s expiry, so the ordering reflects how soon each learner loses their existing credential.</li>
+        </ul>
+      </>
+    ),
+  },
+  "reports-trained-not-certified": {
+    title: "Trained But Not Certified",
+    content: (
+      <>
+        <p>
+          Learners who completed a training that leads to a certification but
+          never earned the certification itself. These are usually the cheapest
+          people to certify, because the preparation is already done.
+        </p>
+        <ul>
+          <li>A gap is counted when someone holds the instructor-led training or OLX, and does not hold any certification that training leads to. OLX parents are treated the same as instructor-led trainings.</li>
+          <li><strong>Active status</strong> — whether the training they took is itself still unexpired. An expired training is a weaker lead, since they may need to re-sit it first.</li>
+          <li>The product funnel shows where the largest gaps sit, so you can prioritise by product rather than by individual.</li>
+        </ul>
+        <p>
+          <strong>Compliance Planning</strong> ranks these same people against
+          your actual program requirements, if you want the gaps that matter
+          most rather than all of them.
+        </p>
+      </>
+    ),
+  },
+  "reports-comparison": {
+    title: "Theatre / Region / Country Comparison",
+    content: (
+      <>
+        <p>
+          Geographies side by side in one matrix, for answering &ldquo;how does
+          this region compare with that one?&rdquo; without opening a report per
+          geography.
+        </p>
+        <ul>
+          <li><strong>Compare by</strong> — whether each row is a theatre, a region or a country.</li>
+          <li><strong>Columns</strong> — headcount, completions by training type, how many expire in the next 3 and 6 months, and trainings per student. The last one is the fair comparison: a large geography will lead on raw totals regardless.</li>
+          <li><strong>Chart</strong> — either a breakdown of the current metric across geographies, or the same metric over time.</li>
+        </ul>
+        <p>
+          The table has one row per geography and no pagination, so every
+          compared bucket stays on screen together.
+        </p>
+      </>
+    ),
+  },
   "reports-learner-scorecard": {
     title: "Learner Achievement Scorecard",
     content: (
@@ -2440,6 +2588,44 @@ const helpSections: Record<string, HelpSection> = {
           for it). The candidate list and the renewals list also keep their own
           per-section export buttons for a quick single-table download.
         </p>
+      </>
+    ),
+  },
+  programs: {
+    title: "Programs",
+    content: (
+      <>
+        <p>
+          <strong>Programs</strong>{" "}lists every partner program set up on this
+          system. Each card opens a compliance dashboard showing how the program
+          is tracking against its requirements.
+        </p>
+        <p>
+          The list is data-driven: a program appears here once it has
+          requirements defined in <strong>Admin &rsaquo; Program Data</strong>{" "}
+          (or, for a tiered program, once it has tiers). If a program you expect
+          is missing, its requirements have not been added yet.
+        </p>
+
+        <h3>Compliance Planning</h3>
+        <p>
+          The <strong>Compliance Planning</strong>{" "}link is the action layer over
+          these dashboards. Where a dashboard tells you <em>where</em>{" "}you fall
+          short, planning tells you <em>who</em>{" "}to certify to close the gap —
+          and picks the cheapest route, so one person&apos;s exam that satisfies
+          several requirements is only counted once.
+        </p>
+
+        <h3>What a card shows</h3>
+        <ul>
+          <li>
+            <strong>Program name</strong>{" "}— opens that program&apos;s dashboard.
+          </li>
+          <li>
+            A summary line describing how the program is configured, including
+            whether it is <strong>tiered</strong>.
+          </li>
+        </ul>
       </>
     ),
   },
