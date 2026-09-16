@@ -1062,6 +1062,29 @@ const helpSections: Record<string, HelpSection> = {
             &quot;(missing)&quot; filter to find rows that still need a theatre.
           </li>
           <li>
+            <strong>ISO Code</strong>{" "}&mdash; Each country can carry its
+            two-letter ISO 3166-1 code ({"\u201C"}GB{"\u201D"}, {"\u201C"}US
+            {"\u201D"}, {"\u201C"}DE{"\u201D"}). This is the key that lets the
+            app match your country names to a map, or to any other system that
+            identifies countries by code &mdash; matching on the name alone fails
+            quietly, so {"\u201C"}UK{"\u201D"} and {"\u201C"}United Kingdom
+            {"\u201D"} would not line up. Leaving it blank is fine and means
+            <em>unmapped</em>; the page shows how many countries still have no
+            code. Codes do <strong>not</strong>{" "}have to be unique &mdash; if
+            you list sub-national geographies separately they can share a code,
+            and anything using them adds those rows together.
+          </li>
+          <li>
+            <strong>Suggest ISO codes</strong>{" "}&mdash; Matches the countries
+            that have no code against the official list and shows you what it
+            found, including the name it matched against. Nothing is saved until
+            you tick the rows you accept, and nothing is ticked for you. Treat
+            the suggestions as proposals to check rather than answers: a wrong
+            code is worse than a blank one, because a blank one is visibly
+            blank. Countries it cannot match confidently are listed separately
+            so you can set them by hand.
+          </li>
+          <li>
             <strong>Add</strong>{" "}&mdash; Add a new country with its region and
             (optionally) theatre. A country without a theatre cannot be selected
             for new students &mdash; set the theatre before assigning students.
