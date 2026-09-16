@@ -87,6 +87,10 @@ export default function RegionDataPage() {
 
   // Add modal state
   const [addModalOpen, setAddModalOpen] = useState(false);
+  // A 400 from the write routes used to be swallowed: the modal simply stayed
+  // open with no message. The ISO field makes that reachable in normal use —
+  // one letter in the box is a valid keystroke and an invalid code.
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [newCountry, setNewCountry] = useState("");
   const [newRegionValue, setNewRegionValue] = useState("");
   const [newTheatreValue, setNewTheatreValue] = useState("");
@@ -229,12 +233,27 @@ export default function RegionDataPage() {
     });
     if (res.ok) {
       setAddModalOpen(false);
+      setSaveError(null);
       setNewCountry("");
       setNewRegionValue("");
       setNewTheatreValue("");
       setNewIsoValue("");
       fetchRegions();
+    } else {
+      setSaveError(await readError(res));
     }
+  };
+
+  // The routes answer a rejection with `{ error }`; anything else (a proxy
+  // page, a network failure) must still say something rather than nothing.
+  const readError = async (res: Response): Promise<string> => {
+    try {
+      const body = await res.json();
+      if (body && typeof body.error === "string") return body.error;
+    } catch {
+      // fall through to the generic message
+    }
+    return "Could not save. Please check the values and try again.";
   };
 
   const handleUpdateRegion = async (originalCountry: string) => {
@@ -268,6 +287,8 @@ export default function RegionDataPage() {
           .sort((a, b) => a.country.localeCompare(b.country))
       );
       setEditingRegion(null);
+    } else {
+      setSaveError(await readError(res));
     }
   };
 
@@ -410,13 +431,27 @@ export default function RegionDataPage() {
 
   const autoMapColumns = (hdrs: string[]) => {
     const mapping: Record<string, string> = {};
-    // Digits are kept (unlike the old letters-only fold) so an "ISO 3166-1"
-    // header still resolves to a stable key.
+    // Two folds, and both are needed. Keeping digits is what lets an
+    // "ISO 3166-1" header resolve (letters-only collapses it to "iso"), but
+    // keeping them ALONE silently narrows the three pre-existing fields: a
+    // real-world "Theatre 3" or "Country 2" header folds to "theatre3" and
+    // stops matching. For Country/Region that surfaces as the "please map the
+    // following fields" error, but Theatre is optional, so it would import with
+    // every row's theatre quietly unwritten. So: prefer the digit-preserving
+    // fold, then fall back to the historic letters-only one.
     const fold = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const letters = (value: string) => value.toLowerCase().replace(/[^a-z]/g, "");
+    const claimed = new Set<string>();
     for (const field of TARGET_FIELDS) {
       const wanted = new Set([fold(field.label), ...field.aliases]);
-      const match = hdrs.find((h) => wanted.has(fold(h)));
-      if (match) mapping[field.key] = match;
+      const legacy = new Set([letters(field.label), ...field.aliases.map(letters)]);
+      const match =
+        hdrs.find((h) => !claimed.has(h) && wanted.has(fold(h))) ??
+        hdrs.find((h) => !claimed.has(h) && legacy.has(letters(h)));
+      if (match) {
+        mapping[field.key] = match;
+        claimed.add(match);
+      }
     }
     setColumnMapping(mapping);
   };
@@ -697,17 +732,22 @@ export default function RegionDataPage() {
       {/* Add Region Modal */}
       <Modal
         open={addModalOpen}
-        onClose={() => { setAddModalOpen(false); setNewCountry(""); setNewRegionValue(""); setNewTheatreValue(""); setNewIsoValue(""); }}
+        onClose={() => { setAddModalOpen(false); setSaveError(null); setNewCountry(""); setNewRegionValue(""); setNewTheatreValue(""); setNewIsoValue(""); }}
         title="Add Region"
         size="sm"
         actions={
           <>
-            <button onClick={() => { setAddModalOpen(false); setNewCountry(""); setNewRegionValue(""); setNewTheatreValue(""); setNewIsoValue(""); }} className="px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300">Cancel</button>
+            <button onClick={() => { setAddModalOpen(false); setSaveError(null); setNewCountry(""); setNewRegionValue(""); setNewTheatreValue(""); setNewIsoValue(""); }} className="px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300">Cancel</button>
             <button onClick={handleAddRegion} className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">Add</button>
           </>
         }
       >
         <div className="space-y-3">
+          {saveError && (
+            <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+              {saveError}
+            </p>
+          )}
           <div>
             <label className="block text-sm font-medium mb-1">Country *</label>
             <input

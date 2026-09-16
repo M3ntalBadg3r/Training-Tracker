@@ -394,6 +394,22 @@ export function normaliseCountryName(value: string): string {
 /** normalised name -> code. Canonical names win over aliases on a collision. */
 const NAME_INDEX: Map<string, { code: string; matchedName: string }> = (() => {
   const index = new Map<string, { code: string; matchedName: string }>();
+
+  // Which pre-comma heads are shared by more than one country, DERIVED from the
+  // table rather than listed here, so the guard cannot go stale when an entry is
+  // added or renamed. Today it finds exactly two: "korea" (KP/KR) and
+  // "virginislands" (VG/VI).
+  const headCounts = new Map<string, number>();
+  for (const entry of ISO_COUNTRIES) {
+    const comma = entry.name.indexOf(",");
+    if (comma <= 0) continue;
+    const head = normaliseCountryName(entry.name.slice(0, comma));
+    if (head) headCounts.set(head, (headCounts.get(head) ?? 0) + 1);
+  }
+  const AMBIGUOUS_COMMA_HEADS = new Set(
+    [...headCounts].filter(([, n]) => n > 1).map(([head]) => head)
+  );
+
   for (const alias of ISO_NAME_ALIASES) {
     index.set(normaliseCountryName(alias.name), {
       code: alias.code,
@@ -405,13 +421,21 @@ const NAME_INDEX: Map<string, { code: string; matchedName: string }> = (() => {
       code: entry.code,
       matchedName: entry.name,
     });
-    // "Korea, Republic of" is also reachable as "Republic of Korea"-ish forms
-    // via the alias table; here we additionally index the part before the first
-    // comma ("Bolivia", "Moldova"), which is unambiguous for every such entry.
+    // Also index the part before the first comma, so "Bolivia" reaches
+    // "Bolivia, Plurinational State of". This is NOT unambiguous for every
+    // entry, and an earlier comment here claimed it was: two heads are shared.
+    // "korea" is resolved deliberately by an explicit alias (KR wins), but
+    // "virginislands" is shared by VG and VI and would otherwise resolve to
+    // whichever appears first in the array — offering "Virgin Islands, British"
+    // for a row that meant the US ones. That is exactly the plausible-looking
+    // wrong match this column exists to prevent, and a reviewer working through
+    // a long list with Select-all would accept it. Ambiguous heads are
+    // therefore skipped entirely: no suggestion beats a wrong one, because a
+    // blank is visibly blank. Reach those via their explicit aliases.
     const comma = entry.name.indexOf(",");
     if (comma > 0) {
       const head = normaliseCountryName(entry.name.slice(0, comma));
-      if (head && !index.has(head)) {
+      if (head && !AMBIGUOUS_COMMA_HEADS.has(head) && !index.has(head)) {
         index.set(head, { code: entry.code, matchedName: entry.name });
       }
     }
