@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useState, useMemo, use } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
-import { Download } from "lucide-react";
 import PageHeader from "@/components/layout/PageHeader";
+import ExportMenu from "@/components/ui/ExportMenu";
+import LoadingState from "@/components/ui/LoadingState";
 import DataTable, { type DataTableState } from "@/components/data-table/DataTable";
 import Badge from "@/components/ui/Badge";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
@@ -194,9 +195,7 @@ export default function TrainingTakenPage({
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-gray-500">Loading...</div>
-      </div>
+      <LoadingState label="Loading training…" />
     );
   }
 
@@ -227,45 +226,15 @@ export default function TrainingTakenPage({
           {students.length} student(s) have taken this training
         </p>
         {students.length > 0 && (
-          <div className="relative">
-            <button
-              onClick={() => setShowExportMenu((prev) => !prev)}
-              className="flex items-center gap-2 px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300"
-            >
-              <Download size={16} /> Export
-            </button>
-            {showExportMenu && (
-              <div className="absolute right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[140px]">
-                <button
-                  onClick={() => {
-                    exportToCsv(exportData, exportColumns, fullTitle);
-                    setShowExportMenu(false);
-                  }}
-                  className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-t-lg"
-                >
-                  Export as CSV
-                </button>
-                <button
-                  onClick={() => {
-                    exportToExcel(exportData, exportColumns, fullTitle);
-                    setShowExportMenu(false);
-                  }}
-                  className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100"
-                >
-                  Export as Excel
-                </button>
-                <button
-                  onClick={() => {
-                    exportToPdf(exportData, exportColumns, fullTitle);
-                    setShowExportMenu(false);
-                  }}
-                  className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-b-lg"
-                >
-                  Export as PDF
-                </button>
-              </div>
-            )}
-          </div>
+          <ExportMenu
+            show={showExportMenu}
+            setShow={setShowExportMenu}
+            onExport={(fmt) => {
+              if (fmt === "csv") exportToCsv(exportData, exportColumns, fullTitle);
+              else if (fmt === "excel") exportToExcel(exportData, exportColumns, fullTitle);
+              else exportToPdf(exportData, exportColumns, fullTitle);
+            }}
+          />
         )}
       </div>
       <DataTable<TrainingTakenRow>

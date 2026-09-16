@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import PageHeader from "@/components/layout/PageHeader";
+import LoadingState from "@/components/ui/LoadingState";
 import { ShieldCheck, ChevronRight, Sparkles } from "lucide-react";
 
 interface ProgramInfo {
@@ -39,7 +40,11 @@ export default function ProgramsPage() {
 
   return (
     <div>
-      <PageHeader title="Programs" helpSlug="programs" />
+      <PageHeader
+        title="Programs"
+        description="Compliance dashboards for each partner program."
+        helpSlug="programs"
+      />
 
       <Link
         href="/programs/planning"
@@ -56,9 +61,7 @@ export default function ProgramsPage() {
       </Link>
 
       {loading ? (
-        <div className="flex items-center justify-center py-20">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
-        </div>
+        <LoadingState label="Loading programs…" />
       ) : programs.length === 0 ? (
         <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-500">
           No programs configured yet. Add program requirements in{" "}
