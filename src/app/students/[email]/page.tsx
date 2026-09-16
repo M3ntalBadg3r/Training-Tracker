@@ -630,17 +630,20 @@ export default function StudentRecordPage({
       new Date(t.expiryDate) <= sixMonthsOut
   ).length;
 
-  // The legacy count used to be an orange badge with an explanatory tooltip.
-  // The shared card carries a plain hint, so the wording does the work the
-  // colour did: say what the number means rather than just flagging it.
-  const legacyHint = (n: number) =>
-    n > 0 ? `${n} legacy — retired, renew or replace` : undefined;
+  const legacyBadge = (n: number) =>
+    n > 0
+      ? {
+          text: `${n} legacy`,
+          title:
+            "Legacy certifications counted above — these are retired/superseded and should be renewed or replaced",
+        }
+      : undefined;
 
   const statCards: KpiCard[] = [
-    { label: "Certifications Earned", value: activeCerts, icon: Award, tone: "indigo", hint: legacyHint(legacyCerts) },
-    { label: "Accreditations Earned", value: activeAccred, icon: ShieldCheck, tone: "emerald", hint: legacyHint(legacyAccred) },
-    { label: "Instructor-Led Trainings", value: activeILT, icon: GraduationCap, tone: "amber", hint: legacyHint(legacyILT) },
-    { label: "OLX Completed", value: activeOLX, icon: GraduationCap, tone: "blue", hint: legacyHint(legacyOLX) },
+    { label: "Certifications Earned", value: activeCerts, icon: Award, tone: "indigo", badge: legacyBadge(legacyCerts) },
+    { label: "Accreditations Earned", value: activeAccred, icon: ShieldCheck, tone: "emerald", badge: legacyBadge(legacyAccred) },
+    { label: "Instructor-Led Trainings", value: activeILT, icon: GraduationCap, tone: "amber", badge: legacyBadge(legacyILT) },
+    { label: "OLX Completed", value: activeOLX, icon: GraduationCap, tone: "blue", badge: legacyBadge(legacyOLX) },
     { label: "Expiring in 6 Months", value: expiringSoon, icon: CalendarClock, tone: "red" },
   ];
 
@@ -651,7 +654,7 @@ export default function StudentRecordPage({
 
   return (
     <div>
-      <PageHeader title={student.fullName} backHref="/students" backLabel="Students" helpSlug="student-detail" />
+      <PageHeader title="Student Record" backHref="/students" backLabel="Students" helpSlug="student-detail" />
 
       {/* Contact Card */}
       <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6">
@@ -760,7 +763,10 @@ export default function StudentRecordPage({
               </div>
             ) : (
               <>
-                <div className="flex flex-wrap gap-4 text-sm text-gray-600">
+                <h2 className="text-2xl font-bold text-gray-900">
+                  {student.fullName}
+                </h2>
+                <div className="mt-2 flex flex-wrap gap-4 text-sm text-gray-600">
                   <span>{student.email}</span>
                   <span className="text-gray-300">|</span>
                   <span>{student.theatre}</span>

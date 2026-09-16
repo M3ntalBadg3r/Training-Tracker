@@ -8,6 +8,12 @@ export interface KpiCard {
   icon: LucideIcon;
   tone?: "blue" | "green" | "amber" | "red" | "indigo" | "emerald";
   hint?: string;
+  /**
+   * A short coloured pill under the label, for a state the grey `hint` line
+   * cannot carry — a warning the user is meant to notice rather than read.
+   * The student record uses it for a legacy-certification count.
+   */
+  badge?: { text: string; title?: string };
 }
 
 const TONE: Record<NonNullable<KpiCard["tone"]>, { bg: string; icon: string }> = {
@@ -53,7 +59,7 @@ export default function KpiStrip({ cards }: { cards: KpiCard[] }) {
             data-kpi-label={c.label}
             data-kpi-value={value}
             data-kpi-tone={c.tone ?? "blue"}
-            {...(c.hint ? { "data-kpi-hint": c.hint } : {})}
+            {...(c.hint ?? c.badge ? { "data-kpi-hint": c.hint ?? c.badge!.text } : {})}
           >
             <div className={`p-2.5 rounded-lg ${tone.bg}`}>
               <Icon size={20} className={tone.icon} />
@@ -62,6 +68,14 @@ export default function KpiStrip({ cards }: { cards: KpiCard[] }) {
               <div className="text-xl font-bold text-gray-900">{value}</div>
               <div className="text-xs text-gray-500 truncate">{c.label}</div>
               {c.hint && <div className="text-xs text-gray-400 truncate">{c.hint}</div>}
+              {c.badge && (
+                <span
+                  className="mt-1 inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800"
+                  title={c.badge.title}
+                >
+                  {c.badge.text}
+                </span>
+              )}
             </div>
           </div>
         );
