@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFetchJson } from "@/hooks/useFetchJson";
 import { useChartTheme } from "@/lib/chart-theme";
 
@@ -73,10 +73,23 @@ export interface GeoMapProps {
 /** The static asset in `public/geo/`. See `public/geo/README.md`. */
 interface GeoAtlas {
   viewBox: string;
+  /**
+   * ISO 3166-1 alpha-2 -> SVG path data, **ordered largest country first**.
+   *
+   * That order is part of the contract, not an incidental property of the file:
+   * SVG paints in document order and hit-tests the topmost shape, so a small
+   * country overlapped by a big one (or by an enlarged neighbour's square) is
+   * only visible and clickable because it is emitted afterwards. This component
+   * renders `Object.entries` as it finds them and must never re-sort them.
+   */
   paths: Record<string, string>;
   unclaimed?: string[];
   enlarged?: string[];
+  /** Declares the guarantee above. Checked at load; see `ORDER_CONTRACT`. */
+  order?: string;
 }
+
+const ORDER_CONTRACT = "largest-first";
 
 const ATLAS_URL = "/geo/world-countries.json";
 
@@ -98,12 +111,21 @@ const ISO_RE = /^[A-Z]{2}$/;
  * sequential ramp, so these live here — keyed off its `isDark` rather than off
  * `useTheme` directly, which is what makes `ForceLightChartsContext` flip this
  * map to the light palette for a PDF capture exactly as it does every Recharts
- * card. If a second map consumer wants the same ramp, move it into
- * `lib/chart-theme.ts` rather than copying it.
+ * card.
  *
  * "No data" is deliberately a neutral GREY, not a step of the ramp: it is outside
  * the scale rather than at the bottom of it, and it has to be told apart from
- * zero at a glance.
+ * zero at a glance — which is the whole point of `value: number | null`.
+ *
+ * **When a second consumer arrives, move all three of these into
+ * `lib/chart-theme.ts` together — do not copy any of them.** The trigger is
+ * nearer than it looks: the plan already names the Comparison report as map
+ * consumer #2. The three that must travel as one are (1) the two ramps, (2) the
+ * keying off `useChartTheme().isDark` rather than `useTheme`, which is the only
+ * reason the capture's light-palette flip reaches this map at all, and (3) the
+ * rule that no-data is a grey outside the ramp. A copy that keeps the colours but
+ * loses (2) looks identical on screen and exports a dark map into a light PDF;
+ * one that loses (3) makes "nobody here" and "we do not know" the same colour.
  */
 const RAMP_LIGHT = ["#eff6ff", "#bfdbfe", "#60a5fa", "#2563eb", "#1e3a8a"];
 const RAMP_DARK = ["#1e293b", "#1e40af", "#2563eb", "#60a5fa", "#bfdbfe"];
@@ -144,11 +166,22 @@ interface LegendItem {
  * `null` is absence, not zero, so it never contributes to a sum: one row with no
  * data alongside one with five holders is five, and an ISO whose every row is
  * null stays null.
+ *
+ * Rows whose code is not a well-formed alpha-2 come back in `rejected` rather
+ * than being dropped.
  */
-function aggregate(data: GeoMapDatum[]): Map<string, Aggregated> {
+function aggregate(data: GeoMapDatum[]): { byIso: Map<string, Aggregated>; rejected: string[] } {
   const out = new Map<string, Aggregated>();
+  const rejected: string[] = [];
   for (const datum of data) {
-    if (!ISO_RE.test(datum.iso)) continue;
+    if (!ISO_RE.test(datum.iso)) {
+      // Not drawable, but NOT droppable. A row with a malformed code is real data
+      // the map is leaving out, and silently skipping it under-reports by exactly
+      // as much as a missing ISO code does — the thing the notice exists to stop.
+      // It is reported through the same channel rather than a second one.
+      rejected.push(datum.labels.join(", ") || datum.iso);
+      continue;
+    }
     const existing = out.get(datum.iso);
     if (!existing) {
       out.set(datum.iso, {
@@ -168,7 +201,7 @@ function aggregate(data: GeoMapDatum[]): Map<string, Aggregated> {
     // than inventing a blend.
     if (existing.band === undefined) existing.band = datum.band;
   }
-  return out;
+  return { byIso: out, rejected };
 }
 
 /**
@@ -244,7 +277,7 @@ export default function GeoMap({
   const [hover, setHover] = useState<{ iso: string; x: number; y: number } | null>(null);
   const [showUnmapped, setShowUnmapped] = useState(false);
 
-  const byIso = useMemo(() => aggregate(data), [data]);
+  const { byIso, rejected } = useMemo(() => aggregate(data), [data]);
 
   /**
    * Geometry only — no colour. See the module header: a fill in here would change
@@ -253,12 +286,34 @@ export default function GeoMap({
   const shapes = useMemo(() => {
     const paths = atlas.data?.paths;
     if (!paths) return [];
-    // Largest-first order is a property of the asset and the reason small
-    // countries stay clickable; preserve it rather than re-sorting.
+    // Largest-first order is the asset's contract (see `GeoAtlas.paths`) and the
+    // reason small countries stay visible and clickable. It is preserved, never
+    // re-sorted — there is nothing here to re-sort it BY, which is exactly why
+    // the file has to promise it, and why the promise is checked below.
     return Object.entries(paths)
       .filter(([iso, d]) => ISO_RE.test(iso) && typeof d === "string" && d.length > 0)
       .map(([iso, d]) => ({ iso, d }));
   }, [atlas.data]);
+
+  /**
+   * The asset's paint-order promise, checked where it is consumed.
+   *
+   * Nothing here can repair a badly ordered atlas — the sizes it would need to
+   * sort by are not in the file — so this is a warning, not a fallback. It exists
+   * so a silently reordered asset shows up as a message rather than as small
+   * countries quietly disappearing under their neighbours, which is how the first
+   * version of that ordering bug was found: by someone measuring, not by anyone
+   * noticing. In an effect, not in render: a console write is a side effect.
+   */
+  const declaredOrder = atlas.data?.order;
+  useEffect(() => {
+    if (!atlas.data) return;
+    if (declaredOrder === ORDER_CONTRACT) return;
+    console.warn(
+      `GeoMap: atlas declares paint order "${declaredOrder ?? "none"}", expected ` +
+        `"${ORDER_CONTRACT}". Small countries may be hidden under their neighbours.`
+    );
+  }, [atlas.data, declaredOrder]);
 
   const viewBox = useMemo(() => {
     const parts = (atlas.data?.viewBox ?? "").split(/\s+/).map(Number);
@@ -296,10 +351,23 @@ export default function GeoMap({
     [byIso, mode]
   );
 
+  /**
+   * Only a country the caller gave a datum for is selectable.
+   *
+   * The component can only hand back labels it was given, and consumers key their
+   * scope state on the country *name* — `onSelect={(iso, labels) => setCountry(labels[0])}`
+   * is the expected shape. A country with no datum has no app-side name at all, so
+   * emitting one would mean emitting `[]` and handing the consumer `undefined`.
+   * Refusing the click is the honest answer, and it is what the cursor, tabIndex
+   * and role already promise: those are gated on the same condition, so the
+   * affordance and the behaviour cannot disagree.
+   */
   const select = useCallback(
     (iso: string) => {
       if (!onSelect || !ISO_RE.test(iso)) return;
-      onSelect(iso, byIso.get(iso)?.labels ?? []);
+      const entry = byIso.get(iso);
+      if (!entry) return;
+      onSelect(iso, entry.labels);
     },
     [onSelect, byIso]
   );
@@ -343,7 +411,8 @@ export default function GeoMap({
   const mapWidth = viewBox?.width ?? 0;
   const legendRows = layoutLegend(legendItems, mapWidth);
   const legendTitle = mode === "sequential" && valueLabel ? valueLabel : null;
-  const unmappedCount = (unmapped?.length ?? 0) + undrawable.length;
+  const omitted = [...(unmapped ?? []), ...undrawable, ...rejected];
+  const unmappedCount = omitted.length;
   const legendHeight =
     mapWidth === 0
       ? 0
@@ -353,23 +422,92 @@ export default function GeoMap({
         (unmappedCount > 0 ? ROW_H : 0) +
         10;
 
+  /*
+    The unmapped notice, rendered by the component so no consumer can forget it.
+    Same principle as `PendingReviewNotice`: it reports an ongoing inaccuracy in
+    the numbers on the same screen, so it is not dismissible.
+
+    Built here, above the early returns, and rendered in every state including
+    the loading and error ones. If the atlas fails to fetch, the user must still
+    be told that twelve countries had no ISO code — a component that owns the
+    notice precisely so nobody can forget it cannot then forget it itself on the
+    one path where the map is missing anyway. `undrawable` is legitimately empty
+    there, because without an atlas there is nothing to say a code is absent
+    from; `unmapped` and `rejected` are known regardless of the fetch.
+
+    Deliberately no icon: `chart-capture.ts:findSurface` takes the FIRST `<svg>`
+    in the card, so an icon anywhere in this component could be captured in place
+    of the map. The one-line count is repeated inside the SVG above, which is the
+    only part a PDF export carries.
+  */
+  const notice =
+    unmappedCount > 0 ? (
+      <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+        <p className="font-semibold">
+          {unmappedCount} {unmappedCount === 1 ? "country is" : "countries are"} not shown on the
+          map
+        </p>
+        <p className="text-amber-800">
+          {(unmapped?.length ?? 0) > 0 ? (
+            <>
+              {unmapped?.length} {unmapped?.length === 1 ? "has" : "have"} no ISO country code set
+              in Region Data.{" "}
+            </>
+          ) : null}
+          {undrawable.length > 0 ? (
+            <>
+              {undrawable.length} {undrawable.length === 1 ? "has a code" : "have codes"} this map
+              has no outline for.{" "}
+            </>
+          ) : null}
+          {rejected.length > 0 ? (
+            <>
+              {rejected.length} {rejected.length === 1 ? "has a code" : "have codes"} that are not
+              valid two-letter country codes.{" "}
+            </>
+          ) : null}
+          Their figures are in the table but not in the picture.{" "}
+          <button
+            type="button"
+            className="font-medium underline"
+            onClick={() => setShowUnmapped((v) => !v)}
+          >
+            {showUnmapped ? "Hide list" : "Show list"}
+          </button>
+        </p>
+        {showUnmapped ? (
+          <ul className="mt-2 list-disc pl-5 text-amber-800">
+            {omitted.map((name, index) => (
+              <li key={`${name}-${index}`}>{name}</li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
+    ) : null;
+
   const hovered = hover ? byIso.get(hover.iso) : null;
 
   if (atlas.loading) {
     return (
-      <div
-        className="flex items-center justify-center text-sm text-gray-500"
-        style={{ height }}
-      >
-        Loading map…
+      <div className="w-full">
+        <div
+          className="flex items-center justify-center text-sm text-gray-500"
+          style={{ height }}
+        >
+          Loading map…
+        </div>
+        {notice}
       </div>
     );
   }
 
   if (atlas.error || !viewBox || shapes.length === 0) {
     return (
-      <div className="flex items-center justify-center text-sm text-gray-500" style={{ height }}>
-        The map could not be loaded. The figures below are unaffected.
+      <div className="w-full">
+        <div className="flex items-center justify-center text-sm text-gray-500" style={{ height }}>
+          The map could not be loaded. The figures below are unaffected.
+        </div>
+        {notice}
       </div>
     );
   }
@@ -377,7 +515,13 @@ export default function GeoMap({
   return (
     <div ref={containerRef} className="relative w-full">
       <svg
-        role="img"
+        /*
+          `role="img"` collapses an element's whole subtree into one graphic, so
+          it would hide the per-country buttons below from assistive technology
+          entirely — their role, tabIndex and label would be unreachable. A
+          non-interactive map really is a single picture and keeps `img`.
+        */
+        role={onSelect ? "group" : "img"}
         aria-label="World map"
         viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height + legendHeight}`}
         preserveAspectRatio="xMidYMid meet"
@@ -419,13 +563,17 @@ export default function GeoMap({
                 setHover({ iso, x: event.clientX - box.left, y: event.clientY - box.top });
               }}
               onPointerLeave={() => setHover((h) => (h?.iso === iso ? null : h))}
-              onClick={() => select(iso)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") {
-                  event.preventDefault();
-                  select(iso);
-                }
-              }}
+              onClick={interactive ? () => select(iso) : undefined}
+              onKeyDown={
+                interactive
+                  ? (event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        select(iso);
+                      }
+                    }
+                  : undefined
+              }
             />
           );
         })}
@@ -507,50 +655,7 @@ export default function GeoMap({
         </div>
       ) : null}
 
-      {/*
-        The unmapped notice, rendered by the component so no consumer can forget
-        it. Same principle as `PendingReviewNotice`: it reports an ongoing
-        inaccuracy in the numbers on the same screen, so it is not dismissible.
-        The one-line count is repeated inside the SVG above, which is the only
-        part a PDF export carries.
-      */}
-      {unmappedCount > 0 ? (
-        <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-          <p className="font-semibold">
-            {unmappedCount} {unmappedCount === 1 ? "country is" : "countries are"} not shown on the
-            map
-          </p>
-          <p className="text-amber-800">
-            {(unmapped?.length ?? 0) > 0 ? (
-              <>
-                {unmapped?.length} {unmapped?.length === 1 ? "has" : "have"} no ISO country code set
-                in Region Data.{" "}
-              </>
-            ) : null}
-            {undrawable.length > 0 ? (
-              <>
-                {undrawable.length} {undrawable.length === 1 ? "has a code" : "have codes"} this map
-                has no outline for.{" "}
-              </>
-            ) : null}
-            Their figures are in the table but not in the picture.{" "}
-            <button
-              type="button"
-              className="font-medium underline"
-              onClick={() => setShowUnmapped((v) => !v)}
-            >
-              {showUnmapped ? "Hide list" : "Show list"}
-            </button>
-          </p>
-          {showUnmapped ? (
-            <ul className="mt-2 list-disc pl-5 text-amber-800">
-              {[...(unmapped ?? []), ...undrawable].map((name) => (
-                <li key={name}>{name}</li>
-              ))}
-            </ul>
-          ) : null}
-        </div>
-      ) : null}
+      {notice}
 
       {enlargedInUse.length > 0 ? (
         <p className="mt-2 text-xs text-gray-500">

@@ -39,32 +39,85 @@ non-zero if a handful of well-known countries are missing or malformed.
 }
 ```
 
-`paths` is ordered **largest country first**, and consumers must render in that
-order: SVG paints in document order and hit-tests the topmost shape, so a small
-country drawn on top of its large neighbour is what keeps Monaco, Vatican City and
-Macao clickable at all.
+`paths` is ordered **largest country first — by true size, not drawn size** — and
+consumers must render in that order: SVG paints in document order and hit-tests the
+topmost shape, so a small country drawn on top of its large neighbour is what keeps
+Monaco, Vatican City and Liechtenstein clickable at all. Sorting on the *drawn*
+size is what went wrong first time round: every enlarged square is the same size,
+so all 57 tied and fell back to alphabetical order, which decided by nothing at all
+that Sint Maarten paints over Anguilla.
 
-### Three properties worth knowing before trusting the picture
+### Four properties worth knowing before trusting the picture
 
 **Equal Earth, not Mercator.** The map's job is "where are our people", and
 Mercator answers that wrongly: it inflates area without bound towards the poles,
 drawing Greenland larger than Africa, which is fourteen times its size. Equal
 Earth is equal-area, so a country's share of the ink is its share of the land.
 
-**57 countries are drawn larger than they are.** Singapore is 0.4 degrees across;
-at any scale a world map is drawn its true outline is a fraction of a pixel, which
-is neither visible nor clickable. Those countries are drawn as a fixed-size square
-on their true position instead, and every one of them is listed in the `enlarged`
-array so the distortion is stated rather than hidden. Natural Earth ships a
-separate "tiny countries" point layer for the same reason. A consequence: an
-enlarged square can overlap the neighbour it sits inside (Vatican City over Rome,
-Macao over Hong Kong).
+**57 countries are drawn larger than they are, and some are drawn slightly to one
+side.** Singapore is 0.4 degrees across; at any scale a world map is drawn its true
+outline is a fraction of a pixel, which is neither visible nor clickable. Those
+countries are drawn as an 8-unit square on their true position instead, and every
+one of them is listed in the `enlarged` array so the distortion is stated rather
+than hidden. Natural Earth ships a separate "tiny countries" point layer for the
+same reason.
+
+Squares that would overlap each other are then nudged apart until they only
+touch. Anguilla, Sint Maarten, Saint Martin and Saint Barthelemy are within 30km
+of one another and four 8-unit squares (about 160km each) cannot share that space
+— whichever painted last simply erased the others, and the first version of this
+file shipped with Anguilla at **0% visible**, present in the data, coloured,
+hoverable and clickable as its neighbour, with nothing anywhere saying so. The
+furthest any square moves is about 11 units, four pixels at a typical render
+width. Only squares move; a real outline is never displaced to make room for one.
+
+A square can still overlap a large neighbour it sits *inside* — Liechtenstein
+costs Switzerland 28% of its ink, Vatican City and San Marino cost Italy 9%
+between them — and nudging is not the answer there, because moving Liechtenstein
+out of Switzerland would be a worse lie than drawing it too big. The generator
+asserts a floor on what every country keeps; see below.
 
 **Three polygons have no ISO 3166-1 code** and are in `unclaimed`: they are drawn
 as plain background land so the map has no holes where land should be, and they can
 never be selected or coloured. Kosovo is the one exception — ISO 3166-1 has no
 entry for it either, but `XK` is the user-assigned code in general use, so it is
 keyed under that.
+
+**Nothing is cut at the dateline by accident.** A landmass crossing the
+antimeridian is stored with one 360-degree jump in the middle of its ring, and a
+ring left like that closes by drawing a straight line back across the world. The
+first version tested for this with a projected bounding box, which cannot work:
+Equal Earth converges towards the poles, so `x = 2000` is longitude 180 *at the
+equator only* — at 68N, longitude 180 is x 1695. Russia therefore looked entirely
+"inside the map" and shipped with three Russia-coloured bars across the Arctic,
+each one hoverable and clickable from Alaska to Siberia. Rings are now unwrapped
+and cut in longitude space before they are projected. Antarctica is deliberately
+exempt: its ring encircles the pole, and its full-width edge along latitude -90 is
+the map's own southern boundary rather than a seam.
+
+### What the generator refuses to write
+
+Both of the defects above passed the original sanity check, which asserted only
+that ten named codes existed and that their paths began `M` and ended `Z`. Neither
+is visible to a point-in-polygon probe either — an occluded country is present and
+merely painted over, and a seam adds area over ocean while moving no country. So
+the generator now measures the two things directly, **before** it writes the file,
+and exits non-zero instead:
+
+- **Occlusion.** Every country must keep at least **50%** of its painted area once
+  the countries above it are drawn. Half is the line where the picture starts
+  lying rather than merely crowding: below it, most of the ink inside a country's
+  outline belongs to something else, so a reader sees the neighbour's colour,
+  hovers the neighbour's name and clicks the neighbour's code — and the unmapped
+  notice cannot help, because an occluded country is not missing, it is present
+  and wrong. The tightest today is Switzerland at 72%.
+- **Seams.** No edge may run more than **250** units across the map unless both
+  ends lie on the polar boundary. The longest legitimate edge in the file is 127
+  units (the 49th-parallel run of the Canada/United States border); a seam is 1300
+  to 1400. That leaves two-fold headroom above the honest maximum and a five-fold
+  margin below the shortest seam, so the check can neither nag nor miss.
+
+Both were confirmed to fail by reintroducing each defect and re-running.
 
 ### Why the PDF export constrains this file
 
