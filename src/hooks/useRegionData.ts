@@ -2,11 +2,17 @@
 
 import { useEffect, useState } from "react";
 
-/** One region-data row — `{ country, region, theatre }` (a.k.a. CountryOption). */
+/**
+ * One region-data row — `{ country, region, theatre, isoCode }` (a.k.a.
+ * CountryOption). `isoCode` is ISO 3166-1 alpha-2, uppercase, and `null` means
+ * unmapped — a first-class state, never a stand-in for a guess. It is not
+ * unique, so several rows may share one code and a consumer must aggregate.
+ */
 export interface RegionDataRow {
   country: string;
   region: string;
   theatre: string | null;
+  isoCode: string | null;
 }
 
 // Module-level cache so the small, global region-data list is fetched once per

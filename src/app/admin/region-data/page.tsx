@@ -16,17 +16,43 @@ import {
   Search,
   ChevronUp,
   ChevronDown,
+  Wand2,
 } from "lucide-react";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import { checkImportFile } from "@/lib/import-file";
+// Type-only: erased at build, so the country table itself stays out of this
+// page's bundle. The data module is pulled in with a dynamic import when the
+// admin actually asks for suggestions.
+import type { IsoSuggestion } from "@/lib/iso-countries";
 
 const TARGET_FIELDS = [
-  { key: "country", label: "Country", required: true },
-  { key: "region", label: "Region", required: true },
-  { key: "theatre", label: "Theatre", required: false },
+  { key: "country", label: "Country", required: true, aliases: ["country"] },
+  { key: "region", label: "Region", required: true, aliases: ["region"] },
+  { key: "theatre", label: "Theatre", required: false, aliases: ["theatre", "theater"] },
+  {
+    key: "isoCode",
+    label: "ISO Code",
+    required: false,
+    aliases: ["isocode", "iso", "iso2", "iso31661", "alpha2", "countrycode"],
+  },
 ];
+
+// One definition shared by the CSV, Excel and PDF exports so a new column
+// cannot reach two of the three and be missing from the other.
+const EXPORT_COLUMNS: { key: keyof RegionDataRow; header: string }[] = [
+  { key: "country", header: "Country" },
+  { key: "region", header: "Region" },
+  { key: "theatre", header: "Theatre" },
+  { key: "isoCode", header: "ISO Code" },
+];
+
+/** One proposed code, awaiting a human decision. Nothing here is written. */
+interface IsoSuggestionRow extends IsoSuggestion {
+  country: string;
+  region: string;
+}
 
 type ImportStep = "upload" | "mapping" | "importing" | "summary";
 
@@ -37,7 +63,7 @@ interface ImportSummary {
   errors: string[];
 }
 
-type SortColumn = "country" | "region" | "theatre";
+type SortColumn = "country" | "region" | "theatre" | "isoCode";
 
 export default function RegionDataPage() {
   const [regions, setRegions] = useState<RegionDataRow[]>([]);
@@ -45,6 +71,7 @@ export default function RegionDataPage() {
   const [editCountryValue, setEditCountryValue] = useState("");
   const [editRegionValue, setEditRegionValue] = useState("");
   const [editTheatreValue, setEditTheatreValue] = useState("");
+  const [editIsoValue, setEditIsoValue] = useState("");
   const [loading, setLoading] = useState(true);
   const [lastImport, setLastImport] = useState<string | null>(null);
   const [showExportMenu, setShowExportMenu] = useState(false);
@@ -54,6 +81,7 @@ export default function RegionDataPage() {
   const [searchColumn, setSearchColumn] = useState("all");
   const [regionFilter, setRegionFilter] = useState("");
   const [theatreFilter, setTheatreFilter] = useState("");
+  const [isoFilter, setIsoFilter] = useState("");
   const [sortColumn, setSortColumn] = useState<SortColumn>("country");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
 
@@ -62,6 +90,19 @@ export default function RegionDataPage() {
   const [newCountry, setNewCountry] = useState("");
   const [newRegionValue, setNewRegionValue] = useState("");
   const [newTheatreValue, setNewTheatreValue] = useState("");
+  const [newIsoValue, setNewIsoValue] = useState("");
+
+  // "Suggest ISO codes" review queue. A suggestion is a proposal: nothing is
+  // written until the admin ticks it and applies. Auto-applying a name match
+  // would be a new silent-mismatch surface, which is the exact failure this
+  // column exists to eliminate.
+  const [suggestOpen, setSuggestOpen] = useState(false);
+  const [suggestLoading, setSuggestLoading] = useState(false);
+  const [suggestions, setSuggestions] = useState<IsoSuggestionRow[] | null>(null);
+  const [unmatched, setUnmatched] = useState<string[]>([]);
+  const [accepted, setAccepted] = useState<Set<string>>(new Set());
+  const [applying, setApplying] = useState(false);
+  const [suggestError, setSuggestError] = useState<string | null>(null);
 
   // Import state
   const [showImport, setShowImport] = useState(false);
@@ -93,10 +134,12 @@ export default function RegionDataPage() {
         if (searchColumn === "country") return r.country.toLowerCase().includes(term);
         if (searchColumn === "region") return r.region.toLowerCase().includes(term);
         if (searchColumn === "theatre") return (r.theatre ?? "").toLowerCase().includes(term);
+        if (searchColumn === "isoCode") return (r.isoCode ?? "").toLowerCase().includes(term);
         return (
           r.country.toLowerCase().includes(term) ||
           r.region.toLowerCase().includes(term) ||
-          (r.theatre ?? "").toLowerCase().includes(term)
+          (r.theatre ?? "").toLowerCase().includes(term) ||
+          (r.isoCode ?? "").toLowerCase().includes(term)
         );
       });
     }
@@ -109,18 +152,40 @@ export default function RegionDataPage() {
         theatreFilter === "__missing__" ? !r.theatre : r.theatre === theatreFilter
       );
     }
+    if (isoFilter) {
+      result = result.filter((r) => (isoFilter === "__missing__" ? !r.isoCode : !!r.isoCode));
+    }
+
+    const cell = (r: RegionDataRow) =>
+      sortColumn === "country"
+        ? r.country
+        : sortColumn === "region"
+          ? r.region
+          : sortColumn === "theatre"
+            ? r.theatre ?? ""
+            : r.isoCode ?? "";
 
     result.sort((a, b) => {
-      const aVal =
-        sortColumn === "country" ? a.country : sortColumn === "region" ? a.region : a.theatre ?? "";
-      const bVal =
-        sortColumn === "country" ? b.country : sortColumn === "region" ? b.region : b.theatre ?? "";
-      const cmp = aVal.localeCompare(bVal);
+      const cmp = cell(a).localeCompare(cell(b));
       return sortDirection === "asc" ? cmp : -cmp;
     });
 
     return result;
-  }, [regions, searchTerm, searchColumn, regionFilter, theatreFilter, sortColumn, sortDirection]);
+  }, [
+    regions,
+    searchTerm,
+    searchColumn,
+    regionFilter,
+    theatreFilter,
+    isoFilter,
+    sortColumn,
+    sortDirection,
+  ]);
+
+  // Rows still waiting for a code. Rendered as a standing notice rather than
+  // left for someone to notice: an unmapped country is a real gap in the data,
+  // not a cosmetic one.
+  const unmappedCount = useMemo(() => regions.filter((r) => !r.isoCode).length, [regions]);
 
   const handleSort = (col: SortColumn) => {
     if (sortColumn === col) {
@@ -159,6 +224,7 @@ export default function RegionDataPage() {
         country: newCountry,
         region: newRegionValue,
         theatre: newTheatreValue,
+        isoCode: newIsoValue,
       }),
     });
     if (res.ok) {
@@ -166,12 +232,16 @@ export default function RegionDataPage() {
       setNewCountry("");
       setNewRegionValue("");
       setNewTheatreValue("");
+      setNewIsoValue("");
       fetchRegions();
     }
   };
 
   const handleUpdateRegion = async (originalCountry: string) => {
     const trimmedTheatre = editTheatreValue.trim();
+    // Uppercase on the way out so a lowercase entry is accepted rather than
+    // bounced; the route and the DB CHECK both reject anything else.
+    const trimmedIso = editIsoValue.trim().toUpperCase();
     const res = await fetch(`/api/region-data/${encodeURIComponent(originalCountry)}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -179,6 +249,7 @@ export default function RegionDataPage() {
         country: editCountryValue,
         region: editRegionValue,
         theatre: trimmedTheatre,
+        isoCode: trimmedIso,
       }),
     });
     if (res.ok) {
@@ -190,6 +261,7 @@ export default function RegionDataPage() {
                   country: editCountryValue,
                   region: editRegionValue,
                   theatre: trimmedTheatre || null,
+                  isoCode: trimmedIso || null,
                 }
               : r
           )
@@ -197,6 +269,84 @@ export default function RegionDataPage() {
       );
       setEditingRegion(null);
     }
+  };
+
+  // --- Suggest ISO codes (review queue) ---------------------------------
+  // Name-matches the countries that have no code yet and presents the matches
+  // for approval. It never writes: `applySuggestions` below only saves the rows
+  // the admin has ticked.
+  const openSuggest = async () => {
+    setSuggestOpen(true);
+    setSuggestError(null);
+    setSuggestions(null);
+    setUnmatched([]);
+    setAccepted(new Set());
+    setSuggestLoading(true);
+    try {
+      const { suggestIsoCode } = await import("@/lib/iso-countries");
+      const matched: IsoSuggestionRow[] = [];
+      const missed: string[] = [];
+      for (const r of regions) {
+        if (r.isoCode) continue;
+        const hit = suggestIsoCode(r.country);
+        if (hit) {
+          matched.push({ country: r.country, region: r.region, ...hit });
+        } else {
+          missed.push(r.country);
+        }
+      }
+      setSuggestions(matched);
+      setUnmatched(missed);
+      // Deliberately starts with nothing ticked. Pre-ticking would make
+      // "apply" the path of least resistance, which is auto-apply wearing a
+      // checkbox; "Select all" is one click away for whoever has read them.
+    } catch {
+      setSuggestError("Could not load the ISO country list. Please try again.");
+    } finally {
+      setSuggestLoading(false);
+    }
+  };
+
+  const toggleAccepted = (country: string) => {
+    setAccepted((prev) => {
+      const next = new Set(prev);
+      if (next.has(country)) next.delete(country);
+      else next.add(country);
+      return next;
+    });
+  };
+
+  const applySuggestions = async () => {
+    if (!suggestions) return;
+    const chosen = suggestions.filter((sg) => accepted.has(sg.country));
+    if (chosen.length === 0) return;
+    setApplying(true);
+    setSuggestError(null);
+    const failed: string[] = [];
+    for (const sg of chosen) {
+      try {
+        const res = await fetch(`/api/region-data/${encodeURIComponent(sg.country)}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          // region is required by the route; `theatre` is deliberately omitted
+          // so the stored value is left alone.
+          body: JSON.stringify({ region: sg.region, isoCode: sg.code }),
+        });
+        if (!res.ok) failed.push(sg.country);
+      } catch {
+        failed.push(sg.country);
+      }
+    }
+    setApplying(false);
+    if (failed.length > 0) {
+      setSuggestError(
+        `${failed.length} of ${chosen.length} could not be saved. The rest were applied.`
+      );
+    } else {
+      setSuggestOpen(false);
+      setSuggestions(null);
+    }
+    fetchRegions();
   };
 
   const handleDeleteRegion = async (country: string) => {
@@ -260,10 +410,12 @@ export default function RegionDataPage() {
 
   const autoMapColumns = (hdrs: string[]) => {
     const mapping: Record<string, string> = {};
+    // Digits are kept (unlike the old letters-only fold) so an "ISO 3166-1"
+    // header still resolves to a stable key.
+    const fold = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, "");
     for (const field of TARGET_FIELDS) {
-      const match = hdrs.find(
-        (h) => h.toLowerCase().replace(/[^a-z]/g, "") === field.label.toLowerCase().replace(/[^a-z]/g, "")
-      );
+      const wanted = new Set([fold(field.label), ...field.aliases]);
+      const match = hdrs.find((h) => wanted.has(fold(h)));
       if (match) mapping[field.key] = match;
     }
     setColumnMapping(mapping);
@@ -358,12 +510,18 @@ export default function RegionDataPage() {
             </button>
             {showExportMenu && (
               <div className="absolute left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[140px]">
-                <button onClick={() => { exportToCsv(regions, [{ key: "country", header: "Country" }, { key: "region", header: "Region" }, { key: "theatre", header: "Theatre" }], "region-data"); setShowExportMenu(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-t-lg">Export as CSV</button>
-                <button onClick={() => { exportToExcel(regions, [{ key: "country", header: "Country" }, { key: "region", header: "Region" }, { key: "theatre", header: "Theatre" }], "region-data"); setShowExportMenu(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100">Export as Excel</button>
-                <button onClick={() => { exportToPdf(regions, [{ key: "country", header: "Country" }, { key: "region", header: "Region" }, { key: "theatre", header: "Theatre" }], "region-data"); setShowExportMenu(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-b-lg">Export as PDF</button>
+                <button onClick={() => { exportToCsv(regions, EXPORT_COLUMNS, "region-data"); setShowExportMenu(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-t-lg">Export as CSV</button>
+                <button onClick={() => { exportToExcel(regions, EXPORT_COLUMNS, "region-data"); setShowExportMenu(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100">Export as Excel</button>
+                <button onClick={() => { exportToPdf(regions, EXPORT_COLUMNS, "region-data"); setShowExportMenu(false); }} className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 rounded-b-lg">Export as PDF</button>
               </div>
             )}
           </div>
+          <button
+            onClick={openSuggest}
+            className="flex items-center gap-2 px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300"
+          >
+            <Wand2 size={16} /> Suggest ISO codes
+          </button>
           <button
             onClick={() => setAddModalOpen(true)}
             className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
@@ -371,6 +529,13 @@ export default function RegionDataPage() {
             <Plus size={16} /> Add
           </button>
         </div>
+        {unmappedCount > 0 && (
+          <p className="mt-3 text-sm text-amber-700">
+            {unmappedCount} {unmappedCount === 1 ? "country has" : "countries have"} no ISO
+            code. Unmapped countries cannot be matched to a map or to any other
+            system that keys on ISO 3166-1.
+          </p>
+        )}
       </section>
 
       {/* Import Modal */}
@@ -380,7 +545,7 @@ export default function RegionDataPage() {
             <button
               onClick={() => {
                 const csv =
-                  "Country,Region,Theatre\nUnited States,Americas,AMER\nUnited Kingdom,EMEA,EMEA";
+                  "Country,Region,Theatre,ISO Code\nUnited States,Americas,AMER,US\nUnited Kingdom,EMEA,EMEA,GB";
                 const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
                 const a = document.createElement("a");
                 a.href = url;
@@ -428,7 +593,9 @@ export default function RegionDataPage() {
               <div>
                 <h4 className="text-sm font-semibold mb-3">Map Columns</h4>
                 <p className="text-sm text-gray-600 mb-3">
-                  Map the columns from your file to Country, Region, and (optionally) Theatre.
+                  Map the columns from your file to Country, Region, and (optionally)
+                  Theatre and ISO Code. A column you leave unmapped is not written
+                  at all, so the stored value is left exactly as it is.
                 </p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {TARGET_FIELDS.map((field) => (
@@ -530,12 +697,12 @@ export default function RegionDataPage() {
       {/* Add Region Modal */}
       <Modal
         open={addModalOpen}
-        onClose={() => { setAddModalOpen(false); setNewCountry(""); setNewRegionValue(""); setNewTheatreValue(""); }}
+        onClose={() => { setAddModalOpen(false); setNewCountry(""); setNewRegionValue(""); setNewTheatreValue(""); setNewIsoValue(""); }}
         title="Add Region"
         size="sm"
         actions={
           <>
-            <button onClick={() => { setAddModalOpen(false); setNewCountry(""); setNewRegionValue(""); setNewTheatreValue(""); }} className="px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300">Cancel</button>
+            <button onClick={() => { setAddModalOpen(false); setNewCountry(""); setNewRegionValue(""); setNewTheatreValue(""); setNewIsoValue(""); }} className="px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300">Cancel</button>
             <button onClick={handleAddRegion} className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">Add</button>
           </>
         }
@@ -574,6 +741,145 @@ export default function RegionDataPage() {
               Required before students can be assigned to this country.
             </p>
           </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">ISO Code</label>
+            <input
+              type="text"
+              value={newIsoValue}
+              onChange={(e) => setNewIsoValue(e.target.value.toUpperCase())}
+              maxLength={2}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm uppercase"
+              placeholder="e.g. US"
+            />
+            <p className="mt-1 text-xs text-gray-500">
+              ISO 3166-1 alpha-2, two letters. Leave blank if this geography has
+              no single country code — blank means unmapped, not zero.
+            </p>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Suggest ISO codes — a review queue, never an automatic write */}
+      <Modal
+        open={suggestOpen}
+        onClose={() => { if (!applying) setSuggestOpen(false); }}
+        title="Suggest ISO codes"
+        size="xl"
+        actions={
+          <>
+            <button
+              onClick={() => setSuggestOpen(false)}
+              disabled={applying}
+              className="px-4 py-2 text-sm bg-gray-200 rounded-lg hover:bg-gray-300 disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={applySuggestions}
+              disabled={applying || accepted.size === 0}
+              className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+            >
+              {applying ? "Applying..." : `Apply ${accepted.size} selected`}
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600">
+            These are <strong>proposals</strong>, matched by country name against
+            the ISO 3166-1 list. Nothing is saved until you tick a row and choose
+            Apply. Check the matched name before accepting — a name match is a
+            guess about your data, not a fact about it.
+          </p>
+
+          {suggestError && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
+              <AlertCircle size={18} className="text-red-500 mt-0.5 shrink-0" />
+              <span className="text-red-700 text-sm">{suggestError}</span>
+            </div>
+          )}
+
+          {suggestLoading && <p className="text-sm text-gray-500">Matching countries...</p>}
+
+          {!suggestLoading && suggestions && suggestions.length === 0 && (
+            <p className="text-sm text-gray-600">
+              No suggestions. Every country either already has a code, or has no
+              confident match in the ISO 3166-1 list.
+            </p>
+          )}
+
+          {!suggestLoading && suggestions && suggestions.length > 0 && (
+            <div>
+              <div className="flex items-center gap-3 mb-2">
+                <h4 className="text-sm font-semibold">
+                  {suggestions.length} suggested{" "}
+                  {suggestions.length === 1 ? "code" : "codes"}
+                </h4>
+                <button
+                  onClick={() => setAccepted(new Set(suggestions.map((sg) => sg.country)))}
+                  className="text-xs text-blue-600 hover:underline"
+                >
+                  Select all
+                </button>
+                <button
+                  onClick={() => setAccepted(new Set())}
+                  className="text-xs text-blue-600 hover:underline"
+                >
+                  Select none
+                </button>
+              </div>
+              <div className="max-h-80 overflow-y-auto border border-gray-200 rounded-lg">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 sticky top-0">
+                    <tr>
+                      <th className="px-3 py-2 w-10" />
+                      <th className="px-3 py-2 text-left font-semibold text-gray-700">
+                        Country (yours)
+                      </th>
+                      <th className="px-3 py-2 text-left font-semibold text-gray-700">
+                        Suggested
+                      </th>
+                      <th className="px-3 py-2 text-left font-semibold text-gray-700">
+                        Matched against
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {suggestions.map((sg) => (
+                      <tr key={sg.country} className="border-t">
+                        <td className="px-3 py-2">
+                          <input
+                            type="checkbox"
+                            checked={accepted.has(sg.country)}
+                            onChange={() => toggleAccepted(sg.country)}
+                            aria-label={`Accept ${sg.code} for ${sg.country}`}
+                          />
+                        </td>
+                        <td className="px-3 py-2">{sg.country}</td>
+                        <td className="px-3 py-2 font-mono">{sg.code}</td>
+                        <td className="px-3 py-2 text-gray-600">{sg.matchedName}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {!suggestLoading && unmatched.length > 0 && (
+            <div>
+              <h4 className="text-sm font-semibold text-amber-700 mb-1">
+                No suggestion ({unmatched.length})
+              </h4>
+              <p className="text-xs text-gray-500 mb-2">
+                No confident match, so nothing is proposed rather than a guess
+                being offered. Set these by hand in the table.
+              </p>
+              <div className="max-h-40 overflow-y-auto bg-amber-50 rounded-lg p-3 text-sm text-amber-900">
+                {unmatched.join(", ")}
+              </div>
+            </div>
+          )}
         </div>
       </Modal>
 
@@ -598,6 +904,7 @@ export default function RegionDataPage() {
           <option value="country">Country</option>
           <option value="region">Region</option>
           <option value="theatre">Theatre</option>
+          <option value="isoCode">ISO Code</option>
         </select>
       </section>
 
@@ -648,6 +955,23 @@ export default function RegionDataPage() {
                     </select>
                   </div>
                 </th>
+                <th className="px-4 py-3 text-left">
+                  <div className="space-y-1">
+                    <button onClick={() => handleSort("isoCode")} className="flex items-center gap-1 font-semibold text-gray-700 hover:text-gray-900">
+                      ISO Code
+                      {sortColumn === "isoCode" && (sortDirection === "asc" ? <ChevronUp size={14} /> : <ChevronDown size={14} />)}
+                    </button>
+                    <select
+                      value={isoFilter}
+                      onChange={(e) => setIsoFilter(e.target.value)}
+                      className="w-full text-xs border border-gray-200 rounded px-1 py-0.5 font-normal"
+                    >
+                      <option value="">All</option>
+                      <option value="__missing__">(missing)</option>
+                      <option value="__mapped__">(mapped)</option>
+                    </select>
+                  </div>
+                </th>
                 <th className="px-4 py-3 text-left font-semibold text-gray-700">Actions</th>
               </tr>
             </thead>
@@ -680,6 +1004,22 @@ export default function RegionDataPage() {
                     )}
                   </td>
                   <td className="px-4 py-3">
+                    {editingRegion === r.country ? (
+                      <input
+                        type="text"
+                        value={editIsoValue}
+                        onChange={(e) => setEditIsoValue(e.target.value.toUpperCase())}
+                        maxLength={2}
+                        placeholder="e.g. US"
+                        className="border border-gray-300 rounded px-2 py-1 text-sm w-full uppercase"
+                      />
+                    ) : r.isoCode ? (
+                      <span className="font-mono">{r.isoCode}</span>
+                    ) : (
+                      <span className="text-amber-600 text-xs">(unmapped)</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
                     <div className="flex gap-2">
                       {editingRegion === r.country ? (
                         <>
@@ -688,7 +1028,7 @@ export default function RegionDataPage() {
                         </>
                       ) : (
                         <>
-                          <button onClick={() => { setEditingRegion(r.country); setEditCountryValue(r.country); setEditRegionValue(r.region); setEditTheatreValue(r.theatre ?? ""); }} className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200">Edit</button>
+                          <button onClick={() => { setEditingRegion(r.country); setEditCountryValue(r.country); setEditRegionValue(r.region); setEditTheatreValue(r.theatre ?? ""); setEditIsoValue(r.isoCode ?? ""); }} className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200">Edit</button>
                           <button onClick={() => handleDeleteRegion(r.country)} className="px-2 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200"><Trash2 size={14} /></button>
                         </>
                       )}
@@ -697,7 +1037,7 @@ export default function RegionDataPage() {
                 </tr>
               ))}
               {filteredRegions.length === 0 && (
-                <tr><td colSpan={4} className="px-4 py-8 text-center text-gray-500">No records found</td></tr>
+                <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-500">No records found</td></tr>
               )}
             </tbody>
           </table>

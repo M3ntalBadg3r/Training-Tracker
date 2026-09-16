@@ -1100,7 +1100,14 @@ async function restoreConfigArchive(zip: JSZip): Promise<NextResponse> {
   };
 
   type ProductTypeRow = { id: number; name: string; color: string | null };
-  type RegionDataRow = { country: string; region: string; theatre: string | null };
+  // isoCode is optional here because archives written before the column
+  // existed simply do not carry the key; it restores as null.
+  type RegionDataRow = {
+    country: string;
+    region: string;
+    theatre: string | null;
+    isoCode?: string | null;
+  };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   type TrainingDataRow = any;
   type OlxRelationRow = { parentTrainingTitle: string; subItemTrainingTitle: string };
@@ -1213,12 +1220,25 @@ async function restoreConfigArchive(zip: JSZip): Promise<NextResponse> {
         productTypeIdByName.set(trimmedName, upserted.id);
       }
 
-      // 3. Upsert RegionData by country (PK).
+      // 3. Upsert RegionData by country (PK). This path enumerates its columns
+      //    explicitly (unlike the full restore's createMany, which spreads the
+      //    archived row), so a new column has to be added here by hand or it is
+      //    silently dropped on every config round-trip. `?? null` covers older
+      //    archives that predate the column, which restore as unmapped.
       for (const row of archiveRegionData) {
         await tx.regionData.upsert({
           where: { country: row.country },
-          create: { country: row.country, region: row.region, theatre: row.theatre ?? null },
-          update: { region: row.region, theatre: row.theatre ?? null },
+          create: {
+            country: row.country,
+            region: row.region,
+            theatre: row.theatre ?? null,
+            isoCode: row.isoCode ?? null,
+          },
+          update: {
+            region: row.region,
+            theatre: row.theatre ?? null,
+            isoCode: row.isoCode ?? null,
+          },
         });
       }
 
