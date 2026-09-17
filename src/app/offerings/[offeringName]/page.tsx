@@ -18,7 +18,7 @@ import { exportToCsv, exportToExcel } from "@/lib/export";
 import { exportReportTablePdf } from "@/lib/report-export";
 import { useFetchJson } from "@/hooks/useFetchJson";
 import { useRegionData } from "@/hooks/useRegionData";
-import { buildOfferingBandMap } from "./band-map";
+import { buildOfferingBandMap, buildOfferingDensityMap } from "./band-map";
 import { ExternalLink, Users, Ship, Anchor, Globe } from "lucide-react";
 
 interface AltOut {
@@ -37,6 +37,14 @@ interface ReqOut {
   nearshore: number | null;
   offshore: number | null;
   met: boolean | null;
+  /**
+   * Distinct holders of this requirement per country — a decomposition of the
+   * three band counts above, not a per-country verdict. Countries with no
+   * holders are OMITTED, so `undefined` here is "counted, nobody holds it" for
+   * a country in scope and "never counted" for one outside it; `band-map.ts`
+   * resolves which. Null until a scope is selected.
+   */
+  holdersByCountry: Record<string, number> | null;
 }
 interface SpecOut {
   name: string;
@@ -73,6 +81,22 @@ interface StudentRow {
   training: string;
 }
 
+/** The map card's two views. `bands` is the default. */
+type MapView = "bands" | "density";
+
+/**
+ * A requirement id read back out of the query string, which is user-editable
+ * text. Anything that is not a positive integer is discarded here; whether the
+ * integer names a requirement this offering still has is a separate question,
+ * answered against the response (see `activeReqId`).
+ */
+function parseRequirementId(raw: string | null): number | null {
+  if (!raw) return null;
+  if (!/^\d+$/.test(raw)) return null;
+  const n = Number(raw);
+  return Number.isSafeInteger(n) && n > 0 ? n : null;
+}
+
 function OfferingDashboardInner() {
   const params = useParams();
   const searchParams = useSearchParams();
@@ -96,6 +120,20 @@ function OfferingDashboardInner() {
     searchParams.get("level") === "region" ? "region" : "country"
   );
   const [value, setValue] = useState(() => searchParams.get("value") ?? "");
+  // Which map the card is showing, and — for the density map — which
+  // requirement it is drawing. Both are view state and both ride in the URL.
+  // Anything but the one other option falls back to the default, so the
+  // `<select>` can never be handed a value it has no option for.
+  const [mapView, setMapView] = useState<MapView>(() =>
+    searchParams.get("mapView") === "density" ? "density" : "bands"
+  );
+  // Held raw; validated against the requirements this offering actually has
+  // once the response arrives (see `activeReqId`). A seeded id naming a deleted
+  // requirement, or one belonging to a different offering, is the realistic
+  // case and must fall back rather than draw an empty map.
+  const [mapReqId, setMapReqId] = useState<number | null>(() =>
+    parseRequirementId(searchParams.get("mapReq"))
+  );
   const [showExport, setShowExport] = useState(false);
   const [exporting, setExporting] = useState(false);
 
@@ -107,30 +145,6 @@ function OfferingDashboardInner() {
 
   const router = useRouter();
   const pathname = usePathname();
-
-  // `companyId` is preserved exactly as it arrived rather than written from the
-  // derived value: it identifies which company's offering this is, and pinning
-  // a derived one into the URL would stop the page following the header
-  // switcher on every later visit.
-  const buildViewParams = useCallback(() => {
-    const params = new URLSearchParams();
-    if (urlCompanyId) params.set("companyId", urlCompanyId);
-    params.set("level", level);
-    if (value) params.set("value", value);
-    return params;
-  }, [urlCompanyId, level, value]);
-
-  useEffect(() => {
-    const qs = buildViewParams().toString();
-    if (qs !== searchParams.toString()) {
-      router.replace(`${pathname}?${qs}`, { scroll: false });
-    }
-  }, [buildViewParams, pathname, router, searchParams]);
-
-  // Students modal
-  const [students, setStudents] = useState<StudentRow[] | null>(null);
-  const [studentsTitle, setStudentsTitle] = useState("");
-  const [studentsLoading, setStudentsLoading] = useState(false);
 
   const apiBase = `/api/offerings/${encodeURIComponent(offeringName)}`;
 
@@ -145,6 +159,71 @@ function OfferingDashboardInner() {
     return `${apiBase}?${qs.toString()}${companyQS}`;
   })();
   const { data, loading } = useFetchJson<OfferingResponse>(dataUrl);
+
+  /**
+   * Every requirement in the offering, flattened, as the density map's picker
+   * options. Requirement ids are `OfferingData` rows and are independent of the
+   * geography, so changing the scope never invalidates a selection — only
+   * editing the offering does.
+   */
+  const reqOptions = useMemo(
+    () =>
+      (data?.specialisations ?? []).flatMap((spec) =>
+        spec.requirements.map((r) => ({
+          id: r.id,
+          label: `${spec.name} — ${r.trainingFullTitle}`,
+          req: r,
+        }))
+      ),
+    [data]
+  );
+
+  /**
+   * The requirement actually drawn — the URL's, if it names one this offering
+   * still has, else the first.
+   *
+   * Derived rather than reconciled in an effect: an effect writing state here
+   * would need a mount guard to avoid clobbering the seed, and would trip
+   * `react-hooks/set-state-in-effect` besides. While the options are empty (the
+   * response has not landed) the seed is returned unchanged, which is what lets
+   * the URL mirror run on mount without erasing it.
+   */
+  const activeReqId = useMemo(() => {
+    if (reqOptions.length === 0) return mapReqId;
+    if (mapReqId !== null && reqOptions.some((o) => o.id === mapReqId)) return mapReqId;
+    return reqOptions[0].id;
+  }, [reqOptions, mapReqId]);
+  const activeReq = reqOptions.find((o) => o.id === activeReqId) ?? null;
+
+  // `companyId` is preserved exactly as it arrived rather than written from the
+  // derived value: it identifies which company's offering this is, and pinning
+  // a derived one into the URL would stop the page following the header
+  // switcher on every later visit.
+  const buildViewParams = useCallback(() => {
+    const params = new URLSearchParams();
+    if (urlCompanyId) params.set("companyId", urlCompanyId);
+    params.set("level", level);
+    if (value) params.set("value", value);
+    params.set("mapView", mapView);
+    // The *effective* id, not the raw seed: before the response arrives this is
+    // the seed itself (so the mount mirror cannot wipe it), and afterwards it is
+    // the validated one (so a stale id is corrected in the address bar rather
+    // than left to mislead the next reload).
+    if (activeReqId !== null) params.set("mapReq", String(activeReqId));
+    return params;
+  }, [urlCompanyId, level, value, mapView, activeReqId]);
+
+  useEffect(() => {
+    const qs = buildViewParams().toString();
+    if (qs !== searchParams.toString()) {
+      router.replace(`${pathname}?${qs}`, { scroll: false });
+    }
+  }, [buildViewParams, pathname, router, searchParams]);
+
+  // Students modal
+  const [students, setStudents] = useState<StudentRow[] | null>(null);
+  const [studentsTitle, setStudentsTitle] = useState("");
+  const [studentsLoading, setStudentsLoading] = useState(false);
 
   // Reset the selected value when switching level dimension.
   const changeLevel = (l: "country" | "region") => {
@@ -213,6 +292,29 @@ function OfferingDashboardInner() {
     () => (geo ? buildOfferingBandMap(geo, regionRows) : null),
     [geo, regionRows]
   );
+
+  /**
+   * The density map: one requirement's holders per country.
+   *
+   * Per requirement, not per offering, so every shade reconciles against a row
+   * the user can read — sum it over `geo.onshoreCountries` and you get that
+   * row's Onshore figure, and likewise over the nearshore and offshore lists
+   * (each over its own list only: Offshore is a superset of Nearshore, so a sum
+   * over the whole map is not any of the three).
+   */
+  const densityMap = useMemo(
+    () =>
+      geo && activeReq
+        ? buildOfferingDensityMap(geo, regionRows, activeReq.req.holdersByCountry ?? {})
+        : null,
+    [geo, regionRows, activeReq]
+  );
+
+  // The density view only draws when it has a requirement to draw. With none
+  // configured the card says so rather than rendering an empty scale (an
+  // all-grey world with a legend claiming to count holders is a picture that
+  // looks like an answer).
+  const showDensity = mapView === "density" && densityMap !== null;
 
   // Three mutually exclusive fills for a pair of bands that genuinely overlap:
   // Offshore is Nearshore plus everywhere else, so each label names the part of
@@ -318,21 +420,87 @@ function OfferingDashboardInner() {
           */}
           {geo && bandMap && (
             <ExportableChart className="border border-gray-200 rounded-lg bg-white p-4">
-              <h3 className="font-semibold text-gray-900">Delivery geography — {geo.scopeLabel}</h3>
+              <h3 className="font-semibold text-gray-900">
+                {showDensity && activeReq
+                  ? `Where the people are: ${activeReq.req.trainingFullTitle} — ${geo.scopeLabel}`
+                  : `Delivery geography — ${geo.scopeLabel}`}
+              </h3>
               <p className="mt-1 text-sm text-gray-600">
-                Where this offering can be delivered from — not per-country compliance. A
-                requirement is met by the onshore countries collectively, so holders spread across
-                several countries can satisfy one that no single country meets on its own.
+                {showDensity
+                  ? "How many people hold this one training, country by country — not per-country compliance."
+                  : "Where this offering can be delivered from — not per-country compliance."}{" "}
+                A requirement is met by the onshore countries collectively, so holders spread across
+                several countries can satisfy one that no single country meets on its own. Met and
+                Not met stay on the tables below.
               </p>
               <p className="mt-1 text-sm text-gray-600">
-                Offshore has no shade of its own because it overlaps the others: Offshore is
-                Nearshore plus the rest of the world, so those two bands together are the Offshore
-                set.
+                {showDensity
+                  ? "A country that was counted and has nobody holding the training is drawn at the palest shade; a country outside this offering's geography has no figure at all and is left grey."
+                  : "Offshore has no shade of its own because it overlaps the others: Offshore is Nearshore plus the rest of the world, so those two bands together are the Offshore set."}
               </p>
+              {/*
+                Text and `<select>` only. An icon button here would put an
+                `<svg>` above the map inside this card, and
+                `chart-capture.ts:findSurface` takes the FIRST one — the PDF
+                would carry the icon instead of the map.
+              */}
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <label className="text-sm font-medium text-gray-700" htmlFor="offering-map-view">
+                  Show
+                </label>
+                <select
+                  id="offering-map-view"
+                  value={mapView}
+                  onChange={(e) => setMapView(e.target.value === "density" ? "density" : "bands")}
+                  className={SELECT_CLASS}
+                >
+                  <option value="bands">Delivery geography</option>
+                  <option value="density">Where the people are</option>
+                </select>
+                {mapView === "density" && reqOptions.length > 0 && (
+                  <>
+                    <label
+                      className="text-sm font-medium text-gray-700"
+                      htmlFor="offering-map-req"
+                    >
+                      Requirement
+                    </label>
+                    <select
+                      id="offering-map-req"
+                      value={activeReqId ?? ""}
+                      onChange={(e) => setMapReqId(parseRequirementId(e.target.value))}
+                      className={`${SELECT_CLASS} min-w-[240px] max-w-full`}
+                    >
+                      {reqOptions.map((o) => (
+                        <option key={o.id} value={o.id}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </select>
+                  </>
+                )}
+              </div>
               {regionLoading ? (
                 <div className="flex h-60 items-center justify-center text-sm text-gray-500">
                   Loading country codes…
                 </div>
+              ) : mapView === "density" && !densityMap ? (
+                <div className="flex h-60 items-center justify-center text-sm text-gray-500">
+                  This offering has no supporting trainings to count yet.
+                </div>
+              ) : showDensity && densityMap ? (
+                /*
+                  Sequential, single hue. A red/green scale would read as a
+                  per-country pass/fail, which is exactly what this map is not
+                  (see the note above): `met` is decided on the onshore set as a
+                  whole.
+                */
+                <GeoMap
+                  data={densityMap.data}
+                  mode="sequential"
+                  valueLabel="Active holders"
+                  unmapped={densityMap.unmapped}
+                />
               ) : (
                 <GeoMap
                   data={bandMap.data}

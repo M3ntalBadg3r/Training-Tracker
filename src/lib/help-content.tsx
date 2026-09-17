@@ -873,14 +873,18 @@ const helpSections: Record<string, HelpSection> = {
           <li><strong>Nearshore</strong>{" "}counts the rest of that country/region&apos;s <strong>theatre</strong>, with the onshore countries removed — the wider in-theatre capability available to support delivery.</li>
           <li><strong>Offshore</strong> counts everyone <strong>worldwide</strong>{" "}who holds the training, with the onshore countries removed (so it includes the nearshore people plus every other theatre). Nearshore and Offshore are informational and don&apos;t change the Met status.</li>
           <li>Figures are scoped to the offering&apos;s company. Use <strong>Export</strong> for the current view, and click <strong>View</strong> on any count to list the people behind it.</li>
-          <li>Your selection is kept in the page address, so opening someone&apos;s record and pressing <strong>Back</strong>{" "}returns you to the same country or region — and a particular view can be bookmarked or shared as a link.</li>
+          <li>Your selection — the country or region, which map is showing and which requirement it is drawing — is kept in the page address, so opening someone&apos;s record and pressing <strong>Back</strong>{" "}returns you to the same view, and a particular view can be bookmarked or shared as a link. A link naming a requirement the offering no longer has falls back to the first one rather than showing an empty map.</li>
         </ul>
-        <h3>The delivery-geography map</h3>
+        <h3>The map</h3>
         <p>
-          Above the specialisation tables the page draws a world map of the same
-          three geographies, so you can see how far away your delivery capability
-          is at a glance. The tables are always shown underneath it — the map is
-          an addition, not an alternative view.
+          Above the specialisation tables the page draws a world map, so you can
+          see how far away your delivery capability is at a glance. The tables are
+          always shown underneath it — the map is an addition, never an
+          alternative to them. A <strong>Show</strong>{" "}dropdown on the card
+          picks between two views of the same data:{" "}
+          <strong>Delivery geography</strong>{" "}(the three geographies, shown by
+          default) and <strong>Where the people are</strong>{" "}(how many people
+          hold one training, country by country).
         </p>
         <p>
           The three geographies <strong>overlap</strong>: Offshore is everyone
@@ -900,6 +904,29 @@ const helpSections: Record<string, HelpSection> = {
           nothing on the map is red or green. A country&apos;s shade is a distance,
           never a verdict.
         </p>
+        <h3>Where the people are</h3>
+        <p>
+          The second view shades countries by how many people hold{" "}
+          <em>one particular</em>{" "}training — choose it from the{" "}
+          <strong>Requirement</strong>{" "}dropdown beside the switch. It is one
+          requirement rather than the whole offering so that the picture adds up
+          to something you can check: total the countries in the Onshore list and
+          you have that row&apos;s <strong>Onshore</strong>{" "}figure, and the
+          same for Nearshore and Offshore. Each band only adds up over{" "}
+          <em>its own</em>{" "}countries — the whole map is not any of the three,
+          because Offshore already contains Nearshore.
+        </p>
+        <p>
+          Two shades mean very different things and are deliberately kept apart.
+          The <strong>palest</strong>{" "}step of the scale is a real{" "}
+          <strong>zero</strong>: that country was counted and nobody there holds
+          the training. <strong>Grey</strong>{" "}is{" "}
+          <strong>no figure at all</strong>: that country sits outside this
+          offering&apos;s geography, so it was never counted. The scale is a
+          single colour rather than red-to-green for the same reason as the other
+          map — a requirement is met collectively, so a per-country pass or fail
+          would be false.
+        </p>
         <p>
           A country in scope with no <strong>ISO Code</strong> in Region Data
           cannot be drawn. Those are never quietly left out: they are counted in an
@@ -909,8 +936,8 @@ const helpSections: Record<string, HelpSection> = {
         </p>
         <p>
           Tick <strong>Include charts &amp; metrics in PDF</strong> in the{" "}
-          <strong>Export</strong> menu to carry the map, legend and all, into the
-          PDF.
+          <strong>Export</strong> menu to carry whichever map is on screen, legend
+          and all, into the PDF.
         </p>
         <p className="text-sm text-gray-500">
           Offerings are configured under <strong>Admin &gt; Offerings</strong>{" "}by a

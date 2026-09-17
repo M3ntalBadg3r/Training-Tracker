@@ -185,34 +185,31 @@ export async function computeOfferingCounts(
  * "compliance".
  *
  * Countries with no holders are absent rather than present as 0 — absent means
- * "no holders here", which a consumer may render as zero or as no-data, but the
- * two are its decision to make.
+ * "no holders in a country that WAS counted", which a consumer renders as zero,
+ * while a country that was never in scope is absent for a different reason and
+ * is not knowable from this record alone. The consumer decides which by
+ * intersecting these keys with the geo country lists it was given; see
+ * `buildOfferingDensityMap`.
  */
 export type HoldersByCountry = Record<string, number>;
-
-/** The per-country breakdown returned alongside the band counts. */
-export interface OfferingCountryBreakdown {
-  /**
-   * Per requirement id → per-country distinct holders of that requirement's
-   * primary training or any of its alternatives. Decomposes exactly the same
-   * numbers the Onshore/Nearshore/Offshore columns show, so summing the entries
-   * over `geo.onshoreCountries` reproduces `onshore` (and likewise for the
-   * other two bands — see the bucketing comment in `getEmailSetsByTitleAndGeo`).
-   */
-  byRequirement: Map<number, HoldersByCountry>;
-  /**
-   * Per-country distinct holders of **any** qualifying training in the whole
-   * offering (every requirement's primary + alternatives, unioned). This is one
-   * dataset for a whole-offering view; it is NOT the sum of `byRequirement`,
-   * because a person holding two of the offering's trainings is one person.
-   */
-  overall: HoldersByCountry;
-}
 
 /**
  * Per-country holder breakdown for an offering's requirements, over the union
  * of the Onshore and Offshore country lists — i.e. every country the three
- * bands are drawn from, in one query.
+ * bands are drawn from, in one query. Returns one map per requirement id.
+ *
+ * Each map decomposes exactly the same numbers the Onshore/Nearshore/Offshore
+ * columns show, so summing its entries over `geo.onshoreCountries` reproduces
+ * `onshore` — and likewise for the other two bands, each over *its own* country
+ * list. It never reconciles over the whole map, because Offshore is a superset
+ * of Nearshore (see the bucketing comment in `getEmailSetsByTitleAndGeo` for
+ * why the partition holds at all).
+ *
+ * There is deliberately **no whole-offering map alongside these.** A union over
+ * every requirement's titles would not be the sum of these maps — one person
+ * holding two of the offering's trainings is one person — so it would reconcile
+ * against nothing on screen, which is the one thing a number beside a table has
+ * to do.
  *
  * Deliberately a second function rather than an extra field on
  * `computeOfferingCounts`: the public API (`/api/public/v1/offerings`) uses that
@@ -226,36 +223,25 @@ export async function computeOfferingCountryBreakdown(
   reqs: Array<OfferingReqLike & { id: number }>,
   geo: OfferingGeo,
   companyIds: number[] | null
-): Promise<OfferingCountryBreakdown> {
+): Promise<Map<number, HoldersByCountry>> {
   const now = new Date();
   const titles = collectTitles(reqs);
-  const empty: OfferingCountryBreakdown = { byRequirement: new Map(), overall: {} };
-  if (titles.length === 0) return empty;
+  const byRequirement = new Map<number, HoldersByCountry>();
+  if (titles.length === 0) return byRequirement;
 
   // Onshore ∪ Offshore is every country the bands can draw from (Nearshore is a
-  // subset of Offshore). One bucketed query therefore serves all three.
+  // subset of Offshore). One bucketed query therefore serves all three — and it
+  // is also exactly the set a consumer must treat as "counted", so an absent
+  // country in it is a true zero.
   const countries = [...new Set([...geo.onshoreCountries, ...geo.offshoreCountries])];
-  if (countries.length === 0) return empty;
+  if (countries.length === 0) return byRequirement;
 
   const sets = await getEmailSetsByTitleAndGeo(titles, now, "country", { countries, companyIds });
 
-  const toRecord = (rows: { bucket: string; count: number }[]): HoldersByCountry => {
+  for (const r of reqs) {
     const out: HoldersByCountry = {};
-    for (const r of rows) if (r.count > 0) out[r.bucket] = r.count;
-    return out;
-  };
-
-  const byRequirement = new Map<number, HoldersByCountry>();
-  for (const r of reqs) byRequirement.set(r.id, toRecord(unionAttainedByGeo(r, sets)));
-
-  // "Any qualifying training in the offering", expressed as one synthetic
-  // requirement so the union runs through the same code path as every other
-  // count rather than being re-derived here.
-  const overallReq: OfferingReqLike = {
-    trainingTitle: titles[0],
-    alternatives: titles.slice(1).map((t) => ({ trainingTitle: t })),
-    quantityRequired: 0,
-  };
-
-  return { byRequirement, overall: toRecord(unionAttainedByGeo(overallReq, sets)) };
+    for (const row of unionAttainedByGeo(r, sets)) if (row.count > 0) out[row.bucket] = row.count;
+    byRequirement.set(r.id, out);
+  }
+  return byRequirement;
 }

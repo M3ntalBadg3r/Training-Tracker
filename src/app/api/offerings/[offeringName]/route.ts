@@ -16,8 +16,8 @@ import {
  * Data-driven offering dashboard. Returns the offering definition + the
  * countries/regions available for the scope selector, and — when a country or
  * region is selected — per-specialisation requirements with Onshore + Nearshore
- * + Offshore distinct-holder counts and Met flags, plus a per-country
- * distinct-holder breakdown of the same numbers (`holdersByCountry`, keyed by
+ * + Offshore distinct-holder counts and Met flags, each carrying a per-country
+ * distinct-holder breakdown of its own numbers (`holdersByCountry`, keyed by
  * the app's own country name). Company-scoped (compliance = students).
  *
  * `?students=true&scope=onshore|nearshore|offshore&trainingTitle=<csv>&level=&country=|region=`
@@ -117,7 +117,10 @@ export async function GET(
      * country name. A DISTRIBUTION of the three band counts, not a per-country
      * verdict: `met` is decided on the Onshore set as a whole, so three holders
      * in three countries meet a requirement of 3 that no single country meets.
-     * Countries with no holders are omitted. Null until a scope is selected.
+     * Countries with no holders are omitted, so a consumer distinguishing
+     * "counted, nobody here" from "never counted" must intersect these keys
+     * with `geo.onshoreCountries` ∪ `geo.offshoreCountries` — the set the
+     * breakdown query actually covered. Null until a scope is selected.
      */
     holdersByCountry: HoldersByCountry | null;
   }
@@ -151,7 +154,6 @@ export async function GET(
 
   // Resolve compliance when a scope value is selected + companies are in scope.
   let geoOut: Awaited<ReturnType<typeof resolveOfferingGeo>> | null = null;
-  let holdersByCountry: HoldersByCountry | null = null;
   if (value && !noCompanies) {
     geoOut = await resolveOfferingGeo(level, value);
     const allReqs = [...specMap.values()].flatMap((s) =>
@@ -182,10 +184,9 @@ export async function GET(
         req.nearshore = geoOut.hasNearshore ? c.nearshore : null;
         req.offshore = geoOut.hasOffshore ? c.offshore : null;
         req.met = c.onshore >= req.quantityRequired;
-        req.holdersByCountry = breakdown.byRequirement.get(req.id) ?? {};
+        req.holdersByCountry = breakdown.get(req.id) ?? {};
       }
     }
-    holdersByCountry = breakdown.overall;
   }
 
   const specialisations = [...specMap.values()]
@@ -207,11 +208,6 @@ export async function GET(
     regions,
     specialisations,
     geo: geoOut,
-    // Whole-offering distribution: distinct holders per country of ANY
-    // qualifying training in this offering. Not the sum of the per-requirement
-    // maps (one person may hold several), and not a compliance verdict — see
-    // `HoldersByCountry`. Null until a scope value is selected.
-    holdersByCountry,
   });
 }
 

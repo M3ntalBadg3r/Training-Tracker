@@ -92,3 +92,65 @@ export function buildOfferingBandMap(
   unmapped.sort((a, b) => a.localeCompare(b));
   return { data, unmapped };
 }
+
+/**
+ * Turn one requirement's per-country holder counts into a sequential-mode map.
+ *
+ * The whole job here is deciding, per country, between **0** and **no data** —
+ * which `holders` alone cannot tell you, because the server omits a country
+ * with no holders rather than sending a zero. The answer comes from the geo
+ * lists instead:
+ *
+ *  - **In scope** is `onshoreCountries ∪ offshoreCountries`, which is precisely
+ *    the set `computeOfferingCountryBreakdown` ran its query over. A country in
+ *    it that `holders` does not mention was counted and came back empty, so it
+ *    is a genuine **0** and is drawn at the palest step of the ramp.
+ *  - Everything else — every country the query never asked about, and every
+ *    shape the atlas has that Region Data does not list — gets no datum at all
+ *    and `GeoMap` paints it neutral grey, off the scale.
+ *
+ * Nearshore is deliberately *not* added to the in-scope set even though the
+ * table has a Nearshore column: it is a subset of Offshore, so it is already
+ * covered, and widening this set beyond what the server queried is exactly how
+ * a country that was never counted would come to read as "nobody here".
+ *
+ * A holder count for a country outside that set cannot arise today (the query
+ * filters on the same list) but is carried through rather than dropped if it
+ * ever does — a real number silently discarded is the failure this whole layer
+ * exists to avoid.
+ *
+ * On ISO collisions: several countries may share a code, and `GeoMap` sums
+ * their values. That is correct here and cannot double-count a person, because
+ * these keys are `Student.country` — one column, one value per student — so
+ * every holder is counted under exactly one country name.
+ */
+export function buildOfferingDensityMap(
+  geo: OfferingBandInput,
+  rows: CountryIsoRow[],
+  holders: Record<string, number>
+): OfferingBandMap {
+  const index = isoIndex(rows);
+  const data: GeoMapDatum[] = [];
+  const unmapped: string[] = [];
+  const seen = new Set<string>();
+
+  const add = (country: string, value: number) => {
+    if (seen.has(country)) return;
+    seen.add(country);
+    const iso = index.get(country);
+    if (!iso) {
+      unmapped.push(country);
+      return;
+    }
+    data.push({ iso, labels: [country], value });
+  };
+
+  // Onshore first so its name leads the label when countries share a shape.
+  for (const country of geo.onshoreCountries) add(country, holders[country] ?? 0);
+  for (const country of geo.offshoreCountries) add(country, holders[country] ?? 0);
+  // Anything the server counted that the geo lists somehow do not name.
+  for (const [country, count] of Object.entries(holders)) add(country, count);
+
+  unmapped.sort((a, b) => a.localeCompare(b));
+  return { data, unmapped };
+}
