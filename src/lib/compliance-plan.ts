@@ -212,6 +212,16 @@ export interface PlanRiskImpact {
   required: number;
   attained: number;
   projectedAttained: number;
+  /**
+   * On the plan's recommended path — a counted instance: a tier target's chosen
+   * specialisations plus its delivery certs, or any instance of a non-tier
+   * target. False means the roadmap dims this requirement for reference and
+   * nothing here is costed into "People to certify". Named `onPath` rather than
+   * `chosen` because `PlanSpecialisation.chosen` is narrower — it is unset for
+   * non-tier targets, where every row is nonetheless on the path — and reusing
+   * the word would invite a client-side derive that gets delivery certs wrong.
+   */
+  onPath: boolean;
 }
 
 export interface PlanRenewalRow {
@@ -221,6 +231,16 @@ export interface PlanRenewalRow {
   theatre: string;
   cert: string;
   scopeLabel: string;
+  /**
+   * On the plan's recommended path — a counted instance: a tier target's chosen
+   * specialisations plus its delivery certs, or any instance of a non-tier
+   * target. False means the roadmap dims this requirement for reference and
+   * nothing here is costed into "People to certify". Named `onPath` rather than
+   * `chosen` because `PlanSpecialisation.chosen` is narrower — it is unset for
+   * non-tier targets, where every row is nonetheless on the path — and reusing
+   * the word would invite a client-side derive that gets delivery certs wrong.
+   */
+  onPath: boolean;
 }
 
 export interface CompliancePlanResult {
@@ -237,10 +257,18 @@ export interface CompliancePlanResult {
    * subset the allocator nominates to close the gaps.
    */
   eligible: PlanCandidate[];
+  /**
+   * Every holder whose qualifying training lapses inside the window, over every
+   * requirement the roadmap shows — one row per (person, certification).
+   * `onPath` marks the subset the plan is actually costed against. Deliberately
+   * NOT scoped to the counted instances: that scoping made a 6-month window
+   * report fewer renewals than a 3-month one, because the cheapest path is
+   * costed from a window-dependent gap and shifts as the window widens.
+   */
   renewals: PlanRenewalRow[];
   /**
-   * The requirements those renewals break. Scoped to counted instances, so it
-   * always agrees with `renewals` — see the note where it's built.
+   * The requirements those renewals break, over the same set and carrying the
+   * same `onPath` marker, so the two always agree.
    */
   riskImpacts: PlanRiskImpact[];
   totals: {
@@ -249,9 +277,24 @@ export interface CompliancePlanResult {
     lapsed: number;
     legacy: number;
     netNew: number;
-    /** People nominated to renew (0 unless planning for the window). */
+    /**
+     * People the allocator actually committed to renew (0 unless planning for
+     * the window). Costed from the counted instances only, so it is NOT the
+     * number of at-risk renewals below and must not be widened to match them:
+     * doing so would put uncosted people into `peopleMoves`. The ordering
+     * `renewalMoves <= renewalsAtRiskOnPath <= renewalsAtRisk` always holds.
+     */
     renewalMoves: number;
+    /**
+     * Rows in `renewals` — one per (person, certification) expiring inside the
+     * window, on and off path. Equal to `renewals.length` by construction, so
+     * the KPI card and the section heading cannot disagree. (This counted
+     * distinct *people* until the overlay was widened; the heading could never
+     * show that number, so the two reported different measures side by side.)
+     */
     renewalsAtRisk: number;
+    /** How many of those rows are on the recommended path. */
+    renewalsAtRiskOnPath: number;
   };
 }
 
@@ -907,6 +950,14 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
   // Only counted instances feed the allocator + totals, so a tier target costs
   // just its cheapest path, not every specialisation in the program.
   const countedInstances: ReqInstance[] = [];
+  // Every instance the roadmap renders — the chosen specialisations AND the
+  // dimmed reference ones. The renewal overlay is built from this; `counted`
+  // decides only which of those rows are on the recommended path. Scoping the
+  // overlay to `countedInstances` is what let a WIDER renewal window report
+  // FEWER renewals than a narrower one: the cheapest path is costed from a
+  // window-dependent `shortfall`, so a specialisation dropping off the path
+  // took its expiring holders out of the panel with it.
+  const allInstances: ReqInstance[] = [];
 
   for (const target of input.targets) {
     const [programRow, programData, tierRows] = await Promise.all([
@@ -1108,7 +1159,10 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
     }
 
     const counted = rowInstances.filter((inst) => countedIds.has(inst.id));
+    // Adjacent on purpose: a future target mode that populates one and forgets
+    // the other is then a one-line diff rather than a silent divergence.
     countedInstances.push(...counted);
+    allInstances.push(...rowInstances);
     preps.push({
       target: targetResult,
       bySpec,
@@ -1127,13 +1181,22 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
   // are shown for reference but don't inflate the plan's totals.
   const alloc = allocateCandidates(countedInstances);
 
+  // The recommended path as one flat set: a tier target's chosen specialisations
+  // plus its delivery certs, or every instance of a non-tier target. Named in
+  // full rather than `countedIds` — that name is the per-target Set above, and
+  // the two are not the same thing.
+  const countedInstanceIds = new Set(countedInstances.map((i) => i.id));
+
   // Student display info for every committed candidate + every renewal-at-risk
   // holder + every eligible pool member (so the full-pool list can be named).
   const candidateEmails = new Set<string>(alloc.closesByEmail.keys());
-  for (const inst of countedInstances) {
-    for (const e of inst.expiringEmails) candidateEmails.add(e);
-    for (const m of inst.pool) candidateEmails.add(m.email);
-  }
+  // Renewal rows are reported for every roadmap instance, so every one of their
+  // holders has to be named — an off-path holder would otherwise render as a
+  // raw email address.
+  for (const inst of allInstances) for (const e of inst.expiringEmails) candidateEmails.add(e);
+  // Pools stay scoped to the counted instances: `eligible` below is built from
+  // those alone, so widening this would fetch students nothing ever renders.
+  for (const inst of countedInstances) for (const m of inst.pool) candidateEmails.add(m.email);
   const students = candidateEmails.size > 0
     ? await prisma.student.findMany({
         where: { email: { in: [...candidateEmails] } },
@@ -1274,56 +1337,14 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
     (a, b) => tierOrder(a.topTier) - tierOrder(b.topTier) || b.closesCount - a.closesCount || a.fullName.localeCompare(b.fullName),
   );
 
-  // ── What the renewals actually break ──
-  // Built here, not on the client, from `countedInstances` — the set the plan was
-  // actually costed against. `spec.chosen` used to be a wider tie-set, so deriving
-  // this client-side would have named requirements whose expiring holders never
-  // appear in the table below it; now that `chosen` is exactly the cheapest-K, a
-  // client derive would agree. It stays here anyway because `countedInstances` is
-  // the definition and the flag only reflects it — a future counted instance that
-  // isn't a chosen specialisation's would silently vanish from a client derive.
-  const riskImpacts: PlanRiskImpact[] = countedInstances
-    .filter((i) => i.shortfallProjected !== null && i.shortfallProjected > 0 && i.expiringEmails.length > 0)
-    .map((i) => ({
-      program: i.program,
-      specialisation: i.specialisation,
-      tierName: i.tierName,
-      cert: i.cert,
-      scopeLabel: i.scopeLabel,
-      required: i.required,
-      attained: i.attained,
-      projectedAttained: i.projectedAttained ?? i.attained,
-    }))
-    // Requirements that are fine today lead — those are the surprising ones.
-    .sort(
-      (a, b) =>
-        Number(b.attained >= b.required) - Number(a.attained >= a.required) ||
-        (b.required - b.projectedAttained) - (a.required - a.projectedAttained) ||
-        a.cert.localeCompare(b.cert),
-    );
-
-  // ── Renewal-at-risk rows (deduped by email+cert+scope) ──
-  const renewals: PlanRenewalRow[] = [];
-  const renewalSeen = new Set<string>();
-  const renewalEmails = new Set<string>();
-  for (const inst of countedInstances) {
-    for (const email of inst.expiringEmails) {
-      const k = `${email} ${inst.cert} ${inst.scopeLabel}`;
-      if (renewalSeen.has(k)) continue;
-      renewalSeen.add(k);
-      renewalEmails.add(email);
-      const s = studentById.get(email);
-      renewals.push({
-        email,
-        fullName: s?.fullName ?? email,
-        country: s?.country ?? "",
-        theatre: s?.theatre ?? "",
-        cert: inst.cert,
-        scopeLabel: inst.scopeLabel,
-      });
-    }
-  }
-  renewals.sort((a, b) => a.fullName.localeCompare(b.fullName) || a.cert.localeCompare(b.cert));
+  // ── The renewal overlay ──
+  // Both halves are built over EVERY roadmap instance and marked `onPath`,
+  // rather than filtered down to the counted ones — see `buildRenewalRows`.
+  // They stay on the server because only this side knows which instances are
+  // counted: reproducing the flag on the client would mean re-deriving the
+  // chosen specialisations *and* the tier's delivery certs.
+  const riskImpacts = buildRiskImpacts(allInstances, countedInstanceIds);
+  const renewals = buildRenewalRows(allInstances, countedInstanceIds, studentById);
 
   // ── Overall totals ──
   let easyWins = 0;
@@ -1359,9 +1380,110 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
       legacy,
       netNew,
       renewalMoves,
-      renewalsAtRisk: renewalEmails.size,
+      renewalsAtRisk: renewals.length,
+      renewalsAtRiskOnPath: renewals.filter((r) => r.onPath).length,
     },
   };
+}
+
+// ─── The renewal overlay ─────────────────────────────────────────────────────
+
+/** Split a plan's instances into the ones on the recommended path and the rest.
+ *  Both overlay builders walk them in that order, so a row reachable from both
+ *  sides is marked `onPath`. */
+function splitByPath(all: ReqInstance[], countedInstanceIds: Set<string>): [ReqInstance[], ReqInstance[]] {
+  const onPath: ReqInstance[] = [];
+  const offPath: ReqInstance[] = [];
+  for (const inst of all) (countedInstanceIds.has(inst.id) ? onPath : offPath).push(inst);
+  return [onPath, offPath];
+}
+
+/**
+ * The requirements the window's expiries break — over EVERY roadmap instance,
+ * not just the counted ones. `shortfallProjected` is computed for every
+ * instance regardless of counted-ness, so the filter is unchanged; the source
+ * set and the `onPath` marker are what is new.
+ */
+function buildRiskImpacts(all: ReqInstance[], countedInstanceIds: Set<string>): PlanRiskImpact[] {
+  const [onPath, offPath] = splitByPath(all, countedInstanceIds);
+  return [...onPath, ...offPath]
+    .filter((i) => i.shortfallProjected !== null && i.shortfallProjected > 0 && i.expiringEmails.length > 0)
+    .map((i) => ({
+      program: i.program,
+      specialisation: i.specialisation,
+      tierName: i.tierName,
+      cert: i.cert,
+      scopeLabel: i.scopeLabel,
+      required: i.required,
+      attained: i.attained,
+      projectedAttained: i.projectedAttained ?? i.attained,
+      onPath: countedInstanceIds.has(i.id),
+    }))
+    .sort(
+      (a, b) =>
+        // On-path requirements lead: those are the ones the plan is costed
+        // against, and the ones the copy above the table speaks for.
+        Number(b.onPath) - Number(a.onPath) ||
+        // Then the ones that are fine today — those are the surprising ones.
+        Number(b.attained >= b.required) - Number(a.attained >= a.required) ||
+        (b.required - b.projectedAttained) - (a.required - a.projectedAttained) ||
+        a.cert.localeCompare(b.cert),
+    );
+}
+
+/**
+ * One row per (person, certification) whose training lapses inside the window,
+ * over EVERY roadmap instance — not just the ones the plan is costed against,
+ * which is what let a wider window report FEWER renewals than a narrower one:
+ * the cheapest path is costed from a window-dependent gap and shifts as the
+ * window widens, and a specialisation dropping off it took its expiring holders
+ * out of the panel with it.
+ *
+ * The counted instances are walked FIRST, because the dedupe key is
+ * `email + cert + scopeLabel` and the first instance to claim a pair owns the
+ * row: a single merged pass would make `onPath` depend on instance ordering and
+ * could file an on-path renewal under "reference", under copy that says it is
+ * not counted. The key itself is unchanged, so the on-path subset is exactly
+ * what this used to return.
+ */
+function buildRenewalRows(
+  all: ReqInstance[],
+  countedInstanceIds: Set<string>,
+  studentById: Map<string, { fullName: string; country: string; theatre: string }>,
+): PlanRenewalRow[] {
+  const rows: PlanRenewalRow[] = [];
+  const seen = new Set<string>();
+  const collect = (instances: ReqInstance[], onPath: boolean) => {
+    for (const inst of instances) {
+      for (const email of inst.expiringEmails) {
+        const k = `${email} ${inst.cert} ${inst.scopeLabel}`;
+        if (seen.has(k)) continue;
+        seen.add(k);
+        const s = studentById.get(email);
+        rows.push({
+          email,
+          fullName: s?.fullName ?? email,
+          country: s?.country ?? "",
+          theatre: s?.theatre ?? "",
+          cert: inst.cert,
+          scopeLabel: inst.scopeLabel,
+          onPath,
+        });
+      }
+    }
+  };
+  const [onPath, offPath] = splitByPath(all, countedInstanceIds);
+  collect(onPath, true);
+  collect(offPath, false);
+  // The on-path key leads here too: without it this sort would undo the
+  // two-pass ordering the page groups on.
+  rows.sort(
+    (a, b) =>
+      Number(b.onPath) - Number(a.onPath) ||
+      a.fullName.localeCompare(b.fullName) ||
+      a.cert.localeCompare(b.cert),
+  );
+  return rows;
 }
 
 // ─── Small helpers ───────────────────────────────────────────────────────────
