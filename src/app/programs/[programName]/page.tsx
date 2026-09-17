@@ -17,6 +17,7 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { useCompanyScope } from "@/components/company/CompanyScopeProvider";
+import CompanyRequired, { useCompanyRequired } from "@/components/company/CompanyRequired";
 import {
   ComplianceTable,
   SpecialisationCard,
@@ -114,23 +115,19 @@ function ProgramDetailPageInner() {
   const apiBase = `/api/programs/${encodeURIComponent(programName)}`;
 
   const companyScope = useCompanyScope();
-  // Compliance is per-company; force a single-company selection.
-  // Reconciled with React's "adjust state while rendering" pattern rather than a
-  // setState-in-effect. The "all companies" branch is deliberately sticky — it
-  // seeds the first company but must never clobber a later explicit pick.
-  const [companyId, setCompanyId] = useState<number | null>(null);
-  const companyKey = companyScope.loading
-    ? null
-    : `${companyScope.selected}|${companyScope.companies.map((c) => c.id).join(",")}`;
-  const [prevCompanyKey, setPrevCompanyKey] = useState<string | null>(null);
-  if (companyKey !== null && companyKey !== prevCompanyKey) {
-    setPrevCompanyKey(companyKey);
-    if (companyScope.selected !== "all") {
-      setCompanyId(companyScope.selected);
-    } else if (companyScope.companies.length > 0) {
-      setCompanyId((prev) => prev ?? companyScope.companies[0].id);
-    }
-  }
+  // Compliance is reported for one company at a time, and the header switcher is
+  // the only control that picks it. Under "All companies" the page asks for one
+  // (`companyRequired` below) instead of quietly reporting on whichever company
+  // sorted first while looking like it covered them all.
+  //
+  // This is a plain render-time derivation rather than the "adjust state while
+  // rendering" reconcile it replaced, and the usual objection does not apply:
+  // that pattern exists to preserve a value the *user* can edit afterwards, and
+  // the page's own Company dropdown — the only thing that ever wrote this — is
+  // gone. Nothing edits it now, so there is nothing to preserve.
+  const companyRequired = useCompanyRequired();
+  const companyId =
+    companyScope.loading || companyScope.selected === "all" ? null : companyScope.selected;
   const companyQS = companyId !== null ? `&companyId=${companyId}` : "";
 
   // Forward-looking projection horizon (0 = today). When > 0 the dashboard shows
@@ -288,7 +285,11 @@ function ProgramDetailPageInner() {
     specialisations?: Specialisation[];
     tiers?: TierBlock | null;
   }>(reportUrl);
-  const loading = !scopeMissing && reportLoading;
+  // `companyRequired` masks `loading` for the same reason `scopeMissing` does: a
+  // null url parks useFetchJson at loading===true for ever, so without it the
+  // gated page would sit on a spinner instead of showing the card asking for a
+  // company.
+  const loading = !companyRequired && !scopeMissing && reportLoading;
   const specs = useMemo(
     () => (scopeMissing ? [] : reportData?.specialisations ?? []),
     [scopeMissing, reportData]
@@ -742,7 +743,7 @@ function ProgramDetailPageInner() {
     };
   };
 
-  const noLevels = meta !== null && meta.levels.length === 0;
+  const noLevels = !companyRequired && meta !== null && meta.levels.length === 0;
 
   return (
     <div>
@@ -752,17 +753,7 @@ function ProgramDetailPageInner() {
         showBack
         rightContent={
           <div className="flex items-center gap-2">
-            <label className="text-sm text-gray-500">Company</label>
-            <select
-              value={companyId ?? ""}
-              onChange={(e) => setCompanyId(e.target.value ? Number(e.target.value) : null)}
-              className="text-sm border border-gray-300 rounded-lg px-2 py-1.5 bg-white"
-            >
-              {companyScope.companies.map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </select>
-            <label className="text-sm text-gray-500 ml-2">Compliance as of</label>
+            <label className="text-sm text-gray-500">Compliance as of</label>
             <select
               value={horizonMonths}
               onChange={(e) => setHorizonMonths(Number(e.target.value))}
@@ -778,7 +769,18 @@ function ProgramDetailPageInner() {
         }
       />
 
-      {horizonMonths > 0 && meta && meta.levels.length > 0 && (
+      {/*
+        Ahead of the scope selector, not beside it: there is no point offering a
+        level and a value for a dashboard the page has already decided not to
+        draw. Everything below is suppressed while gated, and the suppression is
+        needed rather than incidental — `meta`, `specs` and `tierBlock` hold
+        whatever the last selected company returned, so switching the header
+        back to "All companies" would otherwise leave that company's report on
+        screen underneath a card saying no company is selected.
+      */}
+      {companyRequired && <CompanyRequired what="dashboard" />}
+
+      {!companyRequired && horizonMonths > 0 && meta && meta.levels.length > 0 && (
         <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800">
           <span className="font-medium">Projection:</span>
           <span>
@@ -797,7 +799,7 @@ function ProgramDetailPageInner() {
         </div>
       )}
 
-      {meta && meta.levels.length > 0 && (
+      {!companyRequired && meta && meta.levels.length > 0 && (
         <>
           {/* Page-level scope selector — drives both the tier status and report. */}
           <FilterBar>
