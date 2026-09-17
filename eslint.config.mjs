@@ -26,6 +26,15 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Agent worktrees: the Claude Code harness checks this same repo out under
+    // `.claude/worktrees/<agent>/`, and a worktree that has been built carries
+    // its own `.next/` and `node_modules/`. The patterns above are root-anchored
+    // (`.next/**`, not `**/.next/**`), so a nested build directory is NOT
+    // covered by them — one agent session was enough to turn `npm run lint`
+    // into 130k findings, none of them in `src/`. CI never sees this (it lints a
+    // fresh checkout), which is exactly why it has to be handled here: the
+    // person it breaks is the one running the checks locally before pushing.
+    ".claude/worktrees/**",
   ]),
 ]);
 
