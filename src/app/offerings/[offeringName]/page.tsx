@@ -439,6 +439,23 @@ function OfferingDashboardInner() {
                   : "Offshore has no shade of its own because it overlaps the others: Offshore is Nearshore plus the rest of the world, so those two bands together are the Offshore set."}
               </p>
               {/*
+                Says how many holders the shades leave out. Without it the map
+                quietly totals less than the table and nothing explains the
+                difference — and the help text tells people to add the countries
+                up, so the mismatch is one a user is actively invited to find.
+                GeoMap's own notice names the countries but cannot know values.
+              */}
+              {showDensity && densityMap && densityMap.omittedHolders > 0 && (
+                <p className="mt-1 text-sm text-amber-700">
+                  {densityMap.omittedHolders}{" "}
+                  {densityMap.omittedHolders === 1 ? "holder is" : "holders are"} not shown on the
+                  map, in the {densityMap.unmapped.length === 1 ? "country" : "countries"} listed
+                  below with no ISO code. The shaded countries therefore total less than the figure
+                  in the table. Set the code under Admin &gt; Region Data to bring{" "}
+                  {densityMap.unmapped.length === 1 ? "it" : "them"} onto the map.
+                </p>
+              )}
+              {/*
                 Text and `<select>` only. An icon button here would put an
                 `<svg>` above the map inside this card, and
                 `chart-capture.ts:findSurface` takes the FIRST one — the PDF

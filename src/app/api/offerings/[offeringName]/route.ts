@@ -165,17 +165,18 @@ export async function GET(
       }))
     );
     // Two passes over the same scope: the band totals the table shows, and the
-    // per-country decomposition of those same totals for a map. They share the
-    // counting LOGIC but not a snapshot — each takes its own `new Date()` and
-    // issues its own queries, in separate transactions. So a completion that
-    // expires, or an import that commits, between the two round-trips can leave
-    // the table reading `onshore: 7` while the map sums to 6. Vanishingly
-    // unlikely, but worth knowing before chasing it: verify the "per-country
-    // sums to the band total" property against a quiesced dataset, or hoist a
-    // single `now` through both.
+    // per-country decomposition of those same totals for the map beside it.
+    // They share the counting logic AND, through `asOf`, one instant. That
+    // second half is the load-bearing one: they are still separate queries in
+    // separate transactions, so on their own clocks a completion expiring
+    // between the two round-trips would leave the table reading `onshore: 7`
+    // while the map sums to 6 — and the map's whole claim is that those
+    // reconcile. Vanishingly rare, but it would present as a reconciliation bug
+    // with no reproducible cause, which is the worst kind to be handed.
+    const asOf = new Date();
     const [counts, breakdown] = await Promise.all([
-      computeOfferingCounts(allReqs, geoOut, companyFilter),
-      computeOfferingCountryBreakdown(allReqs, geoOut, companyFilter),
+      computeOfferingCounts(allReqs, geoOut, companyFilter, asOf),
+      computeOfferingCountryBreakdown(allReqs, geoOut, companyFilter, asOf),
     ]);
     for (const spec of specMap.values()) {
       for (const req of spec.requirements) {

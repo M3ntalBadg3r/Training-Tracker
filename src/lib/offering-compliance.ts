@@ -145,9 +145,18 @@ export function collectTitles(reqs: OfferingReqLike[]): string[] {
 export async function computeOfferingCounts(
   reqs: Array<OfferingReqLike & { id: number }>,
   geo: OfferingGeo,
-  companyIds: number[] | null
+  companyIds: number[] | null,
+  /**
+   * Point-in-time instant. Both functions default to their own `new Date()`,
+   * which is correct when either is called alone — but the offering route calls
+   * BOTH and shows their results side by side, so it passes one shared instant.
+   * Without that they run in separate transactions off separate clocks, and a
+   * completion expiring between the two round-trips leaves the map summing to
+   * one less than the table it sits above.
+   */
+  asOf: Date = new Date()
 ): Promise<Map<number, { onshore: number; nearshore: number; offshore: number }>> {
-  const now = new Date();
+  const now = asOf;
   const titles = collectTitles(reqs);
   const empty = () => Promise.resolve(new Map<string, Set<string>>());
 
@@ -222,9 +231,18 @@ export type HoldersByCountry = Record<string, number>;
 export async function computeOfferingCountryBreakdown(
   reqs: Array<OfferingReqLike & { id: number }>,
   geo: OfferingGeo,
-  companyIds: number[] | null
+  companyIds: number[] | null,
+  /**
+   * Point-in-time instant. Both functions default to their own `new Date()`,
+   * which is correct when either is called alone — but the offering route calls
+   * BOTH and shows their results side by side, so it passes one shared instant.
+   * Without that they run in separate transactions off separate clocks, and a
+   * completion expiring between the two round-trips leaves the map summing to
+   * one less than the table it sits above.
+   */
+  asOf: Date = new Date()
 ): Promise<Map<number, HoldersByCountry>> {
-  const now = new Date();
+  const now = asOf;
   const titles = collectTitles(reqs);
   const byRequirement = new Map<number, HoldersByCountry>();
   if (titles.length === 0) return byRequirement;

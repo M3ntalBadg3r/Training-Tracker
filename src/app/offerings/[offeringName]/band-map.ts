@@ -39,6 +39,19 @@ export interface OfferingBandMap {
   data: GeoMapDatum[];
   /** In-scope countries the map cannot place, for `GeoMap`'s own notice. */
   unmapped: string[];
+  /**
+   * Holders sitting in those unmapped countries — always 0 for the band map,
+   * which is why this is not simply `unmapped.length`.
+   *
+   * A band is set membership, so naming the country IS the whole datum and
+   * dropping its shape loses nothing countable. A density country carries a
+   * **number**, and that number would otherwise appear nowhere on screen: the
+   * shades would sum to less than the table's figure with nothing saying by how
+   * much. `GeoMap`'s own notice cannot report it — it is shared and deliberately
+   * knows nothing about values — so the caller states it. "Stated, never
+   * dropped" is only half-honoured by a count that is itself dropped.
+   */
+  omittedHolders: number;
 }
 
 /**
@@ -90,7 +103,8 @@ export function buildOfferingBandMap(
   add(geo.offshoreCountries, "rest");
 
   unmapped.sort((a, b) => a.localeCompare(b));
-  return { data, unmapped };
+  // A band carries no quantity, so nothing countable is lost here.
+  return { data, unmapped, omittedHolders: 0 };
 }
 
 /**
@@ -134,23 +148,35 @@ export function buildOfferingDensityMap(
   const unmapped: string[] = [];
   const seen = new Set<string>();
 
+  let omittedHolders = 0;
+
   const add = (country: string, value: number) => {
     if (seen.has(country)) return;
     seen.add(country);
     const iso = index.get(country);
     if (!iso) {
       unmapped.push(country);
+      omittedHolders += value;
       return;
     }
     data.push({ iso, labels: [country], value });
   };
 
+  // `holders` is a parsed JSON object, so a plain `holders[country]` reads
+  // through the prototype chain: a country named `constructor` or `toString`
+  // would yield a function, which `?? 0` does not catch. Not credible data, but
+  // CLAUDE.md carries this rule for exactly this shape elsewhere.
+  const held = (country: string) =>
+    Object.hasOwn(holders, country) && typeof holders[country] === "number"
+      ? holders[country]
+      : 0;
+
   // Onshore first so its name leads the label when countries share a shape.
-  for (const country of geo.onshoreCountries) add(country, holders[country] ?? 0);
-  for (const country of geo.offshoreCountries) add(country, holders[country] ?? 0);
+  for (const country of geo.onshoreCountries) add(country, held(country));
+  for (const country of geo.offshoreCountries) add(country, held(country));
   // Anything the server counted that the geo lists somehow do not name.
-  for (const [country, count] of Object.entries(holders)) add(country, count);
+  for (const country of Object.keys(holders)) add(country, held(country));
 
   unmapped.sort((a, b) => a.localeCompare(b));
-  return { data, unmapped };
+  return { data, unmapped, omittedHolders };
 }
