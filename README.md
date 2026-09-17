@@ -573,7 +573,7 @@ Five summary cards are displayed at the top. The four "earned" cards (Certificat
 | **Certifications Earned** | Total certification completions across all students, with a sub-metric of distinct students holding any certification |
 | **Accreditations Earned** | Total accreditation completions across all students, with a sub-metric of distinct students holding any accreditation |
 | **Instructor-Led Trainings** | Total ILT completions across all students, with a sub-metric of distinct students who have attended any ILT |
-| **OLX Completed** | Total OLX completions, with a sub-metric of distinct students who have completed any OLX. An OLX is "completed" once a student has completed every sub-item, or directly for single-item OLX entries. |
+| **OLX Completed** | Total OLX completions, with a sub-metric of distinct students who have completed any OLX. An OLX is "completed" once a student has completed every sub-item, or directly for single-item OLX entries. Sub-items are counted by **Full Title**, so where one appears under several Training Titles — the different spellings it arrived under in an import — completing any one of them counts. |
 
 ### Charts
 

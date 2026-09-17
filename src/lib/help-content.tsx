@@ -56,7 +56,10 @@ const helpSections: Record<string, HelpSection> = {
                 distinct students who have completed any OLX. An OLX is
                 &quot;completed&quot; when the student has completed every
                 sub-item linked to that OLX, or when the OLX has no sub-items
-                and the student has a completion for it directly.
+                and the student has a completion for it directly. Where a
+                sub-item appears under more than one Training Title, taking{" "}
+                <em>any</em>{" "}of them counts &mdash; they are the same course
+                under different names.
               </td>
             </tr>
           </tbody>
@@ -1220,7 +1223,9 @@ const helpSections: Record<string, HelpSection> = {
                 OLX Sub-Item. An <strong>OLX</strong> can be a single training
                 or a parent that bundles multiple <strong>OLX Sub-Items</strong>
                 {" "}&mdash; the parent is only counted as completed once a
-                student has finished every sub-item.
+                student has finished every sub-item. Sub-items are counted by{" "}
+                <strong>Full Title</strong>, so where one appears under several
+                Training Titles, completing any one of them is enough.
               </td>
             </tr>
             <tr>
