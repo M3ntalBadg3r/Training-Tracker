@@ -2,13 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma, { type PrismaTransactionClient } from "@/lib/prisma";
 import { TrainingType } from "@prisma/client";
 import { handleAuthError, requireAuth, requireSuperAdmin } from "@/lib/auth";
-import { recomputeAllStudentsForParent } from "@/lib/olx";
+import { recomputeAllStudentsForParent, syncMemberships } from "@/lib/olx";
 import { isRejectedLink, safeDecodeParam, safeExternalUrl } from "@/lib/utils";
 import { resolveProductTypeId } from "@/lib/product-types";
 import { sanitizeLegacyFields } from "@/lib/legacy-training";
 import { invalidateReportCache } from "@/lib/report-cache";
 import { readJsonBody } from "@/lib/request-body";
 import {
+  countTitleReferences,
+  dedupeTitles,
   expandFullTitles,
   isFunctionType,
   isTrainingType,
@@ -130,7 +132,12 @@ export async function GET(
     };
   });
 
-  return NextResponse.json({ fullTitle: decoded, members, meta, groups });
+  // What a move or a merge would disturb. Requirements name ONE representative
+  // training title and expand it to its group at counting time, so regrouping
+  // changes which holders they count — silently, and in both directions.
+  const references = await countTitleReferences(members.map((m) => m.trainingTitle));
+
+  return NextResponse.json({ fullTitle: decoded, members, meta, groups, references });
 }
 /**
  * PATCH — group operations across the TrainingData rows sharing `fullTitle`.
@@ -162,6 +169,12 @@ export async function GET(
  *  - setCertificationFullTitles: string[] → the "leads to Certification(s)"
  *      relationship, set ONCE for the pair instead of once per training title.
  *      Expanded server-side to the chosen Full Titles' Certification members.
+ *  - setSubItemFullTitles: string[]      → OLX membership, parent side
+ *  - setParentFullTitles: string[]       → OLX membership, sub-item side
+ *  - mergeInto: string                   → move every member into an EXISTING
+ *      Full Title. Explicit because renaming onto an existing name used to do
+ *      this silently and irreversibly; `rename` now refuses that collision.
+ *  - moveAliases: { trainingTitles[], toFullTitle } → move some members out
  *  - setIgnored: boolean                 → mark/unmark the whole group as not needed
  */
 export async function PATCH(
@@ -203,6 +216,8 @@ export async function PATCH(
     "setFunction",
     "setLink",
     "setCertificationFullTitles",
+    "setSubItemFullTitles",
+    "setParentFullTitles",
   ] as const;
   const touchesFields = FIELD_KEYS.some((k) => k in body && body[k] !== undefined);
 
@@ -260,6 +275,81 @@ export async function PATCH(
   if (rename !== undefined && rename.length === 0) {
     return NextResponse.json({ error: "Full Title cannot be empty" }, { status: 400 });
   }
+  // Full Titles are not unique, so renaming onto an existing one used to merge
+  // the two groups — silently, and with no way back, since afterwards nothing
+  // records which members came from where. Merging is a real operation and now
+  // has its own verb; rename refuses to be it by accident.
+  if (rename !== undefined && rename !== decoded) {
+    const collision = await prisma.trainingData.count({ where: { fullTitle: rename } });
+    if (collision > 0) {
+      return NextResponse.json(
+        {
+          error: `A Full Title named "${rename}" already exists. Use Merge if you meant to combine them.`,
+          collision: true,
+        },
+        { status: 409 }
+      );
+    }
+  }
+
+  // ---- Merge / move -------------------------------------------------------
+  // Both are a plain `fullTitle` update: `trainingTitle` is the primary key and
+  // is untouched, so no foreign key is traversed and not one TrainingTaken row
+  // is read or written. What changes is the (fullTitle, trainingType) grouping
+  // key — which is what report dedupe, sibling expansion and compliance-plan's
+  // certKey are all built on, hence the cache flush at the end.
+  const mergeInto = typeof body.mergeInto === "string" ? body.mergeInto.trim() : undefined;
+  if (mergeInto !== undefined) {
+    if (mergeInto.length === 0 || mergeInto === decoded) {
+      return NextResponse.json({ error: "Choose a different Full Title to merge into" }, { status: 400 });
+    }
+    const targetCount = await prisma.trainingData.count({ where: { fullTitle: mergeInto } });
+    if (targetCount === 0) {
+      return NextResponse.json({ error: "Target Full Title not found" }, { status: 404 });
+    }
+    const moved = await prisma.trainingData.updateMany({
+      where: { fullTitle: decoded },
+      data: { fullTitle: mergeInto },
+    });
+    invalidateReportCache();
+    return NextResponse.json({
+      success: true,
+      fullTitle: mergeInto,
+      merged: moved.count,
+    });
+  }
+
+  if (body.moveAliases !== undefined) {
+    const move = body.moveAliases;
+    const toFullTitle = typeof move?.toFullTitle === "string" ? move.toFullTitle.trim() : "";
+    const wanted = dedupeTitles(move?.trainingTitles);
+    if (toFullTitle.length === 0 || wanted.length === 0) {
+      return NextResponse.json({ error: "Choose a training title and a destination" }, { status: 400 });
+    }
+    if (toFullTitle === decoded) {
+      return NextResponse.json({ error: "That is already this Full Title" }, { status: 400 });
+    }
+    // Every named title must belong to THIS group — the route is scoped to one
+    // Full Title, so accepting a stray title would let it move somebody else's.
+    const memberSet = new Set(allMembers.map((m) => m.trainingTitle));
+    const stray = wanted.filter((t) => !memberSet.has(t));
+    if (stray.length > 0) {
+      return NextResponse.json(
+        { error: "Those training titles are not under this Full Title" },
+        { status: 400 }
+      );
+    }
+    await prisma.trainingData.updateMany({
+      where: { trainingTitle: { in: wanted } },
+      data: { fullTitle: toFullTitle },
+    });
+    invalidateReportCache();
+    return NextResponse.json({
+      success: true,
+      moved: wanted.length,
+      remainingMemberCount: allMembers.length - wanted.length,
+    });
+  }
 
   let link: string | null | undefined;
   if ("setLink" in body && body.setLink !== undefined) {
@@ -298,6 +388,48 @@ export async function PATCH(
     });
   }
 
+  // OLX membership, set once for the training rather than once per spelling.
+  //
+  // This is only safe because `lib/olx.ts` now counts a parent's sub-items per
+  // (fullTitle, trainingType) group. Under the old per-title rule, expanding a
+  // chosen sub-item Full Title to all of its spellings would have made the
+  // parent completable only by somebody who had taken every spelling — i.e.
+  // nobody — and every affected learner's materialised parent completion would
+  // have disappeared.
+  let subItemTitles: string[] | undefined;
+  if (body.setSubItemFullTitles !== undefined) {
+    if (!Array.isArray(body.setSubItemFullTitles)) {
+      return NextResponse.json({ error: "Invalid sub-item list" }, { status: 400 });
+    }
+    if (!members.every((m) => m.trainingType === "OLX")) {
+      return NextResponse.json(
+        { error: "Only an OLX can have sub-items" },
+        { status: 400 }
+      );
+    }
+    subItemTitles = await expandFullTitles(body.setSubItemFullTitles, {
+      types: ["OLXSubItem"],
+      excludeFullTitles: [decoded],
+    });
+  }
+
+  let parentTitles: string[] | undefined;
+  if (body.setParentFullTitles !== undefined) {
+    if (!Array.isArray(body.setParentFullTitles)) {
+      return NextResponse.json({ error: "Invalid parent list" }, { status: 400 });
+    }
+    if (!members.every((m) => m.trainingType === "OLXSubItem")) {
+      return NextResponse.json(
+        { error: "Only an OLX sub-item can belong to a parent OLX" },
+        { status: 400 }
+      );
+    }
+    parentTitles = await expandFullTitles(body.setParentFullTitles, {
+      types: ["OLX"],
+      excludeFullTitles: [decoded],
+    });
+  }
+
   // Expand replacement Full Titles → underlying training titles (validated later
   // by sanitizeLegacyFields, which keeps only existing Cert/Accred titles).
   let expandedReplacement: string[] | undefined;
@@ -310,6 +442,8 @@ export async function PATCH(
         })
       : [];
   }
+
+  const staleParents = new Set<string>();
 
   await prisma.$transaction(async (tx: PrismaTransactionClient) => {
     // Field-level bulk updates. `rename` and `setIgnored` name the whole Full
@@ -349,6 +483,19 @@ export async function PATCH(
       }
     }
 
+    if (subItemTitles !== undefined || parentTitles !== undefined) {
+      for (const m of members) {
+        const sync = await syncMemberships(
+          tx,
+          m.trainingTitle,
+          m.trainingType,
+          subItemTitles,
+          parentTitles,
+        );
+        for (const parent of sync.affectedParents) staleParents.add(parent);
+      }
+    }
+
     // Legacy cascade — per eligible member, so sanitizeLegacyFields can drop the
     // member's own training title from its replacement list.
     if (isLegacyTarget !== undefined) {
@@ -367,6 +514,12 @@ export async function PATCH(
       }
     }
   });
+
+  // Outside the transaction: this is O(students x sub-items) sequential queries
+  // and is the only thing keeping materialised parent completions honest.
+  for (const parent of staleParents) {
+    await recomputeAllStudentsForParent(parent);
+  }
 
   invalidateReportCache();
   return NextResponse.json({ success: true, fullTitle: rename ?? decoded });

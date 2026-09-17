@@ -55,10 +55,12 @@ export function dedupeTitles(arr: unknown): string[] {
  * working with no read-side change and a variant imported later is picked up by
  * the sibling expansion in `program-compliance.ts`.
  *
- * NOT suitable for OLX sub-items. Sub-item completion is AND
- * (`lib/olx.ts` requires every listed sub-item), whereas `certification[]` is
- * OR, so expanding a sub-item Full Title to all its variants would make the
- * parent completable only by someone who took every variant.
+ * Safe for OLX sub-items too, but only since `lib/olx.ts` began counting a
+ * parent's sub-items per `(fullTitle, trainingType)` group. While that rule was
+ * per training title, expanding a sub-item Full Title to all its spellings made
+ * the parent completable only by somebody who had taken every spelling — i.e.
+ * nobody. If that rule is ever reverted, this expansion has to go back to being
+ * certification- and replacement-only.
  */
 export async function expandFullTitles(
   fullTitles: unknown,
@@ -199,4 +201,43 @@ export async function rewriteTitleReferences(
       },
     });
   }
+}
+
+export interface TitleReferenceCounts {
+  programRequirements: number;
+  offeringRequirements: number;
+}
+
+/**
+ * How many partner-program and offering requirements name any of these training
+ * titles, counting a requirement's alternatives as well as its primary training.
+ *
+ * Used to warn before a move or a merge. Requirements store ONE representative
+ * `trainingTitle` and expand it to its `(fullTitle, trainingType)` group at
+ * counting time (`resolveSiblingTitles`), so regrouping a title changes which
+ * holders those requirements count — in both directions, and silently.
+ *
+ * Call it over the members of BOTH the source and the destination group, not
+ * just the titles being moved: a requirement naming a sibling that stays behind
+ * is equally affected, because its group has shrunk.
+ */
+export async function countTitleReferences(
+  trainingTitles: unknown,
+  client: Client = prisma,
+): Promise<TitleReferenceCounts> {
+  const titles = dedupeTitles(trainingTitles);
+  if (titles.length === 0) {
+    return { programRequirements: 0, offeringRequirements: 0 };
+  }
+  const where = { trainingTitle: { in: titles } };
+  const [program, programAlt, offering, offeringAlt] = await Promise.all([
+    client.programData.count({ where }),
+    client.programDataAlternative.count({ where }),
+    client.offeringData.count({ where }),
+    client.offeringDataAlternative.count({ where }),
+  ]);
+  return {
+    programRequirements: program + programAlt,
+    offeringRequirements: offering + offeringAlt,
+  };
 }

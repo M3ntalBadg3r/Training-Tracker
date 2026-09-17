@@ -261,7 +261,9 @@ export default function TrainingTakenPage({
         <section className="mt-8">
           <h3 className="text-lg font-semibold mb-2">Sub-Items</h3>
           <p className="text-sm text-gray-600 mb-3">
-            A student is counted as having completed this OLX once they&apos;ve completed every sub-item below.
+            A student is counted as having completed this OLX once they&apos;ve
+            completed every sub-item below. Where a sub-item is listed under
+            more than one Training Title, taking any one of them counts.
           </p>
           <div className="bg-white rounded-lg border border-gray-200 overflow-x-auto">
             <table className="w-full text-sm">
