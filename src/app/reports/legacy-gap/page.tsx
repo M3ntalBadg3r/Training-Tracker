@@ -10,7 +10,7 @@ import LoadingState from "@/components/ui/LoadingState";
 import KpiStrip from "@/components/ui/KpiStrip";
 import { useChartTheme, tooltipStyle } from "@/lib/chart-theme";
 import { useProductTypeColors } from "@/hooks/useProductTypeColors";
-import { resolveBucket, GROUP_BY_LABEL, GroupByMode } from "@/lib/group-by";
+import { resolveBucket, displayRegion, GROUP_BY_LABEL, GroupByMode } from "@/lib/group-by";
 import { exportToCsv, exportToExcel } from "@/lib/export";
 import { exportReportTablePdf } from "@/lib/report-export";
 import ExportMenu, { type ExportFormat } from "@/components/ui/ExportMenu";
@@ -248,7 +248,7 @@ function LegacyGapPageInner() {
       <td className="px-4 py-3">{row.fullName}</td>
       <td className="px-4 py-3">{row.email}</td>
       <td className="px-4 py-3">{row.theatre || "-"}</td>
-      <td className="px-4 py-3">{row.region || "-"}</td>
+      <td className="px-4 py-3">{displayRegion(row.region)}</td>
       <td className="px-4 py-3">{row.country || "-"}</td>
       <td className="px-4 py-3">{row.legacyFullTitle}</td>
       <td className="px-4 py-3">

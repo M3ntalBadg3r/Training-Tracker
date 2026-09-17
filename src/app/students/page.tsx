@@ -11,6 +11,7 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
 import { useRegionData } from "@/hooks/useRegionData";
 import { useFetchJson } from "@/hooks/useFetchJson";
+import { displayRegion } from "@/lib/group-by";
 import { Plus } from "lucide-react";
 
 interface CompanyOption { id: number; name: string }
@@ -133,13 +134,9 @@ function StudentsPageInner() {
     {
       key: "region",
       header: "Region",
-      accessor: (row) => {
-        const r = (row.region ?? "").trim();
-        if (!r) return "N/A";
-        const lower = r.toLowerCase();
-        if (lower === "unknown" || lower === "not applicable") return "";
-        return r;
-      },
+      // A country with no region defined shows an empty cell — and drops out of
+      // this column's filter dropdown, which skips falsy values.
+      accessor: (row) => displayRegion(row.region),
     },
     { key: "country", header: "Country" },
   ];
@@ -332,7 +329,7 @@ function StudentsPageInner() {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Region</label>
               <div className="w-full px-3 py-2 border border-gray-200 bg-gray-50 rounded-lg text-sm text-gray-700 min-h-[38px]">
-                {selectedCountry?.region ?? <span className="text-gray-400">—</span>}
+                {displayRegion(selectedCountry?.region)}
               </div>
             </div>
           </div>

@@ -26,13 +26,17 @@ export async function POST(request: NextRequest) {
   const body = await request.json();
   const { country, region, theatre, isoCode } = body;
 
-  if (!country || !region) {
+  if (!country) {
     return NextResponse.json(
       { error: "Missing required fields" },
       { status: 400 }
     );
   }
 
+  // A blank region is the legitimate "not defined yet" state, so it is stored
+  // as the empty string rather than refused (the column is NOT NULL, which is
+  // the only reason this is "" and not NULL like theatre/isoCode).
+  const trimmedRegion = typeof region === "string" ? region.trim() : "";
   const trimmedTheatre = typeof theatre === "string" ? theatre.trim() : "";
 
   // isoCode is input reaching a sink (the DB, and later a geometry lookup), so
@@ -51,7 +55,7 @@ export async function POST(request: NextRequest) {
   const regionData = await prisma.regionData.create({
     data: {
       country,
-      region,
+      region: trimmedRegion,
       theatre: trimmedTheatre ? trimmedTheatre : null,
       isoCode: normalisedIso,
     },

@@ -119,8 +119,10 @@ export default function RegionDataPage() {
   const [importError, setImportError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Countries with no region defined are not a region — they must not become a
+  // blank, unselectable-looking option alongside the real ones.
   const uniqueRegions = useMemo(
-    () => [...new Set(regions.map((r) => r.region))].sort(),
+    () => [...new Set(regions.map((r) => r.region).filter((r): r is string => !!r))].sort(),
     [regions]
   );
 
@@ -220,7 +222,9 @@ export default function RegionDataPage() {
   }, [fetchRegions, fetchLastImport]);
 
   const handleAddRegion = async () => {
-    if (!newCountry || !newRegionValue) return;
+    // Region may be left blank — that is the "not defined yet" state, and it is
+    // what the student import now writes for a country it has never seen.
+    if (!newCountry) return;
     const res = await fetch("/api/region-data", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -759,7 +763,7 @@ export default function RegionDataPage() {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">Region *</label>
+            <label className="block text-sm font-medium mb-1">Region</label>
             <input
               type="text"
               value={newRegionValue}
@@ -767,6 +771,9 @@ export default function RegionDataPage() {
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
               placeholder="e.g. Americas"
             />
+            <p className="mt-1 text-xs text-gray-500">
+              Leave blank if the country has no region yet.
+            </p>
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">Theatre</label>
