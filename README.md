@@ -314,7 +314,7 @@ Training Tracker requires authentication to access. On first launch (when no use
 
 ### Companies
 
-Training Tracker is multi-company: every student belongs to exactly one company, and Admin/User accounts see only the companies they have been granted access to. SuperAdmins manage the company list at **Admin → Companies** and assign companies to users via **Admin → Users**. A global **Company** dropdown in the page header filters the dashboard, students list, training, reports, and programs to the selected company; SuperAdmins also have an **All companies** option. The selection is remembered in your browser. Imports require a Company column or a per-import default company; SuperAdmins can auto-create new companies on the fly during import.
+Training Tracker is multi-company: every student belongs to exactly one company, and Admin/User accounts see only the companies they have been granted access to. SuperAdmins manage the company list at **Admin → Companies** and assign companies to users via **Admin → Users**. A global **Company** dropdown in the page header filters the dashboard, students list, training, reports, and programs to the selected company; SuperAdmins also have an **All companies** option. Two areas are the exception: the partner-program dashboards and Compliance Planning report on **one company at a time** — compliance figures added up across companies would not mean anything — so under **All companies** they ask you to choose one instead of showing a plan. The selection is remembered in your browser. Imports require a Company column or a per-import default company; SuperAdmins can auto-create new companies on the fly during import.
 
 ### Login
 
@@ -1320,6 +1320,10 @@ key in browser-side code.
 ## Partner Programs
 
 Partner programs are **fully data-driven**. Every distinct program name configured in **Admin > Program Data** automatically gets its own compliance dashboard at **Programs > _[name]_** — no code changes are required to add a new program. The dashboard at `/programs/[programName]` auto-adapts to how the program is configured.
+
+### One company at a time
+
+Compliance figures only mean something within a single company, so the dashboard reports on **one company at a time** and takes it from the **Company** switcher in the page header — the same switcher every other page uses. With the header set to **All companies** the dashboard asks you to choose one rather than picking for you. (It previously fell back to whichever company sorted first and drew a complete report without saying which one it was, and it carried a second Company dropdown of its own that could disagree with the header; both are gone.) A user with access to only one company never sees the prompt — their company is selected for them.
 
 ### One scope selector drives the page
 
