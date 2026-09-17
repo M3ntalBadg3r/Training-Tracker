@@ -1343,7 +1343,7 @@ The Global report auto-adapts based on the program's data:
 - **Compliant-theatre count** — when Global rows have no specific training, the report shows how many theatres meet all of a specialisation's theatre-level requirements, against a target number of compliant theatres.
 - **Global count with per-theatre minimums** — when a requirement has a **Minimum per Theatre** value, each specialisation appears as a card with a **Compliant** / **Not Compliant** badge and a global attained/required total. Click the chevron to expand a per-theatre breakdown. The requirement is only **Met** when the global total is reached **and** every theatre meets its minimum.
 
-All sections support export to CSV, Excel, and PDF. Alternative trainings (OR logic) configured on a requirement count any qualifying training, deduplicated by student.
+All sections support export to CSV, Excel, and PDF. CSV and Excel are the flat data table; **the PDF mirrors the dashboard** — a section per specialisation with its Met / Not-met badge and the page's colour shading, deployment requirements as their own labelled block, and, for a tiered program, a **Tier Status** section carrying the tier ladder. Alternative trainings (OR logic) configured on a requirement count any qualifying training, deduplicated by student.
 
 ### Compliance as of — upcoming-expiry projection
 
@@ -1381,13 +1381,13 @@ The **Renewal window** selector (Off / 1 / 3 / 6 / 12 months) projects complianc
 
 By default the window is **informational**: the KPIs and "Who to certify" still answer *what is broken today*. Tick **Plan for this window** to fold it in — gaps are sized from the projected figure, **People to certify** includes the renewals needed to hold compliance through the window, and those people appear in "Who to certify" as **Renewal (expiring)** candidates. For a tiered program this can change which specialisations are **Recommended**, since one that lapses inside the window no longer counts toward the tier.
 
-Each scope plans against **only its own-level requirements**, exactly like the dashboards: planning one country shows that country's Country-level requirements, not the theatre-wide requirement above it (select the theatre to plan against theatre-level requirements). An **Export report** button in the page header downloads the **whole plan** as one file — a KPI summary, the aggregate roadmap, the "Who to certify" list, a **Requirements at risk** section, and the renewals-at-risk list — as CSV, Excel (one sheet per section), or PDF (each section a headed table). With a window selected the roadmap gains **Projected**, **Expiring**, **Projected gap** and **Projected achieved** columns, and the file name carries a `-plusNmo` suffix (plus `-planned` when planning for the window). The candidate list and the renewals list also keep their own per-section export buttons for a quick single-table download. This release is a **live view** (no saved plans yet).
+Each scope plans against **only its own-level requirements**, exactly like the dashboards: planning one country shows that country's Country-level requirements, not the theatre-wide requirement above it (select the theatre to plan against theatre-level requirements). An **Export report** button in the page header downloads the **whole plan** as one file — a KPI summary, the aggregate roadmap, the "Who to certify" list, a **Requirements at risk** section, and the renewals-at-risk list — as CSV, Excel (one sheet per section), or PDF. **CSV and Excel keep the wide machine-readable tables** — every column, including the ones the page keeps out of sight — while **the PDF mirrors the page**: the coloured metric cards, the projection note, a card per specialisation with its badges and shared-certification footnote, the combined `4 → 2 / 4` figures under the same red/amber/green shading, each candidate's reasons as indented lines beneath their row, and an explanation instead of an empty header row where a section has nothing in it. With a window selected the CSV and Excel roadmap gains **Projected**, **Expiring**, **Projected gap** and **Projected achieved** columns, and the file name carries a `-plusNmo` suffix (plus `-planned` when planning for the window). The candidate list and the renewals list also keep their own per-section export buttons for a quick single-table download. This release is a **live view** (no saved plans yet).
 
 Your selection — scope, programs and targets, the renewal window and **Plan for this window** — is mirrored into the page address, so opening a person's record from "Who to certify" or "Renewals at risk" and pressing **Back** returns you to the same plan instead of an empty one. It also makes a plan bookmarkable and shareable as a link.
 
 - Attained figures display as **current → projected** (e.g. `5 → 3`), with a **▼N expiring** note showing how many people lose a qualifying certificate within the window.
 - Requirements (and theatres) that are compliant today but will fall below their requirement by the chosen horizon are shaded **amber** with an **At Risk** status — an early warning to schedule renewals before compliance breaks. Green stays compliant through the horizon; red is already non-compliant today.
-- Section exports gain **Projected**, **Expiring**, and **Projected Compliant** columns reflecting the selected horizon, and the file name carries a `-plusNmo` suffix.
+- Section exports reflect the selected horizon and the file name carries a `-plusNmo` suffix: CSV and Excel gain **Projected**, **Expiring**, and **Projected Compliant** columns, while the PDF folds the same figures into the combined cells and amber shading it already mirrors from the page.
 
 ---
 
@@ -1574,14 +1574,15 @@ Export functionality is available on the following pages:
 | **Admin > Region Data** | Country and Region |
 | **Admin > Training Data** | Training Title, Full Title, Type, Product, Function, Link, Certification, Parent Training Title, Legacy, Replacement |
 
-The **Link** column holds a web address and accepts `http://` and `https://` only; on import, a row with anything else is reported and its link left empty, while the row itself is still imported.
 | **Reports** | Full report results with all columns |
+
+The **Link** column holds a web address and accepts `http://` and `https://` only; on import, a row with anything else is reported and its link left empty, while the row itself is still imported.
 
 Each export supports three formats:
 
 - **CSV** — Comma-separated values, compatible with any spreadsheet application. A value that would otherwise be read as a spreadsheet *formula* rather than text (one starting with `=`, `+`, `-` or `@`) is marked as text, so a name or title that came in through an import cannot take effect in the spreadsheet of whoever opens the file. Numbers and percentages, including negative ones, are exported unchanged.
 - **Excel** — `.xlsx` format for Microsoft Excel.
-- **PDF** — Formatted table document. Automatically switches to landscape orientation when there are more than 5 columns.
+- **PDF** — Formatted table document. Automatically switches to landscape orientation when there are more than 5 columns. On **Compliance Planning** and the **program compliance dashboards** the PDF is laid out to mirror the page instead — cards, badges, combined figures and the same red/amber/green shading — while their CSV and Excel exports stay the wide machine-readable tables.
 
 Click the **Export** button and select the desired format. For reports, the export respects any active filters — only the currently displayed results are exported.
 

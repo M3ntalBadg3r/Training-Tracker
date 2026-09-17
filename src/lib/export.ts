@@ -61,6 +61,12 @@ const PDF_TRANSLITERATIONS: [RegExp, string][] = [
   [/\u25b2/g, "^"],
   [/\u25bc/g, "v"],
   [/\u2022/g, "-"],
+  // Check and cross marks: compliance tables are full of them, and unlike the
+  // ellipsis and curly quotes above they are genuinely outside CP1252 (what
+  // jsPDF's `/WinAnsiEncoding` standard fonts can encode), so without an entry
+  // each arrives as mojibake in the one column a reader scans first.
+  [/[\u2713\u2714]/g, "OK"],
+  [/[\u2715-\u2718]/g, "X"],
   [/[\u2009\u202f]/g, " "],
 ];
 
