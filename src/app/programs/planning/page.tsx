@@ -37,6 +37,7 @@ import type {
   ReportTonedRow,
 } from "@/lib/report-export";
 import { useCompanyScope } from "@/components/company/CompanyScopeProvider";
+import CompanyRequired, { useCompanyRequired } from "@/components/company/CompanyRequired";
 import { useRegionData } from "@/hooks/useRegionData";
 import { useTableSort } from "@/hooks/useTableSort";
 import { useDebounce } from "@/hooks/useDebounce";
@@ -1057,13 +1058,17 @@ function CompliancePlanningPageInner() {
   const companyScope = useCompanyScope();
   const { rows: regionRows } = useRegionData();
 
-  // Compliance is per-company — derive a single-company selection (like the
-  // dashboards), defaulting to the first company when "all" is selected.
+  // A plan is only meaningful within one company, and the header switcher is the
+  // only control that picks it. This used to fall back to `companies[0]` under
+  // "All companies" and produce a confident, fully-costed plan for whichever
+  // company sorted first, with nothing on the page naming it — the same defect
+  // the program dashboard had. `active` below already requires a company, so a
+  // null here parks the fetch as well as the render.
+  const companyRequired = useCompanyRequired();
   const companyId = useMemo<number | null>(() => {
-    if (companyScope.loading) return null;
-    if (companyScope.selected !== "all") return companyScope.selected;
-    return companyScope.companies[0]?.id ?? null;
-  }, [companyScope.loading, companyScope.selected, companyScope.companies]);
+    if (companyScope.loading || companyScope.selected === "all") return null;
+    return companyScope.selected;
+  }, [companyScope.loading, companyScope.selected]);
 
   // Selector metadata.
   const [options, setOptions] = useState<PlanningOption[]>([]);
@@ -1244,7 +1249,12 @@ function CompliancePlanningPageInner() {
         }
       />
 
-      {/* Controls */}
+      {/*
+        Controls are suppressed while gated rather than left inert: building a
+        scope and a set of targets that cannot produce anything is worse than
+        being told what is missing first.
+      */}
+      {!companyRequired && (
       <div className="bg-white rounded-lg border border-gray-200 p-4 mb-6 space-y-4">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-sm font-medium text-gray-700 mr-1">Scope</span>
@@ -1337,6 +1347,7 @@ function CompliancePlanningPageInner() {
           )}
         </div>
       </div>
+      )}
 
       {/* Results */}
       {active && loading && (
@@ -1404,14 +1415,17 @@ function CompliancePlanningPageInner() {
         </>
       )}
 
-      {!active && (
+      {/* `companyRequired` implies `!active`, so it is the first branch here. */}
+      {!active && (companyRequired ? (
+        <CompanyRequired what="plan" />
+      ) : (
         <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-500">
           <Sparkles className="mx-auto mb-2 text-blue-400" size={28} />
           {debouncedTargets.length === 0
             ? "Select one or more programs and a target above to generate a gap-closing plan."
             : `Choose a ${level} to plan against.`}
         </div>
-      )}
+      ))}
     </div>
   );
 }
