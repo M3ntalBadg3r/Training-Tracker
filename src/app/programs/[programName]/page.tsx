@@ -24,11 +24,32 @@ import {
   LoadingSpinner,
   TierLadder,
   TRAINING_TYPE_LABELS,
+  DEPLOYMENT_REQUIREMENTS_NOTE,
+  RISK_COMPLIANCE_LABEL,
+  RISK_STATUS_LABEL,
+  RISK_TONE,
+  alternativesText,
+  attainedText,
+  complianceRiskState,
+  expiringText,
+  riskState,
+  tierGate,
+  trainingTypeLabel,
   type AlternativeEntry,
+  type Requirement,
   type Specialisation,
   type StudentEntry,
   type TierBlock,
+  type TierDeploymentRequirement,
 } from "@/components/programs/ProgramCompliance";
+import type {
+  ReportCellValue,
+  ReportDocument,
+  ReportRichCell,
+  ReportRowGroup,
+  ReportSection,
+  ReportTonedRow,
+} from "@/lib/report-export";
 
 interface ProgramMeta {
   levels: string[];
@@ -461,6 +482,266 @@ function ProgramDetailPageInner() {
   const exportColumns = gdStyleGlobal && scopeLevel === "global" ? gdExportCols : exportCols;
   const exportFilename = `${sectionSlug}-${scopeLevel}${needsValue && scopeValue ? `-${scopeValue}` : ""}${horizonSuffix}`;
 
+  /**
+   * The PDF's own shape.
+   *
+   * CSV and Excel keep the flat `exportData`/`exportColumns` above — those are
+   * data interchange, and their contents have to stay comparable with the
+   * server-side scheduled exports. A PDF is read rather than pivoted, so it
+   * gets what the page actually shows: a section per specialisation carrying
+   * the same Met/At-risk badges and risk shading, the deployment sub-section
+   * with its explanation intact, and the tier ladder.
+   *
+   * Assembled on demand rather than on every render. Scope, horizon and company
+   * all change far more often than anyone opens the export menu.
+   */
+  const buildPdfDocument = (): ReportDocument => {
+    const levelLabel = report.label.replace(" Report", "");
+    // The Global card layout counts holders worldwide and gates on a per-theatre
+    // minimum; every other layout counts people inside the selected scope.
+    const globalCards = gdStyleGlobal && scopeLevel === "global";
+    const unitLabel = globalCards ? "people" : report.unit;
+
+    // Weighted so the training name — the only column whose content is prose —
+    // gets the room it needs, and the Status column stays wide enough to hold a
+    // group badge, which is drawn as a right-aligned cell in the last column.
+    const baseColumns = [
+      { key: "training", header: "Training", width: 5 },
+      { key: "type", header: "Type", width: 2 },
+      { key: "attained", header: "Attained / Required", width: 2.2, align: "center" as const },
+    ];
+    const statusColumn = { key: "status", header: "Status", width: 1.8, align: "center" as const };
+    const columns = globalCards
+      ? [
+          ...baseColumns,
+          { key: "minPerTheatre", header: "Min/Theatre", width: 1.3, align: "center" as const },
+          statusColumn,
+        ]
+      : [...baseColumns, statusColumn];
+    const tierColumns = [...baseColumns, statusColumn];
+
+    const trainingCell = (
+      trainingFullTitle: string,
+      alternatives: AlternativeEntry[] | undefined,
+      prefix?: string | null
+    ): ReportRichCell => ({
+      text: prefix ? `${prefix}: ${trainingFullTitle}` : trainingFullTitle,
+      sub: alternativesText(alternatives),
+    });
+
+    const attainedCell = (
+      attained: number,
+      projected: number | undefined,
+      required: number
+    ): ReportRichCell => ({
+      text: `${attainedText(attained, projected)} / ${required}`,
+      sub: expiringText(attained, projected),
+      bold: true,
+      align: "center",
+    });
+
+    /**
+     * The per-theatre breakdown the page hides behind an expander. A printed
+     * page has no expander, so wherever the data carries one it is written out
+     * as indented lines under its row.
+     */
+    const theatreDetail = (
+      breakdown: { theatre: string; count: number; compliant: boolean }[] | null | undefined,
+      projectedBreakdown: { theatre: string; count: number; compliant: boolean }[] | null | undefined,
+      required: number
+    ): string[] | undefined => {
+      if (!breakdown || breakdown.length === 0) return undefined;
+      return breakdown.map((t) => {
+        const projected = projectedBreakdown?.find((p) => p.theatre === t.theatre)?.count;
+        const expiring = expiringText(t.count, projected);
+        const state = RISK_STATUS_LABEL[riskState(t.count, projected, required)];
+        return `${t.theatre}: ${attainedText(t.count, projected)} / ${required} (${state}${expiring ? `, ${expiring}` : ""})`;
+      });
+    };
+
+    const requirementRow = (req: Requirement): ReportTonedRow => {
+      const attained = globalCards ? req.globalAttained ?? req.attained : req.attained;
+      const projected = globalCards ? req.projectedGlobalAttained : req.projectedAttained;
+      const countState = riskState(attained, projected, req.quantityRequired);
+      // On the Global cards the status also weighs the per-theatre minimum,
+      // which the headline count cannot express, so it comes from the API's own
+      // verdict rather than being re-derived here.
+      const statusState = globalCards
+        ? complianceRiskState(req.compliant, req.projectedCompliant)
+        : countState;
+      const cells: Record<string, ReportCellValue> = {
+        training: trainingCell(req.trainingFullTitle, req.alternatives),
+        type: trainingTypeLabel(req.trainingType),
+        attained: attainedCell(attained, projected, req.quantityRequired),
+        status: { text: RISK_STATUS_LABEL[statusState], align: "center" },
+      };
+      if (globalCards) cells.minPerTheatre = req.minimumPerTheatre ?? "—";
+      return {
+        tone: RISK_TONE[countState],
+        cells,
+        detail: theatreDetail(
+          req.theatreBreakdown,
+          req.projectedTheatreBreakdown,
+          req.minimumPerTheatre ?? 0
+        ),
+      };
+    };
+
+    const tierRequirementRow = (req: TierDeploymentRequirement): ReportTonedRow => {
+      const projected = req.projectedAttained ?? undefined;
+      const countState = riskState(req.attained, projected, req.quantityRequired);
+      const statusState = complianceRiskState(req.compliant, req.projectedCompliant);
+      return {
+        tone: RISK_TONE[countState],
+        cells: {
+          // In "perTierPerSpecialisation" mode each row belongs to one
+          // specialisation, which the page prefixes to the training name.
+          training: trainingCell(req.trainingFullTitle, req.alternatives, req.specialisationName),
+          type: trainingTypeLabel(req.trainingType),
+          attained: attainedCell(req.attained, projected, req.quantityRequired),
+          status: { text: RISK_STATUS_LABEL[statusState], align: "center" },
+        },
+        detail: theatreDetail(
+          req.theatreBreakdown,
+          req.projectedTheatreBreakdown,
+          req.minimumPerTheatre ?? 0
+        ),
+      };
+    };
+
+    const sections: ReportSection[] = [];
+
+    // The page's amber projection banner, so a printed copy explains its own
+    // amber shading rather than leaving the reader to infer it.
+    if (horizonMonths > 0) {
+      sections.push({
+        kind: "note",
+        title: "Projection",
+        lines: [
+          `Showing compliance as it will stand in ${horizonMonths} months (current -> projected).`,
+          "Rows shaded amber are compliant today but fall below their requirement as certificates expire within the window.",
+        ],
+        tone: "amber",
+      });
+    }
+
+    // Tier Status comes first, as it does on the page.
+    if (isTiered && tierBlock) {
+      const block = tierBlock;
+      const achieved = block.achievedSpecialisationCount;
+      const projectedAchieved = block.projectedAchievedSpecialisationCount ?? undefined;
+      const projectedHighest = block.projectedHighestAchievedTier;
+      const highestChanges =
+        projectedHighest !== null && projectedHighest !== block.highestAchievedTier;
+      const achievedList =
+        block.achievedSpecialisations.length > 0
+          ? block.achievedSpecialisations.join(", ")
+          : "none yet";
+
+      sections.push({
+        kind: "note",
+        title: "Tier Status",
+        lines: [
+          highestChanges
+            ? `Highest tier achieved: ${block.highestAchievedTier ?? "None"} -> projected ${projectedHighest ?? "None"}`
+            : `Highest tier achieved: ${block.highestAchievedTier ?? "None"}`,
+          `${attainedText(achieved, projectedAchieved)} specialisation${achieved === 1 ? "" : "s"} achieved (${achievedList})`,
+        ],
+        tone: highestChanges ? "amber" : block.highestAchievedTier ? "green" : "muted",
+      });
+
+      const sortedTiers = [...block.tiers].sort((a, b) => a.sortOrder - b.sortOrder);
+      // Next tier to aim for = the lowest tier not currently compliant, as on the page.
+      const nextTier = sortedTiers.find((t) => !t.compliant) ?? null;
+      const tierGroups: ReportRowGroup[] = sortedTiers.map((tier): ReportRowGroup => {
+        const gate = tierGate(block, tier);
+        const shortfall = gate.required - gate.counted;
+        return {
+          title: tier.name,
+          badge: tier.compliant ? "Achieved" : nextTier?.name === tier.name ? "Next tier" : "Not yet",
+          badgeTone: tier.compliant ? "green" : "muted",
+          subtitle:
+            `${gate.label}: ${gate.counted} / ${gate.required}` +
+            (gate.met ? "" : ` (need ${shortfall} more)`) +
+            ` · Achieved: ${achievedList}`,
+          rows: tier.deploymentRequirements.map(tierRequirementRow),
+          note:
+            tier.deploymentRequirements.length === 0
+              ? "No deployment requirements for this tier."
+              : undefined,
+        };
+      });
+      sections.push({
+        title: "Tiers",
+        columns: tierColumns,
+        rows: [],
+        groups: tierGroups,
+        emptyText: "No tiers configured for this program yet.",
+      });
+    }
+
+    for (const spec of specs) {
+      const qualState = complianceRiskState(spec.compliant, spec.projectedCompliant);
+      const deploymentReqs = spec.deploymentRequirements ?? [];
+      const groups: ReportRowGroup[] = [
+        {
+          title: "Qualification requirements",
+          badge: RISK_COMPLIANCE_LABEL[qualState],
+          badgeTone: RISK_TONE[qualState],
+          rows: spec.requirements.map(requirementRow),
+          note:
+            spec.requirements.length === 0
+              ? "No qualifying requirements configured for this specialisation."
+              : undefined,
+        },
+      ];
+      if (deploymentReqs.length > 0) {
+        const depState = complianceRiskState(
+          spec.deploymentCompliant,
+          spec.projectedDeploymentCompliant
+        );
+        groups.push({
+          title: "Deployment requirements",
+          badge: RISK_STATUS_LABEL[depState],
+          badgeTone: RISK_TONE[depState],
+          subtitle: DEPLOYMENT_REQUIREMENTS_NOTE,
+          rows: deploymentReqs.map(requirementRow),
+        });
+      }
+      sections.push({
+        title: spec.name,
+        // The specialisation's own verdict, coloured, so the state is legible
+        // from the heading alone — the group bands inside repeat it per
+        // requirement kind, which is a level of detail a skim does not want.
+        badge: RISK_COMPLIANCE_LABEL[qualState],
+        badgeTone: RISK_TONE[qualState],
+        columns,
+        rows: [],
+        groups,
+      });
+    }
+
+    return {
+      title: "Program Compliance",
+      meta: [
+        { label: "Program", value: programName },
+        { label: "Level", value: levelLabel },
+        { label: "Scope", value: needsValue ? scopeValue || "—" : "Global" },
+        { label: "Counting", value: unitLabel === "theatres" ? "compliant theatres" : "people" },
+        {
+          label: "Compliance as of",
+          value: horizonMonths > 0 ? `+${horizonMonths} months` : "Now",
+        },
+      ],
+      sections,
+      // One wide prose column beside four narrow numeric ones: this document is
+      // long rather than wide, and portrait fits a third more rows to a page.
+      // Pinned rather than left to the renderer's column-count heuristic so the
+      // extra Min/Theatre column at Global level cannot silently flip it.
+      orientation: "portrait",
+    };
+  };
+
   const noLevels = meta !== null && meta.levels.length === 0;
 
   return (
@@ -586,6 +867,7 @@ function ProgramDetailPageInner() {
                   columns={exportColumns}
                   filename={exportFilename}
                   align="right"
+                  pdfDocument={buildPdfDocument}
                 />
               )}
             </div>

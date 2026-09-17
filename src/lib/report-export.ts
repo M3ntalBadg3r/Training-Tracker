@@ -103,6 +103,13 @@ export interface ReportTableSection {
   lead?: string;
   /** A right-aligned label on the heading line, e.g. a count or a scope. */
   badge?: string;
+  /**
+   * Colour for `badge`. A heading badge is usually a status the reader is
+   * scanning for — Met, At Risk, Not Compliant — and printing it in the same
+   * grey as a row count throws away the one cue that makes a long document
+   * skimmable. Omitted leaves it grey, which is what a plain count wants.
+   */
+  badgeTone?: ReportTone;
   columns: {
     key: string;
     header: string;
@@ -567,12 +574,19 @@ export function exportReportToPdf(doc: ReportDocument, filename: string): void {
    * the existing reports' `y` arithmetic (and therefore their pagination)
    * identical.
    */
-  const drawHeading = (title: string, subtitle?: string, lead?: string, badge?: string) => {
+  const drawHeading = (
+    title: string,
+    subtitle?: string,
+    lead?: string,
+    badge?: string,
+    badgeTone?: ReportTone,
+  ) => {
     pdf.setFontSize(12);
     pdf.text(pdfSafe(title), margin, y);
     if (badge) {
       pdf.setFontSize(9);
-      pdf.setTextColor(107);
+      if (badgeTone) pdf.setTextColor(...hexToRgb(TONE_TEXT[badgeTone]));
+      else pdf.setTextColor(107);
       // Held to a third of the width so a long badge cannot collide with a long
       // title; the title is the thing a reader scans for.
       pdf.text(fitLine(badge, contentWidth / 3), pageWidth - margin, y, { align: "right" });
@@ -618,7 +632,7 @@ export function exportReportToPdf(doc: ReportDocument, filename: string): void {
 
     const leadLines = section.lead ? wrapAt(section.lead, contentWidth, 8) : [];
     ensureSpace(16 + leadLines.length * 4);
-    drawHeading(section.title, section.subtitle, section.lead, section.badge);
+    drawHeading(section.title, section.subtitle, section.lead, section.badge, section.badgeTone);
 
     if (isEmpty && section.emptyText) {
       pdf.setFontSize(8);
