@@ -690,12 +690,14 @@ function buildRiskImpactSection(impacts: PlanRiskImpact[], windowMonths: number)
 /**
  * The tone of a candidate's best move, mirroring `TIER_BADGE`.
  *
- * The report palette has five tones and no orange, so `renewal` and `lapsed`
- * land on the same amber that the page keeps apart. The "Best move" text still
- * names them, which is what a printed page is read for.
+ * `renewal` is orange and `lapsed` amber for the reason `TIER_BADGE` gives: the
+ * two are semantically adjacent, so they have to stay visually separable. The
+ * report palette had no orange when this was first written and both collapsed
+ * onto amber; it has one now, so the printed column separates the five states
+ * exactly as the screen does.
  */
 const TIER_TONE: Record<CandidateTier, ReportTone> = {
-  renewal: "amber",
+  renewal: "orange",
   "easy-win": "green",
   lapsed: "amber",
   legacy: "neutral",

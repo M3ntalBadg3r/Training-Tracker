@@ -39,7 +39,7 @@ import { csvSafeCell, csvSafeRows } from "@/lib/export-cell";
  * requirement (green), de-emphasised reference data (muted) and ordinary
  * unshaded text (neutral).
  */
-export type ReportTone = "red" | "amber" | "green" | "muted" | "neutral";
+export type ReportTone = "red" | "amber" | "orange" | "green" | "muted" | "neutral";
 
 /**
  * A cell that carries presentation as well as a value.
@@ -377,10 +377,20 @@ const KPI_TONE_HEX: Record<ReportKpiTone, string> = {
  * re-tints the blue palette in `globals.css`; the PDF palette stays stock, as
  * the in-app help and CLAUDE.md both say — a report mailed on from a
  * white-labelled install should still read as a report.
+ *
+ * `orange` earns its place rather than decorating: it is the one pair the other
+ * five could not keep apart. Compliance Planning's "Best move" column separates
+ * `renewal` from `lapsed` — states that are semantically adjacent and so have to
+ * be visually separable — and with no orange here both collapsed onto amber,
+ * losing a distinction the page draws on purpose. It follows the same 700-on-50
+ * rule as its neighbours; the 50-level fills sit close together, but the cell's
+ * meaning rides on its text, where orange-700 and amber-700 are far enough apart
+ * to read as different colours.
  */
 const TONE_TEXT: Record<ReportTone, string> = {
   red: "#b91c1c",
   amber: "#b45309",
+  orange: "#c2410c",
   green: "#15803d",
   muted: "#6b7280",
   neutral: "#111827",
@@ -390,6 +400,7 @@ const TONE_TEXT: Record<ReportTone, string> = {
 const TONE_FILL: Record<ReportTone, string | null> = {
   red: "#fef2f2",
   amber: "#fffbeb",
+  orange: "#fff7ed",
   green: "#f0fdf4",
   muted: null,
   neutral: null,
