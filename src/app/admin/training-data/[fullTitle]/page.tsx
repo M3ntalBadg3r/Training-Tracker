@@ -506,6 +506,59 @@ export default function FullTitleDetailPage() {
         </div>
       </section>
 
+      {/* The quick bulk fields, first: they are one control each and are what
+          the page is most often opened to change. The two relationship editors
+          below are scroll boxes, and having them above pushed Rename / Set
+          Product / Set Function off the screen. */}
+      <section className="mb-6 bg-white rounded-lg border border-gray-200 p-4 space-y-5">
+        <h2 className="text-sm font-semibold text-gray-700">Full Title actions</h2>
+
+        {/* Rename */}
+        <div>
+          <label className="block text-xs font-semibold text-gray-600 mb-1">Rename Full Title (applies to all {meta?.memberCount ?? members.length} training titles)</label>
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              className="flex-1 max-w-lg border border-gray-300 rounded-lg px-3 py-2 text-sm"
+            />
+            <button
+              onClick={handleRename}
+              disabled={busy || !renameValue.trim() || renameValue.trim() === fullTitle}
+              className="px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+            >
+              Rename
+            </button>
+          </div>
+        </div>
+
+        {/* Bulk product / function */}
+        <div className="border-t border-gray-100 pt-4 flex flex-wrap gap-6">
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1">Set Product for all</label>
+            <div className="flex items-center gap-2">
+              <select value={bulkProduct} onChange={(e) => setBulkProduct(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                <option value="">Select…</option>
+                {productTypes.map((p) => <option key={p} value={p}>{p}</option>)}
+              </select>
+              <button onClick={handleBulkProduct} disabled={busy || !bulkProduct} className="px-3 py-2 text-sm bg-gray-700 text-white rounded-lg hover:bg-gray-800 disabled:opacity-50">Apply</button>
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1">Set Function for all</label>
+            <div className="flex items-center gap-2">
+              <select value={bulkFunction} onChange={(e) => setBulkFunction(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                <option value="">Select…</option>
+                {FUNCTION_TYPES.map((f) => <option key={f} value={f}>{FUNCTION_TYPE_LABELS[f]}</option>)}
+              </select>
+              <button onClick={handleBulkFunction} disabled={busy || !bulkFunction} className="px-3 py-2 text-sm bg-gray-700 text-white rounded-lg hover:bg-gray-800 disabled:opacity-50">Apply</button>
+            </div>
+          </div>
+        </div>
+
+      </section>
+
       {/* Leads to Certification(s) — one control per training type.
 
           A Full Title can legitimately cover more than one training type (a
@@ -562,32 +615,13 @@ export default function FullTitleDetailPage() {
         </section>
       )}
 
-      {/* Bulk actions */}
-      <section className="mb-6 bg-white rounded-lg border border-gray-200 p-4 space-y-5">
-        <h2 className="text-sm font-semibold text-gray-700">Full Title actions</h2>
-
-        {/* Rename */}
+      {/* Legacy — its own card rather than a row inside "Full Title
+          actions", so the two relationship editors (this and Leads to)
+          sit together below the quick bulk fields instead of pushing them
+          off the screen. */}
+      <section className="mb-6 bg-white rounded-lg border border-gray-200 p-4">
+        <h2 className="text-sm font-semibold text-gray-700 mb-3">Legacy</h2>
         <div>
-          <label className="block text-xs font-semibold text-gray-600 mb-1">Rename Full Title (applies to all {meta?.memberCount ?? members.length} training titles)</label>
-          <div className="flex items-center gap-2">
-            <input
-              type="text"
-              value={renameValue}
-              onChange={(e) => setRenameValue(e.target.value)}
-              className="flex-1 max-w-lg border border-gray-300 rounded-lg px-3 py-2 text-sm"
-            />
-            <button
-              onClick={handleRename}
-              disabled={busy || !renameValue.trim() || renameValue.trim() === fullTitle}
-              className="px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-            >
-              Rename
-            </button>
-          </div>
-        </div>
-
-        {/* Legacy cascade */}
-        <div className="border-t border-gray-100 pt-4">
           {hasEligible ? (
             <>
               <label className="flex items-center gap-2 cursor-pointer text-sm font-medium text-gray-700">
@@ -628,32 +662,12 @@ export default function FullTitleDetailPage() {
           )}
         </div>
 
-        {/* Bulk product / function */}
-        <div className="border-t border-gray-100 pt-4 flex flex-wrap gap-6">
-          <div>
-            <label className="block text-xs font-semibold text-gray-600 mb-1">Set Product for all</label>
-            <div className="flex items-center gap-2">
-              <select value={bulkProduct} onChange={(e) => setBulkProduct(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
-                <option value="">Select…</option>
-                {productTypes.map((p) => <option key={p} value={p}>{p}</option>)}
-              </select>
-              <button onClick={handleBulkProduct} disabled={busy || !bulkProduct} className="px-3 py-2 text-sm bg-gray-700 text-white rounded-lg hover:bg-gray-800 disabled:opacity-50">Apply</button>
-            </div>
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-gray-600 mb-1">Set Function for all</label>
-            <div className="flex items-center gap-2">
-              <select value={bulkFunction} onChange={(e) => setBulkFunction(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
-                <option value="">Select…</option>
-                {FUNCTION_TYPES.map((f) => <option key={f} value={f}>{FUNCTION_TYPE_LABELS[f]}</option>)}
-              </select>
-              <button onClick={handleBulkFunction} disabled={busy || !bulkFunction} className="px-3 py-2 text-sm bg-gray-700 text-white rounded-lg hover:bg-gray-800 disabled:opacity-50">Apply</button>
-            </div>
-          </div>
-        </div>
+      </section>
 
-        {/* Ignore / restore the whole group */}
-        <div className="border-t border-gray-100 pt-4">
+      {/* Reporting and removal last: both take the Full Title out of
+          circulation, and Delete removes completions with it. */}
+      <section className="mb-6 bg-white rounded-lg border border-gray-200 p-4 space-y-5">
+        <div>
           <label className="block text-xs font-semibold text-gray-600 mb-1">Reporting</label>
           <div className="flex items-center gap-3">
             <button

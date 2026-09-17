@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { X } from "lucide-react";
 import SearchInput from "@/components/ui/FormControls";
 
 /**
@@ -90,6 +91,41 @@ export default function FullTitlePicker({
 
   return (
     <div className="max-w-md">
+      {/* What is currently selected, stated above the list rather than left to
+          be discovered by scrolling it. The list is a scroll box and a real
+          catalogue runs to hundreds of entries, so a tick five screens down is
+          invisible — and on a page whose whole job is "what does this training
+          lead to", the answer should not require hunting for it. */}
+      {value.length > 0 && (
+        <div className="mb-2 flex flex-wrap items-center gap-1.5">
+          {value.map((fullTitle) => (
+            <span
+              key={fullTitle}
+              className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 pl-2.5 pr-1 py-0.5 text-xs text-blue-800"
+            >
+              <span className="break-words">{fullTitle}</span>
+              <button
+                type="button"
+                onClick={() => onChange(value.filter((v) => v !== fullTitle))}
+                aria-label={`Remove ${fullTitle}`}
+                title={`Remove ${fullTitle}`}
+                className="rounded-full p-0.5 text-blue-500 hover:bg-blue-100 hover:text-blue-800"
+              >
+                <X size={12} />
+              </button>
+            </span>
+          ))}
+          {value.length > 1 && (
+            <button
+              type="button"
+              onClick={() => onChange([])}
+              className="text-xs text-gray-500 hover:text-gray-700 underline underline-offset-2 ml-0.5"
+            >
+              Clear all
+            </button>
+          )}
+        </div>
+      )}
       {total > 8 && (
         <div className="mb-2">
           <SearchInput
