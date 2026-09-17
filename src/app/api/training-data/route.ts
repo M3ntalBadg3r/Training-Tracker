@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { TrainingType, FunctionType } from "@prisma/client";
 import { requireAuth, handleAuthError, requireSuperAdmin } from "@/lib/auth";
 import { isRejectedLink, safeExternalUrl } from "@/lib/utils";
 import { getAuthorizedCompanyIds, resolveCompanyFilter } from "@/lib/company-scope";
 import { recomputeAllStudentsForParent } from "@/lib/olx";
 import { resolveProductTypeId } from "@/lib/product-types";
 import { sanitizeLegacyFields } from "@/lib/legacy-training";
+import { expandFullTitles, isFunctionType, isTrainingType } from "@/lib/training-group";
 import { invalidateReportCache } from "@/lib/report-cache";
 
 export async function GET(request: NextRequest) {
@@ -124,12 +124,27 @@ export async function POST(request: NextRequest) {
   }
   const body = await request.json();
   const { trainingTitle, fullTitle, trainingType, productType, function: fn, link, certification, subItems, parents, isLegacy, replacedBy } = body;
+  // Full-Title-shaped alternatives to `certification` / `replacedBy`. The
+  // pickers send these, because a training that arrived under several import
+  // spellings is one training and the admin should only have to name it once;
+  // the raw-trainingTitle keys stay for the importer and any older caller.
+  const { certificationFullTitles, replacedByFullTitles } = body;
 
   if (!trainingTitle || !fullTitle || !trainingType || !productType || !fn) {
     return NextResponse.json(
       { error: "Missing required fields" },
       { status: 400 }
     );
+  }
+
+  // Both enums used to be cast straight through to Prisma, so a value the
+  // client made up came back as an opaque 500. The per-row PUT has always
+  // validated and 400'd; this is the same check.
+  if (!isTrainingType(trainingType)) {
+    return NextResponse.json({ error: "Invalid training type" }, { status: 400 });
+  }
+  if (!isFunctionType(fn)) {
+    return NextResponse.json({ error: "Invalid function" }, { status: 400 });
   }
 
   // A link is rendered straight into an `<a href>`, where React's escaping does
@@ -159,19 +174,37 @@ export async function POST(request: NextRequest) {
     ? Array.from(new Set(parents.filter((p): p is string => typeof p === "string" && !!p.trim())))
     : [];
 
+  const certificationTitles =
+    certificationFullTitles !== undefined
+      ? await expandFullTitles(certificationFullTitles, {
+          types: ["Certification"],
+          // A training cannot lead to itself.
+          excludeFullTitles: [fullTitle],
+        })
+      : Array.isArray(certification)
+        ? certification
+        : [];
+
+  const replacementTitles =
+    replacedByFullTitles !== undefined
+      ? await expandFullTitles(replacedByFullTitles, {
+          types: ["Certification", "Accreditation"],
+        })
+      : replacedBy;
+
   // Legacy flag + replacement list (Certification/Accreditation only).
-  const legacy = await sanitizeLegacyFields(trainingTitle, trainingType, isLegacy, replacedBy);
+  const legacy = await sanitizeLegacyFields(trainingTitle, trainingType, isLegacy, replacementTitles);
 
   const training = await prisma.trainingData.create({
     data: {
       trainingTitle,
       fullTitle,
-      trainingType: trainingType as TrainingType,
+      trainingType,
       productTypeId,
-      function: fn as FunctionType,
+      function: fn,
       link: safeExternalUrl(link),
       // Only OLX parents may carry certifications.
-      certification: trainingType === "OLXSubItem" ? [] : (Array.isArray(certification) ? certification : []),
+      certification: trainingType === "OLXSubItem" ? [] : certificationTitles,
       isLegacy: legacy.isLegacy,
       replacedBy: legacy.replacedBy,
       subItemMemberships: subItemTitles.length > 0

@@ -1244,11 +1244,12 @@ const helpSections: Record<string, HelpSection> = {
               <td>
                 The Certification(s) an ILT or OLX parent <strong>leads to</strong>{" "}
                 &mdash; the recommended preparation before sitting the exam that
-                earns the cert (the training does not itself grant it). Shown
-                without opening each row: a <strong>&ldquo;&rarr; Leads
-                to: &hellip;&rdquo;</strong> subline under the Full Title in the
-                list, and a <strong>Leads to Certification(s)</strong> card on the
-                Full Title detail page.
+                earns the cert (the training does not itself grant it). Set it{" "}
+                <strong>once for the Full Title</strong>{" "}on its detail page:
+                you pick the certification by its Full Title, and it is applied to
+                every Training Title mapped to the training. Shown without opening
+                each row as a <strong>&ldquo;&rarr; Leads to: &hellip;&rdquo;</strong>{" "}
+                subline under the Full Title in the list.
               </td>
             </tr>
             <tr>
@@ -1348,9 +1349,21 @@ const helpSections: Record<string, HelpSection> = {
             product type or function across every mapped Training Title.
           </li>
           <li>
+            <strong>Leads to Certification(s)</strong>{" "}&mdash; Choose the
+            certification(s) this training prepares people for. It is set{" "}
+            <strong>once</strong>{" "}and applied to every Training Title mapped to
+            the Full Title, so a training that arrived under several import
+            spellings only has to be configured once. You pick the target by its{" "}
+            <strong>Full Title</strong>{" "}too, so you never have to work out which
+            internal Training Title to point at. If a Full Title covers more than
+            one type &mdash; a Certification and the Instructor-Led Training that
+            prepares for it, say &mdash; you get one control per type, because
+            those are counted as two separate trainings.
+          </li>
+          <li>
             <strong>Per-Title editing</strong>{" "}&mdash; Each Training Title keeps
-            its own Link, Certifications, and OLX membership, and can still be
-            edited or deleted individually.
+            its own Link and OLX membership, and can still be edited or deleted
+            individually.
           </li>
           <li>
             <strong>Add / Delete</strong>{" "}&mdash; Add another Training Title to

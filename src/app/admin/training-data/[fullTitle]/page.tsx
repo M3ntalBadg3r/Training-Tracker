@@ -7,6 +7,7 @@ import Modal from "@/components/ui/Modal";
 import { TrainingDataRow } from "@/types";
 import { Plus, Trash2, Save, AlertTriangle, ArrowRight } from "lucide-react";
 import { safeExternalUrl } from "@/lib/utils";
+import FullTitlePicker, { type FullTitleOption } from "@/components/training/FullTitlePicker";
 
 const TRAINING_TYPES = ["Certification", "Accreditation", "InstructorLedTraining", "OLX", "OLXSubItem"];
 const FUNCTION_TYPES = ["Sales", "PreSales", "Deployments"];
@@ -32,6 +33,60 @@ interface GroupMeta {
   functions: string[];
   memberCount: number;
   legacyEligibleCount: number;
+}
+
+/**
+ * One `(fullTitle, trainingType)` pair — the unit the rest of the app counts on
+ * (see `resolveSiblingTitles` in lib/program-compliance.ts). The server returns
+ * one of these per type present in the group, with the shared field values and
+ * a `*Varies` flag wherever the member training titles disagree.
+ */
+interface TrainingGroup {
+  trainingType: string;
+  trainingTitles: string[];
+  memberCount: number;
+  productType: string;
+  productTypeVaries: boolean;
+  function: string;
+  functionVaries: boolean;
+  link: string | null;
+  linkVaries: boolean;
+  legacyState: "none" | "some" | "all";
+  certificationFullTitles: string[];
+  certificationVaries: boolean;
+  replacedByFullTitles: string[];
+}
+
+/** Types that can lead to a certification — matches the server's rule. */
+const CERT_BEARING = ["InstructorLedTraining", "OLX"];
+
+/**
+ * Collapse catalogue rows to one picker option per Full Title.
+ *
+ * `excludeFullTitle` keeps a group out of its own picker: a training must not be
+ * able to lead to, or be replaced by, itself.
+ */
+function buildFullTitleOptions(
+  rows: TrainingDataRow[],
+  types: string[],
+  excludeFullTitle?: string,
+): FullTitleOption[] {
+  const byFull = new Map<string, { types: Set<string>; count: number }>();
+  for (const r of rows) {
+    if (!types.includes(r.trainingType)) continue;
+    if (excludeFullTitle && r.fullTitle === excludeFullTitle) continue;
+    const entry = byFull.get(r.fullTitle) ?? { types: new Set<string>(), count: 0 };
+    entry.types.add(r.trainingType);
+    entry.count += 1;
+    byFull.set(r.fullTitle, entry);
+  }
+  return Array.from(byFull.entries())
+    .map(([fullTitle, e]) => ({
+      fullTitle,
+      trainingTypes: Array.from(e.types),
+      memberCount: e.count,
+    }))
+    .sort((a, b) => a.fullTitle.localeCompare(b.fullTitle));
 }
 
 const emptyEdit = {
@@ -63,6 +118,11 @@ export default function FullTitleDetailPage() {
 
   const [members, setMembers] = useState<TrainingDataRow[]>([]);
   const [meta, setMeta] = useState<GroupMeta | null>(null);
+  const [groups, setGroups] = useState<TrainingGroup[]>([]);
+  // "Leads to" is now set once per training type rather than once per training
+  // title. Keyed by type so a mixed Full Title (a Certification plus the ILT
+  // that prepares for it) keeps the two apart.
+  const [leadsTo, setLeadsTo] = useState<Record<string, string[]>>({});
   const [allRows, setAllRows] = useState<TrainingDataRow[]>([]);
   const [productTypes, setProductTypes] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -95,19 +155,21 @@ export default function FullTitleDetailPage() {
 
   // Full Titles (excluding this group) that contain at least one Cert/Accred —
   // valid replacement targets for a legacy item.
-  const replacementFullTitleOptions = useMemo(() => {
-    const set = new Set<string>();
-    for (const t of allRows) {
-      if (t.fullTitle !== fullTitle && LEGACY_ELIGIBLE.includes(t.trainingType)) {
-        set.add(t.fullTitle);
-      }
-    }
-    return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [allRows, fullTitle]);
+  const replacementFullTitleOptions = useMemo<FullTitleOption[]>(
+    () => buildFullTitleOptions(allRows, LEGACY_ELIGIBLE, fullTitle),
+    [allRows, fullTitle]
+  );
 
-  const certificationOptions = useMemo(
-    () => allRows.filter((t) => t.trainingType === "Certification").map((t) => t.trainingTitle).sort(),
-    [allRows]
+  /**
+   * Full Titles that contain at least one Certification — the valid "leads to"
+   * targets. One entry per Full Title, not per training title: the old list
+   * mapped `trainingTitle` while labelling each row with its Full Title, so a
+   * certification that arrived under three import spellings appeared three
+   * times with identical text.
+   */
+  const certificationOptions = useMemo<FullTitleOption[]>(
+    () => buildFullTitleOptions(allRows, ["Certification"], fullTitle),
+    [allRows, fullTitle]
   );
   const subItemOptions = useMemo(
     () => allRows.filter((t) => t.trainingType === "OLXSubItem").map((t) => ({ trainingTitle: t.trainingTitle, fullTitle: t.fullTitle })).sort((a, b) => a.fullTitle.localeCompare(b.fullTitle)),
@@ -116,21 +178,6 @@ export default function FullTitleDetailPage() {
   const parentOptions = useMemo(
     () => allRows.filter((t) => t.trainingType === "OLX").map((t) => ({ trainingTitle: t.trainingTitle, fullTitle: t.fullTitle })).sort((a, b) => a.fullTitle.localeCompare(b.fullTitle)),
     [allRows]
-  );
-
-  // Certifications this Full Title's ILT/OLX members lead to (recommended prep
-  // before the exam), deduped and shown as display Full Titles.
-  const leadsToCertFulls = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          members
-            .filter((m) => m.trainingType === "InstructorLedTraining" || m.trainingType === "OLX")
-            .flatMap((m) => m.certification ?? [])
-            .map((ct) => titleToFull.get(ct) ?? ct)
-        )
-      ),
-    [members, titleToFull]
   );
 
   // Expand selected replacement Full Titles → underlying Cert/Accred training
@@ -171,8 +218,15 @@ export default function FullTitleDetailPage() {
         if (group) {
           setMembers(group.members);
           setMeta(group.meta);
+          setGroups(group.groups ?? []);
           setRenameValue(group.fullTitle);
           // Seed the bulk legacy controls from the current eligible members.
+          // `.every()` is deliberate for the checkbox itself — a partly-legacy
+          // group is NOT "legacy" — but on its own it was lossy: the list page
+          // badges the same group from `.some()`, so a group where two of five
+          // certs were legacy showed a Legacy badge, read as unchecked here, and
+          // pressing Save silently cleared the two that were. The mixed state is
+          // now called out in the UI instead of being flattened in silence.
           const eligible = (group.members as TrainingDataRow[]).filter((m) =>
             LEGACY_ELIGIBLE.includes(m.trainingType)
           );
@@ -209,9 +263,23 @@ export default function FullTitleDetailPage() {
     }
   }
 
+  // Same pattern for the per-type "leads to" selections: seeded from the server,
+  // edited by the user, so re-seeded only when a new `groups` array arrives.
+  const [prevGroups, setPrevGroups] = useState(groups);
+  if (prevGroups !== groups) {
+    setPrevGroups(groups);
+    const next: Record<string, string[]> = {};
+    for (const g of groups) next[g.trainingType] = g.certificationFullTitles;
+    setLeadsTo(next);
+  }
+
   // ---- Bulk actions ----
   const patchGroup = async (body: Record<string, unknown>): Promise<string | null> => {
     setError(null);
+    // Close any open row editor first. Its `editValues` were seeded when the row
+    // was opened, so after a group write they are stale — and the per-member PUT
+    // sends every field, which would write the pre-group values straight back.
+    setEditingTitle(null);
     setBusy(true);
     const res = await fetch(`/api/training-data/full-title/${encodeURIComponent(fullTitle)}`, {
       method: "PATCH",
@@ -238,6 +306,22 @@ export default function FullTitleDetailPage() {
   const handleSaveLegacy = async () => {
     const ok = await patchGroup({
       legacy: { isLegacy: bulkLegacy, replacedByFullTitles: bulkLegacy ? bulkReplacement : [] },
+    });
+    if (ok) fetchAll();
+  };
+
+  /**
+   * Set "leads to Certification(s)" for one training type in one call.
+   *
+   * This is the change the whole page exists for: it used to be a per-training-
+   * title edit, so an OLX whose Full Title covered four import spellings needed
+   * the same certification ticked four times, in four separate saves, with a
+   * full refetch between each.
+   */
+  const handleSaveLeadsTo = async (trainingType: string) => {
+    const ok = await patchGroup({
+      scope: { trainingType },
+      setCertificationFullTitles: leadsTo[trainingType] ?? [],
     });
     if (ok) fetchAll();
   };
@@ -371,26 +455,27 @@ export default function FullTitleDetailPage() {
     );
   }
 
+  // Only ILT and OLX can lead to a certification, so only those get the control.
+  const certBearingGroups = groups.filter((g) => CERT_BEARING.includes(g.trainingType));
+
+  // Some members legacy, some not — the state the all-or-nothing checkbox
+  // cannot represent, so it is stated rather than silently resolved.
+  const partlyLegacy = groups.some(
+    (g) => LEGACY_ELIGIBLE.includes(g.trainingType) && g.legacyState === "some"
+  );
+
   const mixedEligibility = meta && meta.legacyEligibleCount > 0 && meta.legacyEligibleCount < meta.memberCount;
   const hasEligible = (meta?.legacyEligibleCount ?? 0) > 0;
 
   // Reusable replacement Full Title multiselect.
-  const replacementPicker = (selected: string[], onToggle: (full: string, checked: boolean) => void) => (
-    <div className="max-h-40 overflow-y-auto border border-gray-200 rounded px-2 py-1 text-sm space-y-1 bg-white">
-      {replacementFullTitleOptions.length === 0 ? (
-        <span className="text-gray-400 text-xs">No other certifications/accreditations available.</span>
-      ) : replacementFullTitleOptions.map((f) => (
-        <label key={f} className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 rounded px-1">
-          <input
-            type="checkbox"
-            checked={selected.includes(f)}
-            onChange={(e) => onToggle(f, e.target.checked)}
-            className="rounded border-gray-300"
-          />
-          <span className="text-xs">{f}</span>
-        </label>
-      ))}
-    </div>
+  const replacementPicker = (selected: string[], onChange: (next: string[]) => void) => (
+    <FullTitlePicker
+      options={replacementFullTitleOptions}
+      value={selected}
+      onChange={onChange}
+      searchPlaceholder="Search certifications…"
+      emptyMessage="No other certifications/accreditations available."
+    />
   );
 
   return (
@@ -402,7 +487,7 @@ export default function FullTitleDetailPage() {
       )}
 
       {/* Summary */}
-      <section className={`mb-6 grid grid-cols-2 sm:grid-cols-4 ${leadsToCertFulls.length > 0 ? "xl:grid-cols-5" : ""} gap-3`}>
+      <section className="mb-6 grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="bg-white rounded-lg border border-gray-200 p-3">
           <div className="text-xs text-gray-500">Training titles</div>
           <div className="text-lg font-semibold">{meta?.memberCount ?? members.length}</div>
@@ -419,13 +504,63 @@ export default function FullTitleDetailPage() {
           <div className="text-xs text-gray-500">Function(s)</div>
           <div className="text-sm font-medium">{(meta?.functions ?? []).map((f) => FUNCTION_TYPE_LABELS[f] || f).join(", ")}</div>
         </div>
-        {leadsToCertFulls.length > 0 && (
-          <div className="bg-white rounded-lg border border-gray-200 p-3">
-            <div className="text-xs text-gray-500">Leads to Certification(s)</div>
-            <div className="text-sm font-medium">{leadsToCertFulls.join(", ")}</div>
-          </div>
-        )}
       </section>
+
+      {/* Leads to Certification(s) — one control per training type.
+
+          A Full Title can legitimately cover more than one training type (a
+          Certification and the Instructor-Led Training that prepares for it are
+          two trainings sharing a display name, and the rest of the app counts
+          them separately), so this is grouped by type rather than flattened. */}
+      {certBearingGroups.length > 0 && (
+        <section className="mb-6 bg-white rounded-lg border border-gray-200 p-4 space-y-5">
+          <div>
+            <h2 className="text-sm font-semibold text-gray-700">Leads to Certification(s)</h2>
+            <p className="text-xs text-gray-500 mt-1">
+              The certification(s) this training prepares people for. It is
+              recommended preparation &mdash; taking the training does not itself
+              grant the certification.
+            </p>
+          </div>
+
+          {certBearingGroups.map((g) => (
+            <div key={g.trainingType} className="border-t border-gray-100 pt-4 first:border-t-0 first:pt-0">
+              {certBearingGroups.length > 1 && (
+                <div className="text-xs font-semibold text-gray-600 mb-1">
+                  {TRAINING_TYPE_LABELS[g.trainingType] || g.trainingType}
+                </div>
+              )}
+              <p className="text-xs text-gray-500 mb-2">
+                Applies to all {g.memberCount} training title
+                {g.memberCount === 1 ? "" : "s"}{" "}
+                of this type under this Full Title.
+              </p>
+              {g.certificationVaries && (
+                <p className="text-xs text-orange-600 mb-2">
+                  These training titles currently disagree about what they lead
+                  to. Saving applies one answer to all of them.
+                </p>
+              )}
+              <FullTitlePicker
+                options={certificationOptions}
+                value={leadsTo[g.trainingType] ?? []}
+                onChange={(next) =>
+                  setLeadsTo((prev) => ({ ...prev, [g.trainingType]: next }))
+                }
+                searchPlaceholder="Search certifications…"
+                emptyMessage="No certifications available to choose."
+              />
+              <button
+                onClick={() => handleSaveLeadsTo(g.trainingType)}
+                disabled={busy}
+                className="mt-3 px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+              >
+                Save
+              </button>
+            </div>
+          ))}
+        </section>
+      )}
 
       {/* Bulk actions */}
       <section className="mb-6 bg-white rounded-lg border border-gray-200 p-4 space-y-5">
@@ -468,12 +603,16 @@ export default function FullTitleDetailPage() {
                 Applies to the {meta?.legacyEligibleCount} Certification/Accreditation training title{(meta?.legacyEligibleCount ?? 0) === 1 ? "" : "s"} under this Full Title.
                 {mixedEligibility && " Other types in this group are unaffected."}
               </p>
+              {partlyLegacy && (
+                <p className="text-xs text-orange-600 mt-1">
+                  Some of these training titles are marked legacy and some are
+                  not. Saving applies the box above to all of them.
+                </p>
+              )}
               {bulkLegacy && (
                 <div className="mt-3">
                   <div className="text-xs font-semibold text-gray-600 mb-1">Replaced by (optional — pick one or more Full Titles)</div>
-                  {replacementPicker(bulkReplacement, (f, checked) =>
-                    setBulkReplacement((prev) => (checked ? [...prev, f] : prev.filter((x) => x !== f)))
-                  )}
+                  {replacementPicker(bulkReplacement, setBulkReplacement)}
                 </div>
               )}
               <button
@@ -637,24 +776,10 @@ export default function FullTitleDetailPage() {
                     </tr>
                   );
                 })}
-                {/* Expanded editors for the row being edited */}
-                {editingTitle && (editValues.trainingType === "InstructorLedTraining" || editValues.trainingType === "OLX") && (
-                  <tr className="bg-blue-50/40 border-b border-gray-100">
-                    <td colSpan={7} className="px-4 py-3">
-                      <div className="text-xs font-semibold text-gray-600 mb-1">Leads to Certification(s)</div>
-                      <div className="max-h-32 overflow-y-auto border border-gray-200 rounded px-2 py-1 text-sm space-y-1 bg-white max-w-md">
-                        {certificationOptions.length === 0 ? <span className="text-gray-400 text-xs">No certifications available.</span> : certificationOptions.map((c) => (
-                          <label key={c} className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 rounded px-1">
-                            <input type="checkbox" checked={editValues.certification.includes(c)}
-                              onChange={(e) => setEditValues((p) => ({ ...p, certification: e.target.checked ? [...p.certification, c] : p.certification.filter((x) => x !== c) }))}
-                              className="rounded border-gray-300" />
-                            <span className="text-xs">{c}</span>
-                          </label>
-                        ))}
-                      </div>
-                    </td>
-                  </tr>
-                )}
+                {/* Expanded editors for the row being edited. "Leads to
+                    Certification(s)" is no longer among them: it is a property of
+                    the training, not of the spelling it was imported under, so it
+                    is set once in the section above rather than once per row. */}
                 {editingTitle && LEGACY_ELIGIBLE.includes(editValues.trainingType) && (
                   <tr className="bg-blue-50/40 border-b border-gray-100">
                     <td colSpan={7} className="px-4 py-3">
@@ -667,8 +792,8 @@ export default function FullTitleDetailPage() {
                       {editValues.isLegacy && (
                         <div className="mt-2 max-w-md">
                           <div className="text-xs font-semibold text-gray-600 mb-1">Replaced by (pick Full Titles)</div>
-                          {replacementPicker(editValues.replacedByFulls, (f, checked) =>
-                            setEditValues((p) => ({ ...p, replacedByFulls: checked ? [...p.replacedByFulls, f] : p.replacedByFulls.filter((x) => x !== f) }))
+                          {replacementPicker(editValues.replacedByFulls, (next) =>
+                            setEditValues((p) => ({ ...p, replacedByFulls: next }))
                           )}
                         </div>
                       )}
