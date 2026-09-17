@@ -1334,46 +1334,56 @@ const helpSections: Record<string, HelpSection> = {
 
         <h3>Full Title Detail Page</h3>
         <p>
-          Opening a Full Title takes you to a dedicated page (like a student
-          record) showing all of its mapped Training Titles. From here you can:
+          Opening a Full Title takes you to a dedicated page for that training.
+          It is laid out around one idea: several Training Titles usually mean{" "}
+          <em>one</em>{" "}training &mdash; they are the different names it has
+          been imported under &mdash; so the training&rsquo;s properties are set
+          once, not once per name.
         </p>
         <ul>
           <li>
-            <strong>Rename Full Title</strong>{" "}&mdash; Renames every mapped
-            Training Title&rsquo;s Full Title at once.
+            <strong>Full Title actions</strong>{" "}&mdash; Rename the Full Title
+            (applies to every Training Title under it), or{" "}
+            <strong>Merge</strong>{" "}it into another one. Renaming onto a name
+            that already exists is refused, because that used to combine the two
+            silently with no way back; merging is the deliberate version and
+            tells you what it will do first.
           </li>
           <li>
-            <strong>Mark the whole Full Title as Legacy</strong>{" "}&mdash;
-            Cascades the legacy flag to <strong>all</strong>{" "}
-            Certification/Accreditation Training Titles under it in one click
-            (other types are unaffected). Pick the replacement as a{" "}
-            <strong>Full Title</strong> and it is expanded to the underlying
+            <strong>One card per training</strong>{" "}&mdash; Product, Function,
+            Link, <strong>Leads to Certification(s)</strong>{" "}and{" "}
+            <strong>OLX sub-items</strong>{" "}are all set here, once, and applied
+            to every Training Title. If the Full Title covers more than one type
+            &mdash; a Certification and the Instructor-Led Training that prepares
+            for it, say &mdash; you get one card each, because those are counted
+            as two separate trainings. Where the underlying Training Titles
+            currently disagree on a field, the card says so before you save over
+            them.
+          </li>
+          <li>
+            <strong>Legacy</strong>{" "}&mdash; Marks{" "}
+            <strong>all</strong>{" "}Certification/Accreditation Training Titles
+            under the Full Title as retired in one click (other types are
+            unaffected). Pick the replacement as a{" "}
+            <strong>Full Title</strong>{" "}and it is expanded to the underlying
             replacements automatically.
           </li>
           <li>
-            <strong>Set Product / Function for all</strong>{" "}&mdash; Apply a
-            product type or function across every mapped Training Title.
+            <strong>Training titles</strong>{" "}&mdash; The list of names this
+            training has been imported under. Each one can be{" "}
+            <strong>renamed</strong>, <strong>moved</strong>{" "}to a different
+            Full Title, deleted, or re-typed &mdash; changing its type moves it
+            to that type&rsquo;s card. Moving one does not touch any completion
+            records; what changes is which training they are counted under, so
+            the page tells you how many program and offering requirements point
+            at these names before you do it.
           </li>
           <li>
-            <strong>Leads to Certification(s)</strong>{" "}&mdash; Choose the
-            certification(s) this training prepares people for. It is set{" "}
-            <strong>once</strong>{" "}and applied to every Training Title mapped to
-            the Full Title, so a training that arrived under several import
-            spellings only has to be configured once. You pick the target by its{" "}
-            <strong>Full Title</strong>{" "}too, so you never have to work out which
-            internal Training Title to point at. If a Full Title covers more than
-            one type &mdash; a Certification and the Instructor-Led Training that
-            prepares for it, say &mdash; you get one control per type, because
-            those are counted as two separate trainings.
-          </li>
-          <li>
-            <strong>Per-Title editing</strong>{" "}&mdash; Each Training Title keeps
-            its own Link and OLX membership, and can still be edited or deleted
-            individually.
-          </li>
-          <li>
-            <strong>Add / Delete</strong>{" "}&mdash; Add another Training Title to
-            this Full Title, or delete the whole group at once.
+            <strong>Reporting and removal</strong>{" "}&mdash; Ignore the Full
+            Title (leaving it out of reporting while keeping its completions), or
+            delete it outright. Deleting a single Training Title now asks for
+            confirmation too, because it removes that name&rsquo;s completion
+            records with it.
           </li>
         </ul>
 
