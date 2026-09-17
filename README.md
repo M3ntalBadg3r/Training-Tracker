@@ -813,14 +813,14 @@ While you are browsing, those sub-items are not listed as separate top-level row
 
 #### Full Title Detail Page
 
-Opening a Full Title takes you to a dedicated page (like a student record) showing all of its mapped Training Titles. From here you can:
+Opening a Full Title takes you to a dedicated page for that training. It is laid out around one idea: several Training Titles usually mean *one* training — they are the different names it has been imported under — so the training's properties are set once, not once per name.
 
-- **Rename Full Title** — Renames every mapped Training Title's Full Title at once.
-- **Mark the whole Full Title as Legacy** — Cascades the legacy flag to **all** Certification/Accreditation Training Titles under it in one click (other types are unaffected). Pick the replacement as a **Full Title** (not individual titles) and it is expanded to the underlying replacements automatically.
-- **Set Product / Function for all** — Apply a product type or function across every mapped Training Title.
-- **Per-Title editing** — Each Training Title keeps its own Link, Certifications, OLX membership, and can still be edited or deleted individually.
-- **Add Training Title** — Add another Training Title already attached to this Full Title.
-- **Delete Full Title** — Remove the whole group (all mapped Training Titles) at once.
+- **Full Title actions** — Rename the Full Title (applies to every Training Title under it), or **Merge** it into another one. Renaming onto a name that already exists is refused, because that used to combine the two silently with no way back; merging is the deliberate version, and it tells you what it will do — including which fields the two sides disagree on, since after a merge one value wins.
+- **One card per training** — Product, Function, Link, **Leads to Certification(s)** and **OLX sub-items** are set here, once, and applied to every Training Title. If the Full Title covers more than one type — a Certification and the Instructor-Led Training that prepares for it, say — you get one card each, because those are counted as two separate trainings. Where the underlying Training Titles currently disagree on a field, the card says so before you save over them.
+- **Legacy** — Cascades the legacy flag to **all** Certification/Accreditation Training Titles under the Full Title in one click (other types are unaffected). Pick the replacement as a **Full Title** (not individual titles) and it is expanded to the underlying replacements automatically.
+- **Training titles** — The list of names this training has been imported under. Each can be **renamed**, **moved** to a different Full Title, deleted, or re-typed (which moves it to that type's card). Moving one does not touch any completion records; what changes is which training they are counted under, so the page tells you how many program and offering requirements point at these names first.
+- **Add Training Title** — Add another Training Title under this Full Title.
+- **Reporting and removal** — Ignore the Full Title (leaving it out of reporting while keeping its completions), or delete it outright. Deleting a single Training Title asks for confirmation too, since it removes that name's completion records with it.
 
 #### Newly-discovered trainings (import)
 
