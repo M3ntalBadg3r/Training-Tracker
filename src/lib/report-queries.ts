@@ -7,6 +7,7 @@ import prisma from "@/lib/prisma";
 import type { ExportColumn } from "@/lib/server-export";
 import { computeLegacyGaps } from "@/lib/legacy-gap";
 import { REPORTABLE_TRAINING_DATA } from "@/lib/reportable-training";
+import { fetchLeadsToGroups } from "@/lib/leads-to";
 
 // ─── Type definitions ──────────────────────────────────────────────────────────
 
@@ -264,50 +265,42 @@ export async function fetchTrainingsWithStudents(opts: {
 
 export async function fetchTrainedNotCertified(companyId?: CompanyScope): Promise<TrainedNotCertifiedRow[]> {
   const ids = toCompanyIdList(companyId);
-  // Both ILT and OLX trainings can lead to a certification. Treat them
-  // identically here — an OLX parent's TrainingTaken row is materialised once
-  // the student has completed every sub-item.
-  const iltWithCert = await prisma.trainingData.findMany({
-    where: {
-      trainingType: { in: ["InstructorLedTraining", "OLX"] },
-      certification: { isEmpty: false },
-    },
-    include: { productType: { select: { name: true } } },
-  });
-  if (iltWithCert.length === 0) return [];
+  // Shares `fetchLeadsToGroups` with the interactive report so the two cannot
+  // disagree on WHICH trainings lead to which certifications; they still differ
+  // in how completions are fetched, which is the point of having both. Groups
+  // are (fullTitle, trainingType) pairs with the target certs sibling-expanded,
+  // so holding any variant of a target cert clears the gap and a spelling left
+  // with a blank `certification[]` inherits its siblings'.
+  const groups = await fetchLeadsToGroups();
+  if (groups.length === 0) return [];
 
-  const certTitles = new Set<string>();
-  for (const ilt of iltWithCert) {
-    for (const cert of ilt.certification) certTitles.add(cert);
-  }
-
-  const certData = await prisma.trainingData.findMany({
-    where: { trainingTitle: { in: Array.from(certTitles) } },
-  });
-  const certFullTitleMap = new Map(certData.map((c: typeof certData[number]) => [c.trainingTitle, c.fullTitle]));
-
-  // Batch the per-title queries the loop used to run. Instead of 3 queries per
-  // cert-bearing ILT/OLX title, fetch all completions, all certification
-  // holdings, and all uncertified students in one query each, then group in
-  // memory. Results are identical to the per-title version.
   type IltCompletion = { completedDate: Date; expiryDate: Date };
 
-  // 1) All completions for the cert-bearing ILT/OLX titles → most-recent per
-  //    (title, email).
-  const iltTitles = iltWithCert.map((i) => i.trainingTitle);
+  // Batch the per-group queries. Instead of 3 queries per group, fetch all
+  // completions, all certification holdings, and all uncertified students in one
+  // query each, then group in memory.
+
+  // 1) All completions for every group's titles → most-recent per (group, email).
+  //    Keyed by group rather than by title, because several titles routinely map
+  //    to one group and holding any spelling is holding the training.
+  const groupOfTitle = new Map<string, string>();
+  for (const g of groups) for (const t of g.iltTitles) groupOfTitle.set(t, g.key);
+
   const allIltRecords = await prisma.trainingTaken.findMany({
     where: {
-      trainingTitle: { in: iltTitles },
+      trainingTitle: { in: Array.from(groupOfTitle.keys()) },
       ...(ids ? { student: { companyId: { in: ids } } } : {}),
     },
     select: { trainingTitle: true, email: true, completedDate: true, expiryDate: true },
   });
-  const iltByTitle = new Map<string, Map<string, IltCompletion>>();
+  const iltByGroup = new Map<string, Map<string, IltCompletion>>();
   for (const rec of allIltRecords) {
-    let byEmail = iltByTitle.get(rec.trainingTitle);
+    const key = groupOfTitle.get(rec.trainingTitle);
+    if (!key) continue;
+    let byEmail = iltByGroup.get(key);
     if (!byEmail) {
       byEmail = new Map<string, IltCompletion>();
-      iltByTitle.set(rec.trainingTitle, byEmail);
+      iltByGroup.set(key, byEmail);
     }
     const existing = byEmail.get(rec.email);
     if (!existing || rec.completedDate > existing.completedDate) {
@@ -319,10 +312,11 @@ export async function fetchTrainedNotCertified(companyId?: CompanyScope): Promis
   //    filter needed: we only ever consult these for emails that appear in the
   //    (already company-scoped) ILT completions above, and an email maps to a
   //    single student/company.
+  const allCertTitles = Array.from(new Set(groups.flatMap((g) => g.certTitles)));
   const certEmailsByTitle = new Map<string, Set<string>>();
-  if (certTitles.size > 0) {
+  if (allCertTitles.length > 0) {
     const certRecords = await prisma.trainingTaken.findMany({
-      where: { trainingTitle: { in: Array.from(certTitles) } },
+      where: { trainingTitle: { in: allCertTitles } },
       select: { trainingTitle: true, email: true },
     });
     for (const rec of certRecords) {
@@ -331,30 +325,29 @@ export async function fetchTrainedNotCertified(companyId?: CompanyScope): Promis
     }
   }
 
-  // Per ILT, compute the uncertified holders (in memory) and collect the global
+  // Per group, compute the uncertified holders (in memory) and collect the global
   // set so the student lookup can also be a single query.
-  const perIlt: {
-    ilt: (typeof iltWithCert)[number];
+  const perGroup: {
+    group: (typeof groups)[number];
     uncertifiedEmails: string[];
     iltByEmail: Map<string, IltCompletion>;
   }[] = [];
   const allUncertified = new Set<string>();
-  for (const ilt of iltWithCert) {
-    if (ilt.certification.length === 0) continue;
-    const iltByEmail = iltByTitle.get(ilt.trainingTitle);
+  for (const group of groups) {
+    const iltByEmail = iltByGroup.get(group.key);
     if (!iltByEmail || iltByEmail.size === 0) continue;
 
     // Certifications mapped to a training are alternatives (OR): a student is
     // only "not certified" if they hold NONE of them.
     const certifiedEmails = new Set<string>();
-    for (const cert of ilt.certification) {
+    for (const cert of group.certTitles) {
       const holders = certEmailsByTitle.get(cert);
       if (holders) for (const e of holders) certifiedEmails.add(e);
     }
     const uncertifiedEmails = Array.from(iltByEmail.keys()).filter((e) => !certifiedEmails.has(e));
     if (uncertifiedEmails.length === 0) continue;
 
-    perIlt.push({ ilt, uncertifiedEmails, iltByEmail });
+    perGroup.push({ group, uncertifiedEmails, iltByEmail });
     for (const e of uncertifiedEmails) allUncertified.add(e);
   }
 
@@ -369,8 +362,8 @@ export async function fetchTrainedNotCertified(companyId?: CompanyScope): Promis
 
   const results: TrainedNotCertifiedRow[] = [];
   const now = new Date();
-  for (const { ilt, uncertifiedEmails, iltByEmail } of perIlt) {
-    const certFull = ilt.certification.map((c: string) => certFullTitleMap.get(c) ?? c).join(" or ");
+  for (const { group, uncertifiedEmails, iltByEmail } of perGroup) {
+    const certFull = group.certFullTitles.join(" or ");
     for (const email of uncertifiedEmails) {
       const student = studentMap.get(email);
       if (!student) continue;
@@ -381,8 +374,8 @@ export async function fetchTrainedNotCertified(companyId?: CompanyScope): Promis
         theatre: student.theatre,
         region: student.regionData?.region ?? "",
         country: student.country,
-        iltFullTitle: ilt.fullTitle,
-        iltProductType: ilt.productType.name,
+        iltFullTitle: group.fullTitle,
+        iltProductType: group.productTypeName,
         certificationFullTitle: certFull,
         iltCompletedDate: iltRecord.completedDate.toISOString().split("T")[0],
         iltActive: iltRecord.expiryDate > now ? "Yes" : "No",

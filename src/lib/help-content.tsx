@@ -723,6 +723,7 @@ const helpSections: Record<string, HelpSection> = {
         </p>
         <ul>
           <li>A gap is counted when someone holds the instructor-led training or OLX, and does not hold any certification that training leads to. OLX parents are treated the same as instructor-led trainings.</li>
+          <li>Trainings are matched by their <strong>Full Title</strong>, not by the individual Training Titles underneath it. So holding <em>any</em>{" "}version of a certification clears the gap, and a training counts even if only one of its mapped Training Titles has its &ldquo;leads to&rdquo;{" "}filled in. Each learner appears once per training, however many versions of it they have completed.</li>
           <li><strong>Active status</strong> — whether the training they took is itself still unexpired. An expired training is a weaker lead, since they may need to re-sit it first.</li>
           <li>The product funnel shows where the largest gaps sit, so you can prioritise by product rather than by individual.</li>
         </ul>

@@ -6,6 +6,7 @@ import { recomputeAllStudentsForParent } from "@/lib/olx";
 import { isRejectedLink, safeDecodeParam, safeExternalUrl } from "@/lib/utils";
 import { resolveProductTypeId } from "@/lib/product-types";
 import { sanitizeLegacyFields, isLegacyEligible } from "@/lib/legacy-training";
+import { rewriteTitleReferences } from "@/lib/training-group";
 import { invalidateReportCache } from "@/lib/report-cache";
 
 const isTrainingType = (v: unknown): v is TrainingType =>
@@ -289,6 +290,10 @@ export async function PUT(
             : (old?.isIgnored ?? false),
         },
       });
+      // Other rows' `certification[]`/`replacedBy[]` hold this title as a plain
+      // string with no FK, so nothing else repoints them: without this, renaming
+      // a certification silently broke every training that led to it.
+      await rewriteTitleReferences(tx, decodedTitle, newTitle);
       const sync = await syncMemberships(tx, newTitle, trainingType, subItems, parents);
       return { training: created, affectedParents: sync.affectedParents };
       });
@@ -412,8 +417,13 @@ export async function DELETE(
   });
   const affectedParents = memberships.map((m) => m.parentTrainingTitle);
 
-  await prisma.trainingData.delete({
-    where: { trainingTitle: decodedTitle },
+  // The delete and the reference scrub are one unit: `certification[]` and
+  // `replacedBy[]` hold this title as a plain string with no FK, so the cascade
+  // does not reach them and a half-applied pair would leave a dangling key
+  // behind with the row already gone.
+  await prisma.$transaction(async (tx: PrismaTransactionClient) => {
+    await tx.trainingData.delete({ where: { trainingTitle: decodedTitle } });
+    await rewriteTitleReferences(tx, decodedTitle, null);
   });
 
   for (const p of affectedParents) {

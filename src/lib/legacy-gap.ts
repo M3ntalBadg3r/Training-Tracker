@@ -12,6 +12,7 @@
  */
 
 import prisma from "@/lib/prisma";
+import { resolveSiblingTitles } from "@/lib/program-compliance";
 
 export interface LegacyGapRecord {
   fullName: string;
@@ -95,10 +96,22 @@ export async function computeLegacyGaps(
   //    emails (already company-scoped), and an email is one student/company.
   const allReplTitles = new Set<string>();
   for (const lt of legacyTrainings) for (const r of lt.replacedBy) allReplTitles.add(r);
+
+  // `replacedBy` stores ONE catalogue variant of the replacement, but several
+  // trainingTitles routinely map to one Full Title and the app counts a person
+  // who holds any of them (`resolveSiblingTitles`). Matching the stored title
+  // alone reported a learner who had taken a sibling variant of the replacement
+  // as still having a gap — chasing them to re-sit a certification they already
+  // hold. Expand to the sibling group before looking up holders.
+  const { fetchTitles: replFetchTitles, groupMembers: replSiblings } =
+    allReplTitles.size > 0
+      ? await resolveSiblingTitles(Array.from(allReplTitles))
+      : { fetchTitles: [] as string[], groupMembers: new Map<string, string[]>() };
+
   const replByTitle = new Map<string, { any: Set<string>; active: Set<string> }>();
-  if (allReplTitles.size > 0) {
+  if (replFetchTitles.length > 0) {
     const replRecords = await prisma.trainingTaken.findMany({
-      where: { trainingTitle: { in: Array.from(allReplTitles) } },
+      where: { trainingTitle: { in: replFetchTitles } },
       select: { trainingTitle: true, email: true, expiryDate: true },
     });
     for (const rr of replRecords) {
@@ -133,10 +146,14 @@ export async function computeLegacyGaps(
     const activeReplacementEmails = new Set<string>();
     const anyReplacementEmails = new Set<string>();
     for (const replTitle of lt.replacedBy) {
-      const entry = replByTitle.get(replTitle);
-      if (!entry) continue;
-      for (const e of entry.any) anyReplacementEmails.add(e);
-      for (const e of entry.active) activeReplacementEmails.add(e);
+      // A configured title with no catalogue row keeps itself, matching
+      // `resolveSiblingTitles`' own singleton fallback.
+      for (const sibling of replSiblings.get(replTitle) ?? [replTitle]) {
+        const entry = replByTitle.get(sibling);
+        if (!entry) continue;
+        for (const e of entry.any) anyReplacementEmails.add(e);
+        for (const e of entry.active) activeReplacementEmails.add(e);
+      }
     }
 
     // Gap students = holders without an ACTIVE replacement.

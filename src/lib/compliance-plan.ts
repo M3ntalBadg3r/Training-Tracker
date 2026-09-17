@@ -306,9 +306,18 @@ const TIER_RANK: Record<Exclude<CandidateTier, "net-new">, number> = {
 // ─── Reverse ILT/OLX → cert index + legacy/full-title maps ───────────────────
 
 interface CatalogueIndex {
-  /** cert trainingTitle → the ILT/OLX titles that lead to it (with display). */
+  /**
+   * cert PAIR KEY → the ILT/OLX titles that lead to it (with display).
+   *
+   * Keyed on the pair rather than the raw `trainingTitle` for the same reason
+   * `certKey` is (see `pairKey` below): `certification[]` names one catalogue
+   * variant, a requirement names another, and `resolveSiblingTitles` counts them
+   * as the same cert. Keying raw meant a training that led to variant A was
+   * never offered as a path to a requirement naming variant B, so those
+   * candidates silently fell out of the easy-win pool.
+   */
   reverseCert: Map<string, { title: string; full: string }[]>;
-  /** cert trainingTitle → legacy certs whose replacedBy names it (with display). */
+  /** cert PAIR KEY → legacy certs whose replacedBy names it (with display). */
   legacyForCert: Map<string, { title: string; full: string }[]>;
   fullTitle: Map<string, string>;
   /**
@@ -357,16 +366,18 @@ async function buildCatalogueIndex(): Promise<CatalogueIndex> {
       r.certification.length > 0
     ) {
       for (const certTitle of r.certification) {
-        if (!reverseCert.has(certTitle)) reverseCert.set(certTitle, []);
-        reverseCert.get(certTitle)!.push({ title: r.trainingTitle, full: r.fullTitle });
+        const key = pairKey.get(certTitle) ?? certTitle;
+        if (!reverseCert.has(key)) reverseCert.set(key, []);
+        reverseCert.get(key)!.push({ title: r.trainingTitle, full: r.fullTitle });
       }
     }
     // Legacy certs point (via replacedBy) at their replacement(s) — invert it so a
     // required cert knows which legacy certs upgrade into it.
     if (r.isLegacy && r.replacedBy.length > 0) {
       for (const replacement of r.replacedBy) {
-        if (!legacyForCert.has(replacement)) legacyForCert.set(replacement, []);
-        legacyForCert.get(replacement)!.push({ title: r.trainingTitle, full: r.fullTitle });
+        const key = pairKey.get(replacement) ?? replacement;
+        if (!legacyForCert.has(key)) legacyForCert.set(key, []);
+        legacyForCert.get(key)!.push({ title: r.trainingTitle, full: r.fullTitle });
       }
     }
   }
@@ -580,7 +591,7 @@ async function buildInstances(
       const iltTitles: string[] = [];
       const iltFullFor = new Map<string, string>();
       for (const cert of row.titles) {
-        for (const ilt of idx.reverseCert.get(cert) ?? []) {
+        for (const ilt of idx.reverseCert.get(idx.pairKey.get(cert) ?? cert) ?? []) {
           iltTitles.push(ilt.title);
           if (!iltFullFor.has(ilt.title)) iltFullFor.set(ilt.title, ilt.full);
         }
@@ -607,7 +618,7 @@ async function buildInstances(
       const legacyTitles: string[] = [];
       const legacyFullFor = new Map<string, string>();
       for (const cert of row.titles) {
-        for (const lg of idx.legacyForCert.get(cert) ?? []) {
+        for (const lg of idx.legacyForCert.get(idx.pairKey.get(cert) ?? cert) ?? []) {
           legacyTitles.push(lg.title);
           if (!legacyFullFor.has(lg.title)) legacyFullFor.set(lg.title, lg.full);
         }

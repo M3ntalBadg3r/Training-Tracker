@@ -8,7 +8,12 @@ import { resolveProductTypeId } from "@/lib/product-types";
 import { sanitizeLegacyFields } from "@/lib/legacy-training";
 import { invalidateReportCache } from "@/lib/report-cache";
 import { readJsonBody } from "@/lib/request-body";
-import { expandFullTitles, isFunctionType, isTrainingType } from "@/lib/training-group";
+import {
+  expandFullTitles,
+  isFunctionType,
+  isTrainingType,
+  rewriteTitleReferences,
+} from "@/lib/training-group";
 
 const LEGACY_ELIGIBLE_TYPES = ["Certification", "Accreditation"];
 
@@ -410,7 +415,14 @@ export async function DELETE(
     ),
   );
 
-  await prisma.trainingData.deleteMany({ where: { fullTitle: decoded } });
+  // Same unit as the single-title delete: the cascade does not reach other rows'
+  // `certification[]`/`replacedBy[]`, which hold these titles as plain strings.
+  await prisma.$transaction(async (tx: PrismaTransactionClient) => {
+    await tx.trainingData.deleteMany({ where: { fullTitle: decoded } });
+    for (const t of memberTitles) {
+      await rewriteTitleReferences(tx, t, null);
+    }
+  });
 
   for (const p of affectedParents) {
     await recomputeAllStudentsForParent(p);
