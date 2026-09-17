@@ -25,6 +25,15 @@ export interface ComplianceScope {
   companyIds?: number[] | null;
 }
 
+/**
+ * Which geographic column of `Student` a bucketed count is grouped by.
+ *
+ * Both are single, non-null columns on `Student` (`theatre` is denormalised
+ * from `RegionData.theatre` on create/edit), which is what makes the partition
+ * clean — see the bucketing comment in `getEmailSetsByTitleAndGeo`.
+ */
+export type GeoBucket = "theatre" | "country";
+
 /** A program data row shape sufficient for compliance calculations. */
 export interface ProgramRequirement {
   trainingTitle: string | null;
@@ -127,6 +136,64 @@ export async function resolveSiblingTitles(trainingTitles: string[]): Promise<{
 }
 
 /**
+ * Translate a `ComplianceScope` into the `student` relation filter shared by
+ * every holder query here, so the scope is honoured identically whether or not
+ * the result is bucketed.
+ *
+ * The company rule is the one from CLAUDE.md ("Writing a route handler", item
+ * 3): an empty array means "this caller may read no companies" and must match
+ * nothing, while `null`/`undefined` is the separate, deliberate "unrestricted"
+ * case. Callers early-return an empty result on `companyIds.length === 0`
+ * *before* reaching this builder, which is why the `length > 0` test below is
+ * unreachable with an empty array and is correct as written — it is kept so the
+ * builder fails closed on its own if a future caller forgets the early return.
+ *
+ * `countries: []` deliberately has no such guard: it is applied as `in: []`,
+ * which matches nothing, which is the honest answer for an empty country list.
+ */
+function buildStudentFilter(scope: ComplianceScope): Record<string, unknown> {
+  const studentFilter: Record<string, unknown> = {};
+  if (scope.country) studentFilter.country = scope.country;
+  if (scope.countries) studentFilter.country = { in: scope.countries };
+  if (scope.theatre) studentFilter.theatre = scope.theatre;
+  if (Array.isArray(scope.companyIds) && scope.companyIds.length > 0) {
+    studentFilter.companyId = { in: scope.companyIds };
+  }
+  return studentFilter;
+}
+
+/**
+ * Merge each requested title's sibling group into one union per bucket, keyed
+ * by the *requested* title, so `unionAttained*` lookups see every catalogue
+ * variant's holders (see `resolveSiblingTitles`).
+ *
+ * Used by the bucketed query only. `getEmailSetsByTitle` still carries its own
+ * inline merge over a flat set, so there really are two implementations of this
+ * rule — do not read this helper as the single definition and skip checking the
+ * other one. (`buildStudentFilter` genuinely is shared by both.)
+ */
+function mergeSiblingBuckets(
+  groupMembers: Map<string, string[]>,
+  rawByTitle: Map<string, Map<string, Set<string>>>
+): Map<string, Map<string, Set<string>>> {
+  const map = new Map<string, Map<string, Set<string>>>();
+  for (const [requested, members] of groupMembers) {
+    const merged = new Map<string, Set<string>>();
+    for (const m of members) {
+      const byBucket = rawByTitle.get(m);
+      if (!byBucket) continue;
+      for (const [bucket, emails] of byBucket) {
+        if (!merged.has(bucket)) merged.set(bucket, new Set());
+        const set = merged.get(bucket)!;
+        for (const e of emails) set.add(e);
+      }
+    }
+    map.set(requested, merged);
+  }
+  return map;
+}
+
+/**
  * Email-sets keyed by training title for a given scope, considering only
  * trainings that are valid *as of* `asOf` — i.e. completed on or before `asOf`
  * (`completedDate <= asOf`) and not yet expired (`expiryDate > asOf`). The
@@ -151,13 +218,7 @@ export async function getEmailSetsByTitle(
 
   const { fetchTitles, groupMembers } = await resolveSiblingTitles(trainingTitles);
 
-  const studentFilter: Record<string, unknown> = {};
-  if (scope.country) studentFilter.country = scope.country;
-  if (scope.countries) studentFilter.country = { in: scope.countries };
-  if (scope.theatre) studentFilter.theatre = scope.theatre;
-  if (Array.isArray(scope.companyIds) && scope.companyIds.length > 0) {
-    studentFilter.companyId = { in: scope.companyIds };
-  }
+  const studentFilter = buildStudentFilter(scope);
 
   const rows = await prisma.trainingTaken.findMany({
     where: {
@@ -190,64 +251,92 @@ export async function getEmailSetsByTitle(
 }
 
 /**
- * Email sets keyed by trainingTitle and then by theatre. Used for Global
- * Diamond's per-theatre breakdown.
+ * Email sets keyed by trainingTitle and then by a geographic bucket — the
+ * `theatre` or the `country` of the holding student.
+ *
+ * This is `getEmailSetsByTitle` with one extra grouping level; everything that
+ * makes the flat query correct is inherited rather than reimplemented:
+ *
+ *  - **Point-in-time semantics** — the same `completedDate <= asOf` /
+ *    `expiryDate > asOf` pair, so historical and forecast snapshots stay honest.
+ *  - **Sibling expansion** — `resolveSiblingTitles`, which carries the
+ *    `ELIGIBLE_TRAINING_DATA` filter for the load-bearing reason documented
+ *    there (an unreviewed auto-created import row would otherwise join a
+ *    configured requirement's group and contribute holders nobody configured).
+ *  - **Scope** — the full `ComplianceScope`, so a country-list restriction
+ *    (`scope.countries`) is expressible. The theatre wrapper below only ever
+ *    passed a company filter; bucketing by country *within* a supplied country
+ *    list is what the offering geography breakdown needs.
+ *  - **Empty company scope matches nothing** — the early return below, plus
+ *    `buildStudentFilter`'s own guard.
+ *
+ * Empty input → empty map.
  */
-export async function getEmailSetsByTitleAndTheatre(
+export async function getEmailSetsByTitleAndGeo(
   trainingTitles: string[],
   asOf: Date,
-  companyIds?: number[] | null
+  bucket: GeoBucket,
+  scope: ComplianceScope = {}
 ): Promise<Map<string, Map<string, Set<string>>>> {
   if (trainingTitles.length === 0) return new Map();
-  if (Array.isArray(companyIds) && companyIds.length === 0) return new Map();
+  // An empty array is "may read no companies" and must match nothing; `null`
+  // and `undefined` are the separate, deliberate "unrestricted" case.
+  if (Array.isArray(scope.companyIds) && scope.companyIds.length === 0) return new Map();
 
   const { fetchTitles, groupMembers } = await resolveSiblingTitles(trainingTitles);
+  const studentFilter = buildStudentFilter(scope);
 
   const rows = await prisma.trainingTaken.findMany({
     where: {
       trainingTitle: { in: fetchTitles },
       completedDate: { lte: asOf },
       expiryDate: { gt: asOf },
-      ...(Array.isArray(companyIds) && companyIds.length > 0
-        ? { student: { companyId: { in: companyIds } } }
-        : {}),
+      ...(Object.keys(studentFilter).length > 0 ? { student: studentFilter } : {}),
     },
     select: {
       trainingTitle: true,
       email: true,
-      student: { select: { theatre: true } },
+      student: { select: { theatre: true, country: true } },
     },
   });
 
   const rawByTitle = new Map<string, Map<string, Set<string>>>();
   for (const r of rows) {
-    let byTheatre = rawByTitle.get(r.trainingTitle);
-    if (!byTheatre) {
-      byTheatre = new Map();
-      rawByTitle.set(r.trainingTitle, byTheatre);
+    let byBucket = rawByTitle.get(r.trainingTitle);
+    if (!byBucket) {
+      byBucket = new Map();
+      rawByTitle.set(r.trainingTitle, byBucket);
     }
-    const theatre = r.student.theatre;
-    if (!byTheatre.has(theatre)) byTheatre.set(theatre, new Set());
-    byTheatre.get(theatre)!.add(r.email);
+    // A student lands in exactly ONE bucket, because `Student.theatre` and
+    // `Student.country` are each a single non-null column — so the buckets
+    // partition the population and, since the sets hold distinct emails, the
+    // per-bucket counts sum to the count over the whole scope. That property is
+    // load-bearing: it is what lets a per-country breakdown be checked against
+    // the Onshore/Nearshore/Offshore band totals, and what stops the same person
+    // being counted in two places. If a student ever gains multiple countries
+    // (or theatres), every per-bucket map here silently starts double-counting
+    // and every such check silently stops holding.
+    const key = bucket === "theatre" ? r.student.theatre : r.student.country;
+    if (!byBucket.has(key)) byBucket.set(key, new Set());
+    byBucket.get(key)!.add(r.email);
   }
 
-  // Merge each requested title's sibling group per theatre, keyed by the
-  // requested title (see resolveSiblingTitles).
-  const map = new Map<string, Map<string, Set<string>>>();
-  for (const [requested, members] of groupMembers) {
-    const merged = new Map<string, Set<string>>();
-    for (const m of members) {
-      const byTheatre = rawByTitle.get(m);
-      if (!byTheatre) continue;
-      for (const [theatre, emails] of byTheatre) {
-        if (!merged.has(theatre)) merged.set(theatre, new Set());
-        const set = merged.get(theatre)!;
-        for (const e of emails) set.add(e);
-      }
-    }
-    map.set(requested, merged);
-  }
-  return map;
+  return mergeSiblingBuckets(groupMembers, rawByTitle);
+}
+
+/**
+ * Email sets keyed by trainingTitle and then by theatre. Used for the
+ * per-theatre breakdown of Global-level requirements.
+ *
+ * A thin wrapper over `getEmailSetsByTitleAndGeo` — kept so its existing call
+ * sites read unchanged.
+ */
+export async function getEmailSetsByTitleAndTheatre(
+  trainingTitles: string[],
+  asOf: Date,
+  companyIds?: number[] | null
+): Promise<Map<string, Map<string, Set<string>>>> {
+  return getEmailSetsByTitleAndGeo(trainingTitles, asOf, "theatre", { companyIds });
 }
 
 /** Union of unique emails across primary + alternatives, given an emailSets map. */
@@ -262,22 +351,62 @@ export function unionAttained(req: ProgramRequirement, emailSets: Map<string, Se
   return u.size;
 }
 
-/** Per-theatre attained counts for a requirement (used when minimumPerTheatre is set). */
+/**
+ * Per-bucket attained counts for a requirement — the bucketed sibling of
+ * `unionAttained`, counting distinct emails across primary + alternatives
+ * within each geographic bucket.
+ *
+ * With `buckets` supplied, returns one entry per requested bucket **in that
+ * order, including zeros** (what a per-theatre minimum check needs: a theatre
+ * with nobody in it must read 0, not be absent). With `buckets` omitted,
+ * returns every bucket that actually has a holder, sorted by name — what a
+ * distribution needs, where a bucket with no holders is either absent from the
+ * data or genuinely empty and the caller decides which.
+ *
+ * Because the buckets partition the population (see `getEmailSetsByTitleAndGeo`)
+ * the counts returned with `buckets` omitted sum to `unionAttained` over the
+ * same scope.
+ */
+export function unionAttainedByGeo(
+  req: ProgramRequirement,
+  byTitleAndGeo: Map<string, Map<string, Set<string>>>,
+  buckets?: string[]
+): { bucket: string; count: number }[] {
+  if (!req.trainingTitle) return [];
+  const titles = [req.trainingTitle, ...req.alternatives.map((a) => a.trainingTitle)];
+  const keys =
+    buckets ??
+    [
+      ...new Set(
+        titles.flatMap((t) => [...(byTitleAndGeo.get(t)?.keys() ?? [])])
+      ),
+    ].sort((a, b) => a.localeCompare(b));
+  const out: { bucket: string; count: number }[] = [];
+  for (const bucket of keys) {
+    const u = new Set<string>();
+    for (const t of titles) {
+      const set = byTitleAndGeo.get(t)?.get(bucket);
+      if (set) for (const e of set) u.add(e);
+    }
+    out.push({ bucket, count: u.size });
+  }
+  return out;
+}
+
+/**
+ * Per-theatre attained counts for a requirement (used when minimumPerTheatre is
+ * set). A thin wrapper over `unionAttainedByGeo`, kept so its existing call
+ * sites read unchanged.
+ */
 export function unionAttainedByTheatre(
   req: ProgramRequirement,
   byTitleAndTheatre: Map<string, Map<string, Set<string>>>,
   theatres: string[]
 ): { theatre: string; count: number }[] {
-  if (!req.trainingTitle) return [];
-  const titles = [req.trainingTitle, ...req.alternatives.map((a) => a.trainingTitle)];
-  return theatres.map((theatre) => {
-    const u = new Set<string>();
-    for (const t of titles) {
-      const set = byTitleAndTheatre.get(t)?.get(theatre);
-      if (set) for (const e of set) u.add(e);
-    }
-    return { theatre, count: u.size };
-  });
+  return unionAttainedByGeo(req, byTitleAndTheatre, theatres).map((r) => ({
+    theatre: r.bucket,
+    count: r.count,
+  }));
 }
 
 /**

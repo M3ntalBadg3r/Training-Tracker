@@ -1457,11 +1457,20 @@ training:
 
 #### The delivery-geography map
 
-Above those tables the page draws a **world map** of the same three
-geographies, so you can see how far away your delivery capability is without
-holding a map in your head. The tables are always shown underneath it &mdash;
-the map is an addition, not an alternative view, and nothing is hidden behind a
-toggle.
+Above those tables the page draws a **world map**, so you can see how far away
+your delivery capability is without holding a map in your head. The tables are
+always shown underneath it &mdash; the map is an addition, never an alternative
+to them. A **Show** dropdown on the card picks between two maps of the same
+data:
+
+| Show | What it draws |
+| --- | --- |
+| **Delivery geography** (default) | The three geographies from the table, as three shades. |
+| **Where the people are** | How many people hold **one** training, country by country. |
+
+Both choices, and the requirement the second one is drawing, are kept in the
+page address alongside the country or region, so a view can be bookmarked or
+shared and comes back intact after **Back**.
 
 Because the three geographies **overlap** &mdash; Offshore is everyone
 worldwide minus Onshore, so it already contains everyone Nearshore &mdash; a
@@ -1478,6 +1487,29 @@ non-overlapping groups, and the legend says how they relate:
 Take the two Offshore shades together and you have the Offshore figure from the
 table.
 
+#### Where the people are
+
+The second map shades countries by **how many people hold one particular
+training** &mdash; pick it from the **Requirement** dropdown next to the switch.
+It is per requirement, not per offering, precisely so the picture reconciles
+against something you can read: add up the countries in the **Onshore** list and
+you get that row's Onshore figure, and the same for Nearshore and Offshore. Add
+up each band over *its own* countries only &mdash; the whole map is not any of
+the three, because Offshore already contains Nearshore.
+
+Two shades that look similar mean very different things, so the map keeps them
+apart:
+
+| Shade | Meaning |
+| --- | --- |
+| The palest step of the scale | **Zero.** The country was counted and nobody there holds the training. |
+| Neutral grey | **No figure.** The country is outside this offering's geography, so it was never counted. |
+
+It is a single-colour scale on purpose. A red/green one would read as a
+per-country pass or fail, and that would be false for the same reason as above:
+a requirement is met by the onshore countries **collectively**. **Met** and
+**Not met** stay on the tables.
+
 Two things the map deliberately does **not** do. It does not say whether a
 requirement is met: a requirement is met by the onshore countries
 **collectively**, so people spread across several countries can satisfy one
@@ -1493,9 +1525,11 @@ PDF** is ticked in the Export menu, legend and all.
 
 Figures are scoped to the offering's company. Click **View** on any count to list
 the people behind it, and use **Export** for the current view. The selected
-level and value are mirrored into the page address, so opening a person's
-record and pressing **Back** returns you to the same country or region instead
-of an empty selector — and a view can be bookmarked or shared as a link.
+level and value, the chosen map and its requirement are all mirrored into the
+page address, so opening a person's record and pressing **Back** returns you to
+the same view instead of an empty selector — and a view can be bookmarked or
+shared as a link. A link naming a requirement the offering no longer has falls
+back to the first one rather than showing you an empty map.
 Offerings are
 included in both full and config backups (a config restore, which carries no
 companies, lands offerings on the target's oldest company for you to reassign),

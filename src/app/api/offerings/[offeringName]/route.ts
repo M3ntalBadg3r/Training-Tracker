@@ -6,6 +6,8 @@ import { safeDecodeParam, safeExternalUrl } from "@/lib/utils";
 import {
   resolveOfferingGeo,
   computeOfferingCounts,
+  computeOfferingCountryBreakdown,
+  type HoldersByCountry,
   type OfferingLevel,
 } from "@/lib/offering-compliance";
 
@@ -14,8 +16,9 @@ import {
  * Data-driven offering dashboard. Returns the offering definition + the
  * countries/regions available for the scope selector, and — when a country or
  * region is selected — per-specialisation requirements with Onshore + Nearshore
- * + Offshore distinct-holder counts and Met flags. Company-scoped (compliance =
- * students).
+ * + Offshore distinct-holder counts and Met flags, each carrying a per-country
+ * distinct-holder breakdown of its own numbers (`holdersByCountry`, keyed by
+ * the app's own country name). Company-scoped (compliance = students).
  *
  * `?students=true&scope=onshore|nearshore|offshore&trainingTitle=<csv>&level=&country=|region=`
  * returns the drill-down student list for a requirement.
@@ -109,6 +112,17 @@ export async function GET(
     nearshore: number | null;
     offshore: number | null;
     met: boolean | null;
+    /**
+     * Distinct holders of this requirement per country, keyed by the app's own
+     * country name. A DISTRIBUTION of the three band counts, not a per-country
+     * verdict: `met` is decided on the Onshore set as a whole, so three holders
+     * in three countries meet a requirement of 3 that no single country meets.
+     * Countries with no holders are omitted, so a consumer distinguishing
+     * "counted, nobody here" from "never counted" must intersect these keys
+     * with `geo.onshoreCountries` ∪ `geo.offshoreCountries` — the set the
+     * breakdown query actually covered. Null until a scope is selected.
+     */
+    holdersByCountry: HoldersByCountry | null;
   }
   const specMap = new Map<number, { name: string; requirements: ReqOut[] }>();
   for (const link of offering.specialisations) {
@@ -134,6 +148,7 @@ export async function GET(
       nearshore: null,
       offshore: null,
       met: null,
+      holdersByCountry: null,
     });
   }
 
@@ -149,7 +164,20 @@ export async function GET(
         quantityRequired: r.quantityRequired,
       }))
     );
-    const counts = await computeOfferingCounts(allReqs, geoOut, companyFilter);
+    // Two passes over the same scope: the band totals the table shows, and the
+    // per-country decomposition of those same totals for the map beside it.
+    // They share the counting logic AND, through `asOf`, one instant. That
+    // second half is the load-bearing one: they are still separate queries in
+    // separate transactions, so on their own clocks a completion expiring
+    // between the two round-trips would leave the table reading `onshore: 7`
+    // while the map sums to 6 — and the map's whole claim is that those
+    // reconcile. Vanishingly rare, but it would present as a reconciliation bug
+    // with no reproducible cause, which is the worst kind to be handed.
+    const asOf = new Date();
+    const [counts, breakdown] = await Promise.all([
+      computeOfferingCounts(allReqs, geoOut, companyFilter, asOf),
+      computeOfferingCountryBreakdown(allReqs, geoOut, companyFilter, asOf),
+    ]);
     for (const spec of specMap.values()) {
       for (const req of spec.requirements) {
         const c = counts.get(req.id) ?? { onshore: 0, nearshore: 0, offshore: 0 };
@@ -157,6 +185,7 @@ export async function GET(
         req.nearshore = geoOut.hasNearshore ? c.nearshore : null;
         req.offshore = geoOut.hasOffshore ? c.offshore : null;
         req.met = c.onshore >= req.quantityRequired;
+        req.holdersByCountry = breakdown.get(req.id) ?? {};
       }
     }
   }
