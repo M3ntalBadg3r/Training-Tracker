@@ -6,11 +6,37 @@ export interface GeoFields {
   country?: string | null;
 }
 
-const isUnknownRegion = (region: string | null | undefined): boolean => {
+/**
+ * "This country has no region defined." The canonical stored form is an empty
+ * string, but the literal "Unknown" is still recognised: the student import
+ * used to write that word into RegionData for every country it did not know,
+ * and an archive restored from before the `20260917000000_blank_unknown_region`
+ * migration can carry it back in.
+ */
+export const isUnknownRegion = (region: string | null | undefined): boolean => {
   if (!region) return true;
   const v = region.trim().toLowerCase();
   return v === "" || v === "unknown";
 };
+
+/**
+ * Placeholder texts that mean "no region", recognised on the DISPLAY side only.
+ * Deliberately wider than `isUnknownRegion` above, which decides *bucketing*:
+ * hiding a placeholder word in a table cell is safe, whereas folding one into
+ * the theatre bucket would silently change report totals for anyone using it as
+ * a real region name.
+ */
+const DISPLAY_PLACEHOLDER_REGIONS = new Set(["", "unknown", "not applicable"]);
+
+/**
+ * The region as it should be shown to a user: the stored value, or an empty
+ * string when no region is defined. Display sites render that as an empty
+ * cell/field rather than a placeholder word.
+ */
+export function displayRegion(region: string | null | undefined): string {
+  const value = (region ?? "").trim();
+  return DISPLAY_PLACEHOLDER_REGIONS.has(value.toLowerCase()) ? "" : value;
+}
 
 /**
  * Resolve the canonical group-by bucket for a row given the mode.

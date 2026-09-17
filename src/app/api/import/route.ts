@@ -298,8 +298,10 @@ export async function POST(request: NextRequest) {
       //   then use the RegionData theatre.
       // - Country known with no theatre: keep row's theatre, warn so the
       //   SuperAdmin populates RegionData.
-      // - Country unknown: auto-create RegionData (region "Unknown"), keep
-      //   row's theatre, warn.
+      // - Country unknown: auto-create RegionData with NO region (an empty
+      //   string, the first-class "not defined yet" state — this used to store
+      //   the literal "Unknown", which then showed up as a region name in every
+      //   table, dropdown and export), keep row's theatre, warn.
       const csvTheatre = (row.theatre || "").trim();
       let resolvedTheatre = csvTheatre;
       if (row.country) {
@@ -310,11 +312,11 @@ export async function POST(request: NextRequest) {
             rd = { country: found.country, region: found.region, theatre: found.theatre };
           } else {
             const created = await prisma.regionData.create({
-              data: { country: row.country, region: "Unknown", theatre: csvTheatre || null },
+              data: { country: row.country, region: "", theatre: csvTheatre || null },
             });
             rd = { country: created.country, region: created.region, theatre: created.theatre };
             summary.errors.push(
-              `Row ${rowNum}: Country "${row.country}" was not in Region Data; created with region "Unknown"${
+              `Row ${rowNum}: Country "${row.country}" was not in Region Data; created with no region${
                 csvTheatre ? ` and theatre "${csvTheatre}"` : " and no theatre"
               }. Ask a SuperAdmin to verify.`
             );

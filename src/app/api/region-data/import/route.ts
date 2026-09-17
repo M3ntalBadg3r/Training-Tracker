@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { handleAuthError, requireSuperAdmin } from "@/lib/auth";
 import { readJsonBody } from "@/lib/request-body";
+import { normaliseIsoCode } from "@/lib/iso-countries";
 
 export async function POST(request: NextRequest) {
   try {
@@ -14,7 +15,12 @@ export async function POST(request: NextRequest) {
   const body = parsed.body;
   const { rows, columnMapping } = body as {
     rows: Record<string, string>[];
-    columnMapping: { country: string; region: string; theatre?: string };
+    columnMapping: {
+      country: string;
+      region: string;
+      theatre?: string;
+      isoCode?: string;
+    };
   };
 
   if (!rows || !columnMapping?.country || !columnMapping?.region) {
@@ -41,9 +47,20 @@ export async function POST(request: NextRequest) {
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
     const country = row[columnMapping.country]?.trim();
-    const region = row[columnMapping.region]?.trim();
+    // The Region column is mapped, so its cells are applied — including a blank
+    // one, which clears the region (the same rule the mapped theatre column
+    // follows). Coerced to "" because the column is NOT NULL.
+    const region = row[columnMapping.region]?.trim() ?? "";
     const theatreRaw = columnMapping.theatre ? row[columnMapping.theatre]?.trim() : "";
     const theatre = theatreRaw ? theatreRaw : null;
+    // An unmapped column must write NOTHING. When columnMapping.isoCode is
+    // absent we neither compare nor write it, so a file with no ISO column
+    // leaves every stored code alone — the same rule theatre follows above.
+    // (The training-data Legacy/Replacement columns are the documented example
+    // of what happens when this is got wrong: importing a file without the
+    // column silently cleared the value on every row it touched.)
+    const isoRaw = columnMapping.isoCode ? row[columnMapping.isoCode] : undefined;
+    const isoCode = columnMapping.isoCode ? normaliseIsoCode(isoRaw ?? null) : undefined;
     const rowNum = i + 2; // +2 because row 1 is header, data starts at row 2
 
     if (!country) {
@@ -51,8 +68,15 @@ export async function POST(request: NextRequest) {
       skipped++;
       continue;
     }
-    if (!region) {
-      errors.push(`Row ${rowNum}: Missing region value for country "${country}"`);
+    // A blank Region cell is NOT an error: it is the "no region defined" state,
+    // and refusing it meant a file exported from this page could not be
+    // re-imported once any country had been left unmapped.
+    // A mapped-but-malformed ISO cell skips the row rather than being dropped
+    // silently — the operator asked for that column to be applied.
+    if (columnMapping.isoCode && isoCode === undefined) {
+      errors.push(
+        `Row ${rowNum}: ISO code for "${country}" must be two letters (ISO 3166-1 alpha-2)`
+      );
       skipped++;
       continue;
     }
@@ -69,12 +93,16 @@ export async function POST(request: NextRequest) {
         const theatreChanged = columnMapping.theatre
           ? (existing.theatre ?? null) !== theatre
           : false;
-        if (regionChanged || theatreChanged) {
+        const isoChanged = columnMapping.isoCode
+          ? (existing.isoCode ?? null) !== (isoCode ?? null)
+          : false;
+        if (regionChanged || theatreChanged || isoChanged) {
           await prisma.regionData.update({
             where: { country },
             data: {
               region,
               ...(columnMapping.theatre ? { theatre } : {}),
+              ...(columnMapping.isoCode ? { isoCode: isoCode ?? null } : {}),
             },
           });
           updated++;
@@ -83,7 +111,7 @@ export async function POST(request: NextRequest) {
         }
       } else {
         await prisma.regionData.create({
-          data: { country, region, theatre },
+          data: { country, region, theatre, isoCode: isoCode ?? null },
         });
         imported++;
       }

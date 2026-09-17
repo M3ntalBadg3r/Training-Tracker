@@ -30,6 +30,19 @@
  * Cert X in Program A and in Program B" dedup), but bars them from a *different*
  * cert's slot (contention). See `allocateCandidates`, which is pure and
  * unit-testable.
+ *
+ * **The same dedup governs the net-new remainder**, and that is easy to lose: a
+ * cert required by three specialisations at 2 each, with nobody in its pools, is
+ * *two* people to certify, not six. `netNewTotal` therefore groups instances by
+ * cert + population and takes the largest remaining gap per group rather than
+ * summing. Only the totals dedup — `PlanRequirement.netNew` and
+ * `PlanSpecialisation.cost` stay per-instance/standalone, because each of those
+ * figures is true of that requirement read on its own, and `sharedWith` names the
+ * other specialisations so the page can say the total counts it once. Known
+ * approximation: a tiered target's cheapest-K specialisation ranking still costs
+ * each specialisation standalone (see `specCost`), so two specialisations sharing
+ * a cert are not ranked as the bargain they are — picking the genuinely cheapest
+ * set is a set-cover problem, deliberately not solved here.
  */
 
 import prisma from "@/lib/prisma";
@@ -104,8 +117,18 @@ export interface PlanRequirement {
   easyWinPool: number;
   lapsedPool: number;
   legacyPool: number;
-  /** Slots still needing brand-new training after cheaper candidates are allocated. */
+  /**
+   * Slots still needing brand-new training after cheaper candidates are allocated.
+   * Per instance, so it reads true of this requirement alone — the plan's totals
+   * count a cert shared with `sharedWith` once (see `netNewTotal`).
+   */
   netNew: number;
+  /**
+   * The other specialisations in this target that need the same cert over the same
+   * population. Non-empty means this requirement's `netNew`/gap is shared: closing
+   * it closes theirs too, and the target's totals charge for it once.
+   */
+  sharedWith: string[];
   /** Active holders whose qualifying training expires within the renewal window. */
   expiringSoon: number;
 }
@@ -277,6 +300,15 @@ interface CatalogueIndex {
   /** cert trainingTitle → legacy certs whose replacedBy names it (with display). */
   legacyForCert: Map<string, { title: string; full: string }[]>;
   fullTitle: Map<string, string>;
+  /**
+   * trainingTitle → `${fullTitle}::${trainingType}` — the identity `certKey` is
+   * built from. It must be this pair and not the raw title, because that is what
+   * `resolveSiblingTitles` groups on: two requirements naming different catalogue
+   * variants of one training count the *same* holders, so they have to be
+   * recognised as the same cert or neither the candidate dedup nor `netNewTotal`
+   * will collapse them.
+   */
+  pairKey: Map<string, string>;
 }
 
 async function buildCatalogueIndex(): Promise<CatalogueIndex> {
@@ -297,7 +329,11 @@ async function buildCatalogueIndex(): Promise<CatalogueIndex> {
   });
 
   const fullTitle = new Map<string, string>();
-  for (const r of rows) fullTitle.set(r.trainingTitle, r.fullTitle);
+  const pairKey = new Map<string, string>();
+  for (const r of rows) {
+    fullTitle.set(r.trainingTitle, r.fullTitle);
+    pairKey.set(r.trainingTitle, `${r.fullTitle}::${r.trainingType}`);
+  }
 
   const reverseCert = new Map<string, { title: string; full: string }[]>();
   const legacyForCert = new Map<string, { title: string; full: string }[]>();
@@ -324,7 +360,7 @@ async function buildCatalogueIndex(): Promise<CatalogueIndex> {
     }
   }
 
-  return { reverseCert, legacyForCert, fullTitle };
+  return { reverseCert, legacyForCert, fullTitle, pairKey };
 }
 
 // ─── Scope helpers ───────────────────────────────────────────────────────────
@@ -472,7 +508,11 @@ async function buildInstances(
 ): Promise<ReqInstance[]> {
   // Only this scope's own-level requirements are planned against.
   if (row.level !== geo.reqLevel) return [];
-  const certKey = [...row.titles].sort().join("|");
+  // Identity of the qualifying cert-set, keyed on what is actually *counted*:
+  // the (fullTitle, trainingType) groups `resolveSiblingTitles` expands to, not
+  // the authored titles. A title with no catalogue row stays a singleton, which
+  // is `resolveSiblingTitles`' own fallback.
+  const certKey = [...new Set(row.titles.map((t) => idx.pairKey.get(t) ?? t))].sort().join("|");
 
   const targets: { scope: ComplianceScope; scopeLabel: string }[] = [
     { scope: geo.scope, scopeLabel: geo.scopeLabel },
@@ -633,6 +673,10 @@ export interface AllocationResult {
  * One move per person applies to renewals too: someone committed to renewing
  * Cert A won't also be nominated to earn Cert B. That's right for "they can only
  * sit one exam", and mildly pessimistic for anyone who could do both.
+ *
+ * `netNewByInstance` is the remainder **per instance** and so is deliberately NOT
+ * deduped — summing it charges a shared cert once per requirement. Totals go
+ * through `netNewTotal`, which applies the same same-cert dedup to the remainder.
  */
 export function allocateCandidates(instances: ReqInstance[]): AllocationResult {
   const open = instances.filter((i) => i.shortfall > 0);
@@ -729,6 +773,45 @@ export function allocateCandidates(instances: ReqInstance[]): AllocationResult {
   return { closesByEmail, committedTier, netNewByInstance };
 }
 
+/**
+ * The key two instances must share for one person's certification to count for
+ * both: the same qualifying cert-set over the same population.
+ *
+ * `resolveGeoPlan` yields a single population per plan today, so `scopeLabel` is
+ * currently constant — it is in the key anyway because the alternative fails
+ * silently and expensively (collapsing two countries' gaps into one) if a future
+ * change reintroduces multiple populations.
+ */
+function certGroupKey(inst: ReqInstance): string {
+  return `${inst.certKey}::${inst.scopeLabel}`;
+}
+
+/**
+ * People still needing brand-new training across `instances`, counting a
+ * certification required by several of them over the same population ONCE.
+ *
+ * This is the net-new half of the dedup `allocateCandidates` already performs for
+ * named people. Per group we take the **largest** remaining gap, not the sum:
+ * instances in a group share a population and therefore share candidate pools, so
+ * one cohort of N new holders satisfies every instance in the group whose gap is
+ * ≤ N. Three specialisations each needing 2 holders of the same cert cost 2
+ * people, not 6.
+ *
+ * Pure, like `allocateCandidates` — `alloc` supplies the post-allocation
+ * remainder per instance and nothing here touches the database.
+ */
+export function netNewTotal(instances: ReqInstance[], alloc: AllocationResult): number {
+  const byGroup = new Map<string, number>();
+  for (const inst of instances) {
+    const key = certGroupKey(inst);
+    const remaining = alloc.netNewByInstance.get(inst.id) ?? 0;
+    byGroup.set(key, Math.max(byGroup.get(key) ?? 0, remaining));
+  }
+  let total = 0;
+  for (const n of byGroup.values()) total += n;
+  return total;
+}
+
 // ─── Tier fastest-path ───────────────────────────────────────────────────────
 
 interface TierInfo {
@@ -759,8 +842,10 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
     target: PlanTargetResult;
     bySpec: Map<string, ReqInstance[]>;
     tierDeployInsts: ReqInstance[];
-    /** Instance ids that count toward this target's people-to-certify total. */
-    countedIds: Set<string>;
+    /** The instances that count toward this target's people-to-certify total. */
+    counted: ReqInstance[];
+    /** instanceId → the OTHER specialisations needing the same cert (see `sharedWith`). */
+    sharedByInstanceId: Map<string, string[]>;
     /** Specialisation names to badge "Recommended" (tie set); empty for non-tier. */
     recommendedSpecs: Set<string>;
   }
@@ -846,6 +931,26 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
       bySpec.get(key)!.push(inst);
     }
 
+    // Which of this target's requirements are the *same* cert over the same
+    // population, so the page can say why the per-specialisation figures add up
+    // to more than the headline. Computed over every instance, counted or not —
+    // it is informational, and a non-counted specialisation's requirement is just
+    // as shared. `label` mirrors how the roadmap groups the rows.
+    const specLabel = (inst: ReqInstance) => inst.specialisation ?? inst.tierName ?? "—";
+    const labelsByGroup = new Map<string, Set<string>>();
+    for (const inst of rowInstances) {
+      const key = certGroupKey(inst);
+      if (!labelsByGroup.has(key)) labelsByGroup.set(key, new Set());
+      labelsByGroup.get(key)!.add(specLabel(inst));
+    }
+    const sharedByInstanceId = new Map<string, string[]>();
+    for (const inst of rowInstances) {
+      const others = [...(labelsByGroup.get(certGroupKey(inst)) ?? [])]
+        .filter((n) => n !== specLabel(inst))
+        .sort((a, b) => a.localeCompare(b));
+      sharedByInstanceId.set(inst.id, others);
+    }
+
     const targetResult: PlanTargetResult = {
       program: target.program,
       mode: target.mode,
@@ -875,6 +980,10 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
       // Both read the *planning* gap, so when planning for the renewal window a
       // specialisation that lapses inside it stops counting toward the tier —
       // `needed` rises and the cheapest path can legitimately change.
+      // Known approximation: this cost is *standalone*, so two specialisations
+      // sharing a cert don't rank as the bargain they are. Costing the set rather
+      // than each member is set cover; the ranking stays greedy-per-spec and only
+      // the totals dedup (`netNewTotal`).
       const specCost = new Map<string, number>();
       const specAchieved = new Map<string, boolean>();
       for (const [name, insts] of bySpec) {
@@ -909,8 +1018,16 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
       for (const inst of rowInstances) countedIds.add(inst.id);
     }
 
-    for (const inst of rowInstances) if (countedIds.has(inst.id)) countedInstances.push(inst);
-    preps.push({ target: targetResult, bySpec, tierDeployInsts, countedIds, recommendedSpecs });
+    const counted = rowInstances.filter((inst) => countedIds.has(inst.id));
+    countedInstances.push(...counted);
+    preps.push({
+      target: targetResult,
+      bySpec,
+      tierDeployInsts,
+      counted,
+      sharedByInstanceId,
+      recommendedSpecs,
+    });
   }
 
   // Greedy allocation across only the COUNTED instances of ALL targets at once
@@ -935,10 +1052,11 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
   const studentById = new Map(students.map((s) => [s.email, s]));
 
   // ── Roll instances back up into the per-target roadmap ──
-  for (const { target, bySpec, tierDeployInsts, countedIds, recommendedSpecs } of preps) {
+  for (const { target, bySpec, tierDeployInsts, counted, sharedByInstanceId, recommendedSpecs } of preps) {
+    const shared = (inst: ReqInstance) => sharedByInstanceId.get(inst.id) ?? [];
     const specs: PlanSpecialisation[] = [];
     for (const [name, specInsts] of bySpec) {
-      const requirements = specInsts.map((inst) => toPlanRequirement(inst, alloc));
+      const requirements = specInsts.map((inst) => toPlanRequirement(inst, alloc, shared(inst)));
       // Cost is the *planning* gap, so read the instance — the DTO's `shortfall`
       // is deliberately today's figure.
       const cost = specInsts.reduce((s, i) => s + i.shortfall, 0);
@@ -963,7 +1081,7 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
 
     // Surface tier deployment requirements as a synthetic specialisation block.
     if (target.tierPlan && tierDeployInsts.length > 0) {
-      const deployReqs = tierDeployInsts.map((inst) => toPlanRequirement(inst, alloc));
+      const deployReqs = tierDeployInsts.map((inst) => toPlanRequirement(inst, alloc, shared(inst)));
       specs.push({
         name: `${target.tierName} — delivery certs`,
         achieved: isAchievedNow(deployReqs),
@@ -987,8 +1105,9 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
         if (alloc.committedTier.get(email) === "easy-win") easyWins++;
       }
     }
-    let netNew = 0;
-    for (const id of countedIds) netNew += alloc.netNewByInstance.get(id) ?? 0;
+    // Deduped, so a cert several of this target's specialisations require is paid
+    // for once — matching how `targetEmails` already counts a shared person once.
+    const netNew = netNewTotal(counted, alloc);
     target.easyWins = easyWins;
     target.netNew = netNew;
     target.peopleMoves = targetEmails.size + netNew;
@@ -1114,7 +1233,10 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
     else if (tier === "lapsed") lapsed++;
     else if (tier === "legacy") legacy++;
   }
-  const netNew = [...alloc.netNewByInstance.values()].reduce((s, n) => s + n, 0);
+  // Deduped across every counted instance of every target at once, so a cert
+  // required by two selected programs is one cohort — the same scope the greedy
+  // allocator treats contention over.
+  const netNew = netNewTotal(countedInstances, alloc);
 
   return {
     scopeLabel: geo.scopeLabel,
@@ -1154,7 +1276,11 @@ function isAchievedAtHorizon(reqs: PlanRequirement[]): boolean | null {
   return reqs.every((r) => (r.projectedAttained ?? r.attained) >= r.required);
 }
 
-function toPlanRequirement(inst: ReqInstance, alloc: AllocationResult): PlanRequirement {
+function toPlanRequirement(
+  inst: ReqInstance,
+  alloc: AllocationResult,
+  sharedWith: string[],
+): PlanRequirement {
   return {
     instanceId: inst.id,
     specialisation: inst.specialisation,
@@ -1175,6 +1301,7 @@ function toPlanRequirement(inst: ReqInstance, alloc: AllocationResult): PlanRequ
     // Counted instances get their allocated net-new; non-counted (a tier's
     // non-recommended specialisations) fall back to their raw shortfall.
     netNew: alloc.netNewByInstance.get(inst.id) ?? inst.shortfall,
+    sharedWith,
     expiringSoon: inst.expiringEmails.length,
   };
 }

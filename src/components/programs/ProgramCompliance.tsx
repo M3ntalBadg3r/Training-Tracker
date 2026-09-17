@@ -7,6 +7,7 @@ import {
   Users,
 } from "lucide-react";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
+import { exportReportToPdf, type ReportDocument, type ReportTone } from "@/lib/report-export";
 import SharedExportMenu, { type ExportFormat } from "@/components/ui/ExportMenu";
 import LoadingState from "@/components/ui/LoadingState";
 
@@ -162,6 +163,108 @@ export const RISK_BADGE: Record<RiskState, string> = {
   nonCompliant: "bg-red-100 text-red-800",
 };
 
+/**
+ * The export tone that matches each risk state, so a printed report shades a row
+ * exactly as the page shades it. Kept beside RISK_TEXT/RISK_BADGE because those
+ * three are the same decision expressed for three renderers.
+ */
+export const RISK_TONE: Record<RiskState, ReportTone> = {
+  compliant: "green",
+  atRisk: "amber",
+  nonCompliant: "red",
+};
+
+/** "Met" / "At Risk" / "Not Met" — the wording on requirement and theatre badges. */
+export const RISK_STATUS_LABEL: Record<RiskState, string> = {
+  compliant: "Met",
+  atRisk: "At Risk",
+  nonCompliant: "Not Met",
+};
+
+/** "Compliant" / "At Risk" / "Not Compliant" — the wording on specialisation badges. */
+export const RISK_COMPLIANCE_LABEL: Record<RiskState, string> = {
+  compliant: "Compliant",
+  atRisk: "At Risk",
+  nonCompliant: "Not Compliant",
+};
+
+/**
+ * The risk state of something the API has already judged compliant or not — a
+ * specialisation, or a requirement whose per-theatre minimums a bare attained
+ * count cannot express. Amber means the same thing it does in `riskState`:
+ * compliant today, below the requirement by the selected horizon.
+ */
+export function complianceRiskState(
+  compliant: boolean | null | undefined,
+  projectedCompliant: boolean | null | undefined
+): RiskState {
+  if (!compliant) return "nonCompliant";
+  return projectedCompliant === false ? "atRisk" : "compliant";
+}
+
+/**
+ * "4 -> 2" when a projection lowers the count, "4" otherwise.
+ *
+ * The arrow is spelled in ASCII because this feeds the PDF, whose built-in
+ * fonts are WinAnsi-encoded; `AttainedValue` draws the real glyph itself
+ * because it can style the two halves separately, which a string cannot.
+ */
+export function attainedText(attained: number, projected?: number): string {
+  return projected !== undefined && projected < attained
+    ? `${attained} -> ${projected}`
+    : `${attained}`;
+}
+
+/** "2 expiring", or nothing when the projection does not lower the count. */
+export function expiringText(attained: number, projected?: number): string | undefined {
+  if (projected === undefined || projected >= attained) return undefined;
+  return `${attained - projected} expiring`;
+}
+
+/** A training type's display label, falling back to the raw value, then to a dash. */
+export function trainingTypeLabel(trainingType: string | null | undefined): string {
+  if (!trainingType) return "—";
+  return TRAINING_TYPE_LABELS[trainingType] || trainingType;
+}
+
+/** The alternatives line as plain text: "or Training B (Certification), Training C (OLX)". */
+export function alternativesText(alternatives: AlternativeEntry[] | undefined): string | undefined {
+  if (!alternatives || alternatives.length === 0) return undefined;
+  const parts = alternatives.map((a) => `${a.trainingFullTitle} (${trainingTypeLabel(a.trainingType)})`);
+  return `or ${parts.join(", ")}`;
+}
+
+/**
+ * Why deployment requirements sit under a specialisation without deciding
+ * whether it is achieved. Shared by both level reports and the PDF, so the
+ * printed explanation cannot drift from the one on screen.
+ */
+export const DEPLOYMENT_REQUIREMENTS_NOTE =
+  "Required together with the specialisation to qualify for tiers that use it. " +
+  "These do not change whether the specialisation itself is achieved.";
+
+/**
+ * The specialisation gate for one tier. In "perTierPerSpecialisation" mode the
+ * gate counts the specialisations meeting ALL of *this* tier's criteria rather
+ * than the ladder-wide achieved count, so the two modes label it differently.
+ */
+export function tierGate(
+  block: TierBlock,
+  tier: TierInfo
+): { label: string; counted: number; required: number; met: boolean } {
+  const perTierPerSpec =
+    block.deploymentMode === "perTierPerSpecialisation" && tier.satisfiedSpecialisationCount != null;
+  const counted = perTierPerSpec
+    ? tier.satisfiedSpecialisationCount ?? 0
+    : block.achievedSpecialisationCount;
+  return {
+    label: perTierPerSpec ? "Specialisations meeting all criteria" : "Specialisations",
+    counted,
+    required: tier.specialisationsRequired,
+    met: counted >= tier.specialisationsRequired,
+  };
+}
+
 /** Inline "current → projected" attained value with an optional unit label. */
 export function AttainedValue({
   attained,
@@ -261,10 +364,7 @@ export function ComplianceTable({
               <tr>
                 <td colSpan={colCount} className="px-4 py-2 border border-gray-200 bg-indigo-50">
                   <div className="text-sm font-semibold text-indigo-800">Deployment requirements</div>
-                  <div className="text-xs text-indigo-700/80">
-                    Required together with the specialisation to qualify for tiers that use it. These do not change
-                    whether the specialisation itself is achieved.
-                  </div>
+                  <div className="text-xs text-indigo-700/80">{DEPLOYMENT_REQUIREMENTS_NOTE}</div>
                 </td>
               </tr>
               {Array.from({ length: maxDepReqs }).map((_, reqIdx) => (
@@ -320,15 +420,13 @@ function RequirementRowGroup({
               {req ? (
                 <div>
                   <div className="font-medium">{req.trainingFullTitle}</div>
-                  <div className="text-xs text-gray-500">
-                    {req.trainingType ? TRAINING_TYPE_LABELS[req.trainingType] || req.trainingType : "—"}
-                  </div>
+                  <div className="text-xs text-gray-500">{trainingTypeLabel(req.trainingType)}</div>
                   {req.alternatives && req.alternatives.length > 0 && (
                     <div className="text-xs text-blue-600 mt-1">
                       {req.alternatives.map((a, i) => (
                         <span key={i}>
                           {i === 0 ? "or " : ", "}<span className="font-medium">{a.trainingFullTitle}</span>
-                          <span className="text-gray-400"> ({TRAINING_TYPE_LABELS[a.trainingType] || a.trainingType})</span>
+                          <span className="text-gray-400"> ({trainingTypeLabel(a.trainingType)})</span>
                         </span>
                       ))}
                     </div>
@@ -419,24 +517,10 @@ export function SpecialisationCard({ spec }: { spec: Specialisation }) {
   return (
     <div className="mb-6 bg-white rounded-lg border border-gray-200 overflow-hidden">
       {(() => {
-        const state: RiskState = spec.compliant
-          ? spec.projectedCompliant === false
-            ? "atRisk"
-            : "compliant"
-          : "nonCompliant";
-        const label =
-          state === "compliant" ? "Compliant" : state === "atRisk" ? "At Risk" : "Not Compliant";
-        const depState: RiskState = spec.deploymentCompliant
-          ? spec.projectedDeploymentCompliant === false
-            ? "atRisk"
-            : "compliant"
-          : "nonCompliant";
-        const depLabel =
-          depState === "compliant"
-            ? "Deployment: Met"
-            : depState === "atRisk"
-              ? "Deployment: At Risk"
-              : "Deployment: Not Met";
+        const state = complianceRiskState(spec.compliant, spec.projectedCompliant);
+        const label = RISK_COMPLIANCE_LABEL[state];
+        const depState = complianceRiskState(spec.deploymentCompliant, spec.projectedDeploymentCompliant);
+        const depLabel = `Deployment: ${RISK_STATUS_LABEL[depState]}`;
         return (
           <div className="flex items-center justify-between gap-2 px-5 py-4 border-b border-gray-100">
             <h2 className="text-lg font-semibold">{spec.name}</h2>
@@ -475,10 +559,7 @@ export function SpecialisationCard({ spec }: { spec: Specialisation }) {
                 <tr className="bg-indigo-50">
                   <td colSpan={7} className="px-4 py-2">
                     <div className="text-sm font-semibold text-indigo-800">Deployment requirements</div>
-                    <div className="text-xs text-indigo-700/80">
-                      Required together with the specialisation to qualify for tiers that use it. These do not
-                      change whether the specialisation itself is achieved.
-                    </div>
+                    <div className="text-xs text-indigo-700/80">{DEPLOYMENT_REQUIREMENTS_NOTE}</div>
                   </td>
                 </tr>
                 {deploymentReqs.map((req, i) => (
@@ -500,13 +581,8 @@ function RequirementRows({ req }: { req: Requirement }) {
   const projectedGlobalAttained = req.projectedGlobalAttained;
   const attainedState = riskState(globalAttained, projectedGlobalAttained, req.quantityRequired);
   // Status reflects the full compliance (incl. per-theatre minimums) at the horizon.
-  const statusState: RiskState = req.compliant
-    ? req.projectedCompliant === false
-      ? "atRisk"
-      : "compliant"
-    : "nonCompliant";
-  const statusLabel =
-    statusState === "compliant" ? "Met" : statusState === "atRisk" ? "At Risk" : "Not Met";
+  const statusState = complianceRiskState(req.compliant, req.projectedCompliant);
+  const statusLabel = RISK_STATUS_LABEL[statusState];
 
   return (
     <>
@@ -529,15 +605,13 @@ function RequirementRows({ req }: { req: Requirement }) {
               {req.alternatives.map((a, i) => (
                 <span key={i}>
                   {i === 0 ? "or " : ", "}<span className="font-medium">{a.trainingFullTitle}</span>
-                  <span className="text-gray-400"> ({TRAINING_TYPE_LABELS[a.trainingType] || a.trainingType})</span>
+                  <span className="text-gray-400"> ({trainingTypeLabel(a.trainingType)})</span>
                 </span>
               ))}
             </div>
           )}
         </td>
-        <td className="px-4 py-3 text-gray-600">
-          {req.trainingType ? (TRAINING_TYPE_LABELS[req.trainingType] || req.trainingType) : "—"}
-        </td>
+        <td className="px-4 py-3 text-gray-600">{trainingTypeLabel(req.trainingType)}</td>
         <td className="px-4 py-3 text-center font-semibold">{req.quantityRequired}</td>
         <td className="px-4 py-3 text-center">
           <AttainedValue
@@ -574,8 +648,7 @@ function RequirementRows({ req }: { req: Requirement }) {
                     )?.count;
                     const required = req.minimumPerTheatre ?? 0;
                     const tState = riskState(t.count, projectedCount, required);
-                    const tLabel =
-                      tState === "compliant" ? "Met" : tState === "atRisk" ? "At Risk" : "Not Met";
+                    const tLabel = RISK_STATUS_LABEL[tState];
                     return (
                       <tr key={t.theatre} className="border-t border-gray-200">
                         <td className="px-3 py-2">{t.theatre}</td>
@@ -618,6 +691,13 @@ function RequirementRows({ req }: { req: Requirement }) {
  * mapped onto the shared component's `onExport` callback, and the open flag is
  * passed straight through (a page renders several of these at once and owns
  * the state so only one is open at a time).
+ *
+ * `pdfDocument` is the escape hatch from that flat shape. A dashboard is not a
+ * rectangle — it is cards, badges, risk shading and a tier ladder — and none of
+ * that survives a single untoned table. A page that has assembled a
+ * `ReportDocument` passes it here and the PDF is rendered from that instead.
+ * CSV and Excel are untouched by it on purpose: they are data interchange, and
+ * their contents have to keep matching what the flat `data`/`columns` produce.
  */
 export function ExportMenu({
   show,
@@ -626,6 +706,7 @@ export function ExportMenu({
   columns,
   filename,
   align = "left",
+  pdfDocument,
 }: {
   show: boolean;
   setShow: (v: boolean) => void;
@@ -633,10 +714,28 @@ export function ExportMenu({
   columns: { key: string; header: string }[];
   filename: string;
   align?: "left" | "right";
+  /** When given, PDF export renders this document instead of the flat table.
+   *  CSV and Excel continue to use `data`/`columns` unchanged. */
+  pdfDocument?: ReportDocument | (() => ReportDocument);
 }) {
+  // Accepting a builder as well as a document lets a page defer assembling the
+  // thing until a format is actually picked, which is what `ReportExportMenu`
+  // already does — a dashboard rebuilds its document on every filter change
+  // otherwise, for a menu most visits never open.
+  const resolvePdfDocument = () =>
+    typeof pdfDocument === "function" ? pdfDocument() : pdfDocument;
+
   const handleExport = (fmt: ExportFormat) => {
-    if (fmt === "csv") exportToCsv(data as never[], columns as never[], filename);
-    else if (fmt === "excel") exportToExcel(data as never[], columns as never[], filename);
+    if (fmt === "csv") {
+      exportToCsv(data as never[], columns as never[], filename);
+      return;
+    }
+    if (fmt === "excel") {
+      exportToExcel(data as never[], columns as never[], filename);
+      return;
+    }
+    const doc = resolvePdfDocument();
+    if (doc) exportReportToPdf(doc, filename);
     else exportToPdf(data as never[], columns as never[], filename);
   };
 
@@ -748,11 +847,7 @@ export function TierLadder({ block }: { block: TierBlock }) {
           // In "perTierPerSpecialisation" mode the tier gate is how many
           // specialisations meet ALL of THIS tier's criteria (not the ladder-wide
           // achieved count), so use the tier's own satisfied count when present.
-          const perTierPerSpec =
-            block.deploymentMode === "perTierPerSpecialisation" && tier.satisfiedSpecialisationCount != null;
-          const counted = perTierPerSpec ? tier.satisfiedSpecialisationCount! : achieved;
-          const specsMet = counted >= tier.specialisationsRequired;
-          const specLabel = perTierPerSpec ? "Specialisations meeting all criteria" : "Specialisations";
+          const { counted, met: specsMet, label: specLabel } = tierGate(block, tier);
           const isNext = nextTier?.name === tier.name;
           return (
             <div

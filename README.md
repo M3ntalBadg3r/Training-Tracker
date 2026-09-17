@@ -760,11 +760,14 @@ Manage the mapping between countries, regions, and theatres. This page is the so
 
 - **View** — Table of all countries with their assigned region and theatre. Countries with no theatre are flagged so you can fix them.
 - **Search / Filter** — Filter by country, region, or theatre. The Theatre column has a "(missing)" filter to surface rows that still need a theatre assigned.
-- **Add** — Add a new country with its region and (optionally) theatre. A country without a theatre cannot be selected for new students — set the theatre before assigning students.
+- **Region** — Optional. Leaving it blank means the country has no region defined, and that is a real answer rather than an oversight: it is what a student import writes for a country it has never seen. A blank region shows as an **empty cell** wherever it appears — the Region Data table, a student's record, every report's Region column and every export — and it is not offered as a choice in the Region filters, so it cannot be mistaken for a region called "Unknown".
+- **Add** — Add a new country with its region (optional) and theatre (optional). A country without a theatre cannot be selected for new students — set the theatre before assigning students.
 - **Edit** — Click **Edit** on any row to modify the country, region, or theatre inline, then **Save** or **Cancel**.
 - **Delete** — Remove a country/region mapping.
-- **Import** — Upload a CSV or Excel file with `Country`, `Region`, and (optionally) `Theatre` columns. The system auto-maps columns and shows a preview before importing.
-- **Export** — Download all region data (including theatre) as CSV, Excel, or PDF.
+- **ISO Code** — Each country can carry its two-letter **ISO 3166-1** country code (`GB`, `US`, `DE`). It is optional: a country with no code shows as *(unmapped)*, and the page keeps a running count of how many are still unset. The code is what lets the app line your country names up with a map, or with any other system that identifies countries by code, so it is worth setting even before anything visibly uses it. Two things are worth knowing. The code does **not** have to be unique — if your geography lists England and Scotland separately, both are `GB`, and anything using the code adds those rows together. And leaving it blank is a real answer rather than an oversight: a geography that is not a single country genuinely has no code.
+- **Suggest ISO codes** — Looks at every country that has no code yet and tries to match it by name against the official ISO list. It shows you what it found, **including the name it matched against**, and applies nothing until you tick the rows you agree with. Anything it cannot match confidently is listed as *no suggestion* rather than guessed at. Treat the matches as proposals to check — a wrong code is worse than a blank one, because a blank one is visibly blank.
+- **Import** — Upload a CSV or Excel file with `Country`, `Region`, and (optionally) `Theatre` and `ISO Code` columns. The system auto-maps columns and shows a preview before importing. As with Theatre, **a column you do not map is not written at all**, so importing a file without an ISO Code column leaves every existing code exactly as it was. A blank `Region` cell is accepted and clears that country's region, so a file exported from this page can always be re-imported.
+- **Export** — Download all region data (including theatre and ISO code) as CSV, Excel, or PDF.
 
 #### Import size limits
 
@@ -776,7 +779,7 @@ When importing student data (the **Admin → Import** page), each row's theatre 
 
 - If the country exists in Region Data with a theatre, that theatre is the source of truth — any disagreement on the import row is overridden and surfaced as a warning in the **Issues** list.
 - If the country exists in Region Data but has no theatre, the imported theatre is used as-is and a warning asks for the missing theatre to be set.
-- If the country is brand new, Region Data auto-creates an entry with region "Unknown" and the imported theatre, and a warning asks a SuperAdmin to verify it.
+- If the country is brand new, Region Data auto-creates an entry with **no region** and the imported theatre, and a warning asks a SuperAdmin to verify it.
 
 ### Training Data
 
@@ -1340,7 +1343,7 @@ The Global report auto-adapts based on the program's data:
 - **Compliant-theatre count** — when Global rows have no specific training, the report shows how many theatres meet all of a specialisation's theatre-level requirements, against a target number of compliant theatres.
 - **Global count with per-theatre minimums** — when a requirement has a **Minimum per Theatre** value, each specialisation appears as a card with a **Compliant** / **Not Compliant** badge and a global attained/required total. Click the chevron to expand a per-theatre breakdown. The requirement is only **Met** when the global total is reached **and** every theatre meets its minimum.
 
-All sections support export to CSV, Excel, and PDF. Alternative trainings (OR logic) configured on a requirement count any qualifying training, deduplicated by student.
+All sections support export to CSV, Excel, and PDF. CSV and Excel are the flat data table; **the PDF mirrors the dashboard** — a section per specialisation with its Met / Not-met badge and the page's colour shading, deployment requirements as their own labelled block, and, for a tiered program, a **Tier Status** section carrying the tier ladder. Alternative trainings (OR logic) configured on a requirement count any qualifying training, deduplicated by student.
 
 ### Compliance as of — upcoming-expiry projection
 
@@ -1353,6 +1356,8 @@ Your **View** scope and the **Compliance as of** horizon are mirrored into the p
 **Programs > Compliance Planning** (`/programs/planning`) is the **action layer** over the program dashboards: they show *where the gaps are*, this page shows *who to move, in what order, for the least effort*. It reuses exactly the same distinct-holder counting — and the same scope rules — as the dashboards, so the two never disagree.
 
 The headline metric is **People to certify**: how many people still need to earn a certification to close the plan's gaps, deduplicated so one person whose single exam satisfies several requirements counts once.
+
+The dedup applies to **certifications** as well as to named people. Where several specialisations require the *same* certification over the same population, one group of people earning it closes all of them — so three specialisations each needing 2 holders of one certification cost **2** people, not 6. Those requirements are tagged **shared** in the roadmap (and in the exported Roadmap sheet's *Shared with* column), with the other specialisations named on hover. The consequence is worth expecting: each specialisation block shows what it costs *on its own*, so the blocks can add up to more than the program's headline — the headline is the figure that counts a shared certification once.
 
 Pick a **scope** (Global / Theatre / Region / Country) and one or more **programs**, then choose a target per program:
 
@@ -1376,13 +1381,13 @@ The **Renewal window** selector (Off / 1 / 3 / 6 / 12 months) projects complianc
 
 By default the window is **informational**: the KPIs and "Who to certify" still answer *what is broken today*. Tick **Plan for this window** to fold it in — gaps are sized from the projected figure, **People to certify** includes the renewals needed to hold compliance through the window, and those people appear in "Who to certify" as **Renewal (expiring)** candidates. For a tiered program this can change which specialisations are **Recommended**, since one that lapses inside the window no longer counts toward the tier.
 
-Each scope plans against **only its own-level requirements**, exactly like the dashboards: planning one country shows that country's Country-level requirements, not the theatre-wide requirement above it (select the theatre to plan against theatre-level requirements). An **Export report** button in the page header downloads the **whole plan** as one file — a KPI summary, the aggregate roadmap, the "Who to certify" list, a **Requirements at risk** section, and the renewals-at-risk list — as CSV, Excel (one sheet per section), or PDF (each section a headed table). With a window selected the roadmap gains **Projected**, **Expiring**, **Projected gap** and **Projected achieved** columns, and the file name carries a `-plusNmo` suffix (plus `-planned` when planning for the window). The candidate list and the renewals list also keep their own per-section export buttons for a quick single-table download. This release is a **live view** (no saved plans yet).
+Each scope plans against **only its own-level requirements**, exactly like the dashboards: planning one country shows that country's Country-level requirements, not the theatre-wide requirement above it (select the theatre to plan against theatre-level requirements). An **Export report** button in the page header downloads the **whole plan** as one file — a KPI summary, the aggregate roadmap, the "Who to certify" list, a **Requirements at risk** section, and the renewals-at-risk list — as CSV, Excel (one sheet per section), or PDF. **CSV and Excel keep the wide machine-readable tables** — every column, including the ones the page keeps out of sight — while **the PDF mirrors the page**: the coloured metric cards, the projection note, a card per specialisation with its badges and shared-certification footnote, the combined `4 → 2 / 4` figures under the same red/amber/green shading, each candidate's reasons as indented lines beneath their row, and an explanation instead of an empty header row where a section has nothing in it. With a window selected the CSV and Excel roadmap gains **Projected**, **Expiring**, **Projected gap** and **Projected achieved** columns, and the file name carries a `-plusNmo` suffix (plus `-planned` when planning for the window). The candidate list and the renewals list also keep their own per-section export buttons for a quick single-table download. This release is a **live view** (no saved plans yet).
 
 Your selection — scope, programs and targets, the renewal window and **Plan for this window** — is mirrored into the page address, so opening a person's record from "Who to certify" or "Renewals at risk" and pressing **Back** returns you to the same plan instead of an empty one. It also makes a plan bookmarkable and shareable as a link.
 
 - Attained figures display as **current → projected** (e.g. `5 → 3`), with a **▼N expiring** note showing how many people lose a qualifying certificate within the window.
 - Requirements (and theatres) that are compliant today but will fall below their requirement by the chosen horizon are shaded **amber** with an **At Risk** status — an early warning to schedule renewals before compliance breaks. Green stays compliant through the horizon; red is already non-compliant today.
-- Section exports gain **Projected**, **Expiring**, and **Projected Compliant** columns reflecting the selected horizon, and the file name carries a `-plusNmo` suffix.
+- Section exports reflect the selected horizon and the file name carries a `-plusNmo` suffix: CSV and Excel gain **Projected**, **Expiring**, and **Projected Compliant** columns, while the PDF folds the same figures into the combined cells and amber shading it already mirrors from the page.
 
 ---
 
@@ -1451,11 +1456,81 @@ training:
 | **Nearshore** | The rest of that country/region's **theatre** — every other country in the theatre, with the onshore countries removed. The wider in-theatre capability available to support delivery. |
 | **Offshore** | Everyone **worldwide** holding the training, with the onshore countries removed (so it includes the nearshore people plus every other theatre). Nearshore and Offshore are informational — they don't change the Met status. |
 
+#### The delivery-geography map
+
+Above those tables the page draws a **world map**, so you can see how far away
+your delivery capability is without holding a map in your head. The tables are
+always shown underneath it &mdash; the map is an addition, never an alternative
+to them. A **Show** dropdown on the card picks between two maps of the same
+data:
+
+| Show | What it draws |
+| --- | --- |
+| **Delivery geography** (default) | The three geographies from the table, as three shades. |
+| **Where the people are** | How many people hold **one** training, country by country. |
+
+Both choices, and the requirement the second one is drawing, are kept in the
+page address alongside the country or region, so a view can be bookmarked or
+shared and comes back intact after **Back**.
+
+Because the three geographies **overlap** &mdash; Offshore is everyone
+worldwide minus Onshore, so it already contains everyone Nearshore &mdash; a
+country cannot be given two colours. The map therefore shades three
+non-overlapping groups, and the legend says how they relate:
+
+| Shade | Meaning |
+| --- | --- |
+| **Onshore** | The selected country, or the countries in the selected region. |
+| **Nearshore = Offshore in theatre** | The rest of that theatre. Part of Offshore. |
+| **Rest of world = Offshore elsewhere** | Everywhere else. The other part of Offshore. |
+| **No data** | A country your Region Data does not list. |
+
+Take the two Offshore shades together and you have the Offshore figure from the
+table.
+
+#### Where the people are
+
+The second map shades countries by **how many people hold one particular
+training** &mdash; pick it from the **Requirement** dropdown next to the switch.
+It is per requirement, not per offering, precisely so the picture reconciles
+against something you can read: add up the countries in the **Onshore** list and
+you get that row's Onshore figure, and the same for Nearshore and Offshore. Add
+up each band over *its own* countries only &mdash; the whole map is not any of
+the three, because Offshore already contains Nearshore.
+
+Two shades that look similar mean very different things, so the map keeps them
+apart:
+
+| Shade | Meaning |
+| --- | --- |
+| The palest step of the scale | **Zero.** The country was counted and nobody there holds the training. |
+| Neutral grey | **No figure.** The country is outside this offering's geography, so it was never counted. |
+
+It is a single-colour scale on purpose. A red/green one would read as a
+per-country pass or fail, and that would be false for the same reason as above:
+a requirement is met by the onshore countries **collectively**. **Met** and
+**Not met** stay on the tables.
+
+Two things the map deliberately does **not** do. It does not say whether a
+requirement is met: a requirement is met by the onshore countries
+**collectively**, so people spread across several countries can satisfy one
+that no single country meets on its own. That is why nothing on it is red or
+green &mdash; a country's shade is a distance, never a verdict. And it never
+quietly leaves a country out: any country in scope without an **ISO Code** in
+Region Data (or with a code the map has no outline for) is counted in an amber
+notice under the map, with a list you can expand. Filling those codes in on
+**Admin &rarr; Region Data** is what completes the picture.
+
+The map is included in the PDF export when **Include charts &amp; metrics in
+PDF** is ticked in the Export menu, legend and all.
+
 Figures are scoped to the offering's company. Click **View** on any count to list
 the people behind it, and use **Export** for the current view. The selected
-level and value are mirrored into the page address, so opening a person's
-record and pressing **Back** returns you to the same country or region instead
-of an empty selector — and a view can be bookmarked or shared as a link.
+level and value, the chosen map and its requirement are all mirrored into the
+page address, so opening a person's record and pressing **Back** returns you to
+the same view instead of an empty selector — and a view can be bookmarked or
+shared as a link. A link naming a requirement the offering no longer has falls
+back to the first one rather than showing you an empty map.
 Offerings are
 included in both full and config backups (a config restore, which carries no
 companies, lands offerings on the target's oldest company for you to reassign),
@@ -1499,14 +1574,15 @@ Export functionality is available on the following pages:
 | **Admin > Region Data** | Country and Region |
 | **Admin > Training Data** | Training Title, Full Title, Type, Product, Function, Link, Certification, Parent Training Title, Legacy, Replacement |
 
-The **Link** column holds a web address and accepts `http://` and `https://` only; on import, a row with anything else is reported and its link left empty, while the row itself is still imported.
 | **Reports** | Full report results with all columns |
+
+The **Link** column holds a web address and accepts `http://` and `https://` only; on import, a row with anything else is reported and its link left empty, while the row itself is still imported.
 
 Each export supports three formats:
 
 - **CSV** — Comma-separated values, compatible with any spreadsheet application. A value that would otherwise be read as a spreadsheet *formula* rather than text (one starting with `=`, `+`, `-` or `@`) is marked as text, so a name or title that came in through an import cannot take effect in the spreadsheet of whoever opens the file. Numbers and percentages, including negative ones, are exported unchanged.
 - **Excel** — `.xlsx` format for Microsoft Excel.
-- **PDF** — Formatted table document. Automatically switches to landscape orientation when there are more than 5 columns.
+- **PDF** — Formatted table document. Automatically switches to landscape orientation when there are more than 5 columns. On **Compliance Planning** and the **program compliance dashboards** the PDF is laid out to mirror the page instead — cards, badges, combined figures and the same red/amber/green shading — while their CSV and Excel exports stay the wide machine-readable tables.
 
 Click the **Export** button and select the desired format. For reports, the export respects any active filters — only the currently displayed results are exported.
 

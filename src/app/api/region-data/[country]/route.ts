@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma, { type PrismaTransactionClient } from "@/lib/prisma";
 import { handleAuthError, requireSuperAdmin } from "@/lib/auth";
 import { safeDecodeParam } from "@/lib/utils";
+import { normaliseIsoCode } from "@/lib/iso-countries";
 
 export async function PUT(
   request: NextRequest,
@@ -20,7 +21,14 @@ export async function PUT(
   const body = await request.json();
 
   const newCountry = body.country?.trim();
-  const newRegion = body.region?.trim();
+  // Region follows the same present/absent rule as theatre and isoCode below:
+  // omitting the key leaves the stored value alone, and an explicit blank is
+  // the first-class "no region defined" state rather than an error. It stores
+  // as "" rather than NULL only because the column is NOT NULL.
+  const regionProvided = Object.prototype.hasOwnProperty.call(body, "region");
+  const newRegion = regionProvided
+    ? (typeof body.region === "string" ? body.region.trim() : "")
+    : undefined;
   // Theatre handling: only update when the field is present in the body. An
   // explicit empty string means "clear it" (store NULL). Omitting the key
   // leaves the existing value untouched.
@@ -31,8 +39,19 @@ export async function PUT(
         : null)
     : undefined;
 
-  if (!newRegion) {
-    return NextResponse.json({ error: "Region is required" }, { status: 400 });
+  // isoCode follows the same rule as theatre: only touched when the key is
+  // present. An explicit empty string means "clear it" (store NULL, the
+  // first-class "unmapped" state); omitting the key leaves the stored value
+  // alone. Shape is enforced here as well as by the DB CHECK because this is
+  // input reaching a sink, and case is normalised up rather than refused.
+  const isoProvided = Object.prototype.hasOwnProperty.call(body, "isoCode");
+  const newIsoCode = isoProvided ? normaliseIsoCode(body.isoCode) : undefined;
+
+  if (isoProvided && newIsoCode === undefined) {
+    return NextResponse.json(
+      { error: "ISO code must be two letters (ISO 3166-1 alpha-2)" },
+      { status: 400 }
+    );
   }
 
   // If country name changed, we need to delete + recreate since country is the PK
@@ -48,11 +67,14 @@ export async function PUT(
       );
     }
 
-    // Preserve existing theatre when the body didn't include one.
+    // Preserve the existing region / theatre / ISO code when the body didn't
+    // include one.
     const oldRow = await prisma.regionData.findUnique({
       where: { country: decodedCountry },
     });
+    const regionToStore = regionProvided ? newRegion ?? "" : oldRow?.region ?? "";
     const theatreToStore = theatreProvided ? newTheatre : oldRow?.theatre ?? null;
+    const isoToStore = isoProvided ? newIsoCode ?? null : oldRow?.isoCode ?? null;
 
     // Use a transaction: update students to new country, delete old, create new
     const regionData = await prisma.$transaction(async (tx: PrismaTransactionClient) => {
@@ -62,7 +84,12 @@ export async function PUT(
       });
       await tx.regionData.delete({ where: { country: decodedCountry } });
       return tx.regionData.create({
-        data: { country: newCountry, region: newRegion, theatre: theatreToStore },
+        data: {
+          country: newCountry,
+          region: regionToStore,
+          theatre: theatreToStore,
+          isoCode: isoToStore,
+        },
       });
     });
 
@@ -72,8 +99,9 @@ export async function PUT(
   const regionData = await prisma.regionData.update({
     where: { country: decodedCountry },
     data: {
-      region: newRegion,
+      ...(regionProvided ? { region: newRegion ?? "" } : {}),
       ...(theatreProvided ? { theatre: newTheatre } : {}),
+      ...(isoProvided ? { isoCode: newIsoCode ?? null } : {}),
     },
   });
 

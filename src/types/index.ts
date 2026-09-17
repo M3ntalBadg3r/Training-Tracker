@@ -60,12 +60,22 @@ export interface RegionDataRow {
   country: string;
   region: string;
   theatre: string | null;
+  /**
+   * ISO 3166-1 alpha-2, uppercase. `null` means unmapped — a first-class state
+   * that is reported rather than dropped or guessed at. Not unique: several
+   * rows may legitimately share a code, so a consumer keying on it must
+   * aggregate. Treat it as untrusted on read: rows may predate the CHECK
+   * constraint, so never interpolate it into a selector or element id unvalidated.
+   */
+  isoCode: string | null;
 }
 
 export interface CountryOption {
   country: string;
   region: string;
   theatre: string | null;
+  /** ISO 3166-1 alpha-2, uppercase, or null when unmapped. */
+  isoCode: string | null;
 }
 
 export interface TrainingDataRow {

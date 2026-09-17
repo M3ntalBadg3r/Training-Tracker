@@ -480,9 +480,11 @@ const helpSections: Record<string, HelpSection> = {
           </li>
           <li>
             <strong>Country not in Region Data</strong>{" "}&mdash; the country is
-            auto-created with region &quot;Unknown&quot; (and the imported
+            auto-created with{" "}<strong>no region</strong>{" "}(and the imported
             theatre, if any). A warning asks a SuperAdmin to verify and fill in
-            the missing values.
+            the missing values. A country with no region shows a blank Region
+            wherever it appears, and does not appear as an option in the Region
+            filters.
           </li>
         </ul>
 
@@ -873,8 +875,72 @@ const helpSections: Record<string, HelpSection> = {
           <li><strong>Nearshore</strong>{" "}counts the rest of that country/region&apos;s <strong>theatre</strong>, with the onshore countries removed — the wider in-theatre capability available to support delivery.</li>
           <li><strong>Offshore</strong> counts everyone <strong>worldwide</strong>{" "}who holds the training, with the onshore countries removed (so it includes the nearshore people plus every other theatre). Nearshore and Offshore are informational and don&apos;t change the Met status.</li>
           <li>Figures are scoped to the offering&apos;s company. Use <strong>Export</strong> for the current view, and click <strong>View</strong> on any count to list the people behind it.</li>
-          <li>Your selection is kept in the page address, so opening someone&apos;s record and pressing <strong>Back</strong>{" "}returns you to the same country or region — and a particular view can be bookmarked or shared as a link.</li>
+          <li>Your selection — the country or region, which map is showing and which requirement it is drawing — is kept in the page address, so opening someone&apos;s record and pressing <strong>Back</strong>{" "}returns you to the same view, and a particular view can be bookmarked or shared as a link. A link naming a requirement the offering no longer has falls back to the first one rather than showing an empty map.</li>
         </ul>
+        <h3>The map</h3>
+        <p>
+          Above the specialisation tables the page draws a world map, so you can
+          see how far away your delivery capability is at a glance. The tables are
+          always shown underneath it — the map is an addition, never an
+          alternative to them. A <strong>Show</strong>{" "}dropdown on the card
+          picks between two views of the same data:{" "}
+          <strong>Delivery geography</strong>{" "}(the three geographies, shown by
+          default) and <strong>Where the people are</strong>{" "}(how many people
+          hold one training, country by country).
+        </p>
+        <p>
+          The three geographies <strong>overlap</strong>: Offshore is everyone
+          worldwide minus Onshore, so it already includes everyone Nearshore. A
+          country cannot be given two colours, so the map shades three
+          non-overlapping groups instead — <strong>Onshore</strong>,{" "}
+          <strong>Nearshore = Offshore in theatre</strong> and{" "}
+          <strong>Rest of world = Offshore elsewhere</strong>. Take the last two
+          together and you have the Offshore figure from the table. Countries your
+          Region Data does not list are shaded as <strong>No data</strong>.
+        </p>
+        <p>
+          The map shows <strong>where your people are, not whether a requirement
+          is met</strong>. A requirement is met by the onshore countries{" "}
+          <em>collectively</em>, so people spread across several countries can
+          satisfy one that no single country meets on its own — which is why
+          nothing on the map is red or green. A country&apos;s shade is a distance,
+          never a verdict.
+        </p>
+        <h3>Where the people are</h3>
+        <p>
+          The second view shades countries by how many people hold{" "}
+          <em>one particular</em>{" "}training — choose it from the{" "}
+          <strong>Requirement</strong>{" "}dropdown beside the switch. It is one
+          requirement rather than the whole offering so that the picture adds up
+          to something you can check: total the countries in the Onshore list and
+          you have that row&apos;s <strong>Onshore</strong>{" "}figure, and the
+          same for Nearshore and Offshore. Each band only adds up over{" "}
+          <em>its own</em>{" "}countries — the whole map is not any of the three,
+          because Offshore already contains Nearshore.
+        </p>
+        <p>
+          Two shades mean very different things and are deliberately kept apart.
+          The <strong>palest</strong>{" "}step of the scale is a real{" "}
+          <strong>zero</strong>: that country was counted and nobody there holds
+          the training. <strong>Grey</strong>{" "}is{" "}
+          <strong>no figure at all</strong>: that country sits outside this
+          offering&apos;s geography, so it was never counted. The scale is a
+          single colour rather than red-to-green for the same reason as the other
+          map — a requirement is met collectively, so a per-country pass or fail
+          would be false.
+        </p>
+        <p>
+          A country in scope with no <strong>ISO Code</strong> in Region Data
+          cannot be drawn. Those are never quietly left out: they are counted in an
+          amber notice under the map with a list you can expand. Setting the
+          missing codes on <strong>Admin &gt; Region Data</strong> is what
+          completes the picture.
+        </p>
+        <p>
+          Tick <strong>Include charts &amp; metrics in PDF</strong> in the{" "}
+          <strong>Export</strong> menu to carry whichever map is on screen, legend
+          and all, into the PDF.
+        </p>
         <p className="text-sm text-gray-500">
           Offerings are configured under <strong>Admin &gt; Offerings</strong>{" "}by a
           company&apos;s Admins or a SuperAdmin (create, edit, import/export — each
@@ -1062,9 +1128,40 @@ const helpSections: Record<string, HelpSection> = {
             &quot;(missing)&quot; filter to find rows that still need a theatre.
           </li>
           <li>
-            <strong>Add</strong>{" "}&mdash; Add a new country with its region and
-            (optionally) theatre. A country without a theatre cannot be selected
-            for new students &mdash; set the theatre before assigning students.
+            <strong>ISO Code</strong>{" "}&mdash; Each country can carry its
+            two-letter ISO 3166-1 code ({"\u201C"}GB{"\u201D"}, {"\u201C"}US
+            {"\u201D"}, {"\u201C"}DE{"\u201D"}). This is the key that lets the
+            app match your country names to a map, or to any other system that
+            identifies countries by code &mdash; matching on the name alone fails
+            quietly, so {"\u201C"}UK{"\u201D"} and {"\u201C"}United Kingdom
+            {"\u201D"} would not line up. Leaving it blank is fine and means{" "}
+            <em>unmapped</em>; the page shows how many countries still have no
+            code. Codes do <strong>not</strong>{" "}have to be unique &mdash; if
+            you list sub-national geographies separately they can share a code,
+            and anything using them adds those rows together.
+          </li>
+          <li>
+            <strong>Suggest ISO codes</strong>{" "}&mdash; Matches the countries
+            that have no code against the official list and shows you what it
+            found, including the name it matched against. Nothing is saved until
+            you tick the rows you accept, and nothing is ticked for you. Treat
+            the suggestions as proposals to check rather than answers: a wrong
+            code is worse than a blank one, because a blank one is visibly
+            blank. Countries it cannot match confidently are listed separately
+            so you can set them by hand.
+          </li>
+          <li>
+            <strong>Region</strong>{" "}&mdash; Leaving the region blank is fine
+            and means the country has no region defined. A blank region shows as
+            an empty cell everywhere it appears (student records, reports,
+            exports) and is not offered as a choice in the Region filters, so
+            nothing invents a region name for it.
+          </li>
+          <li>
+            <strong>Add</strong>{" "}&mdash; Add a new country with its region
+            (optional) and theatre (optional). A country without a theatre cannot
+            be selected for new students &mdash; set the theatre before assigning
+            students.
           </li>
           <li>
             <strong>Edit</strong>{" "}&mdash; Click <strong>Edit</strong> on any row
@@ -1079,7 +1176,9 @@ const helpSections: Record<string, HelpSection> = {
             <code>Country</code>, <code>Region</code>, and (optionally){" "}
             <code>Theatre</code> columns. The system auto-maps columns and shows
             a preview before importing. Existing rows are updated when the
-            imported value differs.
+            imported value differs. A blank <code>Region</code> cell is accepted
+            and clears the region, so a file exported from this page can always
+            be re-imported.
           </li>
           <li>
             <strong>Export</strong>{" "}&mdash; Download all region data (including
@@ -2460,6 +2559,22 @@ const helpSections: Record<string, HelpSection> = {
           It&apos;s <em>deduplicated</em>{" "}— if one person&apos;s single exam
           satisfies several requirements at once, they count once.
         </p>
+        <p>
+          That dedup applies to <em>certifications</em>{" "}as well as to named
+          people. Where several specialisations require the{" "}
+          <strong>same</strong>{" "}certification over the same population, one
+          group of people earning it closes all of them — so three
+          specialisations each needing 2 holders of one certification cost{" "}
+          <strong>2</strong>{" "}people, not 6. Those requirements are tagged{" "}
+          <strong>shared</strong>{" "}in the roadmap, with the other specialisations
+          named on hover.
+        </p>
+        <p>
+          The consequence is worth expecting: each specialisation block shows what
+          it costs <em>on its own</em>, so the blocks can add up to more than the
+          program&apos;s headline. The headline is the one that counts a shared
+          certification once, and it is the number of people you actually need.
+        </p>
 
         <h3>Choosing a target</h3>
         <p>
@@ -2577,16 +2692,46 @@ const helpSections: Record<string, HelpSection> = {
         <h3>Export</h3>
         <p>
           Use <strong>Export report</strong> in the page header to download the{" "}
-          <em>whole plan</em>{" "}as one file — a summary of the KPI totals, the
-          aggregate roadmap (every requirement gap), the &ldquo;Who to
-          certify&rdquo; candidate list, and the renewals-at-risk list — in CSV,
-          Excel, or PDF. In Excel each section becomes its own sheet; the PDF
-          stacks each section as a headed table; CSV concatenates them with
-          section titles. With a renewal window selected the roadmap gains projected
-          columns and a <strong>Requirements at risk</strong> section is included, and
-          the filename carries the window (and <em>-planned</em> when you are planning
-          for it). The candidate list and the renewals list also keep their own
+          <em>whole plan</em>{" "}as one file — the KPI totals, the aggregate
+          roadmap (every requirement gap), the &ldquo;Who to certify&rdquo;
+          candidate list, and the renewals-at-risk list — in CSV, Excel, or PDF.
+          The candidate list and the renewals list also keep their own
           per-section export buttons for a quick single-table download.
+        </p>
+        <p>
+          <strong>CSV and Excel</strong>{" "}are the wide data tables you pivot and
+          filter in a spreadsheet, and they are unchanged: Excel gives each
+          section its own sheet, CSV concatenates them with section titles, and
+          both carry every column — including the ones the page keeps out of
+          sight, such as email addresses and the separate projected, expiring and
+          projected-gap figures.
+        </p>
+        <p>
+          <strong>The PDF mirrors the page.</strong>{" "}It opens with the same
+          coloured metric cards that sit at the top of the plan and then, when a
+          renewal window is selected, the note explaining what the projection
+          means and how to read the colours. The roadmap prints one section per
+          program carrying that program&rsquo;s headline sentence, and inside it a
+          card per specialisation with its <strong>Achieved</strong>,{" "}
+          <strong>At risk in Nmo</strong>{" "}or <strong>Recommended</strong>{" "}
+          badge, its cost line and its shared-certification footnote.
+        </p>
+        <p>
+          Requirements keep the page&rsquo;s combined figures instead of being
+          split across a dozen thin columns — one <em>Have / Need</em>{" "}cell
+          reading <em>4 &rarr; 2 / 4</em>{" "}with its expiring note beneath — and
+          the same red / amber / green shading, so met, at-risk and short read
+          as clearly on paper as on screen. Each candidate&rsquo;s reasons print
+          as indented lines under their row, the way the page shows them when you
+          expand it, and a section with nothing in it prints its explanation
+          rather than an empty header row. <strong>Renewals at risk</strong>{" "}
+          keeps the amber callout naming the requirements those expiries break.
+        </p>
+        <p>
+          With a renewal window selected the file name carries the window (and{" "}
+          <em>-planned</em>{" "}when you are planning for it), and the CSV and
+          Excel roadmap gains projected columns plus a{" "}
+          <strong>Requirements at risk</strong>{" "}section.
         </p>
       </>
     ),
@@ -2757,10 +2902,30 @@ const helpSections: Record<string, HelpSection> = {
         <h3>Export</h3>
         <p>
           Each report section has an Export button to download the compliance
-          data (including theatre breakdowns where present) as CSV, Excel, or
-          PDF. When a projection horizon is selected, the export adds{" "}
+          data as CSV, Excel, or PDF. <strong>CSV and Excel</strong>{" "}give you
+          the flat data table — one row per requirement, including theatre
+          breakdowns where present — for pivoting in a spreadsheet, and they are
+          unchanged.
+        </p>
+        <p>
+          <strong>The PDF mirrors the dashboard.</strong>{" "}Rather than one wide
+          table it prints a section per specialisation, each carrying its{" "}
+          <strong>Met</strong>{" "}or <strong>Not met</strong>{" "}badge, the same
+          red / amber / green shading you see on screen, and attained figures
+          combined the way the page shows them instead of split across columns.
+          Where a specialisation has <strong>Deployment requirements</strong>{" "}
+          they print as their own labelled block beneath its qualifying rows,
+          and for a tiered program a <strong>Tier Status</strong>{" "}section
+          follows with the highest tier reached, each tier&rsquo;s specialisation
+          gate, its achieved specialisations and its deployment requirements with
+          their holder counts.
+        </p>
+        <p>
+          When a projection horizon is selected the export reflects that horizon
+          throughout and the file name says so: CSV and Excel add{" "}
           <strong>projected</strong>, <strong>expiring</strong>, and{" "}
-          <strong>projected-compliant</strong> columns reflecting that horizon.
+          <strong>projected-compliant</strong>{" "}columns, while the PDF folds the
+          same figures into its combined cells and amber shading.
         </p>
       </>
     ),

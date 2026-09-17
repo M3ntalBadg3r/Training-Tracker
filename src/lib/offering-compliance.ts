@@ -16,7 +16,9 @@
 import prisma from "@/lib/prisma";
 import {
   getEmailSetsByTitle,
+  getEmailSetsByTitleAndGeo,
   unionAttained,
+  unionAttainedByGeo,
   countriesInRegion,
   type ComplianceScope,
 } from "@/lib/program-compliance";
@@ -143,9 +145,18 @@ export function collectTitles(reqs: OfferingReqLike[]): string[] {
 export async function computeOfferingCounts(
   reqs: Array<OfferingReqLike & { id: number }>,
   geo: OfferingGeo,
-  companyIds: number[] | null
+  companyIds: number[] | null,
+  /**
+   * Point-in-time instant. Both functions default to their own `new Date()`,
+   * which is correct when either is called alone — but the offering route calls
+   * BOTH and shows their results side by side, so it passes one shared instant.
+   * Without that they run in separate transactions off separate clocks, and a
+   * completion expiring between the two round-trips leaves the map summing to
+   * one less than the table it sits above.
+   */
+  asOf: Date = new Date()
 ): Promise<Map<number, { onshore: number; nearshore: number; offshore: number }>> {
-  const now = new Date();
+  const now = asOf;
   const titles = collectTitles(reqs);
   const empty = () => Promise.resolve(new Map<string, Set<string>>());
 
@@ -168,4 +179,87 @@ export async function computeOfferingCounts(
     });
   }
   return result;
+}
+
+/**
+ * Per-country distinct-holder counts, keyed by the app's own country name (the
+ * `RegionData.country` / `Student.country` string — there is no ISO join here).
+ *
+ * **This is a DISTRIBUTION, never a per-country compliance verdict.** `met` is
+ * decided on the Onshore set *as a whole*
+ * (`req.met = onshore >= req.quantityRequired`), so three holders spread across
+ * three countries satisfy a requirement of 3 that no single country meets.
+ * Reading any entry here against `quantityRequired` would therefore report a
+ * failure that does not exist. Hence `holdersByCountry`, and nothing named
+ * "compliance".
+ *
+ * Countries with no holders are absent rather than present as 0 — absent means
+ * "no holders in a country that WAS counted", which a consumer renders as zero,
+ * while a country that was never in scope is absent for a different reason and
+ * is not knowable from this record alone. The consumer decides which by
+ * intersecting these keys with the geo country lists it was given; see
+ * `buildOfferingDensityMap`.
+ */
+export type HoldersByCountry = Record<string, number>;
+
+/**
+ * Per-country holder breakdown for an offering's requirements, over the union
+ * of the Onshore and Offshore country lists — i.e. every country the three
+ * bands are drawn from, in one query. Returns one map per requirement id.
+ *
+ * Each map decomposes exactly the same numbers the Onshore/Nearshore/Offshore
+ * columns show, so summing its entries over `geo.onshoreCountries` reproduces
+ * `onshore` — and likewise for the other two bands, each over *its own* country
+ * list. It never reconciles over the whole map, because Offshore is a superset
+ * of Nearshore (see the bucketing comment in `getEmailSetsByTitleAndGeo` for
+ * why the partition holds at all).
+ *
+ * There is deliberately **no whole-offering map alongside these.** A union over
+ * every requirement's titles would not be the sum of these maps — one person
+ * holding two of the offering's trainings is one person — so it would reconcile
+ * against nothing on screen, which is the one thing a number beside a table has
+ * to do.
+ *
+ * Deliberately a second function rather than an extra field on
+ * `computeOfferingCounts`: the public API (`/api/public/v1/offerings`) uses that
+ * one and does not need this, so it keeps its current cost and response shape.
+ *
+ * Counting is the shared engine (`getEmailSetsByTitleAndGeo` +
+ * `unionAttainedByGeo`), so the point-in-time window, the sibling expansion and
+ * the company-scope rules are inherited rather than restated here.
+ */
+export async function computeOfferingCountryBreakdown(
+  reqs: Array<OfferingReqLike & { id: number }>,
+  geo: OfferingGeo,
+  companyIds: number[] | null,
+  /**
+   * Point-in-time instant. Both functions default to their own `new Date()`,
+   * which is correct when either is called alone — but the offering route calls
+   * BOTH and shows their results side by side, so it passes one shared instant.
+   * Without that they run in separate transactions off separate clocks, and a
+   * completion expiring between the two round-trips leaves the map summing to
+   * one less than the table it sits above.
+   */
+  asOf: Date = new Date()
+): Promise<Map<number, HoldersByCountry>> {
+  const now = asOf;
+  const titles = collectTitles(reqs);
+  const byRequirement = new Map<number, HoldersByCountry>();
+  if (titles.length === 0) return byRequirement;
+
+  // Onshore ∪ Offshore is every country the bands can draw from (Nearshore is a
+  // subset of Offshore). One bucketed query therefore serves all three — and it
+  // is also exactly the set a consumer must treat as "counted", so an absent
+  // country in it is a true zero.
+  const countries = [...new Set([...geo.onshoreCountries, ...geo.offshoreCountries])];
+  if (countries.length === 0) return byRequirement;
+
+  const sets = await getEmailSetsByTitleAndGeo(titles, now, "country", { countries, companyIds });
+
+  for (const r of reqs) {
+    const out: HoldersByCountry = {};
+    for (const row of unionAttainedByGeo(r, sets)) if (row.count > 0) out[row.bucket] = row.count;
+    byRequirement.set(r.id, out);
+  }
+  return byRequirement;
 }

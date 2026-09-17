@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
 
   const rows = await prisma.regionData.findMany({
     orderBy: { country: "asc" },
-    select: { country: true, region: true, theatre: true },
+    select: { country: true, region: true, theatre: true, isoCode: true },
   });
 
   return NextResponse.json(rows);
