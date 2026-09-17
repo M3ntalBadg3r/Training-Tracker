@@ -2793,6 +2793,15 @@ const helpSections: Record<string, HelpSection> = {
           report for that scope.
         </p>
         <p>
+          The dashboard reports on <strong>one company at a time</strong>, and it
+          follows the company switcher in the page header — the same switcher
+          every other page uses. The dashboard has no Company dropdown of its own
+          any more; there used to be one, and it could disagree with the header.
+          When the header is set to <strong>All companies</strong>{" "}the dashboard
+          asks you to choose a company rather than picking one for you, because
+          compliance figures added up across companies would not mean anything.
+        </p>
+        <p>
           Your <strong>View</strong> scope and the{" "}
           <strong>Compliance as of</strong>{" "}horizon are kept in the page address.
           Open someone&apos;s record from a <strong>View students</strong>{" "}list and
