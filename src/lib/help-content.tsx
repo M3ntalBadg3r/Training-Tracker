@@ -480,9 +480,11 @@ const helpSections: Record<string, HelpSection> = {
           </li>
           <li>
             <strong>Country not in Region Data</strong>{" "}&mdash; the country is
-            auto-created with region &quot;Unknown&quot; (and the imported
+            auto-created with{" "}<strong>no region</strong>{" "}(and the imported
             theatre, if any). A warning asks a SuperAdmin to verify and fill in
-            the missing values.
+            the missing values. A country with no region shows a blank Region
+            wherever it appears, and does not appear as an option in the Region
+            filters.
           </li>
         </ul>
 
@@ -1149,9 +1151,17 @@ const helpSections: Record<string, HelpSection> = {
             so you can set them by hand.
           </li>
           <li>
-            <strong>Add</strong>{" "}&mdash; Add a new country with its region and
-            (optionally) theatre. A country without a theatre cannot be selected
-            for new students &mdash; set the theatre before assigning students.
+            <strong>Region</strong>{" "}&mdash; Leaving the region blank is fine
+            and means the country has no region defined. A blank region shows as
+            an empty cell everywhere it appears (student records, reports,
+            exports) and is not offered as a choice in the Region filters, so
+            nothing invents a region name for it.
+          </li>
+          <li>
+            <strong>Add</strong>{" "}&mdash; Add a new country with its region
+            (optional) and theatre (optional). A country without a theatre cannot
+            be selected for new students &mdash; set the theatre before assigning
+            students.
           </li>
           <li>
             <strong>Edit</strong>{" "}&mdash; Click <strong>Edit</strong> on any row
@@ -1166,7 +1176,9 @@ const helpSections: Record<string, HelpSection> = {
             <code>Country</code>, <code>Region</code>, and (optionally){" "}
             <code>Theatre</code> columns. The system auto-maps columns and shows
             a preview before importing. Existing rows are updated when the
-            imported value differs.
+            imported value differs. A blank <code>Region</code> cell is accepted
+            and clears the region, so a file exported from this page can always
+            be re-imported.
           </li>
           <li>
             <strong>Export</strong>{" "}&mdash; Download all region data (including

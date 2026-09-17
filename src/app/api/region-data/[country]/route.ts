@@ -21,7 +21,14 @@ export async function PUT(
   const body = await request.json();
 
   const newCountry = body.country?.trim();
-  const newRegion = body.region?.trim();
+  // Region follows the same present/absent rule as theatre and isoCode below:
+  // omitting the key leaves the stored value alone, and an explicit blank is
+  // the first-class "no region defined" state rather than an error. It stores
+  // as "" rather than NULL only because the column is NOT NULL.
+  const regionProvided = Object.prototype.hasOwnProperty.call(body, "region");
+  const newRegion = regionProvided
+    ? (typeof body.region === "string" ? body.region.trim() : "")
+    : undefined;
   // Theatre handling: only update when the field is present in the body. An
   // explicit empty string means "clear it" (store NULL). Omitting the key
   // leaves the existing value untouched.
@@ -40,9 +47,6 @@ export async function PUT(
   const isoProvided = Object.prototype.hasOwnProperty.call(body, "isoCode");
   const newIsoCode = isoProvided ? normaliseIsoCode(body.isoCode) : undefined;
 
-  if (!newRegion) {
-    return NextResponse.json({ error: "Region is required" }, { status: 400 });
-  }
   if (isoProvided && newIsoCode === undefined) {
     return NextResponse.json(
       { error: "ISO code must be two letters (ISO 3166-1 alpha-2)" },
@@ -63,10 +67,12 @@ export async function PUT(
       );
     }
 
-    // Preserve the existing theatre / ISO code when the body didn't include one.
+    // Preserve the existing region / theatre / ISO code when the body didn't
+    // include one.
     const oldRow = await prisma.regionData.findUnique({
       where: { country: decodedCountry },
     });
+    const regionToStore = regionProvided ? newRegion ?? "" : oldRow?.region ?? "";
     const theatreToStore = theatreProvided ? newTheatre : oldRow?.theatre ?? null;
     const isoToStore = isoProvided ? newIsoCode ?? null : oldRow?.isoCode ?? null;
 
@@ -80,7 +86,7 @@ export async function PUT(
       return tx.regionData.create({
         data: {
           country: newCountry,
-          region: newRegion,
+          region: regionToStore,
           theatre: theatreToStore,
           isoCode: isoToStore,
         },
@@ -93,7 +99,7 @@ export async function PUT(
   const regionData = await prisma.regionData.update({
     where: { country: decodedCountry },
     data: {
-      region: newRegion,
+      ...(regionProvided ? { region: newRegion ?? "" } : {}),
       ...(theatreProvided ? { theatre: newTheatre } : {}),
       ...(isoProvided ? { isoCode: newIsoCode ?? null } : {}),
     },

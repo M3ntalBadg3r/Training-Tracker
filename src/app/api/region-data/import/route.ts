@@ -47,7 +47,10 @@ export async function POST(request: NextRequest) {
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
     const country = row[columnMapping.country]?.trim();
-    const region = row[columnMapping.region]?.trim();
+    // The Region column is mapped, so its cells are applied — including a blank
+    // one, which clears the region (the same rule the mapped theatre column
+    // follows). Coerced to "" because the column is NOT NULL.
+    const region = row[columnMapping.region]?.trim() ?? "";
     const theatreRaw = columnMapping.theatre ? row[columnMapping.theatre]?.trim() : "";
     const theatre = theatreRaw ? theatreRaw : null;
     // An unmapped column must write NOTHING. When columnMapping.isoCode is
@@ -65,11 +68,9 @@ export async function POST(request: NextRequest) {
       skipped++;
       continue;
     }
-    if (!region) {
-      errors.push(`Row ${rowNum}: Missing region value for country "${country}"`);
-      skipped++;
-      continue;
-    }
+    // A blank Region cell is NOT an error: it is the "no region defined" state,
+    // and refusing it meant a file exported from this page could not be
+    // re-imported once any country had been left unmapped.
     // A mapped-but-malformed ISO cell skips the row rather than being dropped
     // silently — the operator asked for that column to be applied.
     if (columnMapping.isoCode && isoCode === undefined) {

@@ -146,6 +146,12 @@ model OlxSubItemRelation {
 
 model RegionData {
   country String  @id
+  /// Empty string = no region defined. NOT NULL (unlike theatre/isoCode) purely
+  /// for history, so blank plays the "unmapped" role NULL plays for those two:
+  /// the write routes accept it, and display sites render it as an empty cell
+  /// rather than a placeholder word. The student import used to store the
+  /// literal "Unknown" here instead — see the migration
+  /// 20260917000000_blank_unknown_region.
   region  String
   theatre String?
   /// ISO 3166-1 alpha-2, uppercase. Null = unmapped, which is a first-class

@@ -39,6 +39,7 @@ import {
 } from "recharts";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { safeExternalUrl, trainingTypeLabel } from "@/lib/utils";
+import { displayRegion } from "@/lib/group-by";
 import { useDateFormat } from "@/components/date-format/DateFormatProvider";
 import DatePicker from "@/components/ui/DatePicker";
 import { useChartTheme, tooltipStyle } from "@/lib/chart-theme";
@@ -759,7 +760,7 @@ export default function StudentRecordPage({
                       Region
                     </label>
                     <div className="border border-gray-200 bg-gray-50 rounded-lg px-3 py-2 text-sm text-gray-700 min-h-[38px]">
-                      {selectedEditCountry?.region || <span className="text-gray-400">—</span>}
+                      {displayRegion(selectedEditCountry?.region)}
                     </div>
                   </div>
                 </div>
@@ -773,8 +774,14 @@ export default function StudentRecordPage({
                   <span>{student.email}</span>
                   <span className="text-gray-300">|</span>
                   <span>{student.theatre}</span>
-                  <span className="text-gray-300">|</span>
-                  <span>{student.region || "No Region"}</span>
+                  {/* No region defined: drop the segment AND its separator,
+                      rather than leaving an empty gap between two pipes. */}
+                  {displayRegion(student.region) && (
+                    <>
+                      <span className="text-gray-300">|</span>
+                      <span>{displayRegion(student.region)}</span>
+                    </>
+                  )}
                   <span className="text-gray-300">|</span>
                   <span>{student.country}</span>
                   {student.companyName && (

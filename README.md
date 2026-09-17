@@ -760,12 +760,13 @@ Manage the mapping between countries, regions, and theatres. This page is the so
 
 - **View** — Table of all countries with their assigned region and theatre. Countries with no theatre are flagged so you can fix them.
 - **Search / Filter** — Filter by country, region, or theatre. The Theatre column has a "(missing)" filter to surface rows that still need a theatre assigned.
-- **Add** — Add a new country with its region and (optionally) theatre. A country without a theatre cannot be selected for new students — set the theatre before assigning students.
+- **Region** — Optional. Leaving it blank means the country has no region defined, and that is a real answer rather than an oversight: it is what a student import writes for a country it has never seen. A blank region shows as an **empty cell** wherever it appears — the Region Data table, a student's record, every report's Region column and every export — and it is not offered as a choice in the Region filters, so it cannot be mistaken for a region called "Unknown".
+- **Add** — Add a new country with its region (optional) and theatre (optional). A country without a theatre cannot be selected for new students — set the theatre before assigning students.
 - **Edit** — Click **Edit** on any row to modify the country, region, or theatre inline, then **Save** or **Cancel**.
 - **Delete** — Remove a country/region mapping.
 - **ISO Code** — Each country can carry its two-letter **ISO 3166-1** country code (`GB`, `US`, `DE`). It is optional: a country with no code shows as *(unmapped)*, and the page keeps a running count of how many are still unset. The code is what lets the app line your country names up with a map, or with any other system that identifies countries by code, so it is worth setting even before anything visibly uses it. Two things are worth knowing. The code does **not** have to be unique — if your geography lists England and Scotland separately, both are `GB`, and anything using the code adds those rows together. And leaving it blank is a real answer rather than an oversight: a geography that is not a single country genuinely has no code.
 - **Suggest ISO codes** — Looks at every country that has no code yet and tries to match it by name against the official ISO list. It shows you what it found, **including the name it matched against**, and applies nothing until you tick the rows you agree with. Anything it cannot match confidently is listed as *no suggestion* rather than guessed at. Treat the matches as proposals to check — a wrong code is worse than a blank one, because a blank one is visibly blank.
-- **Import** — Upload a CSV or Excel file with `Country`, `Region`, and (optionally) `Theatre` and `ISO Code` columns. The system auto-maps columns and shows a preview before importing. As with Theatre, **a column you do not map is not written at all**, so importing a file without an ISO Code column leaves every existing code exactly as it was.
+- **Import** — Upload a CSV or Excel file with `Country`, `Region`, and (optionally) `Theatre` and `ISO Code` columns. The system auto-maps columns and shows a preview before importing. As with Theatre, **a column you do not map is not written at all**, so importing a file without an ISO Code column leaves every existing code exactly as it was. A blank `Region` cell is accepted and clears that country's region, so a file exported from this page can always be re-imported.
 - **Export** — Download all region data (including theatre and ISO code) as CSV, Excel, or PDF.
 
 #### Import size limits
@@ -778,7 +779,7 @@ When importing student data (the **Admin → Import** page), each row's theatre 
 
 - If the country exists in Region Data with a theatre, that theatre is the source of truth — any disagreement on the import row is overridden and surfaced as a warning in the **Issues** list.
 - If the country exists in Region Data but has no theatre, the imported theatre is used as-is and a warning asks for the missing theatre to be set.
-- If the country is brand new, Region Data auto-creates an entry with region "Unknown" and the imported theatre, and a warning asks a SuperAdmin to verify it.
+- If the country is brand new, Region Data auto-creates an entry with **no region** and the imported theatre, and a warning asks a SuperAdmin to verify it.
 
 ### Training Data
 
