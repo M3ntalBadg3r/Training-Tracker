@@ -2585,10 +2585,13 @@ const helpSections: Record<string, HelpSection> = {
         <ul>
           <li>
             <strong>Tiered programs</strong> — target a <strong>tier</strong> (the
-            tool picks the cheapest specialisations to get you there — reaching a
-            tier only needs as many specialisations as the tier requires, and any{" "}
-            <em>equally-cheap</em>{" "}alternatives are flagged &ldquo;Recommended&rdquo;
-            so you can choose), or specific specialisation(s).
+            tool recommends exactly as many specialisations as the tier still needs,
+            ranked by what each one adds{" "}<em>given the ones already
+            recommended</em>{" "}— so a certification two specialisations share is
+            paid for once, and the recommended blocks add up to the program&apos;s
+            headline. A specialisation that could be swapped in for one of them at
+            no extra cost is flagged{" "}
+            <strong>Equal-cost alternative</strong>), or specific specialisation(s).
           </li>
           <li>
             <strong>Flat programs</strong> — pick specialisation(s) or{" "}

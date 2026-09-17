@@ -76,7 +76,12 @@ interface PlanSpecialisation {
   cost: number;
   easyWins: number;
   requirements: PlanRequirement[];
+  /** One of the `needed` specialisations the plan is costed against. */
   chosen?: boolean;
+  /** Swaps in for a chosen one at no extra cost. */
+  alternative?: boolean;
+  /** What it adds on top of the other chosen specialisations; `cost` is standalone. */
+  marginalCost?: number;
 }
 interface PlanTargetResult {
   program: string;
@@ -330,6 +335,16 @@ function specDimmed(spec: PlanSpecialisation, tiered: boolean, state: RiskState)
   return tiered && spec.chosen === false && state === "compliant";
 }
 
+/**
+ * A tier target's two roles, in one place so the badge and the export column
+ * can't disagree about which specialisations the plan is actually pursuing.
+ */
+function specRole(spec: PlanSpecialisation, tiered: boolean): "Recommended" | "Alternative" | "" {
+  if (!tiered || spec.achieved) return "";
+  if (spec.chosen) return "Recommended";
+  return spec.alternative ? "Alternative" : "";
+}
+
 /** The pills beside a specialisation's name, in the order the block shows them. */
 function specBadges(
   spec: PlanSpecialisation,
@@ -342,15 +357,27 @@ function specBadges(
   if (state === "atRisk") {
     badges.push({ text: `At risk in ${windowMonths}mo`, className: RISK_BADGE.atRisk, tone: "amber" });
   }
-  if (tiered && spec.chosen && !spec.achieved) {
+  const role = specRole(spec, tiered);
+  if (role === "Recommended") {
     badges.push({ text: "Recommended", className: "bg-blue-100 text-blue-800", tone: "neutral" });
+  } else if (role === "Alternative") {
+    // Muted, because it is an aside: the plan is not costed against it.
+    badges.push({ text: "Equal-cost alternative", className: "bg-gray-100 text-gray-700", tone: "neutral" });
   }
   return badges;
 }
 
-/** The cost line on the right of a specialisation's header. */
+/**
+ * The cost line on the right of a specialisation's header. `cost` is what the
+ * block costs read on its own; the marginal is what it adds given the other
+ * chosen specialisations, and is shown only when a shared certification makes
+ * the two differ — otherwise it is the same number said twice.
+ */
 function specCostLabel(spec: PlanSpecialisation): string {
-  return `${spec.cost > 0 ? `${spec.cost} to certify` : "—"}${spec.easyWins > 0 ? ` · ${spec.easyWins} easy` : ""}`;
+  const base = spec.cost > 0 ? `${spec.cost} to certify` : "—";
+  const marginal =
+    spec.marginalCost != null && spec.marginalCost !== spec.cost ? ` · ${spec.marginalCost} more here` : "";
+  return `${base}${marginal}${spec.easyWins > 0 ? ` · ${spec.easyWins} easy` : ""}`;
 }
 
 function requirementHasCandidates(r: PlanRequirement): boolean {
@@ -588,6 +615,7 @@ function buildRoadmapSection(
   const rows: Record<string, string | number>[] = [];
   for (const t of targets) {
     const target = t.tierName ?? (t.mode === "all" ? "All requirements" : "Specialisations");
+    const tiered = !!t.tierPlan;
     for (const s of t.specialisations) {
       for (const r of s.requirements) {
         rows.push({
@@ -595,6 +623,9 @@ function buildRoadmapSection(
           target,
           specialisation: s.name,
           achieved: s.achieved ? "Yes" : "No",
+          // The file should say what the screen says: which specialisations the
+          // plan is costed against, and which merely swap in for one of them.
+          role: specRole(s, tiered),
           cert: r.cert,
           scope: r.scopeLabel,
           attained: r.attained,
@@ -627,6 +658,7 @@ function buildRoadmapSection(
       { key: "target", header: "Target" },
       { key: "specialisation", header: "Specialisation" },
       { key: "achieved", header: "Achieved" },
+      { key: "role", header: "Role" },
       { key: "cert", header: "Requirement" },
       { key: "scope", header: "Scope" },
       { key: "attained", header: "Attained" },
