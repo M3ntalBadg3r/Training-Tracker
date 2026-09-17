@@ -140,3 +140,63 @@ export async function listFullTitleOptions(
     memberCount: e.count,
   }));
 }
+
+/**
+ * Rewrite or scrub every reference to a `trainingTitle` held in another row's
+ * `certification[]` ("leads to") or `replacedBy[]` (legacy replacement).
+ *
+ * Those two columns are bare `String[]`s holding primary keys with no foreign
+ * key behind them — unlike `OlxSubItemRelation`, which is a real join table with
+ * cascades. So nothing kept them honest: renaming a certification rewrote
+ * `trainingTaken` and both sides of the OLX join table but left every training
+ * that pointed at it holding a key that no longer existed, and deleting one left
+ * the same dangling key behind.
+ *
+ * It failed silently, which is what made it worth fixing: every consumer renders
+ * an unresolvable reference with a `?? title` fallback, so the UI showed the old
+ * internal key where a name should be, and the reports simply stopped matching
+ * the holders. `sanitizeLegacyFields` would then quietly drop the dead entry the
+ * next time that *other* row happened to be saved.
+ *
+ * Pass `to: null` to remove the reference (a delete); pass a title to repoint it
+ * (a rename). Runs inside the caller's transaction, beside the writes it must
+ * stay consistent with.
+ *
+ * Postgres has no array-element update in Prisma's query API, so the rows are
+ * read and rewritten individually. Only rows that actually reference the title
+ * are touched, which is a very small set in practice.
+ */
+export async function rewriteTitleReferences(
+  tx: PrismaTransactionClient,
+  from: string,
+  to: string | null,
+): Promise<void> {
+  const affected = await tx.trainingData.findMany({
+    where: {
+      OR: [{ certification: { has: from } }, { replacedBy: { has: from } }],
+    },
+    select: { trainingTitle: true, certification: true, replacedBy: true },
+  });
+
+  for (const row of affected) {
+    // The renamed row itself is deleted and recreated by the rename path, so
+    // skip it here rather than writing to a row that is about to disappear.
+    if (row.trainingTitle === from) continue;
+
+    const remap = (list: string[]) => {
+      if (!list.includes(from)) return list;
+      const next = list.filter((t) => t !== from);
+      // Guard against duplicates: the row may already reference the new title.
+      if (to !== null && !next.includes(to)) next.push(to);
+      return next;
+    };
+
+    await tx.trainingData.update({
+      where: { trainingTitle: row.trainingTitle },
+      data: {
+        certification: remap(row.certification),
+        replacedBy: remap(row.replacedBy),
+      },
+    });
+  }
+}
