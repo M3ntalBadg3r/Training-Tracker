@@ -4,13 +4,15 @@ name: PR checks
 # requests only. ci.yml (lint, typecheck, build, route guards) runs on pushes
 # too; these two need something to compare against.
 #
-# Both are required checks. The pipeline is unattended — the PR opens itself,
-# auto-merges on green and release.yml publishes the release — so a check that
-# only warns has no reader and stops no mistakes.
+# Both are required checks. The pipeline is unattended — a green PR auto-merges
+# with nobody looking, and a promotion to master publishes a release — so a
+# check that only warns has no reader and stops no mistakes.
 #
 #   release-hygiene  — the mechanical half of the Mandatory Post-Change Rules
-#                      in CLAUDE.md (version bump, lockfile, release notes),
-#                      enforced before the merge fires release.yml.
+#                      in CLAUDE.md: semver format and lockfile sync always,
+#                      plus a version move and a notes file when the base is
+#                      master. A PR into dev cuts no release, so it is asked
+#                      for neither.
 #   deidentify       — email domains and home-directory paths in the added
 #                      lines. False positives get past it with the
 #                      `skip-deid-scan` label, not by being ignored.
