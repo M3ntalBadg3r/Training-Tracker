@@ -38,11 +38,12 @@
  * summing. Only the totals dedup — `PlanRequirement.netNew` and
  * `PlanSpecialisation.cost` stay per-instance/standalone, because each of those
  * figures is true of that requirement read on its own, and `sharedWith` names the
- * other specialisations so the page can say the total counts it once. Known
- * approximation: a tiered target's cheapest-K specialisation ranking still costs
- * each specialisation standalone (see `specCost`), so two specialisations sharing
- * a cert are not ranked as the bargain they are — picking the genuinely cheapest
- * set is a set-cover problem, deliberately not solved here.
+ * other specialisations so the page can say the total counts it once. The same
+ * dedup decides a tiered target's cheapest-K specialisations: `specSetCost` costs
+ * a *set* rather than each member, and the ranking picks greedily by what each
+ * candidate adds to the set so far, so two specialisations sharing a cert rank as
+ * the bargain they are. Greedy, not exact — picking the genuinely cheapest set is
+ * set cover — but the approximation is now in the search, not in the cost.
  */
 
 import prisma from "@/lib/prisma";
@@ -147,9 +148,19 @@ export interface PlanSpecialisation {
   cost: number;
   easyWins: number;
   requirements: PlanRequirement[];
-  /** For a tier target: recommended as one of the cheapest remaining
-   *  specialisations to reach the tier (includes equally-cheap ties). */
+  /** For a tier target: one of the `needed` specialisations this plan actually
+   *  costed against — the cheapest set by marginal cost, so exactly `needed` of
+   *  them are flagged and their `marginalCost`s sum to the target's people-moves. */
   chosen?: boolean;
+  /** For a tier target: not counted, but swapping it in for one of the chosen
+   *  specialisations would cost no more. Shown so a genuine alternative isn't
+   *  hidden by the arbitrary pick between two equal paths. */
+  alternative?: boolean;
+  /** For a tier target: what this specialisation adds *on top of the other chosen
+   *  ones* — equal to `cost` unless it shares a certification with them, in which
+   *  case the shared cert is already paid for. Set for chosen and alternative
+   *  specialisations only. */
+  marginalCost?: number;
 }
 
 export interface PlanTargetResult {
@@ -812,6 +823,33 @@ export function netNewTotal(instances: ReqInstance[], alloc: AllocationResult): 
   return total;
 }
 
+/**
+ * People-moves to close a SET of specialisations, counting a certification
+ * required by several of them over the same population once.
+ *
+ * Same max-per-group rule as `netNewTotal`, and for the same reason: instances
+ * sharing a `certGroupKey` share a population, so one cohort of N new holders
+ * satisfies every instance in the group whose gap is ≤ N. Where this differs is
+ * what it costs — the raw planning gap (`inst.shortfall`), because it ranks
+ * specialisations *before* allocation has happened and so has no post-allocation
+ * remainder to read.
+ *
+ * Pure and exported for the same reason `allocateCandidates` is: the tier
+ * cheapest-path ranking it drives is the part worth exercising directly.
+ */
+export function specSetCost(names: Iterable<string>, bySpec: Map<string, ReqInstance[]>): number {
+  const byGroup = new Map<string, number>();
+  for (const name of names) {
+    for (const inst of bySpec.get(name) ?? []) {
+      const key = certGroupKey(inst);
+      byGroup.set(key, Math.max(byGroup.get(key) ?? 0, inst.shortfall));
+    }
+  }
+  let total = 0;
+  for (const n of byGroup.values()) total += n;
+  return total;
+}
+
 // ─── Tier fastest-path ───────────────────────────────────────────────────────
 
 interface TierInfo {
@@ -835,9 +873,9 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
   const targets: PlanTargetResult[] = [];
 
   // Per-target preparation captured before allocation: how its instances group
-  // into specialisations, and — for a tier target — which specialisations are
-  // *counted* toward the plan (the cheapest `needed`) vs merely *recommended*
-  // (every equal-cost tie, so an equally-cheap alternative is surfaced too).
+  // into specialisations, and — for a tier target — which specialisations the
+  // plan is *costed against* (the cheapest `needed`, chosen by marginal cost) vs
+  // which merely swap in for one of them at no extra cost.
   interface TargetPrep {
     target: PlanTargetResult;
     bySpec: Map<string, ReqInstance[]>;
@@ -846,8 +884,13 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
     counted: ReqInstance[];
     /** instanceId → the OTHER specialisations needing the same cert (see `sharedWith`). */
     sharedByInstanceId: Map<string, string[]>;
-    /** Specialisation names to badge "Recommended" (tie set); empty for non-tier. */
-    recommendedSpecs: Set<string>;
+    /** The cheapest `needed` specialisations, in the order they were picked;
+     *  empty for non-tier targets. These are what `counted` was built from. */
+    chosenSpecs: string[];
+    /** Specialisations that swap in for a chosen one at no extra cost. */
+    alternativeSpecs: Set<string>;
+    /** Marginal cost per chosen/alternative specialisation (see `marginalCost`). */
+    marginalBySpec: Map<string, number>;
   }
   const preps: TargetPrep[] = [];
   // Only counted instances feed the allocator + totals, so a tier target costs
@@ -974,20 +1017,15 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
 
     // Decide which instances count toward reaching the target.
     const countedIds = new Set<string>();
-    const recommendedSpecs = new Set<string>();
+    const chosenSpecs: string[] = [];
+    const alternativeSpecs = new Set<string>();
+    const marginalBySpec = new Map<string, number>();
     if (chosenTier && targetResult.tierPlan) {
-      // Per-specialisation cost (Σ shortfall) + achieved, before any allocation.
-      // Both read the *planning* gap, so when planning for the renewal window a
-      // specialisation that lapses inside it stops counting toward the tier —
-      // `needed` rises and the cheapest path can legitimately change.
-      // Known approximation: this cost is *standalone*, so two specialisations
-      // sharing a cert don't rank as the bargain they are. Costing the set rather
-      // than each member is set cover; the ranking stays greedy-per-spec and only
-      // the totals dedup (`netNewTotal`).
-      const specCost = new Map<string, number>();
+      // Achieved-ness reads the *planning* gap, so when planning for the renewal
+      // window a specialisation that lapses inside it stops counting toward the
+      // tier — `needed` rises and the cheapest path can legitimately change.
       const specAchieved = new Map<string, boolean>();
       for (const [name, insts] of bySpec) {
-        specCost.set(name, insts.reduce((s, i) => s + i.shortfall, 0));
         specAchieved.set(name, insts.every((i) => i.shortfall === 0));
       }
       const achievedCount = [...specAchieved.values()].filter(Boolean).length;
@@ -996,19 +1034,59 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
       targetResult.tierPlan.needed = needed;
       targetResult.tierPlan.deliveryCertShortfall = tierDeployInsts.reduce((s, i) => s + i.shortfall, 0);
 
-      // Reaching the tier needs only `needed` more specialisations — count the
-      // cheapest ones, and recommend every specialisation tied at that cost so
-      // an equally-cheap alternative isn't hidden.
+      // Reaching the tier needs only `needed` more specialisations, so pick that
+      // many — greedily, by **marginal** cost (v2). A standalone per-specialisation
+      // cost charges two specialisations sharing a certification in full each, so
+      // the two cheapest-looking were routinely not the cheapest pair: one that
+      // reads "4 to certify" but shares half its requirements with a specialisation
+      // already picked really adds 2. `specSetCost` costs the set honestly, and
+      // asking it what each candidate *adds* to the set so far is what makes the
+      // per-specialisation figures sum to the target's headline.
       const remaining = [...bySpec.keys()]
         .filter((n) => !specAchieved.get(n))
-        .sort((a, b) => (specCost.get(a)! - specCost.get(b)!) || a.localeCompare(b));
+        .sort((a, b) => a.localeCompare(b));
       if (needed > 0 && remaining.length > 0) {
         const k = Math.min(needed, remaining.length);
-        const boundaryCost = specCost.get(remaining[k - 1])!;
-        for (let i = 0; i < remaining.length; i++) {
-          const name = remaining[i];
-          if (specCost.get(name)! <= boundaryCost) recommendedSpecs.add(name);
-          if (i < k) for (const inst of bySpec.get(name)!) countedIds.add(inst.id);
+        const pool = new Set(remaining);
+        for (let i = 0; i < k; i++) {
+          const base = specSetCost(chosenSpecs, bySpec);
+          let best: string | null = null;
+          let bestMarginal = Infinity;
+          for (const name of pool) {
+            const marginal = specSetCost([...chosenSpecs, name], bySpec) - base;
+            // localeCompare on a genuine tie, so the pick is deterministic rather
+            // than dependent on Map insertion order.
+            if (marginal < bestMarginal || (marginal === bestMarginal && best !== null && name.localeCompare(best) < 0)) {
+              best = name;
+              bestMarginal = marginal;
+            }
+          }
+          if (best === null) break;
+          pool.delete(best);
+          chosenSpecs.push(best);
+          marginalBySpec.set(best, bestMarginal);
+        }
+
+        // An alternative is a specialisation that can be swapped in for one of the
+        // chosen ones without the set costing more — the honest version of the old
+        // "equal standalone cost" test, which called two specialisations equal when
+        // only one of them shared its certifications with the rest of the plan.
+        // k × (n−k) set-cost evaluations over the handful of specialisations a
+        // program has: not worth indexing, and deliberately left plain so it stays
+        // readable rather than becoming something subtler that nobody trusts.
+        const baseline = specSetCost(chosenSpecs, bySpec);
+        for (const name of remaining) {
+          if (marginalBySpec.has(name)) continue;
+          const swaps = chosenSpecs.some(
+            (c) => specSetCost([...chosenSpecs.filter((x) => x !== c), name], bySpec) <= baseline,
+          );
+          if (!swaps) continue;
+          alternativeSpecs.add(name);
+          marginalBySpec.set(name, specSetCost([...chosenSpecs, name], bySpec) - baseline);
+        }
+
+        for (const name of chosenSpecs) {
+          for (const inst of bySpec.get(name)!) countedIds.add(inst.id);
         }
       }
       // Tier delivery certs always count toward the tier.
@@ -1026,13 +1104,15 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
       tierDeployInsts,
       counted,
       sharedByInstanceId,
-      recommendedSpecs,
+      chosenSpecs,
+      alternativeSpecs,
+      marginalBySpec,
     });
   }
 
   // Greedy allocation across only the COUNTED instances of ALL targets at once
   // (contention is global — a person spent in Program A can't also be spent in
-  // Program B). Non-counted instances (a tier's non-recommended specialisations)
+  // Program B). Non-counted instances (a tier's unchosen specialisations)
   // are shown for reference but don't inflate the plan's totals.
   const alloc = allocateCandidates(countedInstances);
 
@@ -1052,7 +1132,11 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
   const studentById = new Map(students.map((s) => [s.email, s]));
 
   // ── Roll instances back up into the per-target roadmap ──
-  for (const { target, bySpec, tierDeployInsts, counted, sharedByInstanceId, recommendedSpecs } of preps) {
+  for (const {
+    target, bySpec, tierDeployInsts, counted, sharedByInstanceId,
+    chosenSpecs, alternativeSpecs, marginalBySpec,
+  } of preps) {
+    const chosenSet = new Set(chosenSpecs);
     const shared = (inst: ReqInstance) => sharedByInstanceId.get(inst.id) ?? [];
     const specs: PlanSpecialisation[] = [];
     for (const [name, specInsts] of bySpec) {
@@ -1074,7 +1158,14 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
         easyWins,
         requirements,
       };
-      if (target.tierPlan) spec.chosen = recommendedSpecs.has(name);
+      if (target.tierPlan) {
+        spec.chosen = chosenSet.has(name);
+        // Only set on the two flagged kinds: a specialisation nobody is being asked
+        // to consider has no "on top of the chosen ones" figure to report.
+        if (alternativeSpecs.has(name)) spec.alternative = true;
+        const marginal = marginalBySpec.get(name);
+        if (marginal !== undefined) spec.marginalCost = marginal;
+      }
       specs.push(spec);
     }
     specs.sort((a, b) => (a.cost - b.cost) || a.name.localeCompare(b.name));
@@ -1173,10 +1264,13 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
   );
 
   // ── What the renewals actually break ──
-  // Built here, not on the client, because only this side knows which instances
-  // are *counted*: `spec.chosen` is the recommended tie-set (a superset of the
-  // cheapest-K the plan pursues), so a client-side derive would name
-  // requirements whose expiring holders never appear in the table below it.
+  // Built here, not on the client, from `countedInstances` — the set the plan was
+  // actually costed against. `spec.chosen` used to be a wider tie-set, so deriving
+  // this client-side would have named requirements whose expiring holders never
+  // appear in the table below it; now that `chosen` is exactly the cheapest-K, a
+  // client derive would agree. It stays here anyway because `countedInstances` is
+  // the definition and the flag only reflects it — a future counted instance that
+  // isn't a chosen specialisation's would silently vanish from a client derive.
   const riskImpacts: PlanRiskImpact[] = countedInstances
     .filter((i) => i.shortfallProjected !== null && i.shortfallProjected > 0 && i.expiringEmails.length > 0)
     .map((i) => ({
@@ -1299,7 +1393,7 @@ function toPlanRequirement(
     lapsedPool: inst.pool.filter((p) => p.tier === "lapsed").length,
     legacyPool: inst.pool.filter((p) => p.tier === "legacy").length,
     // Counted instances get their allocated net-new; non-counted (a tier's
-    // non-recommended specialisations) fall back to their raw shortfall.
+    // unchosen specialisations) fall back to their raw shortfall.
     netNew: alloc.netNewByInstance.get(inst.id) ?? inst.shortfall,
     sharedWith,
     expiringSoon: inst.expiringEmails.length,
@@ -1328,15 +1422,24 @@ function buildHeadline(target: PlanTargetResult, scopeLabel: string, windowMonth
     const { needed, deliveryCertShortfall } = target.tierPlan;
     const parts: string[] = [];
     if (needed > 0) {
-      // Every equal-cost specialisation is recommended — any `needed` of them reach the tier.
+      // `chosen` is exactly `needed` long, and each figure is the specialisation's
+      // *marginal* cost — so the listed parts add up to the headline's total
+      // instead of overstating it by charging a shared certification twice.
       const rec = target.specialisations.filter((s) => s.chosen && !s.name.endsWith("delivery certs"));
-      const names = rec.map((s) => `${s.name} (${s.cost} to certify${s.easyWins > 0 ? `, ${s.easyWins} easy` : ""})`);
+      const names = rec.map(
+        (s) => `${s.name} (${s.marginalCost ?? s.cost} to certify${s.easyWins > 0 ? `, ${s.easyWins} easy` : ""})`,
+      );
       let clause = `achieve ${needed} more specialisation${needed === 1 ? "" : "s"}`;
       if (names.length > 0) {
-        const joined = names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} or ${names[names.length - 1]}`;
+        const joined = names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
         clause += ` — cheapest ${names.length === 1 ? "is" : "are"} ${joined}`;
-        if (names.length > needed) clause += ` (achieve any ${needed})`;
       }
+      // A cost-neutral swap is worth naming: the pick between two equal paths is
+      // arbitrary, and the other one may suit the business better.
+      const alts = target.specialisations
+        .filter((s) => s.alternative && !s.name.endsWith("delivery certs"))
+        .map((s) => s.name);
+      if (alts.length > 0) clause += ` — or swap in ${alts.join(" or ")} at the same cost`;
       parts.push(clause);
     }
     if (deliveryCertShortfall > 0) {
