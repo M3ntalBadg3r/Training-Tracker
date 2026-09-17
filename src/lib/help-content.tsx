@@ -2710,6 +2710,21 @@ const helpSections: Record<string, HelpSection> = {
           expires, led by a summary of exactly which requirements their expiry breaks.
         </p>
         <p>
+          That section covers <em>every</em> requirement on the page, split into two
+          groups.{" "}<strong>On the recommended path</strong>{" "}holds the requirements
+          the plan is costed against — the renewals counted in{" "}
+          <strong>People to certify</strong>{" "}come from this group.{" "}
+          <strong>Reference</strong>{" "}holds the ones the roadmap dims because the plan
+          doesn&apos;t route through them; nothing there is counted, but the expiry is
+          just as real, so it is shown rather than hidden. For a tiered program the
+          cheapest path can change as you widen the window, so listing only the
+          recommended path meant a 6-month window could show{" "}<em>fewer</em>{" "}
+          at-risk renewals than a 3-month one. The count beside the heading — and the{" "}
+          <strong>Renewals at risk</strong>{" "}metric box — is one per{" "}
+          <em>person and certification</em>, so someone with two certifications
+          expiring is counted twice.
+        </p>
+        <p>
           By default the window is <em>informational</em>: the KPIs and
           &ldquo;Who to certify&rdquo; still answer &ldquo;what is broken today?&rdquo;.
           Tick <strong>Plan for this window</strong> to fold it in — gaps are then sized
