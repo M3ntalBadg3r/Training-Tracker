@@ -5,6 +5,7 @@ import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import PageHeader from "@/components/layout/PageHeader";
 import Modal from "@/components/ui/Modal";
 import { TrainingDataRow } from "@/types";
+import FullTitlePicker, { type FullTitleOption } from "@/components/training/FullTitlePicker";
 import { useDebounce } from "@/hooks/useDebounce";
 import {
   Plus,
@@ -24,6 +25,32 @@ import * as XLSX from "xlsx";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import { safeExternalUrl } from "@/lib/utils";
 import { checkImportFile } from "@/lib/import-file";
+
+/**
+ * Collapse catalogue rows to one picker option per Full Title.
+ *
+ * A `trainingTitle` is the spelling a training arrived under in an import, so a
+ * picker listing training titles shows the same training several times with
+ * identical labels. One option per Full Title is what the rest of this page
+ * means by a record.
+ */
+function buildFullTitleOptions(rows: TrainingDataRow[], types: string[]): FullTitleOption[] {
+  const byFull = new Map<string, { types: Set<string>; count: number }>();
+  for (const r of rows) {
+    if (!types.includes(r.trainingType)) continue;
+    const entry = byFull.get(r.fullTitle) ?? { types: new Set<string>(), count: 0 };
+    entry.types.add(r.trainingType);
+    entry.count += 1;
+    byFull.set(r.fullTitle, entry);
+  }
+  return Array.from(byFull.entries())
+    .map(([fullTitle, e]) => ({
+      fullTitle,
+      trainingTypes: Array.from(e.types),
+      memberCount: e.count,
+    }))
+    .sort((a, b) => a.fullTitle.localeCompare(b.fullTitle));
+}
 
 const TRAINING_TYPES = ["Certification", "Accreditation", "InstructorLedTraining", "OLX", "OLXSubItem"];
 const FUNCTION_TYPES = ["Sales", "PreSales", "Deployments"];
@@ -133,11 +160,11 @@ function TrainingDataPageInner() {
     productType: "",
     function: "Sales",
     link: "",
-    certification: [] as string[],
+    certificationFullTitles: [] as string[],
     subItems: [] as string[],
     parents: [] as string[],
     isLegacy: false,
-    replacedBy: [] as string[],
+    replacedByFullTitles: [] as string[],
   });
   const [loading, setLoading] = useState(true);
 
@@ -505,23 +532,21 @@ function TrainingDataPageInner() {
   const [unresolvedProductTypes, setUnresolvedProductTypes] = useState<UnrecognizedValue[]>([]);
   const [unresolvedFunctions, setUnresolvedFunctions] = useState<UnrecognizedValue[]>([]);
 
-  const certificationOptions = useMemo(
-    () =>
-      trainingList
-        .filter((t) => t.trainingType === "Certification")
-        .map((t) => t.trainingTitle)
-        .sort(),
+  // Certifications a training can lead to, as ONE option per Full Title. The
+  // list used to map `trainingTitle` while labelling each row with its Full
+  // Title, so a certification imported under three spellings appeared three
+  // times with identical text — and ticking one of them pointed the
+  // relationship at a single spelling. The server expands a Full Title to its
+  // members, so the admin names the training once.
+  const certificationOptions = useMemo<FullTitleOption[]>(
+    () => buildFullTitleOptions(trainingList, ["Certification"]),
     [trainingList]
   );
 
   // Replacement candidates for a legacy cert/accreditation — any Certification
   // or Accreditation. Callers exclude the row being edited.
-  const replacementOptions = useMemo(
-    () =>
-      trainingList
-        .filter((t) => t.trainingType === "Certification" || t.trainingType === "Accreditation")
-        .map((t) => ({ trainingTitle: t.trainingTitle, fullTitle: t.fullTitle }))
-        .sort((a, b) => a.fullTitle.localeCompare(b.fullTitle)),
+  const replacementOptions = useMemo<FullTitleOption[]>(
+    () => buildFullTitleOptions(trainingList, ["Certification", "Accreditation"]),
     [trainingList]
   );
 
@@ -599,11 +624,11 @@ function TrainingDataPageInner() {
         productType: productTypes[0] ?? "",
         function: "Sales",
         link: "",
-        certification: [],
+        certificationFullTitles: [],
         subItems: [],
         parents: [],
         isLegacy: false,
-        replacedBy: [],
+        replacedByFullTitles: [],
       });
       fetchRawTrainingData();
     }
@@ -2004,7 +2029,7 @@ function TrainingDataPageInner() {
                 setNewTraining((prev) => ({
                   ...prev,
                   trainingType: val,
-                  certification: (val === "InstructorLedTraining" || val === "OLX") ? prev.certification : [],
+                  certificationFullTitles: (val === "InstructorLedTraining" || val === "OLX") ? prev.certificationFullTitles : [],
                   subItems: val === "OLX" ? prev.subItems : [],
                   parents: val === "OLXSubItem" ? prev.parents : [],
                 }));
@@ -2065,29 +2090,15 @@ function TrainingDataPageInner() {
           {(newTraining.trainingType === "InstructorLedTraining" || newTraining.trainingType === "OLX") && (
             <div>
               <label className="block text-sm font-medium mb-1">Leads to Certification(s)</label>
-              <div className="max-h-40 overflow-y-auto border border-gray-300 rounded-lg px-3 py-2 text-sm space-y-1">
-                {certificationOptions.length === 0 && (
-                  <span className="text-gray-400 text-xs">No certifications available</span>
-                )}
-                {certificationOptions.map((c) => (
-                  <label key={c} className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 rounded px-1">
-                    <input
-                      type="checkbox"
-                      checked={newTraining.certification.includes(c)}
-                      onChange={(e) => {
-                        setNewTraining((prev) => ({
-                          ...prev,
-                          certification: e.target.checked
-                            ? [...prev.certification, c]
-                            : prev.certification.filter((x) => x !== c),
-                        }));
-                      }}
-                      className="rounded border-gray-300"
-                    />
-                    <span>{c}</span>
-                  </label>
-                ))}
-              </div>
+              <FullTitlePicker
+                options={certificationOptions.filter((c) => c.fullTitle !== newTraining.fullTitle)}
+                value={newTraining.certificationFullTitles}
+                onChange={(next) =>
+                  setNewTraining((prev) => ({ ...prev, certificationFullTitles: next }))
+                }
+                searchPlaceholder="Search certifications…"
+                emptyMessage="No certifications available"
+              />
             </div>
           )}
           {(newTraining.trainingType === "Certification" || newTraining.trainingType === "Accreditation") && (
@@ -2100,7 +2111,7 @@ function TrainingDataPageInner() {
                     setNewTraining((prev) => ({
                       ...prev,
                       isLegacy: e.target.checked,
-                      replacedBy: e.target.checked ? prev.replacedBy : [],
+                      replacedByFullTitles: e.target.checked ? prev.replacedByFullTitles : [],
                     }))
                   }
                   className="rounded border-gray-300"
@@ -2110,31 +2121,15 @@ function TrainingDataPageInner() {
               {newTraining.isLegacy && (
                 <div>
                   <label className="block text-sm font-medium mb-1">Replaced by <span className="text-xs text-gray-500">(optional — select one or more)</span></label>
-                  <div className="max-h-40 overflow-y-auto border border-gray-300 rounded-lg px-3 py-2 text-sm space-y-1">
-                    {replacementOptions.filter((r) => r.trainingTitle !== newTraining.trainingTitle).length === 0 && (
-                      <span className="text-gray-400 text-xs">No certifications/accreditations available</span>
-                    )}
-                    {replacementOptions
-                      .filter((r) => r.trainingTitle !== newTraining.trainingTitle)
-                      .map((r) => (
-                        <label key={r.trainingTitle} className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 rounded px-1">
-                          <input
-                            type="checkbox"
-                            checked={newTraining.replacedBy.includes(r.trainingTitle)}
-                            onChange={(e) => {
-                              setNewTraining((prev) => ({
-                                ...prev,
-                                replacedBy: e.target.checked
-                                  ? [...prev.replacedBy, r.trainingTitle]
-                                  : prev.replacedBy.filter((x) => x !== r.trainingTitle),
-                              }));
-                            }}
-                            className="rounded border-gray-300"
-                          />
-                          <span>{r.fullTitle}</span>
-                        </label>
-                      ))}
-                  </div>
+                  <FullTitlePicker
+                    options={replacementOptions.filter((r) => r.fullTitle !== newTraining.fullTitle)}
+                    value={newTraining.replacedByFullTitles}
+                    onChange={(next) =>
+                      setNewTraining((prev) => ({ ...prev, replacedByFullTitles: next }))
+                    }
+                    searchPlaceholder="Search certifications…"
+                    emptyMessage="No certifications/accreditations available"
+                  />
                 </div>
               )}
             </div>

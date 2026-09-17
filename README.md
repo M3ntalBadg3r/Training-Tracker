@@ -838,7 +838,9 @@ Click **Edit** on a row to complete it. You can either **attach it to an existin
 
 The **Certification** mapping is available for trainings of type **Instructor-Led Training** and **OLX** (parent). It records which Certification(s) the training **leads to** — i.e. the ILT/OLX is the recommended preparation before sitting the exam that earns the cert; it does **not** itself grant the cert. OLX Sub-Items cannot carry certifications.
 
-Where an ILT/OLX leads to a certification is surfaced without entering edit mode: in the list, a **"→ Leads to: …"** subline appears under the Full Title (naming the certification(s)); on the Full Title detail page, a **Leads to Certification(s)** card in the summary row lists the deduplicated certifications drawn from all mapped Training Titles.
+Where an ILT/OLX leads to a certification is surfaced without entering edit mode: in the list, a **"→ Leads to: …"** subline appears under the Full Title (naming the certification(s)).
+
+It is also **edited once per Full Title**, not once per Training Title. Several Training Titles routinely map to one Full Title — they are the different spellings the same training arrived under in an import — so setting "leads to" per Training Title meant repeating the same choice for every spelling, and missing one silently dropped those learners out of the Trained But Not Certified report. The **Leads to Certification(s)** section on the Full Title detail page applies the choice to every mapped Training Title in one save. You pick the target certification by its **Full Title** too, so you never have to work out which internal Training Title to point at, and the search box makes a long catalogue usable. If a Full Title covers more than one type — a Certification and the Instructor-Led Training that prepares for it, say — you get one control per type, because the system counts those as two separate trainings.
 
 - When editing or adding an ILT, a checkbox list of all available Certifications is shown.
 - Select one or more Certifications to create the mapping.
