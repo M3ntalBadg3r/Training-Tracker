@@ -39,14 +39,31 @@ export function exportToExcel<T extends object>(
 /**
  * Make a string safe for jsPDF's built-in fonts.
  *
- * The standard PDF fonts are WinAnsi-encoded: a character outside Latin-1 is
- * emitted as raw UTF-16 bytes and comes out as mojibake with the wrong advance
- * widths — "Lapsed ≤ 1 month" prints as `Lapsed "d 1 month`. Report text is full
- * of such characters (≤ in the expiry buckets, → in "ILT → Cert", en and em
- * dashes throughout the chart titles), so they are transliterated to their
- * ASCII equivalents. Anything Latin-1 already covers is left exactly as it is —
- * accented names above all, but also × and · — and embedding a Unicode font to
- * keep the real glyphs would cost hundreds of kilobytes in the client bundle.
+ * The standard PDF fonts are WinAnsi-encoded, which is **CP1252 — Latin-1 plus
+ * the 0x80-0x9F range**. A character outside CP1252 is emitted as raw UTF-16
+ * bytes and comes out as mojibake with the wrong advance widths: "Lapsed ≤ 1
+ * month" prints as `Lapsed "d 1 month`, ≤ being U+2264 and 0x22 0x64 being `"d`.
+ * Report text is full of those (≤ in the expiry buckets, → in "ILT → Cert", ▼ in
+ * the expiring notes, ✓ in the compliance columns), so they are transliterated
+ * to their ASCII equivalents.
+ *
+ * CP1252 is the boundary, and reading it as Latin-1 is a mistake that has
+ * already been made here. That extra 0x80-0x9F range holds the ellipsis (0x85),
+ * the en and em dashes (0x96/0x97), the curly quotes (0x91-0x94) and the bullet
+ * (0x95) — jsPDF encodes every one of them correctly, so the entries for them
+ * below are long-standing behaviour rather than a correctness requirement.
+ *
+ * Do not remove those entries regardless. Every existing report PDF would
+ * change bytes, and two of the classes straddle the boundary in any case: the
+ * dash class also covers ‐ ‑ ‒ ― and −, and the quote class also covers ‛, none
+ * of which CP1252 has. Someone taking "outside Latin-1" at face value once
+ * "fixed" the deliberate ellipsis in `report-export.ts:fitLine` by running it
+ * through this table, turning one glyph into three dots and — `...` being the
+ * wider — moving where every truncated label in the twelve report pages is cut.
+ *
+ * Anything CP1252 already covers is left exactly as it is — accented names
+ * above all, but also × and · — and embedding a Unicode font to keep the real
+ * glyphs would cost hundreds of kilobytes in the client bundle.
  */
 const PDF_TRANSLITERATIONS: [RegExp, string][] = [
   [/[\u2018\u2019\u201b]/g, "'"],
@@ -62,9 +79,9 @@ const PDF_TRANSLITERATIONS: [RegExp, string][] = [
   [/\u25bc/g, "v"],
   [/\u2022/g, "-"],
   // Check and cross marks: compliance tables are full of them, and unlike the
-  // ellipsis and curly quotes above they are genuinely outside CP1252 (what
-  // jsPDF's `/WinAnsiEncoding` standard fonts can encode), so without an entry
-  // each arrives as mojibake in the one column a reader scans first.
+  // ellipsis, bullet and curly quotes above they are genuinely outside CP1252,
+  // so without an entry each arrives as mojibake in the column a reader scans
+  // first.
   [/[\u2713\u2714]/g, "OK"],
   [/[\u2715-\u2718]/g, "X"],
   [/[\u2009\u202f]/g, " "],
