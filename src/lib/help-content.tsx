@@ -2692,16 +2692,46 @@ const helpSections: Record<string, HelpSection> = {
         <h3>Export</h3>
         <p>
           Use <strong>Export report</strong> in the page header to download the{" "}
-          <em>whole plan</em>{" "}as one file — a summary of the KPI totals, the
-          aggregate roadmap (every requirement gap), the &ldquo;Who to
-          certify&rdquo; candidate list, and the renewals-at-risk list — in CSV,
-          Excel, or PDF. In Excel each section becomes its own sheet; the PDF
-          stacks each section as a headed table; CSV concatenates them with
-          section titles. With a renewal window selected the roadmap gains projected
-          columns and a <strong>Requirements at risk</strong> section is included, and
-          the filename carries the window (and <em>-planned</em> when you are planning
-          for it). The candidate list and the renewals list also keep their own
+          <em>whole plan</em>{" "}as one file — the KPI totals, the aggregate
+          roadmap (every requirement gap), the &ldquo;Who to certify&rdquo;
+          candidate list, and the renewals-at-risk list — in CSV, Excel, or PDF.
+          The candidate list and the renewals list also keep their own
           per-section export buttons for a quick single-table download.
+        </p>
+        <p>
+          <strong>CSV and Excel</strong>{" "}are the wide data tables you pivot and
+          filter in a spreadsheet, and they are unchanged: Excel gives each
+          section its own sheet, CSV concatenates them with section titles, and
+          both carry every column — including the ones the page keeps out of
+          sight, such as email addresses and the separate projected, expiring and
+          projected-gap figures.
+        </p>
+        <p>
+          <strong>The PDF mirrors the page.</strong>{" "}It opens with the same
+          coloured metric cards that sit at the top of the plan and then, when a
+          renewal window is selected, the note explaining what the projection
+          means and how to read the colours. The roadmap prints one section per
+          program carrying that program&rsquo;s headline sentence, and inside it a
+          card per specialisation with its <strong>Achieved</strong>,{" "}
+          <strong>At risk in Nmo</strong>{" "}or <strong>Recommended</strong>{" "}
+          badge, its cost line and its shared-certification footnote.
+        </p>
+        <p>
+          Requirements keep the page&rsquo;s combined figures instead of being
+          split across a dozen thin columns — one <em>Have / Need</em>{" "}cell
+          reading <em>4 &rarr; 2 / 4</em>{" "}with its expiring note beneath — and
+          the same red / amber / green shading, so met, at-risk and short read
+          as clearly on paper as on screen. Each candidate&rsquo;s reasons print
+          as indented lines under their row, the way the page shows them when you
+          expand it, and a section with nothing in it prints its explanation
+          rather than an empty header row. <strong>Renewals at risk</strong>{" "}
+          keeps the amber callout naming the requirements those expiries break.
+        </p>
+        <p>
+          With a renewal window selected the file name carries the window (and{" "}
+          <em>-planned</em>{" "}when you are planning for it), and the CSV and
+          Excel roadmap gains projected columns plus a{" "}
+          <strong>Requirements at risk</strong>{" "}section.
         </p>
       </>
     ),
@@ -2872,10 +2902,30 @@ const helpSections: Record<string, HelpSection> = {
         <h3>Export</h3>
         <p>
           Each report section has an Export button to download the compliance
-          data (including theatre breakdowns where present) as CSV, Excel, or
-          PDF. When a projection horizon is selected, the export adds{" "}
+          data as CSV, Excel, or PDF. <strong>CSV and Excel</strong>{" "}give you
+          the flat data table — one row per requirement, including theatre
+          breakdowns where present — for pivoting in a spreadsheet, and they are
+          unchanged.
+        </p>
+        <p>
+          <strong>The PDF mirrors the dashboard.</strong>{" "}Rather than one wide
+          table it prints a section per specialisation, each carrying its{" "}
+          <strong>Met</strong>{" "}or <strong>Not met</strong>{" "}badge, the same
+          red / amber / green shading you see on screen, and attained figures
+          combined the way the page shows them instead of split across columns.
+          Where a specialisation has <strong>Deployment requirements</strong>{" "}
+          they print as their own labelled block beneath its qualifying rows,
+          and for a tiered program a <strong>Tier Status</strong>{" "}section
+          follows with the highest tier reached, each tier&rsquo;s specialisation
+          gate, its achieved specialisations and its deployment requirements with
+          their holder counts.
+        </p>
+        <p>
+          When a projection horizon is selected the export reflects that horizon
+          throughout and the file name says so: CSV and Excel add{" "}
           <strong>projected</strong>, <strong>expiring</strong>, and{" "}
-          <strong>projected-compliant</strong> columns reflecting that horizon.
+          <strong>projected-compliant</strong>{" "}columns, while the PDF folds the
+          same figures into its combined cells and amber shading.
         </p>
       </>
     ),
