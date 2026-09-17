@@ -875,6 +875,43 @@ const helpSections: Record<string, HelpSection> = {
           <li>Figures are scoped to the offering&apos;s company. Use <strong>Export</strong> for the current view, and click <strong>View</strong> on any count to list the people behind it.</li>
           <li>Your selection is kept in the page address, so opening someone&apos;s record and pressing <strong>Back</strong>{" "}returns you to the same country or region — and a particular view can be bookmarked or shared as a link.</li>
         </ul>
+        <h3>The delivery-geography map</h3>
+        <p>
+          Above the specialisation tables the page draws a world map of the same
+          three geographies, so you can see how far away your delivery capability
+          is at a glance. The tables are always shown underneath it — the map is
+          an addition, not an alternative view.
+        </p>
+        <p>
+          The three geographies <strong>overlap</strong>: Offshore is everyone
+          worldwide minus Onshore, so it already includes everyone Nearshore. A
+          country cannot be given two colours, so the map shades three
+          non-overlapping groups instead — <strong>Onshore</strong>,{" "}
+          <strong>Nearshore = Offshore in theatre</strong> and{" "}
+          <strong>Rest of world = Offshore elsewhere</strong>. Take the last two
+          together and you have the Offshore figure from the table. Countries your
+          Region Data does not list are shaded as <strong>No data</strong>.
+        </p>
+        <p>
+          The map shows <strong>where your people are, not whether a requirement
+          is met</strong>. A requirement is met by the onshore countries{" "}
+          <em>collectively</em>, so people spread across several countries can
+          satisfy one that no single country meets on its own — which is why
+          nothing on the map is red or green. A country&apos;s shade is a distance,
+          never a verdict.
+        </p>
+        <p>
+          A country in scope with no <strong>ISO Code</strong> in Region Data
+          cannot be drawn. Those are never quietly left out: they are counted in an
+          amber notice under the map with a list you can expand. Setting the
+          missing codes on <strong>Admin &gt; Region Data</strong> is what
+          completes the picture.
+        </p>
+        <p>
+          Tick <strong>Include charts &amp; metrics in PDF</strong> in the{" "}
+          <strong>Export</strong> menu to carry the map, legend and all, into the
+          PDF.
+        </p>
         <p className="text-sm text-gray-500">
           Offerings are configured under <strong>Admin &gt; Offerings</strong>{" "}by a
           company&apos;s Admins or a SuperAdmin (create, edit, import/export — each
