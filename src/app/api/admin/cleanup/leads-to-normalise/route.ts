@@ -16,9 +16,10 @@ const MAX_GROUPS = 500;
  * written to every member, so no spelling can lose a target it already had.
  *
  * See `lib/catalogue-integrity.ts:normaliseLeadsTo` for why this exists as a
- * route at all rather than being "open the page and press Save" — that path goes
- * through Full Titles and silently drops a target sharing the group's own Full
- * Title.
+ * route rather than being "open the page and press Save": that path goes through
+ * Full Titles and silently drops a dangling reference, which is the admin's call
+ * to make from the scan rather than a tidy-up's to make for them — and it is one
+ * group at a time.
  */
 export async function POST(request: NextRequest) {
   try {

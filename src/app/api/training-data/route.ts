@@ -178,8 +178,10 @@ export async function POST(request: NextRequest) {
     certificationFullTitles !== undefined
       ? await expandFullTitles(certificationFullTitles, {
           types: ["Certification"],
-          // A training cannot lead to itself.
-          excludeFullTitles: [fullTitle],
+          // A training cannot lead to itself — keyed on the group being
+          // created, not on its Full Title, so a Certification sharing that
+          // Full Title stays selectable. See `expandFullTitles`.
+          excludeGroups: [{ fullTitle, trainingType }],
         })
       : Array.isArray(certification)
         ? certification
