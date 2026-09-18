@@ -53,10 +53,37 @@ export function dedupeTitles(arr: unknown): string[] {
   );
 }
 
+/** A training's real identity: the unit every consumer counts on. */
+export interface TrainingGroupRef {
+  fullTitle: string;
+  trainingType: TrainingType;
+}
+
 /**
  * Full Titles -> every member `trainingTitle`, optionally restricted by type and
- * optionally excluding some Full Titles (a group must not be able to lead to
- * itself).
+ * optionally excluding some groups (a training must not be able to lead to, or
+ * be replaced by, itself).
+ *
+ * **`excludeGroups` keys on the `(fullTitle, trainingType)` PAIR, not on the
+ * Full Title.** It used to take bare Full Titles, and that was too coarse in a
+ * way that silently destroyed data: a Full Title may legitimately carry a
+ * Certification *and* the instructor-led training that prepares for it — the
+ * admin page is built around exactly that, grouping members by type for this
+ * reason — so excluding the whole Full Title dropped the certification an ILT
+ * pointed at whenever the two shared a name. Saving the Leads-to section
+ * without changing anything then wrote that loss to every spelling in the
+ * group, and emptied it outright when that was the only target. Measured
+ * against a real Postgres before the change and after it.
+ *
+ * At today's call sites the source and target types are disjoint (ILT/OLX lead
+ * to a Certification; an OLX takes OLXSubItems and vice versa), so this guard
+ * correctly never fires. That is the point of stating it as a pair rather than
+ * deleting it: the rule is "a training cannot target itself", and it should
+ * hold because that is the rule — not because two type lists happen not to
+ * overlap today. Legacy replacement, the one relationship whose source and
+ * target types DO overlap, is guarded per member by
+ * `legacy-training.ts:sanitizeLegacyFields` instead, which drops an exact
+ * `trainingTitle` self-reference at the row it is writing.
  *
  * Restricting by type matters because a Full Title can carry members of more
  * than one type: "leads to" may only ever point at a Certification.
@@ -74,12 +101,10 @@ export function dedupeTitles(arr: unknown): string[] {
  */
 export async function expandFullTitles(
   fullTitles: unknown,
-  opts: { types?: TrainingType[]; excludeFullTitles?: string[] } = {},
+  opts: { types?: TrainingType[]; excludeGroups?: TrainingGroupRef[] } = {},
   client: Client = prisma,
 ): Promise<string[]> {
-  const wanted = dedupeTitles(fullTitles);
-  const excluded = new Set(opts.excludeFullTitles ?? []);
-  const targets = wanted.filter((f) => !excluded.has(f));
+  const targets = dedupeTitles(fullTitles);
   if (targets.length === 0) return [];
 
   const rows = await client.trainingData.findMany({
@@ -87,9 +112,19 @@ export async function expandFullTitles(
       fullTitle: { in: targets },
       ...(opts.types && opts.types.length > 0 ? { trainingType: { in: opts.types } } : {}),
     },
-    select: { trainingTitle: true },
+    // fullTitle/trainingType are selected so the exclusion can be applied on the
+    // pair. Filtering in JS rather than as a Prisma `NOT` keeps the semantics
+    // obvious — `NOT` over a list is easy to read as the wrong boolean — and the
+    // row set here is only the members of a handful of Full Titles.
+    select: { trainingTitle: true, fullTitle: true, trainingType: true },
   });
-  return rows.map((r) => r.trainingTitle);
+
+  const excluded = new Set(
+    (opts.excludeGroups ?? []).map((g) => pairKey(g.fullTitle, g.trainingType)),
+  );
+  return rows
+    .filter((r) => !excluded.has(pairKey(r.fullTitle, r.trainingType)))
+    .map((r) => r.trainingTitle);
 }
 
 /**

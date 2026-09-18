@@ -69,18 +69,32 @@ const CERT_BEARING = ["InstructorLedTraining", "OLX"];
 /**
  * Collapse catalogue rows to one picker option per Full Title.
  *
- * `excludeFullTitle` keeps a group out of its own picker: a training must not be
- * able to lead to, or be replaced by, itself.
+ * Two different exclusions, because two different questions are being asked:
+ *
+ * - `excludeFullTitle` drops a whole Full Title. Right for Merge and Move,
+ *   which act on the Full Title as a unit — you cannot merge a group into
+ *   itself whatever types it carries.
+ * - `excludeGroups` drops a `(fullTitle, trainingType)` pair. Right for every
+ *   relationship picker, because that pair is what a training actually IS. A
+ *   Full Title may legitimately carry a Certification *and* the instructor-led
+ *   training preparing for it, so dropping the whole Full Title hid the very
+ *   target the admin wanted — and the server then dropped it on save too,
+ *   silently, which is what made this worth separating rather than leaving as a
+ *   quirk of the picker.
  */
 function buildFullTitleOptions(
   rows: TrainingDataRow[],
   types: string[],
-  excludeFullTitle?: string,
+  opts: { excludeFullTitle?: string; excludeGroups?: { fullTitle: string; trainingType: string }[] } = {},
 ): FullTitleOption[] {
+  const excludedPairs = new Set(
+    (opts.excludeGroups ?? []).map((g) => `${g.fullTitle}::${g.trainingType}`),
+  );
   const byFull = new Map<string, { types: Set<string>; count: number }>();
   for (const r of rows) {
     if (!types.includes(r.trainingType)) continue;
-    if (excludeFullTitle && r.fullTitle === excludeFullTitle) continue;
+    if (opts.excludeFullTitle && r.fullTitle === opts.excludeFullTitle) continue;
+    if (excludedPairs.has(`${r.fullTitle}::${r.trainingType}`)) continue;
     const entry = byFull.get(r.fullTitle) ?? { types: new Set<string>(), count: 0 };
     entry.types.add(r.trainingType);
     entry.count += 1;
@@ -175,21 +189,28 @@ export default function FullTitleDetailPage() {
   // Full Titles (excluding this group) that contain at least one Cert/Accred —
   // valid replacement targets for a legacy item.
   const replacementFullTitleOptions = useMemo<FullTitleOption[]>(
-    () => buildFullTitleOptions(allRows, LEGACY_ELIGIBLE, fullTitle),
+    () =>
+      buildFullTitleOptions(allRows, LEGACY_ELIGIBLE, {
+        excludeGroups: LEGACY_ELIGIBLE.map((trainingType) => ({ fullTitle, trainingType })),
+      }),
     [allRows, fullTitle]
   );
 
   /** Every other Full Title — the destinations for a merge or a move. */
   const allFullTitleOptions = useMemo<FullTitleOption[]>(
-    () => buildFullTitleOptions(allRows, TRAINING_TYPES, fullTitle),
+    () => buildFullTitleOptions(allRows, TRAINING_TYPES, { excludeFullTitle: fullTitle }),
     [allRows, fullTitle]
   );
 
   /** OLX sub-items / OLX parents, for the membership pickers. */
   const subItemOptionsByType = useMemo<Record<string, FullTitleOption[]>>(
     () => ({
-      OLX: buildFullTitleOptions(allRows, ["OLXSubItem"], fullTitle),
-      OLXSubItem: buildFullTitleOptions(allRows, ["OLX"], fullTitle),
+      OLX: buildFullTitleOptions(allRows, ["OLXSubItem"], {
+        excludeGroups: [{ fullTitle, trainingType: "OLX" }],
+      }),
+      OLXSubItem: buildFullTitleOptions(allRows, ["OLX"], {
+        excludeGroups: [{ fullTitle, trainingType: "OLXSubItem" }],
+      }),
     }),
     [allRows, fullTitle]
   );
@@ -202,7 +223,10 @@ export default function FullTitleDetailPage() {
    * times with identical text.
    */
   const certificationOptions = useMemo<FullTitleOption[]>(
-    () => buildFullTitleOptions(allRows, ["Certification"], fullTitle),
+    () =>
+      buildFullTitleOptions(allRows, ["Certification"], {
+        excludeGroups: CERT_BEARING.map((trainingType) => ({ fullTitle, trainingType })),
+      }),
     [allRows, fullTitle]
   );
 

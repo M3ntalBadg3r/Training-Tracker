@@ -381,8 +381,16 @@ export async function PATCH(
     }
     certificationTitles = await expandFullTitles(body.setCertificationFullTitles, {
       types: ["Certification"],
-      // A training cannot lead to itself. Nothing stopped that before.
-      excludeFullTitles: [decoded],
+      // A training cannot lead to itself — keyed on the GROUP being edited, not
+      // on its Full Title. Excluding the whole Full Title dropped a
+      // Certification that legitimately shares a name with the ILT preparing
+      // for it. The source here is always ILT/OLX and the target always a
+      // Certification, so this never fires; see `expandFullTitles` for why it
+      // is stated anyway.
+      excludeGroups: scopedTypes.map((t) => ({
+        fullTitle: decoded,
+        trainingType: t as TrainingType,
+      })),
     });
   }
 
@@ -407,7 +415,7 @@ export async function PATCH(
     }
     subItemTitles = await expandFullTitles(body.setSubItemFullTitles, {
       types: ["OLXSubItem"],
-      excludeFullTitles: [decoded],
+      excludeGroups: [{ fullTitle: decoded, trainingType: "OLX" }],
     });
   }
 
@@ -424,7 +432,7 @@ export async function PATCH(
     }
     parentTitles = await expandFullTitles(body.setParentFullTitles, {
       types: ["OLX"],
-      excludeFullTitles: [decoded],
+      excludeGroups: [{ fullTitle: decoded, trainingType: "OLXSubItem" }],
     });
   }
 
