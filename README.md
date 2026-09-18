@@ -1197,6 +1197,23 @@ Click **Scan for Issues** under **Future Completion Dates** to list every traini
 
 Each row's completed date is shown as an editable date input, highlighted in amber while it is still in the future. Pick the correct date and click **Save** on that row to commit the change. There is no automated fix — every correction is made manually, one row at a time. Saving recomputes the expiry to completed + 2 years and re-evaluates any OLX parent the row may belong to.
 
+#### Catalogue Integrity
+
+Click **Scan for Issues** under **Catalogue Integrity** to check the training catalogue and the OLX completions derived from it. The scan is read-only; nothing changes until you pick one of the actions it offers.
+
+**OLX completions out of step.** An OLX parent counts as completed once a learner holds every sub-item, counted by Full Title — so taking any one spelling of a sub-item is enough. Parent records are materialised by events (an import, or an edit to the learner or the OLX), so a learner who qualified at an earlier point can still be waiting for theirs. The scan lists those, and the reverse: parent records the sub-items no longer support.
+
+**Reconcile OLX completions** applies the rule in both directions at once, so read the second table before using it. Judge by the **Held** column:
+
+| Held | Reading | What reconciling does |
+|------|---------|----------------------|
+| Some but not all | *Stale grant* — module data is flowing for this learner, so the missing sub-item is genuinely missing | Removes the parent record; a correction |
+| None at all | *Check source* — the parent was probably loaded directly with no module detail behind it | Removes the parent record, which may be the only evidence of it. Undoable only by importing the module detail |
+
+**Training titles disagreeing on "leads to".** Where one training arrived under several names, each name stores its own answer to what it leads to. Reports already read every name together, so your numbers are unaffected — this is only about what is stored. **Level them up** writes the combined answer to every name, so none can lose a certification it already had. This is done here rather than by re-saving the training's own page, because that path resolves targets by Full Title and would drop a certification that shares the group's Full Title.
+
+**References to trainings that no longer exist.** A "leads to" or "replaced by" entry pointing at a training since renamed or deleted. It renders as a raw internal name and matches nobody. New ones can no longer be created; clear these by hand — open the training and pick the target again.
+
 #### Wipe All Data
 
 The **Danger Zone** at the bottom of the Data Clean-Up page offers two destructive actions. **Both cannot be undone.**

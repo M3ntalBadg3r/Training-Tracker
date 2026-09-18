@@ -3,6 +3,34 @@ import { computeExpiryDate } from "@/lib/utils";
 
 type Client = typeof prisma | PrismaTransactionClient;
 
+/** One membership row, with just enough of the sub-item to key the group. */
+type MembershipRow = {
+  subItemTrainingTitle: string;
+  subItem: { fullTitle: string; trainingType: string } | null;
+};
+
+/**
+ * The parent's sub-items, one entry per DISTINCT sub-item, holding every
+ * spelling of it. This is the single definition of what "every sub-item" counts
+ * over, and it is shared by the engine (`recomputeParentsForStudent`) and the
+ * read-only scan (`scanOlxParentState`) precisely so the two cannot disagree —
+ * the scan is what the admin UI shows before running a backfill, so a drift
+ * between them would make the preview lie about what the fix is going to do.
+ *
+ * A title whose catalogue row has gone missing keeps itself as its own group, so
+ * a dangling membership still blocks the parent rather than disappearing.
+ */
+export function groupSubItemsByPair(memberships: MembershipRow[]): Map<string, string[]> {
+  const groups = new Map<string, string[]>();
+  for (const m of memberships) {
+    const key = m.subItem
+      ? `${m.subItem.fullTitle}::${m.subItem.trainingType}`
+      : m.subItemTrainingTitle;
+    groups.set(key, [...(groups.get(key) ?? []), m.subItemTrainingTitle]);
+  }
+  return groups;
+}
+
 /**
  * Recompute the parent OLX completion state for a student.
  *
@@ -58,16 +86,7 @@ export async function recomputeParentsForStudent(
     // Single-item OLX (no sub-items defined) — nothing to materialise.
     if (subItemTitles.length === 0) continue;
 
-    // One entry per distinct sub-item, holding every spelling of it. A title
-    // whose catalogue row has gone missing keeps itself as its own group, so a
-    // dangling membership still blocks the parent rather than disappearing.
-    const groups = new Map<string, string[]>();
-    for (const m of parent.subItemMemberships) {
-      const key = m.subItem
-        ? `${m.subItem.fullTitle}::${m.subItem.trainingType}`
-        : m.subItemTrainingTitle;
-      groups.set(key, [...(groups.get(key) ?? []), m.subItemTrainingTitle]);
-    }
+    const groups = groupSubItemsByPair(parent.subItemMemberships);
 
     // Latest completion of each sub-item by this student.
     const taken = await client.trainingTaken.findMany({
@@ -337,4 +356,122 @@ export async function syncMemberships(
   }
 
   return { affectedParents: [...affectedParents] };
+}
+
+/** A learner who has earned a parent OLX but has no materialised row for it. */
+export type OlxOwedRow = {
+  email: string;
+  parentTrainingTitle: string;
+  parentFullTitle: string;
+};
+
+/**
+ * A learner holding a parent OLX row that the sub-item rule does not support.
+ *
+ * `subItemsHeld` / `subItemsRequired` count GROUPS, not training titles, and the
+ * UI splits on them: holding some sub-items but not all means module data is
+ * flowing for that learner and the missing one is genuinely missing (a stale
+ * grant, safe to clear), whereas holding NONE suggests the parent row arrived as
+ * a parent-title import with no module detail behind it — in which case it may
+ * be the only record of a real completion, and clearing it cannot be undone
+ * except by re-importing the module data. Nothing in the schema records where a
+ * row came from, so this count is the only available proxy; the caller decides.
+ */
+export type OlxUnsupportedRow = OlxOwedRow & {
+  subItemsHeld: number;
+  subItemsRequired: number;
+};
+
+/**
+ * Read-only reconciliation of every OLX parent against the completion rule.
+ *
+ * Materialisation is event-driven — a parent row is written only when something
+ * touches that parent, a learner's sub-item completions, or an import runs — and
+ * nothing else reconciles it. So a learner who already satisfied the rule when it
+ * last changed never received their row, and will not until something unrelated
+ * happens to touch them. This is what finds them.
+ *
+ * Writes nothing. It shares `groupSubItemsByPair` with the engine above, so the
+ * preview and the fix are answering with the same definition.
+ */
+export async function scanOlxParentState(
+  client: Client = prisma,
+): Promise<{ owed: OlxOwedRow[]; unsupported: OlxUnsupportedRow[] }> {
+  const parents = await client.trainingData.findMany({
+    where: { trainingType: "OLX" },
+    select: {
+      trainingTitle: true,
+      fullTitle: true,
+      subItemMemberships: {
+        select: {
+          subItemTrainingTitle: true,
+          subItem: { select: { fullTitle: true, trainingType: true } },
+        },
+      },
+    },
+  });
+
+  // Parents with no sub-items are "single-item OLX": the rule never materialises
+  // a row for them, so they can be neither owed nor unsupported.
+  const withSubItems = parents.filter((p) => p.subItemMemberships.length > 0);
+  if (withSubItems.length === 0) return { owed: [], unsupported: [] };
+
+  const titles = new Set<string>();
+  for (const p of withSubItems) {
+    titles.add(p.trainingTitle);
+    for (const m of p.subItemMemberships) titles.add(m.subItemTrainingTitle);
+  }
+
+  // One pass over the completions for every title involved, rather than a query
+  // per parent per learner.
+  const taken = await client.trainingTaken.findMany({
+    where: { trainingTitle: { in: [...titles] } },
+    select: { email: true, trainingTitle: true },
+  });
+  const heldByEmail = new Map<string, Set<string>>();
+  for (const t of taken) {
+    let held = heldByEmail.get(t.email);
+    if (!held) {
+      held = new Set<string>();
+      heldByEmail.set(t.email, held);
+    }
+    held.add(t.trainingTitle);
+  }
+
+  const owed: OlxOwedRow[] = [];
+  const unsupported: OlxUnsupportedRow[] = [];
+
+  for (const parent of withSubItems) {
+    const groups = [...groupSubItemsByPair(parent.subItemMemberships).values()];
+    const subItemTitles = parent.subItemMemberships.map((m) => m.subItemTrainingTitle);
+
+    for (const [email, held] of heldByEmail) {
+      const hasParent = held.has(parent.trainingTitle);
+      const touchesParent = hasParent || subItemTitles.some((t) => held.has(t));
+      if (!touchesParent) continue;
+
+      const groupsHeld = groups.filter((spellings) =>
+        spellings.some((t) => held.has(t)),
+      ).length;
+      const allDone = groupsHeld === groups.length;
+
+      if (allDone && !hasParent) {
+        owed.push({
+          email,
+          parentTrainingTitle: parent.trainingTitle,
+          parentFullTitle: parent.fullTitle,
+        });
+      } else if (!allDone && hasParent) {
+        unsupported.push({
+          email,
+          parentTrainingTitle: parent.trainingTitle,
+          parentFullTitle: parent.fullTitle,
+          subItemsHeld: groupsHeld,
+          subItemsRequired: groups.length,
+        });
+      }
+    }
+  }
+
+  return { owed, unsupported };
 }

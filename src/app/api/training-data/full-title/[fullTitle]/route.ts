@@ -9,6 +9,7 @@ import { sanitizeLegacyFields } from "@/lib/legacy-training";
 import { invalidateReportCache } from "@/lib/report-cache";
 import { readJsonBody } from "@/lib/request-body";
 import {
+  CERT_BEARING_TYPES,
   countTitleReferences,
   dedupeTitles,
   expandFullTitles,
@@ -18,9 +19,6 @@ import {
 } from "@/lib/training-group";
 
 const LEGACY_ELIGIBLE_TYPES = ["Certification", "Accreditation"];
-
-/** Types that may carry `certification[]` — the "leads to" relationship. */
-const CERT_BEARING_TYPES: TrainingType[] = ["InstructorLedTraining", "OLX"];
 
 /**
  * GET — all TrainingData rows that share `fullTitle`, plus aggregate metadata.
