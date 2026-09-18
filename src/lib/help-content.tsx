@@ -1085,6 +1085,46 @@ const helpSections: Record<string, HelpSection> = {
           completed + 2 years.
         </p>
 
+        <h3>Catalogue Integrity</h3>
+        <p>
+          Click <strong>Scan for Issues</strong> to check the training catalogue
+          and the OLX completions derived from it. The scan only reads &mdash;
+          nothing changes until you pick one of the actions it offers.
+        </p>
+        <p>
+          <strong>OLX completions out of step.</strong>{" "}An OLX parent counts as
+          completed once a learner holds every sub-item, counted by Full Title, so
+          taking any one spelling of a sub-item is enough. Parent records are
+          written when something touches them &mdash; an import, or an edit to the
+          learner or the OLX &mdash; which means a learner who qualified at some
+          earlier point can still be waiting for theirs. The scan lists those, and
+          also lists the reverse: parent records that the sub-items no longer
+          support.{" "}
+          <strong>Reconcile OLX completions</strong>{" "}applies the rule in both
+          directions at once, so read the second table before using it. The{" "}
+          <strong>Held</strong>{" "}column is what to judge by: a learner holding
+          some sub-items but not all is missing a genuine one, whereas a learner
+          holding <em>none</em>{" "}of them probably had the parent loaded directly
+          with no module detail behind it &mdash; in which case that record is the
+          only evidence of it, and clearing it can only be undone by importing the
+          module detail.
+        </p>
+        <p>
+          <strong>Training titles disagreeing on &ldquo;leads to&rdquo;.</strong>{" "}
+          Where one training arrived under several names, each name stores its own
+          answer to what it leads to. Reports already read every name together, so
+          your numbers are unaffected &mdash; this is only about what is stored.{" "}
+          <strong>Level them up</strong>{" "}writes the combined answer to every
+          name, so none of them can lose a certification it already had.
+        </p>
+        <p>
+          <strong>References to trainings that no longer exist.</strong>{" "}A
+          &ldquo;leads to&rdquo; or &ldquo;replaced by&rdquo; entry pointing at a
+          training that has since been renamed or deleted. It shows as a raw
+          internal name and matches nobody. These are fixed by hand &mdash; open
+          the training and pick the target again.
+        </p>
+
         <h3>Wipe All Data</h3>
         <p>
           The <strong>Danger Zone</strong> at the bottom of this page offers two

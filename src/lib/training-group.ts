@@ -31,6 +31,16 @@ export const isFunctionType = (v: unknown): v is FunctionType =>
 export const pairKey = (fullTitle: string, trainingType: string): string =>
   `${fullTitle}::${trainingType}`;
 
+/**
+ * The types whose `certification[]` ("leads to") is meaningful: a training that
+ * prepares somebody for a certification. The schema lets a `Certification` row
+ * carry the column too, but nothing reads it that way — `lib/leads-to.ts` roots
+ * the Trained-But-Not-Certified graph on ILT/OLX, and the Full Title editor only
+ * offers the section for those two. Shared so the editor and the integrity scan
+ * agree on which groups are even in scope.
+ */
+export const CERT_BEARING_TYPES: TrainingType[] = ["InstructorLedTraining", "OLX"];
+
 /** Strings, trimmed, non-empty, deduped — the shape every picker sends. */
 export function dedupeTitles(arr: unknown): string[] {
   if (!Array.isArray(arr)) return [];
