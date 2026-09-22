@@ -2,27 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, handleAuthError } from "@/lib/auth";
 import { getAuthorizedCompanyIds, resolveCompanyFilter } from "@/lib/company-scope";
 import { cachedReport, scopeKey } from "@/lib/report-cache";
-import prisma from "@/lib/prisma";
-import { computeCompliancePlan, type CompliancePlanResult, type PlanTarget } from "@/lib/compliance-plan";
-
-/** The "nothing to plan" payload — the full result shape, so the client never
- *  has to null-guard fields the type says are always there. */
-function emptyPlan(renewalWindowMonths: number): CompliancePlanResult {
-  return {
-    scopeLabel: "",
-    renewalWindowMonths,
-    planForWindow: false,
-    targets: [],
-    candidates: [],
-    eligible: [],
-    renewals: [],
-    riskImpacts: [],
-    totals: {
-      peopleMoves: 0, easyWins: 0, lapsed: 0, legacy: 0, netNew: 0,
-      renewalMoves: 0, renewalsAtRisk: 0, renewalsAtRiskOnPath: 0,
-    },
-  };
-}
+import { buildPlanningOptions } from "@/lib/planning-options";
+import { computeCompliancePlan } from "@/lib/compliance-plan";
+import {
+  parsePlanRequest,
+  planCacheKeyParts,
+  emptyCompliancePlan,
+} from "@/lib/compliance-plan-request";
 
 /**
  * Compliance Planning endpoint — the action layer over program compliance.
@@ -72,113 +58,34 @@ export async function GET(request: NextRequest) {
 
   // Fail closed on empty company scope (before the cache), like the reports.
   if (companyFilter !== null && companyFilter.length === 0) {
-    return NextResponse.json(emptyPlan(0));
+    return NextResponse.json(emptyCompliancePlan(0));
   }
 
-  // Parse targets.
-  let targets: PlanTarget[] = [];
-  const rawTargets = p.get("targets");
-  if (rawTargets) {
-    try {
-      const parsed = JSON.parse(rawTargets);
-      if (Array.isArray(parsed)) {
-        targets = parsed
-          .filter((t) => t && typeof t.program === "string")
-          .map((t) => ({
-            program: String(t.program),
-            mode: t.mode === "tier" || t.mode === "specialisations" ? t.mode : "all",
-            tier: typeof t.tier === "string" ? t.tier : undefined,
-            specialisations: Array.isArray(t.specialisations)
-              ? t.specialisations.map((s: unknown) => String(s))
-              : undefined,
-          }));
-      }
-    } catch {
-      return NextResponse.json({ error: "Invalid targets" }, { status: 400 });
-    }
+  // Parsing and clamping are shared with the public API-key route so the two
+  // surfaces cannot diverge on what they accept (see lib/compliance-plan-request.ts).
+  const req = parsePlanRequest(p);
+  if (req === null) {
+    return NextResponse.json({ error: "Invalid targets" }, { status: 400 });
   }
 
-  const level = p.get("level") || "global";
-  const country = p.get("country") || "";
-  const region = p.get("region") || "";
-  const theatre = p.get("theatre") || "";
-  const rawWindow = parseInt(p.get("renewalWindowMonths") || "3", 10);
-  const renewalWindowMonths = [0, 1, 3, 6, 12].includes(rawWindow) ? rawWindow : 3;
-  // Normalised so `renewalWindowMonths=0&planForWindow=true` can neither reach the
-  // engine nor split the cache — with no horizon there is nothing to plan for.
-  const planForWindow = renewalWindowMonths > 0 && p.get("planForWindow") === "true";
-
-  if (targets.length === 0) {
-    return NextResponse.json(emptyPlan(renewalWindowMonths));
+  if (req.targets.length === 0) {
+    return NextResponse.json(emptyCompliancePlan(req.renewalWindowMonths));
   }
 
-  const key = [
-    "compliance-planning",
-    scopeKey(companyFilter),
-    encodeURIComponent(rawTargets ?? ""),
-    level,
-    country,
-    region,
-    theatre,
-    renewalWindowMonths,
-    planForWindow ? "plan" : "status",
-  ].join("|");
-
-  const result = await cachedReport(key, () =>
-    computeCompliancePlan({
-      targets,
-      level,
-      country,
-      region,
-      theatre,
-      companyIds: companyFilter,
-      renewalWindowMonths,
-      planForWindow,
-    }),
+  const result = await cachedReport(
+    `compliance-planning|${scopeKey(companyFilter)}|${planCacheKeyParts(req)}`,
+    () =>
+      computeCompliancePlan({
+        targets: req.targets,
+        level: req.level,
+        country: req.country,
+        region: req.region,
+        theatre: req.theatre,
+        companyIds: companyFilter,
+        renewalWindowMonths: req.renewalWindowMonths,
+        planForWindow: req.planForWindow,
+      }),
   );
 
   return NextResponse.json(result, { headers: { "Cache-Control": "private, max-age=30" } });
-}
-
-interface PlanningOption {
-  name: string;
-  isTiered: boolean;
-  levels: string[];
-  tiers: string[];
-  specialisations: string[];
-}
-
-/** Per-program metadata for the target selector (company-agnostic, like /api/programs). */
-async function buildPlanningOptions(): Promise<PlanningOption[]> {
-  const [programs, programData, tiers] = await Promise.all([
-    prisma.program.findMany({ select: { name: true, isTiered: true } }),
-    prisma.programData.findMany({
-      select: { programName: true, level: true, specialisation: { select: { name: true } } },
-    }),
-    prisma.programTier.findMany({ orderBy: { sortOrder: "asc" }, select: { programName: true, name: true } }),
-  ]);
-
-  const isTieredByName = new Map(programs.map((p) => [p.name, p.isTiered]));
-  const names = new Set<string>([
-    ...programs.filter((p) => p.isTiered).map((p) => p.name),
-    ...programData.map((d) => d.programName),
-  ]);
-
-  const result: PlanningOption[] = [];
-  for (const name of [...names].sort()) {
-    const rows = programData.filter((d) => d.programName === name);
-    const levels = [...new Set(rows.map((d) => d.level))];
-    const specialisations = [
-      ...new Set(rows.map((d) => d.specialisation?.name).filter((n): n is string => !!n)),
-    ].sort();
-    const tierNames = tiers.filter((t) => t.programName === name).map((t) => t.name);
-    result.push({
-      name,
-      isTiered: isTieredByName.get(name) === true,
-      levels,
-      tiers: tierNames,
-      specialisations,
-    });
-  }
-  return result;
 }

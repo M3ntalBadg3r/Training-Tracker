@@ -74,6 +74,12 @@ export async function GET(request: NextRequest) {
       },
       {
         method: "GET",
+        path: "/api/public/v1/programs/planning",
+        description:
+          "Compliance planning AGGREGATES ONLY — the roadmap, per-requirement gaps and costs, risk impacts and totals. ?options=true lists the program/tier/specialisation names needed to build a target; ?targets=<URL-encoded JSON array> plus ?level=, ?country=/?region=/?theatre=, ?renewalWindowMonths=0|1|3|6|12 and ?planForWindow=true return the plan. The named candidate, eligible-pool and renewal rosters shown in the app are deliberately NOT returned over this API.",
+      },
+      {
+        method: "GET",
         path: "/api/public/v1/reports/{reportType}",
         description: "Report aggregates",
         reportTypes: [
@@ -87,7 +93,19 @@ export async function GET(request: NextRequest) {
           "last-12-months",
         ],
       },
+      {
+        method: "GET",
+        path: "/api/public/v1/reports/program-compliance-trend",
+        description:
+          "12 months of point-in-time compliance history plus a 12-month expiry-driven forecast, per program and specialisation. ?program=, ?country=/?region=/?theatre=. A separate endpoint, not a value for {reportType}.",
+      },
+      {
+        method: "GET",
+        path: "/api/public/v1/reports/renewal-forecast",
+        description:
+          "Projected renewals vs lapses over the next 12 months, with an at-risk-by-training breakdown. ?country=/?region=/?theatre=. A separate endpoint, not a value for {reportType}.",
+      },
     ],
-    notes: "All endpoints are read-only. Send the key as 'Authorization: Bearer <key>'. Use ?companyId= to scope to one of your companies.",
+    notes: "All endpoints are read-only. Send the key as 'Authorization: Bearer <key>'. Use ?companyId= to scope to one of your companies. Compliance planning is returned as aggregates only — this API never returns the named candidate or renewal rosters the in-app planner shows.",
   });
 }
