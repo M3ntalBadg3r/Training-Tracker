@@ -17,7 +17,7 @@ import crypto from "crypto";
 import { NextRequest } from "next/server";
 import prisma from "@/lib/prisma";
 import { AuthError } from "@/lib/auth";
-import { getClientIp, checkRateLimit } from "@/lib/rate-limit";
+import { getClientIp, checkRateLimit, type RateLimitResult } from "@/lib/rate-limit";
 
 const KEY_PREFIX = "tt_live_";
 // Number of leading characters (including the `tt_live_` prefix) stored in
@@ -133,9 +133,20 @@ const API_RATE_WINDOW_MS = 60_000;
  * Apply the per-key rate limit. Resolves true if the request is allowed, false if
  * the key has exceeded its budget for the current window.
  */
-export async function checkApiKeyRateLimit(apiKeyId: number): Promise<boolean> {
-  const result = await checkRateLimit(`api:${apiKeyId}`, API_RATE_LIMIT, API_RATE_WINDOW_MS);
-  return result.allowed;
+/**
+ * Per-key rate limit. Returns the limiter's full verdict rather than a bare
+ * boolean, because the caller needs `retryAfterMs` to send a `Retry-After`
+ * header — this used to narrow to `result.allowed` and throw the wait away, so
+ * every public-API 429 told a client it was throttled without telling it for
+ * how long, and an integration had no option but to guess a backoff.
+ */
+export async function checkApiKeyRateLimit(apiKeyId: number): Promise<RateLimitResult> {
+  return checkRateLimit(`api:${apiKeyId}`, API_RATE_LIMIT, API_RATE_WINDOW_MS);
+}
+
+/** `Retry-After` in seconds, floored at 1 — the header has no sub-second form. */
+export function retryAfterSeconds(retryAfterMs: number): string {
+  return String(Math.max(1, Math.ceil(retryAfterMs / 1000)));
 }
 
 // Throttle *invalid*-key attempts per client IP so the public API can't be used
@@ -166,11 +177,33 @@ export async function checkInvalidApiKeyRateLimit(ip: string): Promise<boolean> 
  * Returns the list of company ids to filter by; an empty array means "no
  * results" (the request asked for a company the key cannot read).
  */
+/**
+ * Resolve `?companyId=` against the key's grant.
+ *
+ * Returns `null` when a numeric id was supplied that the key was NOT granted,
+ * so the caller can answer 400 rather than serving an empty result. That used
+ * to return `[]`, which the query layer turns into `in: []` — a clean 200 with
+ * no rows, **indistinguishable from a company that genuinely holds no data**.
+ * An integration pointed at the wrong company therefore looked like an
+ * integration reporting honest zeroes, with nothing anywhere to say otherwise.
+ *
+ * **Refusing leaks nothing**, which is what makes the error safe to send: this
+ * decision reads only `companyIds` — the key's own grant, which the caller can
+ * already enumerate from `GET /api/public/v1` — and never touches the database.
+ * It cannot answer, and so cannot disclose, whether the requested company
+ * exists at all. A 403/404 split over live rows WOULD be an existence oracle;
+ * this is not that.
+ *
+ * A non-numeric value still falls through to the full grant rather than
+ * erroring. That is deliberately left alone: it is the documented behaviour,
+ * changing it would break a second thing in the same pass, and unlike the
+ * ungranted case it does not quietly mimic a real answer.
+ */
 export function resolveApiKeyCompanyFilter(
   companyIds: number[],
   requestedRaw: string | null
-): number[] {
+): number[] | null {
   const requested = requestedRaw ? Number(requestedRaw) : NaN;
   if (Number.isNaN(requested)) return companyIds;
-  return companyIds.includes(requested) ? [requested] : [];
+  return companyIds.includes(requested) ? [requested] : null;
 }

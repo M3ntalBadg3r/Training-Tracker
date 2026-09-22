@@ -12,13 +12,21 @@ import {
   checkInvalidApiKeyRateLimit,
   resolveApiKeyCompanyFilter,
   extractPresentedKey,
+  retryAfterSeconds,
 } from "@/lib/api-key";
 import { getClientIp } from "@/lib/rate-limit";
 import { recordApiFailure } from "@/lib/failed-attempts";
 import { getPublicApiEnabled } from "@/lib/system-settings";
 
 export interface PublicApiContext {
-  /** Company ids this request may read. Empty = no results (out-of-scope ?companyId=). */
+  /**
+   * Company ids this request may read.
+   *
+   * Empty now means only one thing: the key is granted no companies at all. It
+   * used to ALSO carry "a `?companyId=` outside the grant", which is why the
+   * routes' `length === 0` early return exists — that case is now a 400 from
+   * the guard chain and never reaches a handler.
+   */
   companyIds: number[];
 }
 
@@ -38,8 +46,17 @@ export async function ensurePublicApiEnabled(): Promise<NextResponse | null> {
 /**
  * Run the standard guard chain for a public API request. On success returns the
  * resolved context; on any failure returns a ready-to-send NextResponse (503 when
- * the API is disabled, 401 for a bad key, 429 when rate-limited). Callers should
- * check `instanceof NextResponse`.
+ * the API is disabled, 401 for a bad key, 429 when rate-limited, 400 for a
+ * `?companyId=` outside the key's grant). Callers should check
+ * `instanceof NextResponse`.
+ *
+ * **The per-key 429 carries `Retry-After`; the invalid-key 429 deliberately does
+ * not.** That asymmetry is the point, not an oversight: the first is a
+ * legitimate caller who needs to know how long to back off, while the second is
+ * an unauthenticated attempt, and naming the exact moment the window reopens
+ * would hand a key-guesser a pacing signal. The budget there is 20 per 5
+ * minutes, so the information is small either way — but it is free to withhold
+ * and there is no caller it would help. Do not "make the two consistent".
  */
 export async function authorizePublicRequest(
   request: NextRequest
@@ -67,17 +84,28 @@ export async function authorizePublicRequest(
     return handleAuthError(error);
   }
 
-  if (!(await checkApiKeyRateLimit(auth.apiKeyId))) {
+  const rate = await checkApiKeyRateLimit(auth.apiKeyId);
+  if (!rate.allowed) {
     return NextResponse.json(
       { error: "Rate limit exceeded. Please slow down." },
-      { status: 429 }
+      { status: 429, headers: { "Retry-After": retryAfterSeconds(rate.retryAfterMs) } }
     );
   }
 
+  // `null` = a numeric ?companyId= this key was not granted. Answer 400 rather
+  // than serving the empty result that used to come back, which no caller could
+  // tell apart from a company holding no data. Safe to name: the check reads
+  // only this key's own grant and never asks whether that company exists.
   const companyIds = resolveApiKeyCompanyFilter(
     auth.companyIds,
     request.nextUrl.searchParams.get("companyId")
   );
+  if (companyIds === null) {
+    return NextResponse.json(
+      { error: "companyId is not one of the companies this API key may read." },
+      { status: 400 }
+    );
+  }
 
   return { companyIds };
 }

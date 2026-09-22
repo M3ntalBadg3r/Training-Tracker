@@ -1323,8 +1323,17 @@ curl -H "Authorization: Bearer tt_live_xxxxxxxx" \
 
 All endpoints accept an optional `?companyId=` to narrow to a single granted
 company; `training-records` also accepts `?theatre=`, `?region=`, `?country=`,
-and `?activeOnly=true`. A request for a company the key cannot read returns no
-rows (program compliance figures are scoped to the key's companies the same way).
+and `?activeOnly=true`. Asking for a company the key was **not** granted is
+refused with a **400** naming the problem — it previously returned an empty
+result, which an integration could not tell apart from a company that genuinely
+holds no data, so a misconfigured key looked like an honest zero. The index
+endpoint lists the company ids a key may use. (Program compliance figures are
+scoped to the key's companies the same way.)
+
+Requests that exceed the per-key rate limit answer **429 with a `Retry-After`
+header** giving the seconds to wait. The separate limit on *invalid*-key
+attempts deliberately omits that header, so it tells an unauthenticated caller
+nothing about when to try again.
 
 The last two are **separate endpoints, not values for `{reportType}`** — they
 are not in that endpoint's list, so passing their names to

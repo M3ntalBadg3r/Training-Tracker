@@ -6,6 +6,7 @@ import {
   checkApiKeyRateLimit,
   checkInvalidApiKeyRateLimit,
   extractPresentedKey,
+  retryAfterSeconds,
 } from "@/lib/api-key";
 import { getClientIp } from "@/lib/rate-limit";
 import { recordApiFailure } from "@/lib/failed-attempts";
@@ -39,10 +40,15 @@ export async function GET(request: NextRequest) {
     if (presented) await recordApiFailure({ presentedKey: presented, ip });
     return handleAuthError(error);
   }
-  if (!(await checkApiKeyRateLimit(auth.apiKeyId))) {
+  // Kept byte-identical to `authorizePublicRequest`'s per-key 429, Retry-After
+  // included — this route hand-rolls the guard chain because it needs the key's
+  // own name and companies, so the two are the one place the public API can
+  // disagree with itself about how a throttled caller is answered.
+  const rate = await checkApiKeyRateLimit(auth.apiKeyId);
+  if (!rate.allowed) {
     return NextResponse.json(
       { error: "Rate limit exceeded. Please slow down." },
-      { status: 429 }
+      { status: 429, headers: { "Retry-After": retryAfterSeconds(rate.retryAfterMs) } }
     );
   }
 
