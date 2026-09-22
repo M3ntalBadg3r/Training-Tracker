@@ -71,8 +71,17 @@ export interface PublicApiEndpoint {
   parameters: readonly PublicApiParam[];
   /** JSON Schema for the 200 body. */
   responseSchema: Record<string, unknown>;
-  /** Extra non-guard responses, keyed by status code. */
+  /** Extra non-guard responses, keyed by status code. Overrides a shared one. */
   errors?: Readonly<Record<string, string>>;
+  /**
+   * Set on the one route that hand-rolls its guard chain instead of calling
+   * `authorizePublicRequest` (the index, which needs the key's own name and
+   * companies). It therefore never resolves `?companyId=` and cannot answer the
+   * shared 400, so that response is left off it — the entry's own description
+   * says the parameter is not accepted, and declaring an error it cannot
+   * produce would contradict it.
+   */
+  ownGuardChain?: true;
 }
 
 // ─── Shared parameters ───────────────────────────────────────────────────────
@@ -82,7 +91,7 @@ const COMPANY_ID: PublicApiParam = {
   in: "query",
   source: "guard",
   description:
-    "Narrow the response to one of the key's granted companies. Omitted or non-numeric, the response covers every company the key can read. A numeric id the key was NOT granted yields an empty result rather than an error.",
+    "Narrow the response to one of the key's granted companies. Omitted or non-numeric, the response covers every company the key can read. A numeric id the key was NOT granted is refused with 400 — it used to return an empty result, which no caller could tell apart from a company holding no data. GET /api/public/v1 lists the ids this key may use.",
   schema: { type: "integer" },
 };
 
@@ -214,6 +223,7 @@ export const PUBLIC_API_ENDPOINTS: readonly PublicApiEndpoint[] = [
   {
     path: "/api/public/v1",
     routeFile: "route.ts",
+    ownGuardChain: true,
     summary: "Index",
     description:
       "Confirms the key works and reports which companies it can read, plus the available endpoints. This route does not accept ?companyId= — it always reports the key's full grant.",
@@ -494,7 +504,10 @@ export const PUBLIC_API_ENDPOINTS: readonly PublicApiEndpoint[] = [
         },
       ],
     },
-    errors: { "400": "Invalid program name — the path segment was not valid percent-encoding." },
+    errors: {
+      "400":
+        "Invalid program name (the path segment was not valid percent-encoding), or a ?companyId= this key was not granted.",
+    },
   },
 
   {
@@ -579,7 +592,10 @@ export const PUBLIC_API_ENDPOINTS: readonly PublicApiEndpoint[] = [
         },
       ],
     },
-    errors: { "400": "Invalid targets — the value was not parseable JSON." },
+    errors: {
+      "400":
+        "Invalid targets (the value was not parseable JSON), or a ?companyId= this key was not granted.",
+    },
   },
 
   {
@@ -734,6 +750,11 @@ const ERROR_SCHEMA = obj({ error: STR });
 
 /** The guard-chain responses every endpoint shares. */
 const COMMON_RESPONSES: Record<string, unknown> = {
+  "400": {
+    description:
+      "?companyId= named a company this key was not granted. GET /api/public/v1 lists the ids it may use.",
+    content: { "application/json": { schema: ERROR_SCHEMA } },
+  },
   "401": {
     description: "Missing, invalid, disabled, revoked or expired API key.",
     content: { "application/json": { schema: ERROR_SCHEMA } },
@@ -742,12 +763,28 @@ const COMMON_RESPONSES: Record<string, unknown> = {
     description:
       "Rate limited — 120 requests per minute per key, or 20 invalid-key attempts per 5 minutes per IP.",
     content: { "application/json": { schema: ERROR_SCHEMA } },
+    // Sent on the per-key limit only. The invalid-key limit deliberately omits
+    // it rather than telling an unauthenticated caller when to resume guessing
+    // — see the note on authorizePublicRequest.
+    headers: {
+      "Retry-After": {
+        description:
+          "Seconds to wait before retrying. Present on the per-key rate limit; absent on the invalid-key limit.",
+        schema: { type: "integer" },
+      },
+    },
   },
   "503": {
     description: "The public API is switched off for this installation. Checked before the key is even looked up.",
     content: { "application/json": { schema: ERROR_SCHEMA } },
   },
 };
+
+/**
+ * The same set minus the 400, for the index — derived rather than written out,
+ * so a change to 401/429/503 cannot reach one route and miss the other.
+ */
+const { "400": _scopeError, ...COMMON_RESPONSES_NO_SCOPE_ERROR } = COMMON_RESPONSES;
 
 /**
  * The OpenAPI 3.1 document.
@@ -777,13 +814,19 @@ export function buildOpenApiDocument(): Record<string, unknown> {
             description: "Success.",
             content: { "application/json": { schema: e.responseSchema } },
           },
+          // COMMON_RESPONSES first so a per-endpoint `errors` entry OVERRIDES
+          // it rather than being silently dropped. The order used to be the
+          // other way round, which was harmless only because no endpoint
+          // declared a code the common set also carried — adding the shared
+          // 400 made it load-bearing, since it would otherwise have clobbered
+          // the specific 400s on programs/[programName] and programs/planning.
+          ...(e.ownGuardChain ? COMMON_RESPONSES_NO_SCOPE_ERROR : COMMON_RESPONSES),
           ...Object.fromEntries(
             Object.entries(e.errors ?? {}).map(([code, description]) => [
               code,
               { description, content: { "application/json": { schema: ERROR_SCHEMA } } },
             ])
           ),
-          ...COMMON_RESPONSES,
         },
       },
     };

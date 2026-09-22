@@ -3202,7 +3202,10 @@ const helpSections: Record<string, HelpSection> = {
         </table>
         <p>
           All endpoints accept an optional <code>?companyId=</code> to narrow to a single
-          granted company. A request for a company the key cannot read returns no rows.
+          granted company. Asking for a company the key was <strong>not</strong>{" "}
+          granted is refused with a <code>400</code> that says so &mdash; it used to come
+          back empty, which an integration could not tell apart from a company holding no
+          data. The index endpoint lists the ids a key may use.
         </p>
         <p>
           The last two are <strong>separate endpoints</strong>, not values for{" "}
