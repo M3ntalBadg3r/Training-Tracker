@@ -37,14 +37,26 @@
  * correct direction (the dev pre-release did precede the stable release), and
  * the tie was documented as a known wart.
  *
- * ## The migration constraint, which outlives this comment
+ * ## The migration constraint — LIFTED as of v3.33.1, kept as history
  *
  * An installed box runs the OLD comparator until it takes an update, and that
  * comparator reads only `major * 1000 + minor`. So `3.30.0` (3030) is visible to
  * a box on `3.29` (3029), but `3.29.1` also scores 3029 — a tie, and the
- * comparison is strict `>`, so it would be invisible forever. **Until every box
- * is known to be on ≥ 3.30.0, a stable release must bump the MINOR, never just
- * the patch.**
+ * comparison is strict `>`, so it would be invisible forever.
+ *
+ * That is why every stable release from 3.30.0 to 3.33.0 moved the MINOR even
+ * for a bug-fix-only range. **The constraint is now lifted**: the install base
+ * is on ≥ 3.30.0, so every box runs this comparator and patch releases are
+ * visible. Version numbers are plain semver again — patch for fixes.
+ *
+ * **What would bring it back.** A box below 3.30.0 surfacing — a long-dormant
+ * install, a restore from an old image. Such a box cannot see ANY patch release,
+ * permanently and silently: delivery is a branch pull so its code would be fine,
+ * it would simply stop being offered updates. There is no telemetry to detect
+ * one, so this is an operator's judgement, not something CI can check. The fix
+ * is to get it past 3.30.0 by any route — one minor release, or a manual
+ * `git pull` + `deploy/update.sh` on the box itself — after which patch releases
+ * reach it normally. Do not re-impose a blanket minor-bump rule for one box.
  */
 
 /**
