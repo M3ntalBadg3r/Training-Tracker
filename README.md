@@ -1338,6 +1338,20 @@ the price of a gap, without handing a third-party system a roster of named
 staff. Nothing is lost analytically: the risk impacts are the aggregate view of
 the same set the named renewal rows enumerate, and the totals carry its count.
 
+### Freshness
+
+The heavier endpoints — per-program compliance, compliance planning, the two
+forecasts, training records and the report aggregates — are **cached for up to
+30 seconds**, and their responses carry `Cache-Control: private, max-age=30`.
+Two consequences for an integration:
+
+- **Any change made in the app flushes the cache immediately**, so you will
+  never see data from before an import or an edit. The window only ever holds a
+  result that was correct when it was computed.
+- **Polling faster than every 30 seconds buys you nothing.** A tight loop gets
+  the same bytes back and still spends its share of the 120-requests-per-minute
+  budget, so pick an interval that matches how often your data actually changes.
+
 ### Security
 
 - **Off by default** — the whole API is disabled until a SuperAdmin enables it, and can be switched off again at any time (a global kill switch, checked before the key is even looked up). While off, every endpoint returns HTTP 503.
