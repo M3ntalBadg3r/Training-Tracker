@@ -1316,16 +1316,33 @@ curl -H "Authorization: Bearer tt_live_xxxxxxxx" \
 | `GET /api/public/v1/offerings` | Offering definitions (specialisations + supporting trainings) for the key's companies. Add `?country=` or `?region=` for Onshore/Nearshore/Offshore compliance figures; `?name=` for one offering |
 | `GET /api/public/v1/programs` | Partner program list (configured levels, per-theatre-minimum flag, tiered flag) |
 | `GET /api/public/v1/programs/{programName}` | Per-program compliance. `?level=country\|region\|theatre\|global` with `?country=`/`?region=`/`?theatre=`; `?horizonMonths=3\|6\|12` for a forward-looking projection; `?trainingTitle=&students=true` for the holder roster |
+| `GET /api/public/v1/programs/planning` | **Compliance planning — aggregates only.** The roadmap, per-requirement gaps and costs, risk impacts and totals. `?options=true` lists the program / tier / specialisation names you need to build a target; `?targets=` takes a URL-encoded JSON array `[{program, mode:"tier"\|"specialisations"\|"all", tier?, specialisations?[]}]`, with `?level=`, `?country=`/`?region=`/`?theatre=`, `?renewalWindowMonths=0\|1\|3\|6\|12` and `?planForWindow=true` |
+| `GET /api/public/v1/reports/program-compliance-trend` | 12 months of compliance history plus a 12-month expiry-driven forecast, per program and specialisation. `?program=`, `?country=`/`?region=`/`?theatre=` |
+| `GET /api/public/v1/reports/renewal-forecast` | Projected renewals vs lapses over the next 12 months, plus an at-risk-by-training breakdown. `?country=`/`?region=`/`?theatre=` |
 
 All endpoints accept an optional `?companyId=` to narrow to a single granted
 company; `training-records` also accepts `?theatre=`, `?region=`, `?country=`,
 and `?activeOnly=true`. A request for a company the key cannot read returns no
 rows (program compliance figures are scoped to the key's companies the same way).
 
+The last two are **separate endpoints, not values for `{reportType}`** — they
+are not in that endpoint's list, so passing their names to
+`/reports/{reportType}` returns a 404.
+
+**Compliance planning is returned as aggregates only.** The in-app planner also
+shows *who* to certify — named candidates, the full eligible pool, and the
+people whose training lapses inside the renewal window. None of those reach the
+API. What a key receives is the roadmap, each requirement's gap and cost, the
+requirements those expiries break, and the totals — enough to see the shape and
+the price of a gap, without handing a third-party system a roster of named
+staff. Nothing is lost analytically: the risk impacts are the aggregate view of
+the same set the named renewal rows enumerate, and the totals carry its count.
+
 ### Security
 
 - **Off by default** — the whole API is disabled until a SuperAdmin enables it, and can be switched off again at any time (a global kill switch, checked before the key is even looked up). While off, every endpoint returns HTTP 503.
 - **Read-only by design** — there are no write endpoints under `/api/public`, so a leaked key can never modify data.
+- **Aggregates only where the in-app view names people** — the compliance-planning endpoint returns the roadmap, risk impacts and totals; the named-candidate, eligible-pool and named-renewal lists shown in the app are never returned over the API. The restriction is enforced by an allowlist that names the fields it emits, held to the shape of the underlying result by a compile-time check, so a person-level field added later cannot leak through it.
 - **Company-scoped** — a key only ever sees data for its assigned companies.
 - **Hashed at rest** — only a SHA-256 hash of the key is stored; the plaintext is shown once.
 - **Rate-limited** — 120 requests per minute per key (excess requests get HTTP 429). Invalid-key attempts are separately throttled per IP (20 failures / 5 min).

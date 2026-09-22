@@ -816,6 +816,7 @@ const helpSections: Record<string, HelpSection> = {
           <li><strong>Solid lines</strong> are history; <strong>dashed lines</strong>{" "}(after the &quot;Forecast →&quot; marker) project the next 12 months. The forecast assumes <strong>no new completions</strong>{" "}and simply shows compliance decaying as today&apos;s active certifications reach their expiry date — an &quot;if nothing changes&quot; view that surfaces upcoming renewal gaps.</li>
           <li>The <strong>Forecast 12-mo Δ</strong> KPI shows the projected change (in percentage points) from now to 12 months out — a negative value flags certifications due to lapse.</li>
           <li>Narrow the view with the <strong>Theatre / Region / Country</strong>{" "}filters (the &quot;Showing&quot; caption states the active scope); the report is also scoped to the company selected in the header. The program dropdown lists every program found in Program Data.</li>
+          <li>This report is also available over the <strong>public API</strong>{" "}at <code>/api/public/v1/reports/program-compliance-trend</code>, for a partner portal or BI tool holding an API key.</li>
         </ul>
       </>
     ),
@@ -834,6 +835,7 @@ const helpSections: Record<string, HelpSection> = {
           <li><strong>Renewal rate</strong> is computed per training when ≥5 historical expiries exist; otherwise it falls back to per-product, then to a global rate.</li>
           <li>The at-risk leaderboard ranks trainings by projected lapses over the 12-month horizon.</li>
           <li>Use the <strong>Theatre / Region / Country</strong> filters to scope the whole report — the metric boxes, the monthly chart, and the at-risk table all update together. The filters cascade (picking a theatre narrows the regions, and so on).</li>
+          <li>This report is also available over the <strong>public API</strong>{" "}at <code>/api/public/v1/reports/renewal-forecast</code>, for a partner portal or BI tool holding an API key.</li>
         </ul>
       </>
     ),
@@ -2728,6 +2730,16 @@ const helpSections: Record<string, HelpSection> = {
           (e.g. someone in a particular country) when the recommended person
           isn&apos;t the one you want to move.
         </p>
+        <p>
+          <strong>Over the public API</strong>, a plan is available at{" "}
+          <code>/api/public/v1/programs/planning</code> &mdash; but{" "}
+          <strong>as aggregates only</strong>. A third-party system holding an API
+          key receives the roadmap, each requirement&rsquo;s gap and cost, the
+          requirements that upcoming expiry breaks, and the totals. It never
+          receives the named people on this page: &ldquo;Who to certify&rdquo;,
+          &ldquo;All eligible candidates&rdquo; and the named rows under
+          &ldquo;Renewals at risk&rdquo; stay inside the app.
+        </p>
 
         <h3>Scope &amp; renewals</h3>
         <p>
@@ -3182,11 +3194,28 @@ const helpSections: Record<string, HelpSection> = {
             <tr><td><code>GET /api/public/v1/reports/&#123;type&#125;</code></td><td>Report aggregates (e.g. <code>expiring-soon</code>, <code>legacy-gap</code>, <code>learner-scorecard</code>).</td></tr>
             <tr><td><code>GET /api/public/v1/programs</code></td><td>Partner program list (levels, per-theatre-minimum flag, tiered flag).</td></tr>
             <tr><td><code>GET /api/public/v1/programs/&#123;name&#125;</code></td><td>Per-program compliance — <code>?level=</code>, <code>?horizonMonths=</code>, and <code>?trainingTitle=&amp;students=true</code> for the holder roster.</td></tr>
+            <tr><td><code>GET /api/public/v1/programs/planning</code></td><td>Compliance planning, <strong>aggregates only</strong> — roadmap, gaps, risk impacts and totals. <code>?options=true</code> lists the program/tier/specialisation names; <code>?targets=</code> takes a URL-encoded JSON array.</td></tr>
+            <tr><td><code>GET /api/public/v1/reports/program-compliance-trend</code></td><td>12 months of compliance history plus a 12-month forecast, per program and specialisation.</td></tr>
+            <tr><td><code>GET /api/public/v1/reports/renewal-forecast</code></td><td>Projected renewals vs lapses over the next 12 months, with an at-risk-by-training breakdown.</td></tr>
           </tbody>
         </table>
         <p>
           All endpoints accept an optional <code>?companyId=</code> to narrow to a single
           granted company. A request for a company the key cannot read returns no rows.
+        </p>
+        <p>
+          The last two are <strong>separate endpoints</strong>, not values for{" "}
+          <code>&#123;type&#125;</code> &mdash; passing their names to{" "}
+          <code>/reports/&#123;type&#125;</code> returns a 404.
+        </p>
+        <p>
+          <strong>Compliance planning is returned as aggregates only.</strong> The in-app
+          planner also shows <em>who</em> to certify &mdash; named candidates, the full
+          eligible pool, and the people whose training lapses inside the renewal window.
+          None of those reach the API. A key receives the roadmap, each requirement&rsquo;s
+          gap and cost, the requirements those expiries break, and the totals &mdash; enough
+          to see the shape and the price of a gap, without handing a third-party system a
+          roster of named staff.
         </p>
 
         <h3>Managing &amp; securing keys</h3>
