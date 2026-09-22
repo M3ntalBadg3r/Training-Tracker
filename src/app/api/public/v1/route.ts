@@ -10,6 +10,7 @@ import {
 import { getClientIp } from "@/lib/rate-limit";
 import { recordApiFailure } from "@/lib/failed-attempts";
 import { ensurePublicApiEnabled } from "@/lib/public-api";
+import { buildIndexEndpoints } from "@/lib/public-api-spec";
 
 /**
  * GET /api/public/v1 — self-describing index. Confirms the key works and reports
@@ -56,38 +57,11 @@ export async function GET(request: NextRequest) {
     version: "v1",
     keyName: auth.name,
     companies,
-    endpoints: [
-      { method: "GET", path: "/api/public/v1/students", description: "Student roster" },
-      { method: "GET", path: "/api/public/v1/training-records", description: "Per-completion training records" },
-      {
-        method: "GET",
-        path: "/api/public/v1/offerings",
-        description:
-          "Offering definitions (specialisations + supporting trainings). Add ?country= or ?region= for Onshore/Nearshore/Offshore compliance; ?name= for one offering.",
-      },
-      { method: "GET", path: "/api/public/v1/programs", description: "Partner program list (levels, per-theatre minimums, tiered flag)" },
-      {
-        method: "GET",
-        path: "/api/public/v1/programs/{programName}",
-        description:
-          "Per-program compliance. ?level=country|region|theatre|global with ?country=/?region=/?theatre=; ?horizonMonths=3|6|12 for a forward projection; ?trainingTitle=&students=true for the holder roster.",
-      },
-      {
-        method: "GET",
-        path: "/api/public/v1/reports/{reportType}",
-        description: "Report aggregates",
-        reportTypes: [
-          "trained-not-certified",
-          "legacy-gap",
-          "learner-scorecard",
-          "by-product",
-          "by-function",
-          "expiring-soon",
-          "currently-expired",
-          "last-12-months",
-        ],
-      },
-    ],
-    notes: "All endpoints are read-only. Send the key as 'Authorization: Bearer <key>'. Use ?companyId= to scope to one of your companies.",
+    // Rendered from lib/public-api-spec.ts, the same module that builds
+    // /api/public/v1/openapi.json and that scripts/check-api-spec.mjs holds to
+    // the code. This list used to be written out here by hand and drifted:
+    // training-records was described without any of its four filters.
+    endpoints: buildIndexEndpoints(),
+    notes: "All endpoints are read-only. Send the key as 'Authorization: Bearer <key>'. Use ?companyId= to scope to one of your companies. Compliance planning is returned as aggregates only — this API never returns the named candidate or renewal rosters the in-app planner shows. A full OpenAPI 3.1 description is available at /api/public/v1/openapi.json.",
   });
 }

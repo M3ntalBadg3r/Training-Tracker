@@ -37,6 +37,7 @@ import type {
   ReportTonedRow,
 } from "@/lib/report-export";
 import { useCompanyScope } from "@/components/company/CompanyScopeProvider";
+import CompanyRequired, { useCompanyRequired } from "@/components/company/CompanyRequired";
 import { useRegionData } from "@/hooks/useRegionData";
 import { useTableSort } from "@/hooks/useTableSort";
 import { useDebounce } from "@/hooks/useDebounce";
@@ -76,7 +77,12 @@ interface PlanSpecialisation {
   cost: number;
   easyWins: number;
   requirements: PlanRequirement[];
+  /** One of the `needed` specialisations the plan is costed against. */
   chosen?: boolean;
+  /** Swaps in for a chosen one at no extra cost. */
+  alternative?: boolean;
+  /** What it adds on top of the other chosen specialisations; `cost` is standalone. */
+  marginalCost?: number;
 }
 interface PlanTargetResult {
   program: string;
@@ -117,6 +123,10 @@ interface PlanRiskImpact {
   required: number;
   attained: number;
   projectedAttained: number;
+  /** On the plan's recommended cheapest path, and so costed into
+   *  "People to certify". False means the roadmap dims this requirement for
+   *  reference. See `PlanRenewalRow` in `lib/compliance-plan.ts`. */
+  onPath: boolean;
 }
 interface PlanRenewalRow {
   email: string;
@@ -125,6 +135,10 @@ interface PlanRenewalRow {
   theatre: string;
   cert: string;
   scopeLabel: string;
+  /** On the plan's recommended cheapest path, and so costed into
+   *  "People to certify". False means the roadmap dims this requirement for
+   *  reference. See `PlanRenewalRow` in `lib/compliance-plan.ts`. */
+  onPath: boolean;
 }
 interface CompliancePlanResult {
   scopeLabel: string;
@@ -142,7 +156,9 @@ interface CompliancePlanResult {
     legacy: number;
     netNew: number;
     renewalMoves: number;
+    /** Rows in `renewals`, i.e. person x certification — not distinct people. */
     renewalsAtRisk: number;
+    renewalsAtRiskOnPath: number;
   };
 }
 interface PlanningOption {
@@ -262,11 +278,68 @@ const PLAN_FOR_WINDOW_HINT = {
   off: "Tick “Plan for this window” to count the renewals needed to hold them.",
 };
 
-/** The paragraph under the Renewals-at-risk heading. */
-const RENEWAL_LEAD = {
-  on: "These holders' training expires within the window. The renewals needed to hold compliance are already counted in “People to certify” above — don't add the two figures together.",
-  off: "These holders currently count toward a gap the plan reports as closed — their expiry will re-open it.",
+/** The two bands the Renewals-at-risk table splits into, on screen and in
+ *  print, so the heading and the PDF card title can't drift apart. */
+const RENEWAL_GROUP = {
+  onPath: "On the recommended path",
+  offPath: "Reference — not on the recommended path",
 };
+
+/**
+ * The Renewals-at-risk copy. Four strings rather than the old two, because the
+ * table now reports every expiring holder the roadmap covers: one sentence can
+ * no longer be true of all of it.
+ *
+ * Note what `onPathPlanned` claims, and what it deliberately does not. "Already
+ * counted in People to certify" was never true row by row — the allocator
+ * commits at most one certification per person, so an on-path holder may have
+ * been spent on a different cert, or had their gap filled by someone cheaper.
+ * `totals.renewalMoves` is the exact figure, so the sentence names it and says
+ * only that the counted renewals are drawn from this group.
+ */
+const RENEWAL_LEAD = {
+  /** True of the table as a whole, in either mode. */
+  all: "These holders' training expires within the window.",
+  /** The on-path group, when planning for the window. */
+  onPathPlanned: (renewalMoves: number) =>
+    renewalMoves > 0
+      ? `The ${renewalMoves} renewal${renewalMoves === 1 ? "" : "s"} the plan counts ${renewalMoves === 1 ? "is" : "are"} drawn from this group and ${renewalMoves === 1 ? "is" : "are"} already in “People to certify” above — don't add the two figures together.`
+      : "The plan is costed against these requirements, so renewing here holds compliance the plan reports as met.",
+  /** The on-path group, when the window is informational only. */
+  onPathStatus:
+    "These holders currently count toward a gap the plan reports as closed — their expiry will re-open it.",
+  /** The reference group, in either mode. */
+  offPath:
+    "Shown for reference: the roadmap dims these requirements because the plan is not costed against them, so nothing here is counted in “People to certify”.",
+};
+
+/**
+ * The "Renewals at risk" metric, shared by the on-screen KPI strip and the PDF's
+ * KPI boxes — two hand-copied literals until this existed, which is exactly what
+ * "the exports must not drift from the screen" means.
+ *
+ * The value is `totals.renewalsAtRisk`, which the server defines as
+ * `renewals.length`, so the card and the section heading agree by construction.
+ * It counts renewals to book (person x certification), not distinct people: the
+ * heading can only show a row count, and having the two report different
+ * measures side by side is the confusion this replaces.
+ */
+function renewalKpi(plan: CompliancePlanResult): { label: string; value: number; tone: "amber"; hint: string } {
+  const { renewalsAtRisk, renewalsAtRiskOnPath } = plan.totals;
+  return {
+    label: "Renewals at risk",
+    value: renewalsAtRisk,
+    tone: "amber",
+    // Name the split only when there is one; otherwise the old hint, which is
+    // still what the reader needs.
+    hint:
+      renewalsAtRisk > renewalsAtRiskOnPath
+        ? `${renewalsAtRiskOnPath} on the recommended path`
+        : plan.planForWindow
+          ? "Counted in the plan"
+          : `Expire within ${plan.renewalWindowMonths}mo`,
+  };
+}
 
 /** Headings, blurbs and empty states for the two candidate tables. */
 const CANDIDATE_TEXT = {
@@ -310,6 +383,9 @@ function riskImpactSegments(impact: PlanRiskImpact): Segment[] {
     { text: `${impact.cert}: ` },
     { text: `${impact.attained} → ${impact.projectedAttained}`, bold: true },
     { text: ` / ${impact.required} (${impact.scopeLabel})` },
+    // `buildRiskImpactNote` runs these through `segmentsText`, so the PDF's
+    // amber callout picks the marker up without a second code path.
+    ...(impact.onPath ? [] : [{ text: " · not on the recommended path", muted: true }]),
   ];
 }
 
@@ -330,6 +406,23 @@ function specDimmed(spec: PlanSpecialisation, tiered: boolean, state: RiskState)
   return tiered && spec.chosen === false && state === "compliant";
 }
 
+/**
+ * A tier target's two roles, in one place so the badge and the export column
+ * can't disagree about which specialisations the plan is actually pursuing.
+ */
+function specRole(spec: PlanSpecialisation, tiered: boolean): "Recommended" | "Alternative" | "" {
+  if (!tiered) return "";
+  // `chosen` is tested BEFORE `achieved`. The two read different gaps when
+  // planning for the window — the cheapest-K selection costs against the
+  // projected gap while `achieved` reads today's — so a specialisation can be
+  // on the recommended path and still met right now. Short-circuiting on
+  // `achieved` left it with no badge while its renewals grouped under "On the
+  // recommended path" below, which reads as the page contradicting itself.
+  if (spec.chosen) return "Recommended";
+  if (spec.achieved) return "";
+  return spec.alternative ? "Alternative" : "";
+}
+
 /** The pills beside a specialisation's name, in the order the block shows them. */
 function specBadges(
   spec: PlanSpecialisation,
@@ -342,15 +435,27 @@ function specBadges(
   if (state === "atRisk") {
     badges.push({ text: `At risk in ${windowMonths}mo`, className: RISK_BADGE.atRisk, tone: "amber" });
   }
-  if (tiered && spec.chosen && !spec.achieved) {
+  const role = specRole(spec, tiered);
+  if (role === "Recommended") {
     badges.push({ text: "Recommended", className: "bg-blue-100 text-blue-800", tone: "neutral" });
+  } else if (role === "Alternative") {
+    // Muted, because it is an aside: the plan is not costed against it.
+    badges.push({ text: "Equal-cost alternative", className: "bg-gray-100 text-gray-700", tone: "neutral" });
   }
   return badges;
 }
 
-/** The cost line on the right of a specialisation's header. */
+/**
+ * The cost line on the right of a specialisation's header. `cost` is what the
+ * block costs read on its own; the marginal is what it adds given the other
+ * chosen specialisations, and is shown only when a shared certification makes
+ * the two differ — otherwise it is the same number said twice.
+ */
 function specCostLabel(spec: PlanSpecialisation): string {
-  return `${spec.cost > 0 ? `${spec.cost} to certify` : "—"}${spec.easyWins > 0 ? ` · ${spec.easyWins} easy` : ""}`;
+  const base = spec.cost > 0 ? `${spec.cost} to certify` : "—";
+  const marginal =
+    spec.marginalCost != null && spec.marginalCost !== spec.cost ? ` · ${spec.marginalCost} more here` : "";
+  return `${base}${marginal}${spec.easyWins > 0 ? ` · ${spec.easyWins} easy` : ""}`;
 }
 
 function requirementHasCandidates(r: PlanRequirement): boolean {
@@ -550,10 +655,14 @@ function buildRenewalSection(renewals: PlanRenewalRow[], windowMonths: number): 
       { key: "Name", header: "Name" }, { key: "Email", header: "Email" },
       { key: "Country", header: "Country" }, { key: "Theatre", header: "Theatre" },
       { key: "Cert", header: "Cert" }, { key: "Scope", header: "Scope" },
+      // The screen groups these rows and the PDF draws them as two cards; the
+      // flat builders are the machine-readable rectangle, so here it is a column.
+      { key: "OnPath", header: "On recommended path" },
     ],
     rows: renewals.map((r) => ({
       Name: r.fullName, Email: r.email, Country: r.country,
       Theatre: r.theatre, Cert: r.cert, Scope: r.scopeLabel,
+      OnPath: r.onPath ? "Yes" : "No",
     })),
   };
 }
@@ -570,9 +679,12 @@ function buildSummarySection(plan: CompliancePlanResult): ReportTableSection {
       // Deduped: a certification several specialisations require is one cohort of
       // people, so this can be less than the Roadmap sheet's Net-new column adds to.
       { Metric: "Net-new training", Value: plan.totals.netNew },
-      // Two different things: holders whose training lapses in the window, vs the
-      // subset the plan has costed as renewals. Labelled so they don't read as additive.
-      { Metric: "Renewals at risk (holders expiring)", Value: plan.totals.renewalsAtRisk },
+      // Three different things, narrowing left to right: every renewal the window
+      // puts at risk, the subset on the requirements the plan is costed against,
+      // and the subset the allocator actually committed. Labelled so they don't
+      // read as additive — the first counts person x certification, not people.
+      { Metric: "Renewals at risk (person × certification)", Value: plan.totals.renewalsAtRisk },
+      { Metric: "…on the recommended path", Value: plan.totals.renewalsAtRiskOnPath },
       ...(plan.planForWindow
         ? [{ Metric: "Renewals included in plan", Value: plan.totals.renewalMoves }]
         : []),
@@ -588,6 +700,7 @@ function buildRoadmapSection(
   const rows: Record<string, string | number>[] = [];
   for (const t of targets) {
     const target = t.tierName ?? (t.mode === "all" ? "All requirements" : "Specialisations");
+    const tiered = !!t.tierPlan;
     for (const s of t.specialisations) {
       for (const r of s.requirements) {
         rows.push({
@@ -595,6 +708,9 @@ function buildRoadmapSection(
           target,
           specialisation: s.name,
           achieved: s.achieved ? "Yes" : "No",
+          // The file should say what the screen says: which specialisations the
+          // plan is costed against, and which merely swap in for one of them.
+          role: specRole(s, tiered),
           cert: r.cert,
           scope: r.scopeLabel,
           attained: r.attained,
@@ -627,6 +743,7 @@ function buildRoadmapSection(
       { key: "target", header: "Target" },
       { key: "specialisation", header: "Specialisation" },
       { key: "achieved", header: "Achieved" },
+      { key: "role", header: "Role" },
       { key: "cert", header: "Requirement" },
       { key: "scope", header: "Scope" },
       { key: "attained", header: "Attained" },
@@ -665,6 +782,7 @@ function buildRiskImpactSection(impacts: PlanRiskImpact[], windowMonths: number)
       { key: "Projected", header: "Projected" },
       { key: "Required", header: "Required" },
       { key: "Shortfall", header: "Projected shortfall" },
+      { key: "OnPath", header: "On recommended path" },
     ],
     rows: impacts.map((i) => ({
       Program: i.program,
@@ -675,6 +793,7 @@ function buildRiskImpactSection(impacts: PlanRiskImpact[], windowMonths: number)
       Projected: i.projectedAttained,
       Required: i.required,
       Shortfall: Math.max(0, i.required - i.projectedAttained),
+      OnPath: i.onPath ? "Yes" : "No",
     })),
   };
 }
@@ -734,12 +853,7 @@ function buildPlanKpis(plan: CompliancePlanResult): ReportKpi[] {
     },
     { label: "Easy wins", value: n(t.easyWins), tone: "green", hint: "Just need the exam" },
     { label: "Net-new training", value: n(t.netNew), tone: "indigo" },
-    {
-      label: "Renewals at risk",
-      value: n(t.renewalsAtRisk),
-      tone: "amber",
-      hint: plan.planForWindow ? "Counted in the plan" : `Expire within ${plan.renewalWindowMonths}mo`,
-    },
+    { ...renewalKpi(plan), value: n(t.renewalsAtRisk) },
     // The remaining Summary metrics, which the page only publishes in the export.
     { label: "Lapsed (renew)", value: n(t.lapsed), tone: "amber" },
     { label: "Legacy upgrade", value: n(t.legacy), tone: "indigo" },
@@ -907,16 +1021,33 @@ function buildRiskImpactNote(impacts: PlanRiskImpact[]): ReportSection {
   };
 }
 
+/**
+ * Two cards rather than one flat table, mirroring the screen's two groups. Row
+ * groups are the mechanism the roadmap's per-specialisation cards already use,
+ * so the split costs no sixth column — the five widths here sum to 100 and a
+ * sixth would mean rebalancing all of them.
+ */
 function buildRenewalPdfSection(
   renewals: PlanRenewalRow[],
   windowMonths: number,
   planForWindow: boolean,
+  renewalMoves: number,
 ): ReportTableSection {
+  const toRow = (r: PlanRenewalRow) => ({
+    Name: r.fullName,
+    Country: r.country,
+    Theatre: r.theatre,
+    Cert: r.cert,
+    Scope: r.scopeLabel,
+  });
+  const holders = (n: number) => `${n} ${n === 1 ? "holder" : "holders"}`;
+  const onPath = renewals.filter((r) => r.onPath);
+  const offPath = renewals.filter((r) => !r.onPath);
   return {
     title: "Renewals at risk",
     subtitle: `Expiring within ${monthsLabel(windowMonths)}`,
-    badge: `${renewals.length} ${renewals.length === 1 ? "holder" : "holders"}`,
-    lead: planForWindow ? RENEWAL_LEAD.on : RENEWAL_LEAD.off,
+    badge: holders(renewals.length),
+    lead: RENEWAL_LEAD.all,
     columns: [
       { key: "Name", header: "Name", width: 24 },
       { key: "Country", header: "Country", width: 16 },
@@ -924,13 +1055,28 @@ function buildRenewalPdfSection(
       { key: "Cert", header: "Cert", width: 30 },
       { key: "Scope", header: "Scope", width: 16 },
     ],
-    rows: renewals.map((r) => ({
-      Name: r.fullName,
-      Country: r.country,
-      Theatre: r.theatre,
-      Cert: r.cert,
-      Scope: r.scopeLabel,
-    })),
+    rows: [],
+    // Empty groups are dropped rather than drawn: an already-achieved tier
+    // counts only its delivery certs, so every renewal can land under Reference.
+    groups: [
+      ...(onPath.length > 0
+        ? [{
+            title: RENEWAL_GROUP.onPath,
+            badge: holders(onPath.length),
+            note: planForWindow ? RENEWAL_LEAD.onPathPlanned(renewalMoves) : RENEWAL_LEAD.onPathStatus,
+            rows: onPath.map(toRow),
+          }]
+        : []),
+      ...(offPath.length > 0
+        ? [{
+            title: RENEWAL_GROUP.offPath,
+            badge: holders(offPath.length),
+            badgeTone: "muted" as const,
+            note: RENEWAL_LEAD.offPath,
+            rows: offPath.map((r) => ({ tone: "muted" as const, cells: toRow(r) })),
+          }]
+        : []),
+    ],
   };
 }
 
@@ -946,7 +1092,12 @@ function buildPlanPdfSections(plan: CompliancePlanResult): ReportSection[] {
   if (plan.riskImpacts.length > 0) sections.push(buildRiskImpactNote(plan.riskImpacts));
   if (plan.renewals.length > 0) {
     sections.push(
-      buildRenewalPdfSection(plan.renewals, plan.renewalWindowMonths, plan.planForWindow),
+      buildRenewalPdfSection(
+        plan.renewals,
+        plan.renewalWindowMonths,
+        plan.planForWindow,
+        plan.totals.renewalMoves,
+      ),
     );
   }
   return sections;
@@ -1025,13 +1176,17 @@ function CompliancePlanningPageInner() {
   const companyScope = useCompanyScope();
   const { rows: regionRows } = useRegionData();
 
-  // Compliance is per-company — derive a single-company selection (like the
-  // dashboards), defaulting to the first company when "all" is selected.
+  // A plan is only meaningful within one company, and the header switcher is the
+  // only control that picks it. This used to fall back to `companies[0]` under
+  // "All companies" and produce a confident, fully-costed plan for whichever
+  // company sorted first, with nothing on the page naming it — the same defect
+  // the program dashboard had. `active` below already requires a company, so a
+  // null here parks the fetch as well as the render.
+  const companyRequired = useCompanyRequired();
   const companyId = useMemo<number | null>(() => {
-    if (companyScope.loading) return null;
-    if (companyScope.selected !== "all") return companyScope.selected;
-    return companyScope.companies[0]?.id ?? null;
-  }, [companyScope.loading, companyScope.selected, companyScope.companies]);
+    if (companyScope.loading || companyScope.selected === "all") return null;
+    return companyScope.selected;
+  }, [companyScope.loading, companyScope.selected]);
 
   // Selector metadata.
   const [options, setOptions] = useState<PlanningOption[]>([]);
@@ -1147,13 +1302,7 @@ function CompliancePlanningPageInner() {
         },
         { label: "Easy wins", value: plan.totals.easyWins, icon: Zap, tone: "green" as const, hint: "Just need the exam" },
         { label: "Net-new training", value: plan.totals.netNew, icon: ClipboardCheck, tone: "indigo" as const },
-        {
-          label: "Renewals at risk",
-          value: plan.totals.renewalsAtRisk,
-          icon: RefreshCw,
-          tone: "amber" as const,
-          hint: plan.planForWindow ? "Counted in the plan" : `Expire within ${plan.renewalWindowMonths}mo`,
-        },
+        { ...renewalKpi(plan), icon: RefreshCw },
       ]
     : [];
 
@@ -1212,7 +1361,12 @@ function CompliancePlanningPageInner() {
         }
       />
 
-      {/* Controls */}
+      {/*
+        Controls are suppressed while gated rather than left inert: building a
+        scope and a set of targets that cannot produce anything is worse than
+        being told what is missing first.
+      */}
+      {!companyRequired && (
       <div className="bg-white rounded-lg border border-gray-200 p-4 mb-6 space-y-4">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-sm font-medium text-gray-700 mr-1">Scope</span>
@@ -1305,6 +1459,7 @@ function CompliancePlanningPageInner() {
           )}
         </div>
       </div>
+      )}
 
       {/* Results */}
       {active && loading && (
@@ -1366,20 +1521,24 @@ function CompliancePlanningPageInner() {
               impacts={plan.riskImpacts}
               windowMonths={plan.renewalWindowMonths}
               planForWindow={plan.planForWindow}
+              renewalMoves={plan.totals.renewalMoves}
               scopeLabel={plan.scopeLabel}
             />
           )}
         </>
       )}
 
-      {!active && (
+      {/* `companyRequired` implies `!active`, so it is the first branch here. */}
+      {!active && (companyRequired ? (
+        <CompanyRequired what="plan" />
+      ) : (
         <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-500">
           <Sparkles className="mx-auto mb-2 text-blue-400" size={28} />
           {debouncedTargets.length === 0
             ? "Select one or more programs and a target above to generate a gap-closing plan."
             : `Choose a ${level} to plan against.`}
         </div>
-      )}
+      ))}
     </div>
   );
 }
@@ -1695,24 +1854,48 @@ function RenewalTable({
   impacts,
   windowMonths,
   planForWindow,
+  renewalMoves,
   scopeLabel,
 }: {
   renewals: PlanRenewalRow[];
   impacts: PlanRiskImpact[];
   windowMonths: number;
   planForWindow: boolean;
+  renewalMoves: number;
   scopeLabel: string;
 }) {
   const [showExport, setShowExport] = useState(false);
   const exportSection = buildRenewalSection(renewals, windowMonths);
   const pdfSections: ReportSection[] = [
     ...(impacts.length > 0 ? [buildRiskImpactNote(impacts)] : []),
-    buildRenewalPdfSection(renewals, windowMonths, planForWindow),
+    buildRenewalPdfSection(renewals, windowMonths, planForWindow, renewalMoves),
   ];
+  // The server sorts on-path rows first, so a filter keeps the intended order.
+  const onPathRows = renewals.filter((r) => r.onPath);
+  const offPathRows = renewals.filter((r) => !r.onPath);
+  const groups = [
+    {
+      key: "onPath",
+      title: RENEWAL_GROUP.onPath,
+      lead: planForWindow ? RENEWAL_LEAD.onPathPlanned(renewalMoves) : RENEWAL_LEAD.onPathStatus,
+      rows: onPathRows,
+      dim: false,
+    },
+    {
+      key: "offPath",
+      title: RENEWAL_GROUP.offPath,
+      lead: RENEWAL_LEAD.offPath,
+      rows: offPathRows,
+      dim: true,
+    },
+  ].filter((g) => g.rows.length > 0);
   return (
     <div className="bg-white rounded-lg border border-amber-200 p-4 mb-6">
       <div className="flex items-center justify-between mb-3">
         <h2 className="flex items-center gap-2 text-base font-semibold text-amber-800">
+          {/* `renewals.length` is exactly `totals.renewalsAtRisk` (the server
+              defines the total that way), so this and the KPI card cannot
+              disagree — they reported different measures until they did. */}
           <AlertTriangle size={18} /> Renewals at risk — expiring within {monthsLabel(windowMonths)} ({renewals.length})
         </h2>
         <ExportMenu
@@ -1755,7 +1938,7 @@ function RenewalTable({
           </ul>
         </div>
       )}
-      <p className="text-xs text-gray-500 mb-2">{planForWindow ? RENEWAL_LEAD.on : RENEWAL_LEAD.off}</p>
+      <p className="text-xs text-gray-500 mb-2">{RENEWAL_LEAD.all}</p>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
@@ -1763,17 +1946,30 @@ function RenewalTable({
               <th className="py-2 pr-3">Name</th><th className="py-2 pr-3">Country</th><th className="py-2 pr-3">Theatre</th><th className="py-2 pr-3">Cert</th><th className="py-2">Scope</th>
             </tr>
           </thead>
-          <tbody>
-            {renewals.map((r, i) => (
-              <tr key={`${r.email}-${i}`} className="border-b border-gray-50">
-                <td className="py-1.5 pr-3"><Link href={`/students/${encodeURIComponent(r.email)}`} className="text-blue-600 hover:underline">{r.fullName}</Link></td>
-                <td className="py-1.5 pr-3">{r.country}</td>
-                <td className="py-1.5 pr-3">{r.theatre}</td>
-                <td className="py-1.5 pr-3">{r.cert}</td>
-                <td className="py-1.5">{r.scopeLabel}</td>
+          {groups.map((g) => (
+            <tbody key={g.key}>
+              <tr>
+                <td colSpan={5} className="pt-3 pb-1">
+                  <div className="text-xs font-medium text-gray-700">
+                    {g.title}{" "}({g.rows.length})
+                  </div>
+                  <div className="text-xs text-gray-500">{g.lead}</div>
+                </td>
               </tr>
-            ))}
-          </tbody>
+              {g.rows.map((r) => (
+                <tr
+                  key={`${r.email}-${r.cert}`}
+                  className={`border-b border-gray-50${g.dim ? " text-gray-500" : ""}`}
+                >
+                  <td className="py-1.5 pr-3"><Link href={`/students/${encodeURIComponent(r.email)}`} className="text-blue-600 hover:underline">{r.fullName}</Link></td>
+                  <td className="py-1.5 pr-3">{r.country}</td>
+                  <td className="py-1.5 pr-3">{r.theatre}</td>
+                  <td className="py-1.5 pr-3">{r.cert}</td>
+                  <td className="py-1.5">{r.scopeLabel}</td>
+                </tr>
+              ))}
+            </tbody>
+          ))}
         </table>
       </div>
     </div>

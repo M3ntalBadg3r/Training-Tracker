@@ -314,7 +314,7 @@ Training Tracker requires authentication to access. On first launch (when no use
 
 ### Companies
 
-Training Tracker is multi-company: every student belongs to exactly one company, and Admin/User accounts see only the companies they have been granted access to. SuperAdmins manage the company list at **Admin → Companies** and assign companies to users via **Admin → Users**. A global **Company** dropdown in the page header filters the dashboard, students list, training, reports, and programs to the selected company; SuperAdmins also have an **All companies** option. The selection is remembered in your browser. Imports require a Company column or a per-import default company; SuperAdmins can auto-create new companies on the fly during import.
+Training Tracker is multi-company: every student belongs to exactly one company, and Admin/User accounts see only the companies they have been granted access to. SuperAdmins manage the company list at **Admin → Companies** and assign companies to users via **Admin → Users**. A global **Company** dropdown in the page header filters the dashboard, students list, training, reports, and programs to the selected company; SuperAdmins also have an **All companies** option. Two areas are the exception: the partner-program dashboards and Compliance Planning report on **one company at a time** — compliance figures added up across companies would not mean anything — so under **All companies** they ask you to choose one instead of showing a plan. The selection is remembered in your browser. Imports require a Company column or a per-import default company; SuperAdmins can auto-create new companies on the fly during import.
 
 ### Login
 
@@ -573,7 +573,7 @@ Five summary cards are displayed at the top. The four "earned" cards (Certificat
 | **Certifications Earned** | Total certification completions across all students, with a sub-metric of distinct students holding any certification |
 | **Accreditations Earned** | Total accreditation completions across all students, with a sub-metric of distinct students holding any accreditation |
 | **Instructor-Led Trainings** | Total ILT completions across all students, with a sub-metric of distinct students who have attended any ILT |
-| **OLX Completed** | Total OLX completions, with a sub-metric of distinct students who have completed any OLX. An OLX is "completed" once a student has completed every sub-item, or directly for single-item OLX entries. |
+| **OLX Completed** | Total OLX completions, with a sub-metric of distinct students who have completed any OLX. An OLX is "completed" once a student has completed every sub-item, or directly for single-item OLX entries. Sub-items are counted by **Full Title**, so where one appears under several Training Titles — the different spellings it arrived under in an import — completing any one of them counts. |
 
 ### Charts
 
@@ -813,14 +813,14 @@ While you are browsing, those sub-items are not listed as separate top-level row
 
 #### Full Title Detail Page
 
-Opening a Full Title takes you to a dedicated page (like a student record) showing all of its mapped Training Titles. From here you can:
+Opening a Full Title takes you to a dedicated page for that training. It is laid out around one idea: several Training Titles usually mean *one* training — they are the different names it has been imported under — so the training's properties are set once, not once per name.
 
-- **Rename Full Title** — Renames every mapped Training Title's Full Title at once.
-- **Mark the whole Full Title as Legacy** — Cascades the legacy flag to **all** Certification/Accreditation Training Titles under it in one click (other types are unaffected). Pick the replacement as a **Full Title** (not individual titles) and it is expanded to the underlying replacements automatically.
-- **Set Product / Function for all** — Apply a product type or function across every mapped Training Title.
-- **Per-Title editing** — Each Training Title keeps its own Link, Certifications, OLX membership, and can still be edited or deleted individually.
-- **Add Training Title** — Add another Training Title already attached to this Full Title.
-- **Delete Full Title** — Remove the whole group (all mapped Training Titles) at once.
+- **Full Title actions** — Rename the Full Title (applies to every Training Title under it), or **Merge** it into another one. Renaming onto a name that already exists is refused, because that used to combine the two silently with no way back; merging is the deliberate version, and it tells you what it will do — including which fields the two sides disagree on, since after a merge one value wins.
+- **One card per training** — Product, Function, Link, **Leads to Certification(s)** and **OLX sub-items** are set here, once, and applied to every Training Title. If the Full Title covers more than one type — a Certification and the Instructor-Led Training that prepares for it, say — you get one card each, because those are counted as two separate trainings. Where the underlying Training Titles currently disagree on a field, the card says so before you save over them.
+- **Legacy** — Cascades the legacy flag to **all** Certification/Accreditation Training Titles under the Full Title in one click (other types are unaffected). Pick the replacement as a **Full Title** (not individual titles) and it is expanded to the underlying replacements automatically.
+- **Training titles** — The list of names this training has been imported under. Each can be **renamed**, **moved** to a different Full Title, deleted, or re-typed (which moves it to that type's card). Moving one does not touch any completion records; what changes is which training they are counted under, so the page tells you how many program and offering requirements point at these names first.
+- **Add Training Title** — Add another Training Title under this Full Title.
+- **Reporting and removal** — Ignore the Full Title (leaving it out of reporting while keeping its completions), or delete it outright. Deleting a single Training Title asks for confirmation too, since it removes that name's completion records with it.
 
 #### Newly-discovered trainings (import)
 
@@ -838,7 +838,9 @@ Click **Edit** on a row to complete it. You can either **attach it to an existin
 
 The **Certification** mapping is available for trainings of type **Instructor-Led Training** and **OLX** (parent). It records which Certification(s) the training **leads to** — i.e. the ILT/OLX is the recommended preparation before sitting the exam that earns the cert; it does **not** itself grant the cert. OLX Sub-Items cannot carry certifications.
 
-Where an ILT/OLX leads to a certification is surfaced without entering edit mode: in the list, a **"→ Leads to: …"** subline appears under the Full Title (naming the certification(s)); on the Full Title detail page, a **Leads to Certification(s)** card in the summary row lists the deduplicated certifications drawn from all mapped Training Titles.
+Where an ILT/OLX leads to a certification is surfaced without entering edit mode: in the list, a **"→ Leads to: …"** subline appears under the Full Title (naming the certification(s)).
+
+It is also **edited once per Full Title**, not once per Training Title. Several Training Titles routinely map to one Full Title — they are the different spellings the same training arrived under in an import — so setting "leads to" per Training Title meant repeating the same choice for every spelling, and missing one silently dropped those learners out of the Trained But Not Certified report. The **Leads to Certification(s)** section on the Full Title detail page applies the choice to every mapped Training Title in one save. You pick the target certification by its **Full Title** too, so you never have to work out which internal Training Title to point at, and the search box makes a long catalogue usable. If a Full Title covers more than one type — a Certification and the Instructor-Led Training that prepares for it, say — you get one control per type, because the system counts those as two separate trainings.
 
 - When editing or adding an ILT, a checkbox list of all available Certifications is shown.
 - Select one or more Certifications to create the mapping.
@@ -1195,6 +1197,23 @@ Click **Scan for Issues** under **Future Completion Dates** to list every traini
 
 Each row's completed date is shown as an editable date input, highlighted in amber while it is still in the future. Pick the correct date and click **Save** on that row to commit the change. There is no automated fix — every correction is made manually, one row at a time. Saving recomputes the expiry to completed + 2 years and re-evaluates any OLX parent the row may belong to.
 
+#### Catalogue Integrity
+
+Click **Scan for Issues** under **Catalogue Integrity** to check the training catalogue and the OLX completions derived from it. The scan is read-only; nothing changes until you pick one of the actions it offers.
+
+**OLX completions out of step.** An OLX parent counts as completed once a learner holds every sub-item, counted by Full Title — so taking any one spelling of a sub-item is enough. Parent records are materialised by events (an import, or an edit to the learner or the OLX), so a learner who qualified at an earlier point can still be waiting for theirs. The scan lists those, and the reverse: parent records the sub-items no longer support.
+
+**Reconcile OLX completions** applies the rule in both directions at once, so read the second table before using it. Judge by the **Held** column:
+
+| Held | Reading | What reconciling does |
+|------|---------|----------------------|
+| Some but not all | *Stale grant* — module data is flowing for this learner, so the missing sub-item is genuinely missing | Removes the parent record; a correction |
+| None at all | *Check source* — the parent was probably loaded directly with no module detail behind it | Removes the parent record, which may be the only evidence of it. Undoable only by importing the module detail |
+
+**Training titles disagreeing on "leads to".** Where one training arrived under several names, each name stores its own answer to what it leads to. Reports already read every name together, so your numbers are unaffected — this is only about what is stored. **Level them up** writes the combined answer to every name, so none can lose a certification it already had. This is done here rather than by re-saving the training's own page, because that path drops a reference to a training that no longer exists — which is listed separately below for you to decide about, not something a tidy-up should quietly discard — and because it does every affected training at once.
+
+**References to trainings that no longer exist.** A "leads to" or "replaced by" entry pointing at a training since renamed or deleted. It renders as a raw internal name and matches nobody. New ones can no longer be created; clear these by hand — open the training and pick the target again.
+
 #### Wipe All Data
 
 The **Danger Zone** at the bottom of the Data Clean-Up page offers two destructive actions. **Both cannot be undone.**
@@ -1291,22 +1310,72 @@ curl -H "Authorization: Bearer tt_live_xxxxxxxx" \
 | Endpoint | Returns |
 |----------|---------|
 | `GET /api/public/v1` | Index — confirms the key works and lists its companies and the available endpoints |
+| `GET /api/public/v1/openapi.json` | OpenAPI 3.1 description of every endpoint below, with its parameters and response schemas |
 | `GET /api/public/v1/students` | Student roster (name, email, theatre, country, company) |
 | `GET /api/public/v1/training-records` | Per-completion training records (latest per learner & training) |
 | `GET /api/public/v1/reports/{reportType}` | Report aggregates — `trained-not-certified`, `legacy-gap`, `learner-scorecard`, `by-product`, `by-function`, `expiring-soon`, `currently-expired`, `last-12-months` |
 | `GET /api/public/v1/offerings` | Offering definitions (specialisations + supporting trainings) for the key's companies. Add `?country=` or `?region=` for Onshore/Nearshore/Offshore compliance figures; `?name=` for one offering |
 | `GET /api/public/v1/programs` | Partner program list (configured levels, per-theatre-minimum flag, tiered flag) |
 | `GET /api/public/v1/programs/{programName}` | Per-program compliance. `?level=country\|region\|theatre\|global` with `?country=`/`?region=`/`?theatre=`; `?horizonMonths=3\|6\|12` for a forward-looking projection; `?trainingTitle=&students=true` for the holder roster |
+| `GET /api/public/v1/programs/planning` | **Compliance planning — aggregates only.** The roadmap, per-requirement gaps and costs, risk impacts and totals. `?options=true` lists the program / tier / specialisation names you need to build a target; `?targets=` takes a URL-encoded JSON array `[{program, mode:"tier"\|"specialisations"\|"all", tier?, specialisations?[]}]`, with `?level=`, `?country=`/`?region=`/`?theatre=`, `?renewalWindowMonths=0\|1\|3\|6\|12` and `?planForWindow=true` |
+| `GET /api/public/v1/reports/program-compliance-trend` | 12 months of compliance history plus a 12-month expiry-driven forecast, per program and specialisation. `?program=`, `?country=`/`?region=`/`?theatre=` |
+| `GET /api/public/v1/reports/renewal-forecast` | Projected renewals vs lapses over the next 12 months, plus an at-risk-by-training breakdown. `?country=`/`?region=`/`?theatre=` |
 
 All endpoints accept an optional `?companyId=` to narrow to a single granted
 company; `training-records` also accepts `?theatre=`, `?region=`, `?country=`,
 and `?activeOnly=true`. A request for a company the key cannot read returns no
 rows (program compliance figures are scoped to the key's companies the same way).
 
+The last two are **separate endpoints, not values for `{reportType}`** — they
+are not in that endpoint's list, so passing their names to
+`/reports/{reportType}` returns a 404.
+
+**Compliance planning is returned as aggregates only.** The in-app planner also
+shows *who* to certify — named candidates, the full eligible pool, and the
+people whose training lapses inside the renewal window. None of those reach the
+API. What a key receives is the roadmap, each requirement's gap and cost, the
+requirements those expiries break, and the totals — enough to see the shape and
+the price of a gap, without handing a third-party system a roster of named
+staff. Nothing is lost analytically: the risk impacts are the aggregate view of
+the same set the named renewal rows enumerate, and the totals carry its count.
+
+### Machine-readable description
+
+`GET /api/public/v1/openapi.json` returns an **OpenAPI 3.1** document covering
+every endpoint above: its query parameters with their allowed values and
+defaults, and a response schema for each. Point a client generator, Postman or
+Swagger UI at it and you get a typed client without transcribing this table.
+
+It is key-gated like everything else, so a generated copy is committed at
+[`docs/openapi.json`](docs/openapi.json) for reading before you hold a key. Both
+are built from the same source as the index endpoint, and a CI check fails if a
+route grows a parameter the description does not mention — so the document
+cannot quietly fall behind the API it describes.
+
+One deliberate limitation: the eight report types under `/reports/{reportType}`
+return rows whose columns differ per report, and the server does not type them,
+so the document describes `data` as a free-form array rather than claiming a
+shape the code does not guarantee.
+
+### Freshness
+
+The heavier endpoints — per-program compliance, compliance planning, the two
+forecasts, training records and the report aggregates — are **cached for up to
+30 seconds**, and their responses carry `Cache-Control: private, max-age=30`.
+Two consequences for an integration:
+
+- **Any change made in the app flushes the cache immediately**, so you will
+  never see data from before an import or an edit. The window only ever holds a
+  result that was correct when it was computed.
+- **Polling faster than every 30 seconds buys you nothing.** A tight loop gets
+  the same bytes back and still spends its share of the 120-requests-per-minute
+  budget, so pick an interval that matches how often your data actually changes.
+
 ### Security
 
 - **Off by default** — the whole API is disabled until a SuperAdmin enables it, and can be switched off again at any time (a global kill switch, checked before the key is even looked up). While off, every endpoint returns HTTP 503.
 - **Read-only by design** — there are no write endpoints under `/api/public`, so a leaked key can never modify data.
+- **Aggregates only where the in-app view names people** — the compliance-planning endpoint returns the roadmap, risk impacts and totals; the named-candidate, eligible-pool and named-renewal lists shown in the app are never returned over the API. The restriction is enforced by an allowlist that names the fields it emits, held to the shape of the underlying result by a compile-time check, so a person-level field added later cannot leak through it.
 - **Company-scoped** — a key only ever sees data for its assigned companies.
 - **Hashed at rest** — only a SHA-256 hash of the key is stored; the plaintext is shown once.
 - **Rate-limited** — 120 requests per minute per key (excess requests get HTTP 429). Invalid-key attempts are separately throttled per IP (20 failures / 5 min).
@@ -1320,6 +1389,10 @@ key in browser-side code.
 ## Partner Programs
 
 Partner programs are **fully data-driven**. Every distinct program name configured in **Admin > Program Data** automatically gets its own compliance dashboard at **Programs > _[name]_** — no code changes are required to add a new program. The dashboard at `/programs/[programName]` auto-adapts to how the program is configured.
+
+### One company at a time
+
+Compliance figures only mean something within a single company, so the dashboard reports on **one company at a time** and takes it from the **Company** switcher in the page header — the same switcher every other page uses. With the header set to **All companies** the dashboard asks you to choose one rather than picking for you. (It previously fell back to whichever company sorted first and drew a complete report without saying which one it was, and it carried a second Company dropdown of its own that could disagree with the header; both are gone.) A user with access to only one company never sees the prompt — their company is selected for them.
 
 ### One scope selector drives the page
 
@@ -1361,15 +1434,15 @@ The dedup applies to **certifications** as well as to named people. Where severa
 
 Pick a **scope** (Global / Theatre / Region / Country) and one or more **programs**, then choose a target per program:
 
-- **Tiered program** → target a **tier** (the tool picks the cheapest specialisations to reach it) or specific specialisation(s). Reaching a tier only needs as many specialisations as the tier requires, so its cost reflects just the cheapest path — and any **equally-cheap** alternatives are flagged **Recommended** so you can choose between them.
+- **Tiered program** → target a **tier** (the tool picks the cheapest specialisations to reach it) or specific specialisation(s). Reaching a tier only needs as many specialisations as the tier requires, so exactly that many are flagged **Recommended** — and they are chosen by what each one *adds* to the set, not by what it costs on its own. That matters because specialisations share certifications: one that reads "4 to certify" but shares half its requirements with a specialisation already recommended really adds 2, and is the better pick over one that reads 4 and shares nothing. Where a swap genuinely costs the same either way, the alternative is shown as **Equal-cost alternative** so you can take the one that suits the business better.
 - **Flat program** → pick specialisation(s) or **all requirements**.
 
 Mixed selections are supported in one plan (e.g. a tier in one program plus all specialisations in another). The output has three parts:
 
-- **Aggregate roadmap** — a plain-language headline per target plus a per-specialisation, per-requirement breakdown (have / need, the gap, and how many candidates sit in each tier). For a tier target, the cheapest specialisation(s) to reach it are flagged **Recommended**.
+- **Aggregate roadmap** — a plain-language headline per target plus a per-specialisation, per-requirement breakdown (have / need, the gap, and how many candidates sit in each tier). For a tier target the headline names exactly the specialisations being recommended and the people each one adds, so its figures add up to **People to certify** rather than over-counting a shared certification. A specialisation block shows what it costs on its own and, where the two differ, what it adds given the others (`4 to certify · 2 more here`); the exported roadmap carries a **Role** column saying which is which.
 - **"Who to certify"** — one row per person listing every gap they close (expandable), ranked cheapest-first: **Renewal (expiring)** (holds the cert today but it expires inside the renewal window — only offered when *Plan for this window* is on), **Easy win** (did the ILT/OLX that leads to the cert, needs only the exam), **Lapsed** (held the cert but it expired — needs a renewal), **Legacy upgrade** (holds a legacy cert whose replacement is the required one), then **Net-new** (needs the full path; reported as a count, not named people). Two columns — **Specialisation** and **Relevant training held** — show which specialisation(s) each person would help fulfil and the ILT/OLX (or legacy cert) they already hold that makes them a cheap candidate, and expanding a row explains each gap in **plain language** (what they've done and what passing the exam contributes to, worded for an easy win / lapsed renewal / legacy upgrade). Because a person can only be **spent once**, candidates are allocated across the whole plan — someone whose single exam closes the same cert in several places appears once.
 - **"All eligible candidates"** — below the recommended list, the **full pool**: everyone who already holds qualifying training and could be certified (not just the cheapest subset the plan nominates), so you can pick alternatives. Same columns, drill-down, and export.
-- **Renewals at risk** — holders whose qualifying training expires within the selected window, led by a summary naming exactly which requirements their expiry breaks (e.g. `Cert A or Cert B: 16 → 3 / 5`).
+- **Renewals at risk** — every holder whose qualifying training expires within the selected window, led by a summary naming exactly which requirements their expiry breaks (e.g. `Cert A or Cert B: 16 → 3 / 5`). The list is split into **On the recommended path** (the requirements the plan is costed against — these are where the renewals counted in *People to certify* come from) and **Reference** (requirements the roadmap dims because the plan doesn't route through them; nothing here is counted, but their expiry is still real). It deliberately covers the whole roadmap rather than just the recommended path: for a tiered program the cheapest path can change as you widen the window, and scoping the list to it meant a **6-month window could show fewer at-risk renewals than a 3-month one**. The headline count is one per **person × certification**, matching the rows — someone with two certifications expiring counts twice.
 
 #### Renewal window — seeing what upcoming expiry breaks
 
@@ -1381,7 +1454,9 @@ The **Renewal window** selector (Off / 1 / 3 / 6 / 12 months) projects complianc
 
 By default the window is **informational**: the KPIs and "Who to certify" still answer *what is broken today*. Tick **Plan for this window** to fold it in — gaps are sized from the projected figure, **People to certify** includes the renewals needed to hold compliance through the window, and those people appear in "Who to certify" as **Renewal (expiring)** candidates. For a tiered program this can change which specialisations are **Recommended**, since one that lapses inside the window no longer counts toward the tier.
 
-Each scope plans against **only its own-level requirements**, exactly like the dashboards: planning one country shows that country's Country-level requirements, not the theatre-wide requirement above it (select the theatre to plan against theatre-level requirements). An **Export report** button in the page header downloads the **whole plan** as one file — a KPI summary, the aggregate roadmap, the "Who to certify" list, a **Requirements at risk** section, and the renewals-at-risk list — as CSV, Excel (one sheet per section), or PDF. **CSV and Excel keep the wide machine-readable tables** — every column, including the ones the page keeps out of sight — while **the PDF mirrors the page**: the coloured metric cards, the projection note, a card per specialisation with its badges and shared-certification footnote, the combined `4 → 2 / 4` figures under the same red/amber/green shading, each candidate's reasons as indented lines beneath their row, and an explanation instead of an empty header row where a section has nothing in it. With a window selected the CSV and Excel roadmap gains **Projected**, **Expiring**, **Projected gap** and **Projected achieved** columns, and the file name carries a `-plusNmo` suffix (plus `-planned` when planning for the window). The candidate list and the renewals list also keep their own per-section export buttons for a quick single-table download. This release is a **live view** (no saved plans yet).
+Compliance Planning reports on **one company at a time** for the same reason the program dashboards do, and asks you to pick one from the header switcher if **All companies** is selected.
+
+Each scope plans against **only its own-level requirements**, exactly like the dashboards: planning one country shows that country's Country-level requirements, not the theatre-wide requirement above it (select the theatre to plan against theatre-level requirements). An **Export report** button in the page header downloads the **whole plan** as one file — a KPI summary, the aggregate roadmap, the "Who to certify" list, a **Requirements at risk** section, and the renewals-at-risk list — as CSV, Excel (one sheet per section), or PDF. **CSV and Excel keep the wide machine-readable tables** — every column, including the ones the page keeps out of sight — while **the PDF mirrors the page**: the coloured metric cards, the projection note, a card per specialisation with its badges and shared-certification footnote, the combined `4 → 2 / 4` figures under the same red/amber/green shading, each candidate's reasons as indented lines beneath their row, the renewals split into the same two cards the page shows, and an explanation instead of an empty header row where a section has nothing in it. CSV and Excel flatten that split into an **On recommended path** column on both the renewals and the requirements-at-risk tables. With a window selected the CSV and Excel roadmap gains **Projected**, **Expiring**, **Projected gap** and **Projected achieved** columns, and the file name carries a `-plusNmo` suffix (plus `-planned` when planning for the window). The candidate list and the renewals list also keep their own per-section export buttons for a quick single-table download. This release is a **live view** (no saved plans yet).
 
 Your selection — scope, programs and targets, the renewal window and **Plan for this window** — is mirrored into the page address, so opening a person's record from "Who to certify" or "Renewals at risk" and pressing **Back** returns you to the same plan instead of an empty one. It also makes a plan bookmarkable and shareable as a link.
 

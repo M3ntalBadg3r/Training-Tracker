@@ -6,6 +6,7 @@ import { recomputeAllStudentsForParent } from "@/lib/olx";
 import { invalidateReportCache } from "@/lib/report-cache";
 import { readJsonBody } from "@/lib/request-body";
 import { isRejectedLink, safeExternalUrl } from "@/lib/utils";
+import { sanitizeLegacyFields } from "@/lib/legacy-training";
 
 const VALID_TRAINING_TYPES = new Set(Object.values(TrainingType));
 const VALID_FUNCTION_TYPES = new Set(Object.values(FunctionType));
@@ -194,12 +195,29 @@ export async function POST(request: NextRequest) {
       errors.push(`Row ${rowNum}: link for "${trainingTitle}" is not a http:// or https:// web address and was not imported`);
     }
     const link = safeExternalUrl(rawLink);
-    const certRaw = columnMapping.certification ? row[columnMapping.certification]?.trim() : "";
-    const certification = trainingType === TrainingType.OLXSubItem
-      ? []
-      : certRaw
-        ? certRaw.split(",").map((c: string) => c.trim()).filter(Boolean)
-        : [];
+    // "Leads to certification", under the same unmapped-column-is-a-no-op rule
+    // as the legacy pair below. It did NOT have that rule, and the update always
+    // writes the column, so importing a file that simply didn't carry a
+    // Certification column silently cleared "leads to" on every row it touched.
+    // That is the exact data loss the Legacy column was fixed for; this one was
+    // missed, and it is worse here because nothing surfaces the absence — the
+    // training just quietly stops leading anywhere and its learners drop out of
+    // the Trained But Not Certified report.
+    const certRaw = columnMapping.certification ? row[columnMapping.certification]?.trim() : undefined;
+    const parsedCertification = columnMapping.certification
+      ? (certRaw || "").split(",").map((c: string) => c.trim()).filter(Boolean)
+      : undefined;
+
+    /**
+     * Resolve "leads to" against what is already stored, so an absent column
+     * reproduces the existing value and the `changed` comparison sees a no-op.
+     */
+    const resolveCertification = (stored: { certification: string[] } | null): string[] => {
+      // An OLX sub-item may never carry a certification, matching every other
+      // write path — that is the type forcing it, not the import clobbering it.
+      if (trainingType === TrainingType.OLXSubItem) return [];
+      return parsedCertification ?? stored?.certification ?? [];
+    };
 
     // Legacy lifecycle — only meaningful for Certification/Accreditation.
     //
@@ -225,16 +243,27 @@ export async function POST(request: NextRequest) {
      * result unconditionally is safe: with both columns unmapped it reproduces
      * the existing values, so the `changed` comparison sees a no-op.
      */
-    const resolveLegacy = (
+    const resolveLegacy = async (
       stored: { isLegacy: boolean; replacedBy: string[] } | null,
-    ): { isLegacy: boolean; replacedBy: string[] } => {
+    ): Promise<{ isLegacy: boolean; replacedBy: string[] }> => {
       // A type that cannot be legacy clears the pair regardless of the file —
       // that is the type change forcing it, not the import clobbering it.
       if (!legacyEligible) return { isLegacy: false, replacedBy: [] };
       const effective = parsedIsLegacy ?? stored?.isLegacy ?? false;
       // Replacements only mean anything on a legacy row.
       if (!effective) return { isLegacy: false, replacedBy: [] };
-      return { isLegacy: true, replacedBy: parsedReplacedBy ?? stored?.replacedBy ?? [] };
+      // Through the same sanitiser every interactive write path uses. The import
+      // was the one route that wrote `replacedBy` straight from the file, so a
+      // misspelled or non-Cert/Accred title — easy to produce, since the export
+      // emits internal training titles and a spreadsheet edit invites pasting
+      // the displayed Full Title instead — was persisted as a dangling
+      // reference that renders as a raw key and matches no holders.
+      return sanitizeLegacyFields(
+        trainingTitle,
+        trainingType,
+        true,
+        parsedReplacedBy ?? stored?.replacedBy ?? [],
+      );
     };
 
     // Same rule for the "not needed" flag.
@@ -249,7 +278,8 @@ export async function POST(request: NextRequest) {
       });
 
       if (existing) {
-        const legacy = resolveLegacy(existing);
+        const legacy = await resolveLegacy(existing);
+        const certification = resolveCertification(existing);
         const changed =
           existing.fullTitle !== fullTitle ||
           existing.trainingType !== trainingType ||
@@ -275,7 +305,8 @@ export async function POST(request: NextRequest) {
           skipped++;
         }
       } else {
-        const legacy = resolveLegacy(null);
+        const legacy = await resolveLegacy(null);
+        const certification = resolveCertification(null);
         await prisma.trainingData.create({
           data: {
             trainingTitle,

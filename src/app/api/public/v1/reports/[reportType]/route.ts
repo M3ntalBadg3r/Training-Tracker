@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authorizePublicRequest } from "@/lib/public-api";
+import { cachedReport, scopeKey } from "@/lib/report-cache";
 import { fetchReportData, type ReportType } from "@/lib/report-queries";
 
 // The report types exposed over the public API (mirrors lib/report-queries.ts).
@@ -40,10 +41,20 @@ export async function GET(
     return NextResponse.json({ reportType, title: "", data: [] });
   }
 
-  const result = await fetchReportData(reportType as ReportType, ctx.companyIds);
-  return NextResponse.json({
-    reportType,
-    title: result.title,
-    data: result.data,
-  });
+  // Cached for 30s, like every internal `/api/reports/*` route that computes
+  // the same aggregates. `reportType` needs no encoding: it has already been
+  // checked against the closed `VALID_REPORT_TYPES` set above, so it cannot
+  // carry the key delimiter. The route reads no other query params.
+  const result = await cachedReport(
+    `public-report|${reportType}|${scopeKey(ctx.companyIds)}`,
+    () => fetchReportData(reportType as ReportType, ctx.companyIds),
+  );
+  return NextResponse.json(
+    {
+      reportType,
+      title: result.title,
+      data: result.data,
+    },
+    { headers: { "Cache-Control": "private, max-age=30" } },
+  );
 }

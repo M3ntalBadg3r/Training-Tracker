@@ -56,7 +56,10 @@ const helpSections: Record<string, HelpSection> = {
                 distinct students who have completed any OLX. An OLX is
                 &quot;completed&quot; when the student has completed every
                 sub-item linked to that OLX, or when the OLX has no sub-items
-                and the student has a completion for it directly.
+                and the student has a completion for it directly. Where a
+                sub-item appears under more than one Training Title, taking{" "}
+                <em>any</em>{" "}of them counts &mdash; they are the same course
+                under different names.
               </td>
             </tr>
           </tbody>
@@ -723,6 +726,7 @@ const helpSections: Record<string, HelpSection> = {
         </p>
         <ul>
           <li>A gap is counted when someone holds the instructor-led training or OLX, and does not hold any certification that training leads to. OLX parents are treated the same as instructor-led trainings.</li>
+          <li>Trainings are matched by their <strong>Full Title</strong>, not by the individual Training Titles underneath it. So holding <em>any</em>{" "}version of a certification clears the gap, and a training counts even if only one of its mapped Training Titles has its &ldquo;leads to&rdquo;{" "}filled in. Each learner appears once per training, however many versions of it they have completed.</li>
           <li><strong>Active status</strong> — whether the training they took is itself still unexpired. An expired training is a weaker lead, since they may need to re-sit it first.</li>
           <li>The product funnel shows where the largest gaps sit, so you can prioritise by product rather than by individual.</li>
         </ul>
@@ -812,6 +816,7 @@ const helpSections: Record<string, HelpSection> = {
           <li><strong>Solid lines</strong> are history; <strong>dashed lines</strong>{" "}(after the &quot;Forecast →&quot; marker) project the next 12 months. The forecast assumes <strong>no new completions</strong>{" "}and simply shows compliance decaying as today&apos;s active certifications reach their expiry date — an &quot;if nothing changes&quot; view that surfaces upcoming renewal gaps.</li>
           <li>The <strong>Forecast 12-mo Δ</strong> KPI shows the projected change (in percentage points) from now to 12 months out — a negative value flags certifications due to lapse.</li>
           <li>Narrow the view with the <strong>Theatre / Region / Country</strong>{" "}filters (the &quot;Showing&quot; caption states the active scope); the report is also scoped to the company selected in the header. The program dropdown lists every program found in Program Data.</li>
+          <li>This report is also available over the <strong>public API</strong>{" "}at <code>/api/public/v1/reports/program-compliance-trend</code>, for a partner portal or BI tool holding an API key.</li>
         </ul>
       </>
     ),
@@ -830,6 +835,7 @@ const helpSections: Record<string, HelpSection> = {
           <li><strong>Renewal rate</strong> is computed per training when ≥5 historical expiries exist; otherwise it falls back to per-product, then to a global rate.</li>
           <li>The at-risk leaderboard ranks trainings by projected lapses over the 12-month horizon.</li>
           <li>Use the <strong>Theatre / Region / Country</strong> filters to scope the whole report — the metric boxes, the monthly chart, and the at-risk table all update together. The filters cascade (picking a theatre narrows the regions, and so on).</li>
+          <li>This report is also available over the <strong>public API</strong>{" "}at <code>/api/public/v1/reports/renewal-forecast</code>, for a partner portal or BI tool holding an API key.</li>
         </ul>
       </>
     ),
@@ -1081,6 +1087,46 @@ const helpSections: Record<string, HelpSection> = {
           completed + 2 years.
         </p>
 
+        <h3>Catalogue Integrity</h3>
+        <p>
+          Click <strong>Scan for Issues</strong> to check the training catalogue
+          and the OLX completions derived from it. The scan only reads &mdash;
+          nothing changes until you pick one of the actions it offers.
+        </p>
+        <p>
+          <strong>OLX completions out of step.</strong>{" "}An OLX parent counts as
+          completed once a learner holds every sub-item, counted by Full Title, so
+          taking any one spelling of a sub-item is enough. Parent records are
+          written when something touches them &mdash; an import, or an edit to the
+          learner or the OLX &mdash; which means a learner who qualified at some
+          earlier point can still be waiting for theirs. The scan lists those, and
+          also lists the reverse: parent records that the sub-items no longer
+          support.{" "}
+          <strong>Reconcile OLX completions</strong>{" "}applies the rule in both
+          directions at once, so read the second table before using it. The{" "}
+          <strong>Held</strong>{" "}column is what to judge by: a learner holding
+          some sub-items but not all is missing a genuine one, whereas a learner
+          holding <em>none</em>{" "}of them probably had the parent loaded directly
+          with no module detail behind it &mdash; in which case that record is the
+          only evidence of it, and clearing it can only be undone by importing the
+          module detail.
+        </p>
+        <p>
+          <strong>Training titles disagreeing on &ldquo;leads to&rdquo;.</strong>{" "}
+          Where one training arrived under several names, each name stores its own
+          answer to what it leads to. Reports already read every name together, so
+          your numbers are unaffected &mdash; this is only about what is stored.{" "}
+          <strong>Level them up</strong>{" "}writes the combined answer to every
+          name, so none of them can lose a certification it already had.
+        </p>
+        <p>
+          <strong>References to trainings that no longer exist.</strong>{" "}A
+          &ldquo;leads to&rdquo; or &ldquo;replaced by&rdquo; entry pointing at a
+          training that has since been renamed or deleted. It shows as a raw
+          internal name and matches nobody. These are fixed by hand &mdash; open
+          the training and pick the target again.
+        </p>
+
         <h3>Wipe All Data</h3>
         <p>
           The <strong>Danger Zone</strong> at the bottom of this page offers two
@@ -1219,7 +1265,9 @@ const helpSections: Record<string, HelpSection> = {
                 OLX Sub-Item. An <strong>OLX</strong> can be a single training
                 or a parent that bundles multiple <strong>OLX Sub-Items</strong>
                 {" "}&mdash; the parent is only counted as completed once a
-                student has finished every sub-item.
+                student has finished every sub-item. Sub-items are counted by{" "}
+                <strong>Full Title</strong>, so where one appears under several
+                Training Titles, completing any one of them is enough.
               </td>
             </tr>
             <tr>
@@ -1244,11 +1292,12 @@ const helpSections: Record<string, HelpSection> = {
               <td>
                 The Certification(s) an ILT or OLX parent <strong>leads to</strong>{" "}
                 &mdash; the recommended preparation before sitting the exam that
-                earns the cert (the training does not itself grant it). Shown
-                without opening each row: a <strong>&ldquo;&rarr; Leads
-                to: &hellip;&rdquo;</strong> subline under the Full Title in the
-                list, and a <strong>Leads to Certification(s)</strong> card on the
-                Full Title detail page.
+                earns the cert (the training does not itself grant it). Set it{" "}
+                <strong>once for the Full Title</strong>{" "}on its detail page:
+                you pick the certification by its Full Title, and it is applied to
+                every Training Title mapped to the training. Shown without opening
+                each row as a <strong>&ldquo;&rarr; Leads to: &hellip;&rdquo;</strong>{" "}
+                subline under the Full Title in the list.
               </td>
             </tr>
             <tr>
@@ -1327,34 +1376,56 @@ const helpSections: Record<string, HelpSection> = {
 
         <h3>Full Title Detail Page</h3>
         <p>
-          Opening a Full Title takes you to a dedicated page (like a student
-          record) showing all of its mapped Training Titles. From here you can:
+          Opening a Full Title takes you to a dedicated page for that training.
+          It is laid out around one idea: several Training Titles usually mean{" "}
+          <em>one</em>{" "}training &mdash; they are the different names it has
+          been imported under &mdash; so the training&rsquo;s properties are set
+          once, not once per name.
         </p>
         <ul>
           <li>
-            <strong>Rename Full Title</strong>{" "}&mdash; Renames every mapped
-            Training Title&rsquo;s Full Title at once.
+            <strong>Full Title actions</strong>{" "}&mdash; Rename the Full Title
+            (applies to every Training Title under it), or{" "}
+            <strong>Merge</strong>{" "}it into another one. Renaming onto a name
+            that already exists is refused, because that used to combine the two
+            silently with no way back; merging is the deliberate version and
+            tells you what it will do first.
           </li>
           <li>
-            <strong>Mark the whole Full Title as Legacy</strong>{" "}&mdash;
-            Cascades the legacy flag to <strong>all</strong>{" "}
-            Certification/Accreditation Training Titles under it in one click
-            (other types are unaffected). Pick the replacement as a{" "}
-            <strong>Full Title</strong> and it is expanded to the underlying
+            <strong>One card per training</strong>{" "}&mdash; Product, Function,
+            Link, <strong>Leads to Certification(s)</strong>{" "}and{" "}
+            <strong>OLX sub-items</strong>{" "}are all set here, once, and applied
+            to every Training Title. If the Full Title covers more than one type
+            &mdash; a Certification and the Instructor-Led Training that prepares
+            for it, say &mdash; you get one card each, because those are counted
+            as two separate trainings. Where the underlying Training Titles
+            currently disagree on a field, the card says so before you save over
+            them.
+          </li>
+          <li>
+            <strong>Legacy</strong>{" "}&mdash; Marks{" "}
+            <strong>all</strong>{" "}Certification/Accreditation Training Titles
+            under the Full Title as retired in one click (other types are
+            unaffected). Pick the replacement as a{" "}
+            <strong>Full Title</strong>{" "}and it is expanded to the underlying
             replacements automatically.
           </li>
           <li>
-            <strong>Set Product / Function for all</strong>{" "}&mdash; Apply a
-            product type or function across every mapped Training Title.
+            <strong>Training titles</strong>{" "}&mdash; The list of names this
+            training has been imported under. Each one can be{" "}
+            <strong>renamed</strong>, <strong>moved</strong>{" "}to a different
+            Full Title, deleted, or re-typed &mdash; changing its type moves it
+            to that type&rsquo;s card. Moving one does not touch any completion
+            records; what changes is which training they are counted under, so
+            the page tells you how many program and offering requirements point
+            at these names before you do it.
           </li>
           <li>
-            <strong>Per-Title editing</strong>{" "}&mdash; Each Training Title keeps
-            its own Link, Certifications, and OLX membership, and can still be
-            edited or deleted individually.
-          </li>
-          <li>
-            <strong>Add / Delete</strong>{" "}&mdash; Add another Training Title to
-            this Full Title, or delete the whole group at once.
+            <strong>Reporting and removal</strong>{" "}&mdash; Ignore the Full
+            Title (leaving it out of reporting while keeping its completions), or
+            delete it outright. Deleting a single Training Title now asks for
+            confirmation too, because it removes that name&rsquo;s completion
+            records with it.
           </li>
         </ul>
 
@@ -2585,10 +2656,13 @@ const helpSections: Record<string, HelpSection> = {
         <ul>
           <li>
             <strong>Tiered programs</strong> — target a <strong>tier</strong> (the
-            tool picks the cheapest specialisations to get you there — reaching a
-            tier only needs as many specialisations as the tier requires, and any{" "}
-            <em>equally-cheap</em>{" "}alternatives are flagged &ldquo;Recommended&rdquo;
-            so you can choose), or specific specialisation(s).
+            tool recommends exactly as many specialisations as the tier still needs,
+            ranked by what each one adds{" "}<em>given the ones already
+            recommended</em>{" "}— so a certification two specialisations share is
+            paid for once, and the recommended blocks add up to the program&apos;s
+            headline. A specialisation that could be swapped in for one of them at
+            no extra cost is flagged{" "}
+            <strong>Equal-cost alternative</strong>), or specific specialisation(s).
           </li>
           <li>
             <strong>Flat programs</strong> — pick specialisation(s) or{" "}
@@ -2656,6 +2730,16 @@ const helpSections: Record<string, HelpSection> = {
           (e.g. someone in a particular country) when the recommended person
           isn&apos;t the one you want to move.
         </p>
+        <p>
+          <strong>Over the public API</strong>, a plan is available at{" "}
+          <code>/api/public/v1/programs/planning</code> &mdash; but{" "}
+          <strong>as aggregates only</strong>. A third-party system holding an API
+          key receives the roadmap, each requirement&rsquo;s gap and cost, the
+          requirements that upcoming expiry breaks, and the totals. It never
+          receives the named people on this page: &ldquo;Who to certify&rdquo;,
+          &ldquo;All eligible candidates&rdquo; and the named rows under
+          &ldquo;Renewals at risk&rdquo; stay inside the app.
+        </p>
 
         <h3>Scope &amp; renewals</h3>
         <p>
@@ -2676,6 +2760,21 @@ const helpSections: Record<string, HelpSection> = {
           <strong>Achieved</strong>{" "}badge — it is compliant now and won&apos;t be then.
           The <strong>Renewals at risk</strong> section lists the holders whose training
           expires, led by a summary of exactly which requirements their expiry breaks.
+        </p>
+        <p>
+          That section covers <em>every</em> requirement on the page, split into two
+          groups.{" "}<strong>On the recommended path</strong>{" "}holds the requirements
+          the plan is costed against — the renewals counted in{" "}
+          <strong>People to certify</strong>{" "}come from this group.{" "}
+          <strong>Reference</strong>{" "}holds the ones the roadmap dims because the plan
+          doesn&apos;t route through them; nothing there is counted, but the expiry is
+          just as real, so it is shown rather than hidden. For a tiered program the
+          cheapest path can change as you widen the window, so listing only the
+          recommended path meant a 6-month window could show{" "}<em>fewer</em>{" "}
+          at-risk renewals than a 3-month one. The count beside the heading — and the{" "}
+          <strong>Renewals at risk</strong>{" "}metric box — is one per{" "}
+          <em>person and certification</em>, so someone with two certifications
+          expiring is counted twice.
         </p>
         <p>
           By default the window is <em>informational</em>: the KPIs and
@@ -2791,6 +2890,15 @@ const helpSections: Record<string, HelpSection> = {
           region / country; hidden for Global). Picking a scope shows the{" "}
           <strong>Tier Status</strong> (for tiered programs) and the one matching
           report for that scope.
+        </p>
+        <p>
+          The dashboard reports on <strong>one company at a time</strong>, and it
+          follows the company switcher in the page header — the same switcher
+          every other page uses. The dashboard has no Company dropdown of its own
+          any more; there used to be one, and it could disagree with the header.
+          When the header is set to <strong>All companies</strong>{" "}the dashboard
+          asks you to choose a company rather than picking one for you, because
+          compliance figures added up across companies would not mean anything.
         </p>
         <p>
           Your <strong>View</strong> scope and the{" "}
@@ -3081,16 +3189,42 @@ const helpSections: Record<string, HelpSection> = {
           </thead>
           <tbody>
             <tr><td><code>GET /api/public/v1</code></td><td>Index — confirms the key works and lists its companies and the available endpoints.</td></tr>
+            <tr><td><code>GET /api/public/v1/openapi.json</code></td><td>OpenAPI 3.1 description of every endpoint, its query parameters and its response schema.</td></tr>
             <tr><td><code>GET /api/public/v1/students</code></td><td>Student roster for the key&rsquo;s companies.</td></tr>
             <tr><td><code>GET /api/public/v1/training-records</code></td><td>Per-completion training records (latest per learner &amp; training).</td></tr>
             <tr><td><code>GET /api/public/v1/reports/&#123;type&#125;</code></td><td>Report aggregates (e.g. <code>expiring-soon</code>, <code>legacy-gap</code>, <code>learner-scorecard</code>).</td></tr>
             <tr><td><code>GET /api/public/v1/programs</code></td><td>Partner program list (levels, per-theatre-minimum flag, tiered flag).</td></tr>
             <tr><td><code>GET /api/public/v1/programs/&#123;name&#125;</code></td><td>Per-program compliance — <code>?level=</code>, <code>?horizonMonths=</code>, and <code>?trainingTitle=&amp;students=true</code> for the holder roster.</td></tr>
+            <tr><td><code>GET /api/public/v1/programs/planning</code></td><td>Compliance planning, <strong>aggregates only</strong> — roadmap, gaps, risk impacts and totals. <code>?options=true</code> lists the program/tier/specialisation names; <code>?targets=</code> takes a URL-encoded JSON array.</td></tr>
+            <tr><td><code>GET /api/public/v1/reports/program-compliance-trend</code></td><td>12 months of compliance history plus a 12-month forecast, per program and specialisation.</td></tr>
+            <tr><td><code>GET /api/public/v1/reports/renewal-forecast</code></td><td>Projected renewals vs lapses over the next 12 months, with an at-risk-by-training breakdown.</td></tr>
           </tbody>
         </table>
         <p>
           All endpoints accept an optional <code>?companyId=</code> to narrow to a single
           granted company. A request for a company the key cannot read returns no rows.
+        </p>
+        <p>
+          The last two are <strong>separate endpoints</strong>, not values for{" "}
+          <code>&#123;type&#125;</code> &mdash; passing their names to{" "}
+          <code>/reports/&#123;type&#125;</code> returns a 404.
+        </p>
+        <p>
+          <strong>Point an integration at the OpenAPI document</strong> rather than
+          transcribing this table. <code>/api/public/v1/openapi.json</code> describes
+          every endpoint above with its parameters, allowed values and response schema,
+          so a client generator, Postman or Swagger UI can read it directly. It needs a
+          key like everything else; a copy is published in the project&rsquo;s{" "}
+          <code>docs/</code> folder on GitHub for reading beforehand.
+        </p>
+        <p>
+          <strong>Compliance planning is returned as aggregates only.</strong> The in-app
+          planner also shows <em>who</em> to certify &mdash; named candidates, the full
+          eligible pool, and the people whose training lapses inside the renewal window.
+          None of those reach the API. A key receives the roadmap, each requirement&rsquo;s
+          gap and cost, the requirements those expiries break, and the totals &mdash; enough
+          to see the shape and the price of a gap, without handing a third-party system a
+          roster of named staff.
         </p>
 
         <h3>Managing &amp; securing keys</h3>

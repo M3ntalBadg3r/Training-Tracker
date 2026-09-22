@@ -37,6 +37,40 @@ interface FutureDatesResponse {
   today: string;
 }
 
+interface OlxOwedRow {
+  email: string;
+  fullName: string;
+  parentTrainingTitle: string;
+  parentFullTitle: string;
+}
+
+interface OlxUnsupportedRow extends OlxOwedRow {
+  subItemsHeld: number;
+  subItemsRequired: number;
+}
+
+interface DanglingReferenceRow {
+  trainingTitle: string;
+  fullTitle: string;
+  missingTarget: string;
+}
+
+interface LeadsToUnevenRow {
+  fullTitle: string;
+  trainingType: string;
+  trainingTitles: string[];
+  withLeadsTo: number;
+  unionFullTitles: string[];
+}
+
+interface CatalogueIntegrityResponse {
+  olxOwed: OlxOwedRow[];
+  olxUnsupported: OlxUnsupportedRow[];
+  danglingCertification: DanglingReferenceRow[];
+  danglingReplacedBy: DanglingReferenceRow[];
+  leadsToUneven: LeadsToUnevenRow[];
+}
+
 function addTwoYearsIso(iso: string): string {
   // iso is "YYYY-MM-DD". Mirror computeExpiryDate (date-fns addYears) for preview.
   const [y, m, d] = iso.split("-").map((n) => parseInt(n, 10));
@@ -133,6 +167,15 @@ export default function DataCleanUpPage() {
   const [pendingDates, setPendingDates] = useState<Record<number, string>>({});
   const [savingId, setSavingId] = useState<number | null>(null);
   const [rowError, setRowError] = useState<Record<number, string>>({});
+
+  // Catalogue integrity scan
+  const [catOpen, setCatOpen] = useState(true);
+  const [catScanning, setCatScanning] = useState(false);
+  const [catScanned, setCatScanned] = useState(false);
+  const [catData, setCatData] = useState<CatalogueIntegrityResponse | null>(null);
+  const [catBusy, setCatBusy] = useState<string | null>(null);
+  const [catError, setCatError] = useState<string | null>(null);
+  const [catNotice, setCatNotice] = useState<string | null>(null);
 
   // Wipe data
   // Wipe scope: "data" keeps user accounts, "all" is a factory reset.
@@ -295,6 +338,108 @@ export default function DataCleanUpPage() {
       setSavingId(null);
     }
   };
+
+  const handleCatScan = async () => {
+    setCatScanning(true);
+    setCatError(null);
+    setCatNotice(null);
+    try {
+      const res = await fetch("/api/admin/cleanup/catalogue-integrity");
+      if (!res.ok) {
+        setCatError("Scan failed");
+        return;
+      }
+      setCatData((await res.json()) as CatalogueIntegrityResponse);
+      setCatScanned(true);
+    } catch {
+      setCatError("Scan failed");
+    } finally {
+      setCatScanning(false);
+    }
+  };
+
+  // One action for both OLX tables: reconciling a parent applies the completion
+  // rule in both directions, so splitting it into "add" and "remove" buttons
+  // would imply a choice the engine does not offer.
+  const handleOlxReconcile = async () => {
+    if (!catData) return;
+    const parents = [
+      ...new Set(
+        [...catData.olxOwed, ...catData.olxUnsupported].map(
+          (r) => r.parentTrainingTitle
+        )
+      ),
+    ];
+    if (parents.length === 0) return;
+
+    setCatBusy("olx");
+    setCatError(null);
+    setCatNotice(null);
+    try {
+      const res = await fetch("/api/admin/cleanup/olx-backfill", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ parentTrainingTitles: parents }),
+      });
+      if (!res.ok) {
+        setCatError("Reconcile failed");
+        return;
+      }
+      const result: { completionsAdded: number; completionsRemoved: number } =
+        await res.json();
+      setCatNotice(
+        `Reconciled ${parents.length} OLX parent${parents.length !== 1 ? "s" : ""} — ` +
+          `${result.completionsAdded} completion${result.completionsAdded !== 1 ? "s" : ""} added, ` +
+          `${result.completionsRemoved} removed.`
+      );
+      await handleCatScan();
+    } catch {
+      setCatError("Reconcile failed");
+    } finally {
+      setCatBusy(null);
+    }
+  };
+
+  const handleLeadsToNormalise = async () => {
+    if (!catData || catData.leadsToUneven.length === 0) return;
+    setCatBusy("leadsTo");
+    setCatError(null);
+    setCatNotice(null);
+    try {
+      const res = await fetch("/api/admin/cleanup/leads-to-normalise", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          groups: catData.leadsToUneven.map((g) => ({
+            fullTitle: g.fullTitle,
+            trainingType: g.trainingType,
+          })),
+        }),
+      });
+      if (!res.ok) {
+        setCatError("Normalise failed");
+        return;
+      }
+      const result: { groupsUpdated: number; rowsUpdated: number } = await res.json();
+      setCatNotice(
+        `Levelled ${result.groupsUpdated} training${result.groupsUpdated !== 1 ? "s" : ""} ` +
+          `across ${result.rowsUpdated} training title${result.rowsUpdated !== 1 ? "s" : ""}.`
+      );
+      await handleCatScan();
+    } catch {
+      setCatError("Normalise failed");
+    } finally {
+      setCatBusy(null);
+    }
+  };
+
+  const catFindingCount = catData
+    ? catData.olxOwed.length +
+      catData.olxUnsupported.length +
+      catData.danglingCertification.length +
+      catData.danglingReplacedBy.length +
+      catData.leadsToUneven.length
+    : 0;
 
   // Each scope requires its own confirmation word to avoid an accidental reset.
   const wipeConfirmWord = wipeScope === "all" ? "RESET" : "WIPE";
@@ -643,6 +788,284 @@ export default function DataCleanUpPage() {
                   </div>
                 </>
               )}
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* Catalogue Integrity */}
+      <section className="mb-8">
+        <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+          <button
+            onClick={() => setCatOpen((prev) => !prev)}
+            className="w-full flex items-center gap-3 px-6 py-4 text-left hover:bg-gray-50 transition-colors"
+          >
+            {catOpen ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Catalogue Integrity</h2>
+              <p className="text-sm text-gray-500">
+                Find OLX completions that drifted out of step, and training titles
+                that disagree with their siblings
+              </p>
+            </div>
+            {catScanned && (
+              <span className="ml-auto text-sm font-medium text-gray-500 bg-gray-100 px-3 py-1 rounded-full">
+                {catFindingCount} finding{catFindingCount !== 1 ? "s" : ""}
+              </span>
+            )}
+          </button>
+
+          {catOpen && (
+            <div className="border-t border-gray-200 px-6 py-4">
+              <div className="flex items-center gap-3 mb-4">
+                <button
+                  onClick={handleCatScan}
+                  disabled={catScanning}
+                  className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                >
+                  <Search size={16} />
+                  {catScanning ? "Scanning..." : "Scan for Issues"}
+                </button>
+                <span className="text-sm text-gray-500">
+                  Read-only. Nothing changes until you choose an action below.
+                </span>
+              </div>
+
+              {catError && (
+                <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800">
+                  {catError}
+                </div>
+              )}
+              {catNotice && (
+                <div className="mb-4 flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-800">
+                  <CheckCircle size={16} />
+                  {catNotice}
+                </div>
+              )}
+
+              {catScanned && catData && catFindingCount === 0 && (
+                <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-800">
+                  <CheckCircle size={16} />
+                  Nothing to fix — OLX completions are in step and every training
+                  title agrees with its siblings.
+                </div>
+              )}
+
+              {catScanned && catData && (catData.olxOwed.length > 0 || catData.olxUnsupported.length > 0) && (
+                <div className="mb-6">
+                  <h3 className="text-sm font-semibold text-gray-900 mb-1">
+                    OLX completions out of step
+                  </h3>
+                  <p className="text-sm text-gray-500 mb-3">
+                    An OLX parent is completed when a learner holds every sub-item,
+                    counted by Full Title. Parent records are written when something
+                    touches them, so a learner who qualified earlier can be waiting
+                    for one.
+                  </p>
+
+                  {catData.olxOwed.length > 0 && (
+                    <div className="mb-4">
+                      <p className="text-sm font-medium text-gray-700 mb-2">
+                        {catData.olxOwed.length} completion
+                        {catData.olxOwed.length !== 1 ? "s" : ""} owed
+                      </p>
+                      <div className="overflow-x-auto border border-gray-200 rounded-lg">
+                        <table className="min-w-full text-sm">
+                          <thead className="bg-gray-50">
+                            <tr>
+                              <th className="px-4 py-2 text-left font-medium text-gray-600">Learner</th>
+                              <th className="px-4 py-2 text-left font-medium text-gray-600">OLX</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-200">
+                            {catData.olxOwed.map((row) => (
+                              <tr key={`${row.email}-${row.parentTrainingTitle}`}>
+                                <td className="px-4 py-2">
+                                  <div className="text-gray-900">{row.fullName || row.email}</div>
+                                  <div className="text-xs text-gray-500">{row.email}</div>
+                                </td>
+                                <td className="px-4 py-2 text-gray-700">{row.parentFullTitle}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {catData.olxUnsupported.length > 0 && (
+                    <div className="mb-4">
+                      <div className="flex items-start gap-2 p-3 mb-2 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-900">
+                        <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+                        <span>
+                          {catData.olxUnsupported.length} parent record
+                          {catData.olxUnsupported.length !== 1 ? "s" : ""} below are
+                          not supported by sub-items, and reconciling{" "}
+                          <strong>removes</strong> them. Read the Held column first:
+                          a learner holding <strong>none</strong> of the sub-items
+                          may have had the parent loaded directly, with no module
+                          detail behind it — in which case this row is the only
+                          record of it, and removing it can only be undone by
+                          re-importing that detail.
+                        </span>
+                      </div>
+                      <div className="overflow-x-auto border border-gray-200 rounded-lg">
+                        <table className="min-w-full text-sm">
+                          <thead className="bg-gray-50">
+                            <tr>
+                              <th className="px-4 py-2 text-left font-medium text-gray-600">Learner</th>
+                              <th className="px-4 py-2 text-left font-medium text-gray-600">OLX</th>
+                              <th className="px-4 py-2 text-left font-medium text-gray-600">Held</th>
+                              <th className="px-4 py-2 text-left font-medium text-gray-600">Reading</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-200">
+                            {catData.olxUnsupported.map((row) => (
+                              <tr key={`${row.email}-${row.parentTrainingTitle}`}>
+                                <td className="px-4 py-2">
+                                  <div className="text-gray-900">{row.fullName || row.email}</div>
+                                  <div className="text-xs text-gray-500">{row.email}</div>
+                                </td>
+                                <td className="px-4 py-2 text-gray-700">{row.parentFullTitle}</td>
+                                <td className="px-4 py-2 text-gray-700">
+                                  {row.subItemsHeld} / {row.subItemsRequired}
+                                </td>
+                                <td className="px-4 py-2">
+                                  {row.subItemsHeld === 0 ? (
+                                    <span className="px-2 py-0.5 rounded-full text-xs bg-amber-100 text-amber-800">
+                                      Check source
+                                    </span>
+                                  ) : (
+                                    <span className="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-700">
+                                      Stale grant
+                                    </span>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  <button
+                    onClick={handleOlxReconcile}
+                    disabled={catBusy !== null}
+                    className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {catBusy === "olx" ? "Reconciling..." : "Reconcile OLX completions"}
+                  </button>
+                </div>
+              )}
+
+              {catScanned && catData && catData.leadsToUneven.length > 0 && (
+                <div className="mb-6">
+                  <h3 className="text-sm font-semibold text-gray-900 mb-1">
+                    Training titles disagreeing on &ldquo;leads to&rdquo;
+                  </h3>
+                  <p className="text-sm text-gray-500 mb-3">
+                    Reports already read every spelling together, so your numbers
+                    are right — this is only about what is stored. Levelling writes
+                    the combined answer to each spelling, so none of them can lose a
+                    certification it already had.
+                  </p>
+                  <div className="overflow-x-auto border border-gray-200 rounded-lg mb-3">
+                    <table className="min-w-full text-sm">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-4 py-2 text-left font-medium text-gray-600">Training</th>
+                          <th className="px-4 py-2 text-left font-medium text-gray-600">Type</th>
+                          <th className="px-4 py-2 text-left font-medium text-gray-600">Set on</th>
+                          <th className="px-4 py-2 text-left font-medium text-gray-600">Combined answer</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200">
+                        {catData.leadsToUneven.map((row) => (
+                          <tr key={`${row.fullTitle}-${row.trainingType}`}>
+                            <td className="px-4 py-2 text-gray-900">{row.fullTitle}</td>
+                            <td className="px-4 py-2 text-gray-700">
+                              {trainingTypeLabel(row.trainingType)}
+                            </td>
+                            <td className="px-4 py-2 text-gray-700">
+                              {row.withLeadsTo} of {row.trainingTitles.length}
+                            </td>
+                            <td className="px-4 py-2 text-gray-700">
+                              {row.unionFullTitles.length > 0
+                                ? row.unionFullTitles.join(", ")
+                                : "None"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <button
+                    onClick={handleLeadsToNormalise}
+                    disabled={catBusy !== null}
+                    className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {catBusy === "leadsTo" ? "Levelling..." : "Level them up"}
+                  </button>
+                </div>
+              )}
+
+              {catScanned &&
+                catData &&
+                (catData.danglingCertification.length > 0 ||
+                  catData.danglingReplacedBy.length > 0) && (
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-900 mb-1">
+                      References to trainings that no longer exist
+                    </h3>
+                    <p className="text-sm text-gray-500 mb-3">
+                      Left behind by a rename or delete before those paths were
+                      fixed. They show as a raw internal name and match nobody. New
+                      ones can no longer be created; clear these by re-picking the
+                      target on the training&rsquo;s own page.
+                    </p>
+                    <div className="overflow-x-auto border border-gray-200 rounded-lg">
+                      <table className="min-w-full text-sm">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="px-4 py-2 text-left font-medium text-gray-600">Training</th>
+                            <th className="px-4 py-2 text-left font-medium text-gray-600">Relationship</th>
+                            <th className="px-4 py-2 text-left font-medium text-gray-600">Missing target</th>
+                            <th className="px-4 py-2 text-left font-medium text-gray-600"></th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-200">
+                          {[
+                            ...catData.danglingCertification.map((r) => ({
+                              ...r,
+                              kind: "Leads to",
+                            })),
+                            ...catData.danglingReplacedBy.map((r) => ({
+                              ...r,
+                              kind: "Replaced by",
+                            })),
+                          ].map((row) => (
+                            <tr key={`${row.kind}-${row.trainingTitle}-${row.missingTarget}`}>
+                              <td className="px-4 py-2 text-gray-900">{row.fullTitle}</td>
+                              <td className="px-4 py-2 text-gray-700">{row.kind}</td>
+                              <td className="px-4 py-2 text-gray-500 font-mono text-xs">
+                                {row.missingTarget}
+                              </td>
+                              <td className="px-4 py-2">
+                                <a
+                                  href={`/admin/training-data/${encodeURIComponent(row.fullTitle)}`}
+                                  className="text-blue-600 hover:underline"
+                                >
+                                  Open
+                                </a>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
             </div>
           )}
         </div>
