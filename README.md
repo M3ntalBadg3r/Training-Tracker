@@ -1310,6 +1310,7 @@ curl -H "Authorization: Bearer tt_live_xxxxxxxx" \
 | Endpoint | Returns |
 |----------|---------|
 | `GET /api/public/v1` | Index — confirms the key works and lists its companies and the available endpoints |
+| `GET /api/public/v1/openapi.json` | OpenAPI 3.1 description of every endpoint below, with its parameters and response schemas |
 | `GET /api/public/v1/students` | Student roster (name, email, theatre, country, company) |
 | `GET /api/public/v1/training-records` | Per-completion training records (latest per learner & training) |
 | `GET /api/public/v1/reports/{reportType}` | Report aggregates — `trained-not-certified`, `legacy-gap`, `learner-scorecard`, `by-product`, `by-function`, `expiring-soon`, `currently-expired`, `last-12-months` |
@@ -1337,6 +1338,24 @@ requirements those expiries break, and the totals — enough to see the shape an
 the price of a gap, without handing a third-party system a roster of named
 staff. Nothing is lost analytically: the risk impacts are the aggregate view of
 the same set the named renewal rows enumerate, and the totals carry its count.
+
+### Machine-readable description
+
+`GET /api/public/v1/openapi.json` returns an **OpenAPI 3.1** document covering
+every endpoint above: its query parameters with their allowed values and
+defaults, and a response schema for each. Point a client generator, Postman or
+Swagger UI at it and you get a typed client without transcribing this table.
+
+It is key-gated like everything else, so a generated copy is committed at
+[`docs/openapi.json`](docs/openapi.json) for reading before you hold a key. Both
+are built from the same source as the index endpoint, and a CI check fails if a
+route grows a parameter the description does not mention — so the document
+cannot quietly fall behind the API it describes.
+
+One deliberate limitation: the eight report types under `/reports/{reportType}`
+return rows whose columns differ per report, and the server does not type them,
+so the document describes `data` as a free-form array rather than claiming a
+shape the code does not guarantee.
 
 ### Freshness
 

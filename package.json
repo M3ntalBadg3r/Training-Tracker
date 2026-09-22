@@ -19,7 +19,10 @@
     "check:jsx": "node scripts/check-jsx-whitespace.mjs",
     "check:deploy": "bash scripts/check-deploy-scripts.sh && node scripts/check-deploy-parity.mjs",
     "test:deploy": "bash deploy/tests/run.sh",
-    "test:deploy:mutate": "bash deploy/tests/mutate.sh"
+    "test:deploy:mutate": "bash deploy/tests/mutate.sh",
+    "openapi:generate": "node scripts/generate-openapi.mjs",
+    "check:api-spec": "node scripts/check-api-spec.mjs",
+    "api-spec:inventory": "node scripts/check-api-spec.mjs --inventory"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.5.0",
