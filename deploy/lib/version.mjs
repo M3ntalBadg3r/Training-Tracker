@@ -37,14 +37,39 @@
  * correct direction (the dev pre-release did precede the stable release), and
  * the tie was documented as a known wart.
  *
- * ## The migration constraint, which outlives this comment
+ * ## The migration constraint — LIFTED as of v3.33.1, kept as history
  *
  * An installed box runs the OLD comparator until it takes an update, and that
  * comparator reads only `major * 1000 + minor`. So `3.30.0` (3030) is visible to
  * a box on `3.29` (3029), but `3.29.1` also scores 3029 — a tie, and the
- * comparison is strict `>`, so it would be invisible forever. **Until every box
- * is known to be on ≥ 3.30.0, a stable release must bump the MINOR, never just
- * the patch.**
+ * comparison is strict `>`, so it would be invisible forever.
+ *
+ * That is why every stable release from 3.30.0 to 3.33.0 moved the MINOR even
+ * for a bug-fix-only range. **The constraint is lifted, and it was a TRANSITION
+ * constraint, not a standing one** — it mattered only for making 3.30.0 itself
+ * visible. Version numbers are plain semver again: patch for fixes.
+ *
+ * **An old box self-heals in one hop, which is why this cannot strand anyone.**
+ * Traced through the code a pre-3.30.0 box actually runs:
+ *
+ *  1. Its `check-update.sh` fetches the whole releases list and picks the
+ *     HIGHEST by its own scoring — not the next one after its own version.
+ *  2. Running the old comparator means being below 3.30.0, i.e. scoring <= 3029.
+ *     Every release published since scores >= 3030 under BOTH old variants (the
+ *     `major*1000 + minor` one in the app route, and check-update.sh's summing
+ *     variant, which scores 3.33.1 as 3034). So an update is always offered.
+ *  3. The update is `git pull origin <branch>` — the branch TIP, never the tag
+ *     the comparator named. It therefore lands on the newest code in one hop.
+ *  4. That code carries this comparator, so every later patch release is visible.
+ *
+ * Stranding would need the highest published release to TIE with the box's own
+ * score, which means sharing its major.minor. With old boxes at <= 3.29 and
+ * releases at 3.33.x, that cannot happen. **Do not re-impose a minor-bump rule
+ * on this reasoning** — the scenario it would defend against is unreachable.
+ *
+ * The real residual is duller and is not a comparator problem: a box that never
+ * runs an update check at all stays where it is. That is equally true of a minor
+ * release.
  */
 
 /**
