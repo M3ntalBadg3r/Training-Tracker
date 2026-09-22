@@ -1,0 +1,2381 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Training Tracker Public API",
+    "version": "v1",
+    "description": "Read-only access to student, training, offering and partner-program data for the companies an API key has been granted.\n\nEvery endpoint is GET-only; there are no write endpoints under /api/public, so a leaked key can never modify data.\n\n**The whole API ships switched off.** Until a SuperAdmin enables it under Admin → API Keys, every request returns 503 regardless of how many valid keys exist.\n\n**Freshness:** the heavier endpoints are cached for up to 30 seconds and carry `Cache-Control: private, max-age=30`. Any change made in the app flushes that cache immediately, so you never see data from before an edit or an import — but polling faster than every 30 seconds returns the same bytes while still spending your rate-limit budget."
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "This installation. Paths below are absolute."
+    }
+  ],
+  "security": [
+    {
+      "BearerAuth": []
+    },
+    {
+      "ApiKeyAuth": []
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Send the key as `Authorization: Bearer <key>`."
+      },
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key",
+        "description": "Accepted as an alternative to the Authorization header."
+      }
+    }
+  },
+  "paths": {
+    "/api/public/v1": {
+      "get": {
+        "summary": "Index",
+        "description": "Confirms the key works and reports which companies it can read, plus the available endpoints. This route does not accept ?companyId= — it always reports the key's full grant.",
+        "operationId": "getIndex",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "string"
+                    },
+                    "keyName": {
+                      "type": "string"
+                    },
+                    "companies": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "integer"
+                          },
+                          "name": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name"
+                        ]
+                      }
+                    },
+                    "endpoints": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "method": {
+                            "type": "string"
+                          },
+                          "path": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "notes": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, disabled, revoked or expired API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited — 120 requests per minute per key, or 20 invalid-key attempts per 5 minutes per IP.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The public API is switched off for this installation. Checked before the key is even looked up.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/public/v1/openapi.json": {
+      "get": {
+        "summary": "OpenAPI description",
+        "description": "This document, as OpenAPI 3.1. Key-gated like every other endpoint; a copy is committed at docs/openapi.json for reading before you hold a key.",
+        "operationId": "getOpenapi.json",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "An OpenAPI 3.1 document.",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, disabled, revoked or expired API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited — 120 requests per minute per key, or 20 invalid-key attempts per 5 minutes per IP.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The public API is switched off for this installation. Checked before the key is even looked up.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/public/v1/students": {
+      "get": {
+        "summary": "Student roster",
+        "description": "Every learner in the key's companies, ordered by name.",
+        "operationId": "getStudents",
+        "parameters": [
+          {
+            "name": "companyId",
+            "in": "query",
+            "required": false,
+            "description": "Narrow the response to one of the key's granted companies. Omitted or non-numeric, the response covers every company the key can read. A numeric id the key was NOT granted yields an empty result rather than an error.",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "email": {
+                        "type": "string"
+                      },
+                      "fullName": {
+                        "type": "string"
+                      },
+                      "theatre": {
+                        "type": "string"
+                      },
+                      "country": {
+                        "type": "string"
+                      },
+                      "region": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "description": "Null when the country has no region configured."
+                      },
+                      "companyId": {
+                        "type": "integer"
+                      },
+                      "companyName": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, disabled, revoked or expired API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited — 120 requests per minute per key, or 20 invalid-key attempts per 5 minutes per IP.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The public API is switched off for this installation. Checked before the key is even looked up.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/public/v1/training-records": {
+      "get": {
+        "summary": "Per-completion training records",
+        "description": "The latest completion per learner and training, with the learner's geography. OLX sub-items are excluded so they never double-count with their parent.",
+        "operationId": "getTrainingRecords",
+        "parameters": [
+          {
+            "name": "companyId",
+            "in": "query",
+            "required": false,
+            "description": "Narrow the response to one of the key's granted companies. Omitted or non-numeric, the response covers every company the key can read. A numeric id the key was NOT granted yields an empty result rather than an error.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "country",
+            "in": "query",
+            "required": false,
+            "description": "Scope to one country. Narrowest selection wins: country over region over theatre.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "region",
+            "in": "query",
+            "required": false,
+            "description": "Scope to one region. Ignored when country is supplied.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "theatre",
+            "in": "query",
+            "required": false,
+            "description": "Scope to one theatre. Ignored when country or region is supplied.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "activeOnly",
+            "in": "query",
+            "required": false,
+            "description": "Set to true to return only records that have not expired.",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "fullName": {
+                        "type": "string"
+                      },
+                      "email": {
+                        "type": "string"
+                      },
+                      "theatre": {
+                        "type": "string"
+                      },
+                      "region": {
+                        "type": "string",
+                        "description": "Empty string when the country has no region configured."
+                      },
+                      "country": {
+                        "type": "string"
+                      },
+                      "trainingTitle": {
+                        "type": "string"
+                      },
+                      "trainingType": {
+                        "type": "string",
+                        "description": "Display label, e.g. Instructor-Led Training."
+                      },
+                      "rawTrainingType": {
+                        "type": "string",
+                        "description": "The stored enum value, e.g. InstructorLedTraining."
+                      },
+                      "productType": {
+                        "type": "string"
+                      },
+                      "function": {
+                        "type": "string"
+                      },
+                      "completedDate": {
+                        "type": "string",
+                        "format": "date"
+                      },
+                      "expiryDate": {
+                        "type": "string",
+                        "format": "date"
+                      },
+                      "active": {
+                        "type": "string",
+                        "enum": [
+                          "Yes",
+                          "No"
+                        ],
+                        "description": "A string, not a boolean."
+                      },
+                      "isLegacy": {
+                        "type": "boolean"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, disabled, revoked or expired API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited — 120 requests per minute per key, or 20 invalid-key attempts per 5 minutes per IP.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The public API is switched off for this installation. Checked before the key is even looked up.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/public/v1/offerings": {
+      "get": {
+        "summary": "Offering definitions",
+        "description": "Offerings for the key's companies, each with its specialisations and supporting trainings. Supplying ?country= or ?region= adds Onshore/Nearshore/Offshore holder counts and a scope block; without one, those per-requirement fields are omitted entirely rather than returned as zero.",
+        "operationId": "getOfferings",
+        "parameters": [
+          {
+            "name": "companyId",
+            "in": "query",
+            "required": false,
+            "description": "Narrow the response to one of the key's granted companies. Omitted or non-numeric, the response covers every company the key can read. A numeric id the key was NOT granted yields an empty result rather than an error.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "name",
+            "in": "query",
+            "required": false,
+            "description": "Exact offering name — an exact match, not a substring search.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "country",
+            "in": "query",
+            "required": false,
+            "description": "Onshore country. Adds compliance counts.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "region",
+            "in": "query",
+            "required": false,
+            "description": "Onshore region. Adds compliance counts, and takes precedence over country.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "scope": {
+                      "type": "object",
+                      "properties": {
+                        "level": {
+                          "type": "string",
+                          "enum": [
+                            "country",
+                            "region"
+                          ]
+                        },
+                        "value": {
+                          "type": "string"
+                        },
+                        "onshoreCountries": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "nearshoreCountries": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "offshoreCountries": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "Every country minus onshore — a superset of nearshore."
+                        },
+                        "hasNearshore": {
+                          "type": "boolean"
+                        },
+                        "hasOffshore": {
+                          "type": "boolean"
+                        }
+                      },
+                      "description": "Present only when ?country= or ?region= was supplied."
+                    },
+                    "offerings": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "companyId": {
+                            "type": "integer"
+                          },
+                          "description": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "link": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "description": "Null unless the stored link is http: or https:."
+                          },
+                          "specialisations": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "name": {
+                                  "type": "string"
+                                },
+                                "requirements": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "trainingType": {
+                                        "type": "string"
+                                      },
+                                      "trainingTitle": {
+                                        "type": "string"
+                                      },
+                                      "trainingFullTitle": {
+                                        "type": [
+                                          "string",
+                                          "null"
+                                        ]
+                                      },
+                                      "quantityRequired": {
+                                        "type": "integer"
+                                      },
+                                      "alternatives": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "trainingType": {
+                                              "type": "string"
+                                            },
+                                            "trainingTitle": {
+                                              "type": "string"
+                                            },
+                                            "trainingFullTitle": {
+                                              "type": [
+                                                "string",
+                                                "null"
+                                              ]
+                                            }
+                                          }
+                                        }
+                                      },
+                                      "onshore": {
+                                        "type": "integer",
+                                        "description": "Only with a scope."
+                                      },
+                                      "nearshore": {
+                                        "type": [
+                                          "number",
+                                          "null"
+                                        ],
+                                        "description": "Only with a scope; null when the theatre has no other countries."
+                                      },
+                                      "offshore": {
+                                        "type": [
+                                          "number",
+                                          "null"
+                                        ],
+                                        "description": "Only with a scope."
+                                      },
+                                      "met": {
+                                        "type": "boolean",
+                                        "description": "Only with a scope. Onshore holders >= quantityRequired."
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, disabled, revoked or expired API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited — 120 requests per minute per key, or 20 invalid-key attempts per 5 minutes per IP.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The public API is switched off for this installation. Checked before the key is even looked up.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/public/v1/programs": {
+      "get": {
+        "summary": "Partner program list",
+        "description": "Every configured program with the shape needed to query its compliance. Deliberately NOT company-scoped: programs are a global registry carrying no company dimension, and nothing per-company is returned. ?companyId= is accepted but changes nothing here.",
+        "operationId": "getPrograms",
+        "parameters": [
+          {
+            "name": "companyId",
+            "in": "query",
+            "required": false,
+            "description": "Narrow the response to one of the key's granted companies. Omitted or non-numeric, the response covers every company the key can read. A numeric id the key was NOT granted yields an empty result rather than an error.",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "programs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "levels": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "description": "Configured compliance levels: Country, Theatre, Global."
+                          },
+                          "hasMinimumPerTheatre": {
+                            "type": "boolean"
+                          },
+                          "isTiered": {
+                            "type": "boolean"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, disabled, revoked or expired API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited — 120 requests per minute per key, or 20 invalid-key attempts per 5 minutes per IP.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The public API is switched off for this installation. Checked before the key is even looked up.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/public/v1/programs/{programName}": {
+      "get": {
+        "summary": "Per-program compliance",
+        "description": "Compliance for one program at a chosen level and scope. Note that ?students=true only returns a roster when ?trainingTitle= is also supplied; on its own it returns the ordinary report. A tiered program additionally carries a tiers block.",
+        "operationId": "getProgramsByProgramName",
+        "parameters": [
+          {
+            "name": "companyId",
+            "in": "query",
+            "required": false,
+            "description": "Narrow the response to one of the key's granted companies. Omitted or non-numeric, the response covers every company the key can read. A numeric id the key was NOT granted yields an empty result rather than an error.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "programName",
+            "in": "path",
+            "required": true,
+            "description": "Percent-encoded program name.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "level",
+            "in": "query",
+            "required": false,
+            "description": "Which level to report at.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "country",
+                "region",
+                "theatre",
+                "global"
+              ],
+              "default": "country"
+            }
+          },
+          {
+            "name": "country",
+            "in": "query",
+            "required": false,
+            "description": "Scope to one country. Narrowest selection wins: country over region over theatre.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "region",
+            "in": "query",
+            "required": false,
+            "description": "Scope to one region. Ignored when country is supplied.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "theatre",
+            "in": "query",
+            "required": false,
+            "description": "Scope to one theatre. Ignored when country or region is supplied.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "horizonMonths",
+            "in": "query",
+            "required": false,
+            "description": "Project compliance forward by this many months, so upcoming expiries surface before they break compliance. Only 3, 6 and 12 are accepted; anything else means no projection.",
+            "schema": {
+              "type": "integer",
+              "enum": [
+                3,
+                6,
+                12
+              ],
+              "default": 0
+            }
+          },
+          {
+            "name": "trainingTitle",
+            "in": "query",
+            "required": false,
+            "description": "Comma-separated training titles. With students=true, returns the holder roster for these.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "students",
+            "in": "query",
+            "required": false,
+            "description": "Set to true, together with trainingTitle, to return the holder roster instead of the report.",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "specialisations": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "requirements": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "trainingType": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ]
+                                    },
+                                    "trainingTitle": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ]
+                                    },
+                                    "trainingFullTitle": {
+                                      "type": "string",
+                                      "description": "Falls back to \"—\" when the training has been deleted."
+                                    },
+                                    "quantityRequired": {
+                                      "type": "integer"
+                                    },
+                                    "attained": {
+                                      "type": "integer"
+                                    },
+                                    "projectedAttained": {
+                                      "type": [
+                                        "integer",
+                                        "null"
+                                      ]
+                                    },
+                                    "alternatives": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "trainingType": {
+                                            "type": "string"
+                                          },
+                                          "trainingTitle": {
+                                            "type": "string"
+                                          },
+                                          "trainingFullTitle": {
+                                            "type": [
+                                              "string",
+                                              "null"
+                                            ]
+                                          }
+                                        }
+                                      }
+                                    },
+                                    "globalAttained": {
+                                      "type": "integer",
+                                      "description": "Global level only."
+                                    },
+                                    "minimumPerTheatre": {
+                                      "type": [
+                                        "integer",
+                                        "null"
+                                      ],
+                                      "description": "Global level only."
+                                    },
+                                    "theatreBreakdown": {
+                                      "type": "object",
+                                      "description": "Global level only: holders per theatre.",
+                                      "additionalProperties": {
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "compliant": {
+                                      "type": "boolean",
+                                      "description": "Global level only."
+                                    }
+                                  }
+                                }
+                              },
+                              "deploymentRequirements": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "trainingType": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ]
+                                    },
+                                    "trainingTitle": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ]
+                                    },
+                                    "trainingFullTitle": {
+                                      "type": "string",
+                                      "description": "Falls back to \"—\" when the training has been deleted."
+                                    },
+                                    "quantityRequired": {
+                                      "type": "integer"
+                                    },
+                                    "attained": {
+                                      "type": "integer"
+                                    },
+                                    "projectedAttained": {
+                                      "type": [
+                                        "integer",
+                                        "null"
+                                      ]
+                                    },
+                                    "alternatives": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "trainingType": {
+                                            "type": "string"
+                                          },
+                                          "trainingTitle": {
+                                            "type": "string"
+                                          },
+                                          "trainingFullTitle": {
+                                            "type": [
+                                              "string",
+                                              "null"
+                                            ]
+                                          }
+                                        }
+                                      }
+                                    },
+                                    "globalAttained": {
+                                      "type": "integer",
+                                      "description": "Global level only."
+                                    },
+                                    "minimumPerTheatre": {
+                                      "type": [
+                                        "integer",
+                                        "null"
+                                      ],
+                                      "description": "Global level only."
+                                    },
+                                    "theatreBreakdown": {
+                                      "type": "object",
+                                      "description": "Global level only: holders per theatre.",
+                                      "additionalProperties": {
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "compliant": {
+                                      "type": "boolean",
+                                      "description": "Global level only."
+                                    }
+                                  }
+                                }
+                              },
+                              "deploymentCompliant": {
+                                "type": "boolean"
+                              },
+                              "projectedDeploymentCompliant": {
+                                "type": "boolean"
+                              }
+                            }
+                          }
+                        },
+                        "countries": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "regions": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "theatres": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "meta": {
+                          "type": "object",
+                          "properties": {
+                            "levels": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "hasMinimumPerTheatre": {
+                              "type": "boolean"
+                            },
+                            "isTiered": {
+                              "type": "boolean",
+                              "description": "Absent from the empty out-of-scope payload."
+                            },
+                            "deploymentMode": {
+                              "type": "string",
+                              "enum": [
+                                "flat",
+                                "perAchievedSpecialisation",
+                                "perTierPerSpecialisation"
+                              ]
+                            }
+                          }
+                        },
+                        "horizonMonths": {
+                          "type": "integer"
+                        },
+                        "tiers": {
+                          "type": "object",
+                          "properties": {
+                            "deploymentMode": {
+                              "type": "string"
+                            },
+                            "highestAchievedTier": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "projectedHighestAchievedTier": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "achievedSpecialisations": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "achievedSpecialisationCount": {
+                              "type": "integer"
+                            },
+                            "projectedAchievedSpecialisationCount": {
+                              "type": [
+                                "integer",
+                                "null"
+                              ]
+                            },
+                            "tiers": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "sortOrder": {
+                                    "type": "integer"
+                                  },
+                                  "specialisationsRequired": {
+                                    "type": "integer"
+                                  },
+                                  "compliant": {
+                                    "type": "boolean"
+                                  },
+                                  "projectedCompliant": {
+                                    "type": [
+                                      "boolean",
+                                      "null"
+                                    ]
+                                  },
+                                  "satisfiedSpecialisationCount": {
+                                    "type": "integer"
+                                  },
+                                  "projectedSatisfiedSpecialisationCount": {
+                                    "type": [
+                                      "integer",
+                                      "null"
+                                    ]
+                                  },
+                                  "deploymentRequirements": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "trainingType": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        },
+                                        "trainingTitle": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        },
+                                        "trainingFullTitle": {
+                                          "type": "string",
+                                          "description": "Falls back to \"—\" when the training has been deleted."
+                                        },
+                                        "quantityRequired": {
+                                          "type": "integer"
+                                        },
+                                        "attained": {
+                                          "type": "integer"
+                                        },
+                                        "projectedAttained": {
+                                          "type": [
+                                            "integer",
+                                            "null"
+                                          ]
+                                        },
+                                        "alternatives": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "trainingType": {
+                                                "type": "string"
+                                              },
+                                              "trainingTitle": {
+                                                "type": "string"
+                                              },
+                                              "trainingFullTitle": {
+                                                "type": [
+                                                  "string",
+                                                  "null"
+                                                ]
+                                              }
+                                            }
+                                          }
+                                        },
+                                        "globalAttained": {
+                                          "type": "integer",
+                                          "description": "Global level only."
+                                        },
+                                        "minimumPerTheatre": {
+                                          "type": [
+                                            "integer",
+                                            "null"
+                                          ],
+                                          "description": "Global level only."
+                                        },
+                                        "theatreBreakdown": {
+                                          "type": "object",
+                                          "description": "Global level only: holders per theatre.",
+                                          "additionalProperties": {
+                                            "type": "integer"
+                                          }
+                                        },
+                                        "compliant": {
+                                          "type": "boolean",
+                                          "description": "Global level only."
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          },
+                          "description": "Present only for a tiered program."
+                        }
+                      },
+                      "title": "Compliance report"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "students": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "fullName": {
+                                "type": "string"
+                              },
+                              "email": {
+                                "type": "string"
+                              },
+                              "country": {
+                                "type": "string"
+                              },
+                              "theatre": {
+                                "type": "string"
+                              },
+                              "completedDate": {
+                                "type": "string",
+                                "format": "date"
+                              },
+                              "expiryDate": {
+                                "type": "string",
+                                "format": "date"
+                              },
+                              "training": {
+                                "type": "string",
+                                "description": "The specific training this person holds, which may be an alternative or a catalogue variant."
+                              }
+                            }
+                          }
+                        }
+                      },
+                      "title": "Holder roster (students=true with trainingTitle)"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid program name — the path segment was not valid percent-encoding.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, disabled, revoked or expired API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited — 120 requests per minute per key, or 20 invalid-key attempts per 5 minutes per IP.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The public API is switched off for this installation. Checked before the key is even looked up.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/public/v1/programs/planning": {
+      "get": {
+        "summary": "Compliance planning (aggregates only)",
+        "description": "The action layer over program compliance: what it would take to close each gap. AGGREGATES ONLY — the named candidate, eligible-pool and renewal rosters the in-app planner shows are never returned over this API. Nothing analytical is lost: riskImpacts is the aggregate view of the same set the named renewal rows enumerate, and totals.renewalsAtRisk is its count. Use ?options=true first to discover the program, tier and specialisation names needed to build a targets array.",
+        "operationId": "getProgramsPlanning",
+        "parameters": [
+          {
+            "name": "companyId",
+            "in": "query",
+            "required": false,
+            "description": "Narrow the response to one of the key's granted companies. Omitted or non-numeric, the response covers every company the key can read. A numeric id the key was NOT granted yields an empty result rather than an error.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "options",
+            "in": "query",
+            "required": false,
+            "description": "Set to true to return the selector metadata — per program, its tiers and specialisations — instead of a plan. This is the only way to learn the names a targets array must use.",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          },
+          {
+            "name": "targets",
+            "in": "query",
+            "required": false,
+            "description": "URL-encoded JSON array: [{\"program\":\"…\",\"mode\":\"tier\"|\"specialisations\"|\"all\",\"tier\":\"…\",\"specialisations\":[\"…\"]}]. Omitted, the response is an empty plan rather than an error. Unparseable JSON is a 400.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "level",
+            "in": "query",
+            "required": false,
+            "description": "The scope to plan at. Each scope plans against its own level's requirements only.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "global",
+                "theatre",
+                "region",
+                "country"
+              ],
+              "default": "global"
+            }
+          },
+          {
+            "name": "country",
+            "in": "query",
+            "required": false,
+            "description": "Scope to one country. Narrowest selection wins: country over region over theatre.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "region",
+            "in": "query",
+            "required": false,
+            "description": "Scope to one region. Ignored when country is supplied.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "theatre",
+            "in": "query",
+            "required": false,
+            "description": "Scope to one theatre. Ignored when country or region is supplied.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "renewalWindowMonths",
+            "in": "query",
+            "required": false,
+            "description": "Report compliance falling below target as training expires within this window. 0 disables the overlay.",
+            "schema": {
+              "type": "integer",
+              "enum": [
+                0,
+                1,
+                3,
+                6,
+                12
+              ],
+              "default": 3
+            }
+          },
+          {
+            "name": "planForWindow",
+            "in": "query",
+            "required": false,
+            "description": "Size the gaps from the projected end-of-window holder count rather than today's, so training lapsing inside the window has to be renewed to count as closed. Forced false when renewalWindowMonths is 0.",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "scopeLabel": {
+                          "type": "string"
+                        },
+                        "renewalWindowMonths": {
+                          "type": "integer"
+                        },
+                        "planForWindow": {
+                          "type": "boolean"
+                        },
+                        "targets": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "program": {
+                                "type": "string"
+                              },
+                              "mode": {
+                                "type": "string",
+                                "enum": [
+                                  "tier",
+                                  "specialisations",
+                                  "all"
+                                ]
+                              },
+                              "isTiered": {
+                                "type": "boolean"
+                              },
+                              "tierName": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "headline": {
+                                "type": "string"
+                              },
+                              "tierPlan": {
+                                "type": "object",
+                                "properties": {
+                                  "specialisationsRequired": {
+                                    "type": "integer"
+                                  },
+                                  "alreadyAchieved": {
+                                    "type": "integer"
+                                  },
+                                  "needed": {
+                                    "type": "integer"
+                                  },
+                                  "deliveryCertShortfall": {
+                                    "type": "integer"
+                                  }
+                                }
+                              },
+                              "specialisations": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "name": {
+                                      "type": "string"
+                                    },
+                                    "achieved": {
+                                      "type": "boolean"
+                                    },
+                                    "projectedAchieved": {
+                                      "type": [
+                                        "boolean",
+                                        "null"
+                                      ]
+                                    },
+                                    "cost": {
+                                      "type": "integer"
+                                    },
+                                    "easyWins": {
+                                      "type": "integer"
+                                    },
+                                    "requirements": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "instanceId": {
+                                            "type": "string"
+                                          },
+                                          "specialisation": {
+                                            "type": [
+                                              "string",
+                                              "null"
+                                            ]
+                                          },
+                                          "tierName": {
+                                            "type": [
+                                              "string",
+                                              "null"
+                                            ]
+                                          },
+                                          "purpose": {
+                                            "type": "string"
+                                          },
+                                          "nativeLevel": {
+                                            "type": "string",
+                                            "description": "The requirement's authored level: Country, Theatre or Global."
+                                          },
+                                          "scopeLabel": {
+                                            "type": "string",
+                                            "description": "The population this instance is counted over."
+                                          },
+                                          "cert": {
+                                            "type": "string"
+                                          },
+                                          "required": {
+                                            "type": "integer"
+                                          },
+                                          "attained": {
+                                            "type": "integer"
+                                          },
+                                          "projectedAttained": {
+                                            "type": [
+                                              "integer",
+                                              "null"
+                                            ],
+                                            "description": "Holders still active at the end of the renewal window. Null when no window is selected."
+                                          },
+                                          "shortfall": {
+                                            "type": "integer",
+                                            "description": "Today's gap. Independent of planForWindow."
+                                          },
+                                          "projectedShortfall": {
+                                            "type": [
+                                              "integer",
+                                              "null"
+                                            ]
+                                          },
+                                          "renewalPool": {
+                                            "type": "integer"
+                                          },
+                                          "easyWinPool": {
+                                            "type": "integer"
+                                          },
+                                          "lapsedPool": {
+                                            "type": "integer"
+                                          },
+                                          "legacyPool": {
+                                            "type": "integer"
+                                          },
+                                          "netNew": {
+                                            "type": "integer",
+                                            "description": "Slots needing brand-new training, true of this requirement read alone."
+                                          },
+                                          "sharedWith": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string"
+                                            },
+                                            "description": "Other specialisations in this target needing the same certification over the same population."
+                                          },
+                                          "expiringSoon": {
+                                            "type": "integer"
+                                          }
+                                        }
+                                      }
+                                    },
+                                    "chosen": {
+                                      "type": "boolean",
+                                      "description": "For a tier target: one of the cheapest specialisations this plan costed against."
+                                    },
+                                    "alternative": {
+                                      "type": "boolean",
+                                      "description": "For a tier target: an equal-cost swap for a chosen specialisation."
+                                    },
+                                    "marginalCost": {
+                                      "type": "integer"
+                                    }
+                                  }
+                                }
+                              },
+                              "peopleMoves": {
+                                "type": "integer"
+                              },
+                              "easyWins": {
+                                "type": "integer"
+                              },
+                              "netNew": {
+                                "type": "integer"
+                              }
+                            }
+                          }
+                        },
+                        "riskImpacts": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "program": {
+                                "type": "string"
+                              },
+                              "specialisation": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "tierName": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "cert": {
+                                "type": "string"
+                              },
+                              "scopeLabel": {
+                                "type": "string"
+                              },
+                              "required": {
+                                "type": "integer"
+                              },
+                              "attained": {
+                                "type": "integer"
+                              },
+                              "projectedAttained": {
+                                "type": "integer"
+                              },
+                              "onPath": {
+                                "type": "boolean",
+                                "description": "Whether the plan is costed against this requirement."
+                              }
+                            }
+                          }
+                        },
+                        "totals": {
+                          "type": "object",
+                          "properties": {
+                            "peopleMoves": {
+                              "type": "integer",
+                              "description": "The \"people to certify\" headline, deduped so one person's exam counts once."
+                            },
+                            "easyWins": {
+                              "type": "integer"
+                            },
+                            "lapsed": {
+                              "type": "integer"
+                            },
+                            "legacy": {
+                              "type": "integer"
+                            },
+                            "netNew": {
+                              "type": "integer"
+                            },
+                            "renewalMoves": {
+                              "type": "integer"
+                            },
+                            "renewalsAtRisk": {
+                              "type": "integer",
+                              "description": "Person x certification, not distinct people."
+                            },
+                            "renewalsAtRiskOnPath": {
+                              "type": "integer"
+                            }
+                          }
+                        }
+                      },
+                      "title": "Plan"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "programs": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "isTiered": {
+                                "type": "boolean"
+                              },
+                              "levels": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "tiers": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "specialisations": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
+                            }
+                          }
+                        }
+                      },
+                      "title": "Selector metadata (options=true)"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid targets — the value was not parseable JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, disabled, revoked or expired API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited — 120 requests per minute per key, or 20 invalid-key attempts per 5 minutes per IP.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The public API is switched off for this installation. Checked before the key is even looked up.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/public/v1/reports/{reportType}": {
+      "get": {
+        "summary": "Report aggregates",
+        "description": "One of eight pre-built reports. The row shape varies by report and is not type-enforced in the source, so data is described as free-form objects rather than a shape this API does not actually guarantee. Note expiring-soon is fixed at a 6-month horizon; no parameter changes it.",
+        "operationId": "getReportsByReportType",
+        "parameters": [
+          {
+            "name": "companyId",
+            "in": "query",
+            "required": false,
+            "description": "Narrow the response to one of the key's granted companies. Omitted or non-numeric, the response covers every company the key can read. A numeric id the key was NOT granted yields an empty result rather than an error.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "reportType",
+            "in": "path",
+            "required": true,
+            "description": "Which report to return.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "trained-not-certified",
+                "legacy-gap",
+                "learner-scorecard",
+                "by-product",
+                "by-function",
+                "expiring-soon",
+                "currently-expired",
+                "last-12-months"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "reportType": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "The report's display title. Empty string when the key can read no companies."
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      },
+                      "description": "Row shape varies by report type."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, disabled, revoked or expired API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown report type. The body carries validReportTypes listing the accepted values.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited — 120 requests per minute per key, or 20 invalid-key attempts per 5 minutes per IP.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The public API is switched off for this installation. Checked before the key is even looked up.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/public/v1/reports/program-compliance-trend": {
+      "get": {
+        "summary": "Program compliance trend",
+        "description": "Twenty-four month-end snapshots per program and specialisation: twelve of history and twelve projected. Future months assume no new completions, so compliance decays as active certifications expire. A separate endpoint, not a value for {reportType}.",
+        "operationId": "getReportsProgramComplianceTrend",
+        "parameters": [
+          {
+            "name": "companyId",
+            "in": "query",
+            "required": false,
+            "description": "Narrow the response to one of the key's granted companies. Omitted or non-numeric, the response covers every company the key can read. A numeric id the key was NOT granted yields an empty result rather than an error.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "program",
+            "in": "query",
+            "required": false,
+            "description": "Narrow to one program. Omitted, every program is included.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "country",
+            "in": "query",
+            "required": false,
+            "description": "Scope to one country. Narrowest selection wins: country over region over theatre.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "region",
+            "in": "query",
+            "required": false,
+            "description": "Scope to one region. Ignored when country is supplied.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "theatre",
+            "in": "query",
+            "required": false,
+            "description": "Scope to one theatre. Ignored when country or region is supplied.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "snapshots": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "program": {
+                            "type": "string"
+                          },
+                          "specialisation": {
+                            "type": "string"
+                          },
+                          "monthKey": {
+                            "type": "string",
+                            "description": "YYYY-MM."
+                          },
+                          "monthLabel": {
+                            "type": "string"
+                          },
+                          "attained": {
+                            "type": "integer"
+                          },
+                          "required": {
+                            "type": "integer"
+                          },
+                          "compliancePct": {
+                            "type": "number"
+                          },
+                          "projected": {
+                            "type": "boolean",
+                            "description": "True for the twelve forecast months."
+                          }
+                        }
+                      }
+                    },
+                    "programs": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "specialisations": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "scopeLabel": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, disabled, revoked or expired API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited — 120 requests per minute per key, or 20 invalid-key attempts per 5 minutes per IP.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The public API is switched off for this installation. Checked before the key is even looked up.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/public/v1/reports/renewal-forecast": {
+      "get": {
+        "summary": "Renewal forecast",
+        "description": "A twelve-month renewed-versus-lapsed projection with an at-risk-by-training breakdown. A renewal is a re-completion at least 30 days after the previous one; the rate is taken per training where there are at least five historical expiries, else per product, else global. A separate endpoint, not a value for {reportType}.",
+        "operationId": "getReportsRenewalForecast",
+        "parameters": [
+          {
+            "name": "companyId",
+            "in": "query",
+            "required": false,
+            "description": "Narrow the response to one of the key's granted companies. Omitted or non-numeric, the response covers every company the key can read. A numeric id the key was NOT granted yields an empty result rather than an error.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "country",
+            "in": "query",
+            "required": false,
+            "description": "Scope to one country. Narrowest selection wins: country over region over theatre.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "region",
+            "in": "query",
+            "required": false,
+            "description": "Scope to one region. Ignored when country is supplied.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "theatre",
+            "in": "query",
+            "required": false,
+            "description": "Scope to one theatre. Ignored when country or region is supplied.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "monthly": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "monthKey": {
+                            "type": "string"
+                          },
+                          "monthLabel": {
+                            "type": "string"
+                          },
+                          "expiringCount": {
+                            "type": "integer"
+                          },
+                          "projectedRenewed": {
+                            "type": "integer"
+                          },
+                          "projectedLapsed": {
+                            "type": "integer"
+                          }
+                        }
+                      }
+                    },
+                    "titleRows": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "fullTitle": {
+                            "type": "string"
+                          },
+                          "productType": {
+                            "type": "string"
+                          },
+                          "expiringCount": {
+                            "type": "integer"
+                          },
+                          "rate": {
+                            "type": "number",
+                            "description": "Renewal rate as a percentage to one decimal place."
+                          },
+                          "rateSource": {
+                            "type": "string",
+                            "enum": [
+                              "fullTitle",
+                              "product",
+                              "global"
+                            ]
+                          },
+                          "projectedLapsed": {
+                            "type": "integer"
+                          }
+                        }
+                      }
+                    },
+                    "globalRate": {
+                      "type": "number"
+                    },
+                    "historicalRenewed": {
+                      "type": "integer"
+                    },
+                    "historicalLapsed": {
+                      "type": "integer"
+                    },
+                    "scopeLabel": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, disabled, revoked or expired API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited — 120 requests per minute per key, or 20 invalid-key attempts per 5 minutes per IP.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The public API is switched off for this installation. Checked before the key is even looked up.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

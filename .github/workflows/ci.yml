@@ -87,6 +87,17 @@ jobs:
       - name: JSX whitespace
         run: npm run check:jsx
 
+      # The public API's documentation used to be a hand-maintained array in the
+      # index route with nothing tying it to the code, and it drifted exactly as
+      # you would expect — `training-records` grew four query filters that the
+      # index never mentioned, so no partner could discover them. The index, the
+      # OpenAPI document and this check now all read one module, and this asserts
+      # that module still describes the routes: an endpoint with no entry, a
+      # parameter the code reads and the spec does not, and a stale committed
+      # docs/openapi.json all fail here.
+      - name: API spec
+        run: npm run check:api-spec
+
       # The comparator in deploy/lib/version.mjs decides whether an installed
       # system is ever offered an update, and it replaced five hand-rolled
       # copies of `major*1000 + minor` that had already drifted apart. The

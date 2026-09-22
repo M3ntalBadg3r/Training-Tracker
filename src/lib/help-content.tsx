@@ -3189,6 +3189,7 @@ const helpSections: Record<string, HelpSection> = {
           </thead>
           <tbody>
             <tr><td><code>GET /api/public/v1</code></td><td>Index — confirms the key works and lists its companies and the available endpoints.</td></tr>
+            <tr><td><code>GET /api/public/v1/openapi.json</code></td><td>OpenAPI 3.1 description of every endpoint, its query parameters and its response schema.</td></tr>
             <tr><td><code>GET /api/public/v1/students</code></td><td>Student roster for the key&rsquo;s companies.</td></tr>
             <tr><td><code>GET /api/public/v1/training-records</code></td><td>Per-completion training records (latest per learner &amp; training).</td></tr>
             <tr><td><code>GET /api/public/v1/reports/&#123;type&#125;</code></td><td>Report aggregates (e.g. <code>expiring-soon</code>, <code>legacy-gap</code>, <code>learner-scorecard</code>).</td></tr>
@@ -3207,6 +3208,14 @@ const helpSections: Record<string, HelpSection> = {
           The last two are <strong>separate endpoints</strong>, not values for{" "}
           <code>&#123;type&#125;</code> &mdash; passing their names to{" "}
           <code>/reports/&#123;type&#125;</code> returns a 404.
+        </p>
+        <p>
+          <strong>Point an integration at the OpenAPI document</strong> rather than
+          transcribing this table. <code>/api/public/v1/openapi.json</code> describes
+          every endpoint above with its parameters, allowed values and response schema,
+          so a client generator, Postman or Swagger UI can read it directly. It needs a
+          key like everything else; a copy is published in the project&rsquo;s{" "}
+          <code>docs/</code> folder on GitHub for reading beforehand.
         </p>
         <p>
           <strong>Compliance planning is returned as aggregates only.</strong> The in-app
