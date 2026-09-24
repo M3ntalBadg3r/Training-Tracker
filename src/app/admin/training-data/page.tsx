@@ -134,6 +134,8 @@ function NotSet() {
 interface ImportSummary {
   imported: number;
   updated: number;
+  /** Entries awaiting review that the file classified — a subset of `updated`. */
+  completed: number;
   skipped: number;
   errors: string[];
 }
@@ -574,12 +576,17 @@ function TrainingDataPageInner() {
   // Flattens the row for export so the OLX parent column matches the import
   // format. parentTrainingTitle is comma-separated when a sub-item belongs to
   // multiple parents.
+  //
+  // An entry still awaiting review exports its Type/Product/Function BLANK:
+  // the stored values are import placeholders, and writing them out would
+  // make the file assert a classification nobody chose — which the import on
+  // another system would then take as real. Blank round-trips as "not set".
   const rowForExport = (t: TrainingDataRow) => ({
     trainingTitle: t.trainingTitle,
     fullTitle: t.fullTitle,
-    trainingType: t.trainingType,
-    productType: t.productType,
-    function: t.function,
+    trainingType: t.isIncomplete ? "" : t.trainingType,
+    productType: t.isIncomplete ? "" : t.productType,
+    function: t.isIncomplete ? "" : t.function,
     link: t.link ?? "",
     certification: (t.certification ?? []).join(", "),
     parentTrainingTitle: (t.parents ?? []).join(", "),
@@ -1525,6 +1532,18 @@ function TrainingDataPageInner() {
                     <div className="text-sm text-gray-600">Skipped</div>
                   </div>
                 </div>
+
+                {/* A subset of Updated, so a line rather than a fourth card —
+                    a card would read as adding to the total. */}
+                {importSummary.completed > 0 && (
+                  <p className="text-sm text-green-700 bg-green-50 rounded-lg px-4 py-2">
+                    {importSummary.completed}{" "}
+                    {importSummary.completed === 1 ? "entry was" : "entries were"}{" "}
+                    classified by this file and removed from the{" "}
+                    <strong>&ldquo;needs attention&rdquo;</strong>{" "}list (included
+                    in Updated).
+                  </p>
+                )}
 
                 {importSummary.errors.length > 0 && (
                   <div>

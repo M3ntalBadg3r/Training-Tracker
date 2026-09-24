@@ -1372,6 +1372,23 @@ const helpSections: Record<string, HelpSection> = {
             Excel, or PDF (one row per Training Title, so it round-trips with
             import).
           </li>
+          <li>
+            <strong>Moving the catalogue between systems</strong>{" "}&mdash; An
+            entry still in the <strong>&ldquo;needs attention&rdquo;</strong>{" "}
+            list is exported with its Type, Product and Function left blank,
+            because it has not been classified yet. On import, a row whose Type
+            (or Parent Training Title), Product and Function cells are all filled
+            in completes a matching entry that is still awaiting review, so it
+            leaves the &ldquo;needs attention&rdquo; list. A blank cell means
+            &ldquo;not set&rdquo;: it never overwrites a value the receiving
+            system already has, and a brand-new entry arriving with a blank cell
+            is placed in &ldquo;needs attention&rdquo; rather than being given a
+            guessed classification. The default values offered for unmapped
+            fields apply only to columns the file does not have at all, and never
+            mark an entry as reviewed. The import results say how many entries
+            the file took out of &ldquo;needs attention&rdquo; (they are counted
+            within <strong>Updated</strong>).
+          </li>
         </ul>
 
         <h3>Full Title Detail Page</h3>
@@ -1540,7 +1557,10 @@ const helpSections: Record<string, HelpSection> = {
           <li>
             During import, set a <strong>Legacy</strong> column to{" "}
             <code>Yes</code> and list replacement training titles
-            (comma-separated) in a <strong>Replacement</strong> column.
+            (comma-separated) in a <strong>Replacement</strong> column. A
+            replacement may be defined anywhere in the same file, including
+            further down; one that names no Certification or Accreditation is
+            reported in the import results and not saved.
           </li>
           <li>
             The <strong>Legacy Replacement Gap</strong>{" "}report uses this to find

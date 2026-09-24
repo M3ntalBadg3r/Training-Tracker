@@ -98,6 +98,10 @@ export async function POST(request: NextRequest) {
 
   let imported = 0;
   let updated = 0;
+  // Of `updated`, how many were entries awaiting review that this file
+  // classified — i.e. how many left the "needs attention" list. A subset of
+  // `updated`, not an additional count.
+  let completed = 0;
   let skipped = 0;
   const errors: string[] = [];
 
@@ -105,6 +109,17 @@ export async function POST(request: NextRequest) {
   // OLX completion at the end. Also remember any parent links that referenced
   // a parent that doesn't yet exist after this batch.
   const parentLinks: { subItem: string; parent: string }[] = [];
+  // Replacement lists from the file, resolved after every row is written —
+  // same reason as `parentLinks`: a replacement defined further down the file
+  // does not exist yet while its legacy row is being processed. `outcome` is
+  // how the row was already counted, so a row whose only change turns out to
+  // be its replacement moves from skipped to updated rather than counting twice.
+  const pendingReplacements: {
+    trainingTitle: string;
+    rowNum: number;
+    replacedBy: string[];
+    outcome: "created" | "updated" | "skipped";
+  }[] = [];
   const affectedParents = new Set<string>();
 
   // Product types are an admin-managed table; load them once and resolve names
@@ -148,13 +163,42 @@ export async function POST(request: NextRequest) {
       continue;
     }
 
-    // Resolve enum fields: use mapped column if present, fall back to defaults
+    // The stored row is read up front because the classification columns
+    // below resolve against it: a mapped-but-blank cell keeps what is stored.
+    let existing: Awaited<ReturnType<typeof prisma.trainingData.findUnique>>;
+    try {
+      existing = await prisma.trainingData.findUnique({ where: { trainingTitle } });
+    } catch (err) {
+      console.error(`Training data import row ${rowNum} lookup error:`, err);
+      errors.push(`Row ${rowNum}: Failed to import "${trainingTitle}" - Failed to process`);
+      skipped++;
+      continue;
+    }
+
+    // Resolve enum fields: use mapped column if present, fall back to defaults.
+    //
+    // A column that is MAPPED but blank on this row is not the same as an
+    // unmapped one. The wizard's defaults are offered only for unmapped
+    // columns; a blank cell is the file saying "not set" — which is exactly
+    // what the export writes for an entry still awaiting review, since its
+    // stored Type/Product/Function are import placeholders nobody chose. So a
+    // blank cell leaves an existing row's value alone (it used to overwrite a
+    // curated classification with the defaults), and a new row created from
+    // one is flagged as needing attention rather than silently classified.
     const rawTrainingType = columnMapping.trainingType ? row[columnMapping.trainingType]?.trim() : undefined;
     const rawProductType = columnMapping.productType ? row[columnMapping.productType]?.trim() : undefined;
     const rawFunction = columnMapping.function ? row[columnMapping.function]?.trim() : undefined;
+    const blankTrainingType = Boolean(columnMapping.trainingType) && !rawTrainingType;
+    const blankProductType = Boolean(columnMapping.productType) && !rawProductType;
+    const blankFunction = Boolean(columnMapping.function) && !rawFunction;
 
-    let trainingType = parseTrainingType(rawTrainingType) ?? defaultTrainingType;
-    const functionType = parseFunctionType(rawFunction) ?? defaultFunctionType;
+    const cellTrainingType = parseTrainingType(rawTrainingType);
+    const cellFunctionType = parseFunctionType(rawFunction);
+
+    let trainingType =
+      cellTrainingType ?? (blankTrainingType && existing ? existing.trainingType : defaultTrainingType);
+    const functionType =
+      cellFunctionType ?? (blankFunction && existing ? existing.function : defaultFunctionType);
 
     // Resolve product type: an explicit (but unknown) cell is an error; an
     // empty cell falls back to the default. No default at all is an error.
@@ -167,6 +211,8 @@ export async function POST(request: NextRequest) {
         continue;
       }
       productTypeId = resolved;
+    } else if (blankProductType && existing) {
+      productTypeId = existing.productTypeId;
     } else if (defaultProductTypeId !== null) {
       productTypeId = defaultProductTypeId;
     } else {
@@ -185,6 +231,23 @@ export async function POST(request: NextRequest) {
     if (parentsList.length > 0) {
       trainingType = TrainingType.OLXSubItem;
     }
+
+    // Whether THIS ROW'S OWN CELLS classify the training — Type (or a parent,
+    // which forces it), Product and Function all supplied. This is what may
+    // complete an entry still awaiting review (`isIncomplete`), mirroring the
+    // interactive completion path, which requires all three to be chosen.
+    // Import-level defaults deliberately do not count: they are pre-filled
+    // with the very placeholder values an auto-created row already carries,
+    // so accepting them would mark it reviewed with values nobody picked.
+    const classifiedByRow =
+      (parentsList.length > 0 || cellTrainingType !== null) &&
+      Boolean(rawProductType) &&
+      cellFunctionType !== null;
+    // A new row whose file leaves any classification cell blank is created
+    // with placeholders, so it is flagged exactly like a student-import
+    // auto-create — never counted under a category nobody chose.
+    const leftUnclassified =
+      (blankTrainingType && parentsList.length === 0) || blankProductType || blankFunction;
 
     // A spreadsheet is the cheapest way to plant links in bulk, so the same
     // scheme allowlist the interactive routes enforce applies here. The row is
@@ -238,6 +301,19 @@ export async function POST(request: NextRequest) {
       ? Array.from(new Set((replacementRaw || "").split(",").map((c: string) => c.trim()).filter((c) => Boolean(c) && c !== trainingTitle)))
       : undefined;
 
+    // A mapped Replacement column on a row that ends up legacy is resolved
+    // after the loop (see `pendingReplacements`), not here: the sanitiser keeps
+    // only titles that exist as a Cert/Accred right now, so resolving it
+    // row-by-row silently dropped every replacement that appears later in the
+    // file, and a catalogue needed importing twice to come out whole. Until
+    // then the row keeps its stored list, so this pass sees no change there.
+    // An UNMAPPED column is unaffected and still resolves against the stored
+    // value below — deferring it would be pointless, and it must stay a no-op.
+    const deferReplacement =
+      legacyEligible &&
+      parsedReplacedBy !== undefined &&
+      (parsedIsLegacy ?? existing?.isLegacy ?? false);
+
     /**
      * Resolve the legacy pair against what is already stored. Writing the
      * result unconditionally is safe: with both columns unmapped it reproduces
@@ -252,6 +328,7 @@ export async function POST(request: NextRequest) {
       const effective = parsedIsLegacy ?? stored?.isLegacy ?? false;
       // Replacements only mean anything on a legacy row.
       if (!effective) return { isLegacy: false, replacedBy: [] };
+      if (deferReplacement) return { isLegacy: true, replacedBy: stored?.replacedBy ?? [] };
       // Through the same sanitiser every interactive write path uses. The import
       // was the one route that wrote `replacedBy` straight from the file, so a
       // misspelled or non-Cert/Accred title — easy to produce, since the export
@@ -273,14 +350,15 @@ export async function POST(request: NextRequest) {
       : undefined;
 
     try {
-      const existing = await prisma.trainingData.findUnique({
-        where: { trainingTitle },
-      });
-
       if (existing) {
         const legacy = await resolveLegacy(existing);
         const certification = resolveCertification(existing);
+        // An entry awaiting review is completed by a row that classifies it.
+        // Without this an exported-then-imported catalogue left every such
+        // entry in "needs attention" however fully the file described it.
+        const completes = existing.isIncomplete && classifiedByRow;
         const changed =
+          completes ||
           existing.fullTitle !== fullTitle ||
           existing.trainingType !== trainingType ||
           existing.productTypeId !== productTypeId ||
@@ -298,11 +376,18 @@ export async function POST(request: NextRequest) {
               fullTitle, trainingType, productTypeId, function: functionType, link, certification,
               isLegacy: legacy.isLegacy, replacedBy: legacy.replacedBy,
               ...(isIgnored !== undefined && { isIgnored }),
+              ...(completes && { isIncomplete: false }),
             },
           });
           updated++;
+          if (completes) completed++;
         } else {
           skipped++;
+        }
+        if (deferReplacement && parsedReplacedBy) {
+          pendingReplacements.push({
+            trainingTitle, rowNum, replacedBy: parsedReplacedBy, outcome: changed ? "updated" : "skipped",
+          });
         }
       } else {
         const legacy = await resolveLegacy(null);
@@ -319,9 +404,13 @@ export async function POST(request: NextRequest) {
             isLegacy: legacy.isLegacy,
             replacedBy: legacy.replacedBy,
             ...(isIgnored !== undefined && { isIgnored }),
+            ...(leftUnclassified && { isIncomplete: true }),
           },
         });
         imported++;
+        if (deferReplacement && parsedReplacedBy) {
+          pendingReplacements.push({ trainingTitle, rowNum, replacedBy: parsedReplacedBy, outcome: "created" });
+        }
       }
 
       // Queue parent ↔ sub-item links for processing once all rows have
@@ -338,6 +427,44 @@ export async function POST(request: NextRequest) {
         `Row ${rowNum}: Failed to import "${trainingTitle}" - ${safeMessage}`
       );
       skipped++;
+    }
+  }
+
+  // Resolve deferred replacement lists now that every row in the file exists.
+  // The row's CURRENT type and legacy flag are re-read rather than carried
+  // over, so a later row for the same title that changed either one wins, as
+  // it would for any other column. A replacement that still does not resolve
+  // names nothing in the catalogue; it used to be dropped without a word, which
+  // was unavoidable while it might merely not have been written yet.
+  for (const p of pendingReplacements) {
+    try {
+      const current = await prisma.trainingData.findUnique({
+        where: { trainingTitle: p.trainingTitle },
+        select: { trainingType: true, isLegacy: true, replacedBy: true },
+      });
+      if (!current) continue;
+      const resolved = await sanitizeLegacyFields(p.trainingTitle, current.trainingType, current.isLegacy, p.replacedBy);
+      if (resolved.isLegacy) {
+        const dropped = p.replacedBy.filter((t) => !resolved.replacedBy.includes(t));
+        if (dropped.length > 0) {
+          errors.push(
+            `Row ${p.rowNum}: replacement ${dropped.map((t) => `"${t}"`).join(", ")} for "${p.trainingTitle}" was not saved — no Certification or Accreditation has that Training Title`
+          );
+        }
+      }
+      if (JSON.stringify(current.replacedBy) !== JSON.stringify(resolved.replacedBy)) {
+        await prisma.trainingData.update({
+          where: { trainingTitle: p.trainingTitle },
+          data: { replacedBy: resolved.replacedBy },
+        });
+        if (p.outcome === "skipped") {
+          skipped--;
+          updated++;
+        }
+      }
+    } catch (err) {
+      console.error(`Training data import row ${p.rowNum} replacement error:`, err);
+      errors.push(`Row ${p.rowNum}: Failed to save the replacement for "${p.trainingTitle}" - Failed to process`);
     }
   }
 
@@ -395,5 +522,5 @@ export async function POST(request: NextRequest) {
   });
 
   invalidateReportCache();
-  return NextResponse.json({ imported, updated, skipped, errors });
+  return NextResponse.json({ imported, updated, completed, skipped, errors });
 }
