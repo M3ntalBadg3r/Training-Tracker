@@ -857,7 +857,7 @@ A **Certification** or **Accreditation** can be flagged as **Legacy** when it ha
 - Once legacy, a **Replaced by** picker of all other **Full Titles** that contain a Certification/Accreditation appears — select one or more. Multiple replacements are treated as **alternatives**: holding any one of them counts as having migrated (the same model as an ILT mapping to several certs). Leave it empty for a cert that was retired with no successor.
 - A **Legacy** badge is shown on the training in the catalogue, on each learner's training list (with the replacement name), and on the training detail page. On **Admin > Training Data** the grouped row's badge is followed by an inline subtitle (`→ Replaced by: <names>` or `→ No replacement defined`) so you can audit replacements at a glance, and a **Show legacy only** toggle in the search bar scopes the list to retired Certs/Accreds.
 - Changing the type away from Certification/Accreditation automatically clears the legacy flag and replacements.
-- During import, set a **Legacy** column to `Yes` and list replacement training titles (comma-separated) in a **Replacement** column.
+- During import, set a **Legacy** column to `Yes` and list replacement training titles (comma-separated) in a **Replacement** column. A replacement may be defined anywhere in the same file, including further down; one that names no Certification or Accreditation is reported in the import results and not saved.
 - The **Legacy Replacement Gap** report uses this to find learners still holding a legacy cert who haven't taken the replacement.
 
 ### Product Types
