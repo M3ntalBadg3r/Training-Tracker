@@ -574,12 +574,17 @@ function TrainingDataPageInner() {
   // Flattens the row for export so the OLX parent column matches the import
   // format. parentTrainingTitle is comma-separated when a sub-item belongs to
   // multiple parents.
+  //
+  // An entry still awaiting review exports its Type/Product/Function BLANK:
+  // the stored values are import placeholders, and writing them out would
+  // make the file assert a classification nobody chose — which the import on
+  // another system would then take as real. Blank round-trips as "not set".
   const rowForExport = (t: TrainingDataRow) => ({
     trainingTitle: t.trainingTitle,
     fullTitle: t.fullTitle,
-    trainingType: t.trainingType,
-    productType: t.productType,
-    function: t.function,
+    trainingType: t.isIncomplete ? "" : t.trainingType,
+    productType: t.isIncomplete ? "" : t.productType,
+    function: t.isIncomplete ? "" : t.function,
     link: t.link ?? "",
     certification: (t.certification ?? []).join(", "),
     parentTrainingTitle: (t.parents ?? []).join(", "),

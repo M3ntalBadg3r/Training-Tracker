@@ -148,13 +148,42 @@ export async function POST(request: NextRequest) {
       continue;
     }
 
-    // Resolve enum fields: use mapped column if present, fall back to defaults
+    // The stored row is read up front because the classification columns
+    // below resolve against it: a mapped-but-blank cell keeps what is stored.
+    let existing: Awaited<ReturnType<typeof prisma.trainingData.findUnique>>;
+    try {
+      existing = await prisma.trainingData.findUnique({ where: { trainingTitle } });
+    } catch (err) {
+      console.error(`Training data import row ${rowNum} lookup error:`, err);
+      errors.push(`Row ${rowNum}: Failed to import "${trainingTitle}" - Failed to process`);
+      skipped++;
+      continue;
+    }
+
+    // Resolve enum fields: use mapped column if present, fall back to defaults.
+    //
+    // A column that is MAPPED but blank on this row is not the same as an
+    // unmapped one. The wizard's defaults are offered only for unmapped
+    // columns; a blank cell is the file saying "not set" — which is exactly
+    // what the export writes for an entry still awaiting review, since its
+    // stored Type/Product/Function are import placeholders nobody chose. So a
+    // blank cell leaves an existing row's value alone (it used to overwrite a
+    // curated classification with the defaults), and a new row created from
+    // one is flagged as needing attention rather than silently classified.
     const rawTrainingType = columnMapping.trainingType ? row[columnMapping.trainingType]?.trim() : undefined;
     const rawProductType = columnMapping.productType ? row[columnMapping.productType]?.trim() : undefined;
     const rawFunction = columnMapping.function ? row[columnMapping.function]?.trim() : undefined;
+    const blankTrainingType = Boolean(columnMapping.trainingType) && !rawTrainingType;
+    const blankProductType = Boolean(columnMapping.productType) && !rawProductType;
+    const blankFunction = Boolean(columnMapping.function) && !rawFunction;
 
-    let trainingType = parseTrainingType(rawTrainingType) ?? defaultTrainingType;
-    const functionType = parseFunctionType(rawFunction) ?? defaultFunctionType;
+    const cellTrainingType = parseTrainingType(rawTrainingType);
+    const cellFunctionType = parseFunctionType(rawFunction);
+
+    let trainingType =
+      cellTrainingType ?? (blankTrainingType && existing ? existing.trainingType : defaultTrainingType);
+    const functionType =
+      cellFunctionType ?? (blankFunction && existing ? existing.function : defaultFunctionType);
 
     // Resolve product type: an explicit (but unknown) cell is an error; an
     // empty cell falls back to the default. No default at all is an error.
@@ -167,6 +196,8 @@ export async function POST(request: NextRequest) {
         continue;
       }
       productTypeId = resolved;
+    } else if (blankProductType && existing) {
+      productTypeId = existing.productTypeId;
     } else if (defaultProductTypeId !== null) {
       productTypeId = defaultProductTypeId;
     } else {
@@ -185,6 +216,23 @@ export async function POST(request: NextRequest) {
     if (parentsList.length > 0) {
       trainingType = TrainingType.OLXSubItem;
     }
+
+    // Whether THIS ROW'S OWN CELLS classify the training — Type (or a parent,
+    // which forces it), Product and Function all supplied. This is what may
+    // complete an entry still awaiting review (`isIncomplete`), mirroring the
+    // interactive completion path, which requires all three to be chosen.
+    // Import-level defaults deliberately do not count: they are pre-filled
+    // with the very placeholder values an auto-created row already carries,
+    // so accepting them would mark it reviewed with values nobody picked.
+    const classifiedByRow =
+      (parentsList.length > 0 || cellTrainingType !== null) &&
+      Boolean(rawProductType) &&
+      cellFunctionType !== null;
+    // A new row whose file leaves any classification cell blank is created
+    // with placeholders, so it is flagged exactly like a student-import
+    // auto-create — never counted under a category nobody chose.
+    const leftUnclassified =
+      (blankTrainingType && parentsList.length === 0) || blankProductType || blankFunction;
 
     // A spreadsheet is the cheapest way to plant links in bulk, so the same
     // scheme allowlist the interactive routes enforce applies here. The row is
@@ -273,14 +321,15 @@ export async function POST(request: NextRequest) {
       : undefined;
 
     try {
-      const existing = await prisma.trainingData.findUnique({
-        where: { trainingTitle },
-      });
-
       if (existing) {
         const legacy = await resolveLegacy(existing);
         const certification = resolveCertification(existing);
+        // An entry awaiting review is completed by a row that classifies it.
+        // Without this an exported-then-imported catalogue left every such
+        // entry in "needs attention" however fully the file described it.
+        const completes = existing.isIncomplete && classifiedByRow;
         const changed =
+          completes ||
           existing.fullTitle !== fullTitle ||
           existing.trainingType !== trainingType ||
           existing.productTypeId !== productTypeId ||
@@ -298,6 +347,7 @@ export async function POST(request: NextRequest) {
               fullTitle, trainingType, productTypeId, function: functionType, link, certification,
               isLegacy: legacy.isLegacy, replacedBy: legacy.replacedBy,
               ...(isIgnored !== undefined && { isIgnored }),
+              ...(completes && { isIncomplete: false }),
             },
           });
           updated++;
@@ -319,6 +369,7 @@ export async function POST(request: NextRequest) {
             isLegacy: legacy.isLegacy,
             replacedBy: legacy.replacedBy,
             ...(isIgnored !== undefined && { isIgnored }),
+            ...(leftUnclassified && { isIncomplete: true }),
           },
         });
         imported++;
