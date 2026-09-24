@@ -1372,6 +1372,21 @@ const helpSections: Record<string, HelpSection> = {
             Excel, or PDF (one row per Training Title, so it round-trips with
             import).
           </li>
+          <li>
+            <strong>Moving the catalogue between systems</strong>{" "}&mdash; An
+            entry still in the <strong>&ldquo;needs attention&rdquo;</strong>{" "}
+            list is exported with its Type, Product and Function left blank,
+            because it has not been classified yet. On import, a row whose Type
+            (or Parent Training Title), Product and Function cells are all filled
+            in completes a matching entry that is still awaiting review, so it
+            leaves the &ldquo;needs attention&rdquo; list. A blank cell means
+            &ldquo;not set&rdquo;: it never overwrites a value the receiving
+            system already has, and a brand-new entry arriving with a blank cell
+            is placed in &ldquo;needs attention&rdquo; rather than being given a
+            guessed classification. The default values offered for unmapped
+            fields apply only to columns the file does not have at all, and never
+            mark an entry as reviewed.
+          </li>
         </ul>
 
         <h3>Full Title Detail Page</h3>
