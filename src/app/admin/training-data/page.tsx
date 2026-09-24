@@ -1089,7 +1089,7 @@ function TrainingDataPageInner() {
       </section>
 
       {/* Import Modal */}
-      <Modal open={showImport} onClose={closeImport} title="Import Training Data" size="2xl">
+      <Modal open={showImport} onClose={closeImport} title="Import Training Data" size="4xl">
         <div>
           <div className="flex justify-end mb-3">
             <button
@@ -1159,10 +1159,14 @@ function TrainingDataPageInner() {
                     Map columns from your file to the training data fields.
                     Training Title and Full Title are required. Unmapped columns will be discarded.
                   </p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
                     {TARGET_FIELDS.map((field) => (
-                      <div key={field.key} className="flex items-center gap-3">
-                        <label className="w-28 text-sm font-medium text-gray-700 shrink-0">
+                      // min-w-0 on the item AND the select: a <select> will not
+                      // shrink below its longest option by default, so without
+                      // them it overflowed its cell and covered the label in the
+                      // next column.
+                      <div key={field.key} className="flex items-center gap-3 min-w-0">
+                        <label className="w-40 text-sm font-medium text-gray-700 shrink-0">
                           {field.label}
                           {field.required && <span className="text-red-500 ml-1">*</span>}
                         </label>
@@ -1179,7 +1183,7 @@ function TrainingDataPageInner() {
                               return next;
                             })
                           }
-                          className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                          className="flex-1 min-w-0 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
                         >
                           <option value="">-- {field.required ? "Select column" : "Not mapped (use default)"} --</option>
                           {headers.map((h) => (
@@ -1278,7 +1282,7 @@ function TrainingDataPageInner() {
                         <thead>
                           <tr className="bg-gray-50">
                             {TARGET_FIELDS.map((f) => (
-                              <th key={f.key} className="px-3 py-2 text-left border-b">
+                              <th key={f.key} className="px-3 py-2 text-left border-b whitespace-nowrap">
                                 {f.label}
                               </th>
                             ))}
@@ -1288,7 +1292,14 @@ function TrainingDataPageInner() {
                           {rows.slice(0, 5).map((row, idx) => (
                             <tr key={idx} className="border-b">
                               {TARGET_FIELDS.map((f) => (
-                                <td key={f.key} className="px-3 py-2 text-gray-600">
+                                // One line per cell, cut with an ellipsis; the
+                                // full value is in the tooltip. Eleven wrapping
+                                // columns turned every row into a tall block.
+                                <td
+                                  key={f.key}
+                                  className="px-3 py-2 text-gray-600 whitespace-nowrap max-w-[14rem] truncate"
+                                  title={columnMapping[f.key] ? row[columnMapping[f.key]] || undefined : undefined}
+                                >
                                   {columnMapping[f.key]
                                     ? row[columnMapping[f.key]] || "-"
                                     : <span className="text-gray-300 italic">default</span>}
