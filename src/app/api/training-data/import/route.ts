@@ -98,6 +98,10 @@ export async function POST(request: NextRequest) {
 
   let imported = 0;
   let updated = 0;
+  // Of `updated`, how many were entries awaiting review that this file
+  // classified — i.e. how many left the "needs attention" list. A subset of
+  // `updated`, not an additional count.
+  let completed = 0;
   let skipped = 0;
   const errors: string[] = [];
 
@@ -351,6 +355,7 @@ export async function POST(request: NextRequest) {
             },
           });
           updated++;
+          if (completes) completed++;
         } else {
           skipped++;
         }
@@ -446,5 +451,5 @@ export async function POST(request: NextRequest) {
   });
 
   invalidateReportCache();
-  return NextResponse.json({ imported, updated, skipped, errors });
+  return NextResponse.json({ imported, updated, completed, skipped, errors });
 }

@@ -1385,7 +1385,9 @@ const helpSections: Record<string, HelpSection> = {
             is placed in &ldquo;needs attention&rdquo; rather than being given a
             guessed classification. The default values offered for unmapped
             fields apply only to columns the file does not have at all, and never
-            mark an entry as reviewed.
+            mark an entry as reviewed. The import results say how many entries
+            the file took out of &ldquo;needs attention&rdquo; (they are counted
+            within <strong>Updated</strong>).
           </li>
         </ul>
 
