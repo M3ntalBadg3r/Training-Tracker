@@ -1557,7 +1557,10 @@ const helpSections: Record<string, HelpSection> = {
           <li>
             During import, set a <strong>Legacy</strong> column to{" "}
             <code>Yes</code> and list replacement training titles
-            (comma-separated) in a <strong>Replacement</strong> column.
+            (comma-separated) in a <strong>Replacement</strong> column. A
+            replacement may be defined anywhere in the same file, including
+            further down; one that names no Certification or Accreditation is
+            reported in the import results and not saved.
           </li>
           <li>
             The <strong>Legacy Replacement Gap</strong>{" "}report uses this to find

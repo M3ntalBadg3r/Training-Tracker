@@ -109,6 +109,17 @@ export async function POST(request: NextRequest) {
   // OLX completion at the end. Also remember any parent links that referenced
   // a parent that doesn't yet exist after this batch.
   const parentLinks: { subItem: string; parent: string }[] = [];
+  // Replacement lists from the file, resolved after every row is written —
+  // same reason as `parentLinks`: a replacement defined further down the file
+  // does not exist yet while its legacy row is being processed. `outcome` is
+  // how the row was already counted, so a row whose only change turns out to
+  // be its replacement moves from skipped to updated rather than counting twice.
+  const pendingReplacements: {
+    trainingTitle: string;
+    rowNum: number;
+    replacedBy: string[];
+    outcome: "created" | "updated" | "skipped";
+  }[] = [];
   const affectedParents = new Set<string>();
 
   // Product types are an admin-managed table; load them once and resolve names
@@ -290,6 +301,19 @@ export async function POST(request: NextRequest) {
       ? Array.from(new Set((replacementRaw || "").split(",").map((c: string) => c.trim()).filter((c) => Boolean(c) && c !== trainingTitle)))
       : undefined;
 
+    // A mapped Replacement column on a row that ends up legacy is resolved
+    // after the loop (see `pendingReplacements`), not here: the sanitiser keeps
+    // only titles that exist as a Cert/Accred right now, so resolving it
+    // row-by-row silently dropped every replacement that appears later in the
+    // file, and a catalogue needed importing twice to come out whole. Until
+    // then the row keeps its stored list, so this pass sees no change there.
+    // An UNMAPPED column is unaffected and still resolves against the stored
+    // value below — deferring it would be pointless, and it must stay a no-op.
+    const deferReplacement =
+      legacyEligible &&
+      parsedReplacedBy !== undefined &&
+      (parsedIsLegacy ?? existing?.isLegacy ?? false);
+
     /**
      * Resolve the legacy pair against what is already stored. Writing the
      * result unconditionally is safe: with both columns unmapped it reproduces
@@ -304,6 +328,7 @@ export async function POST(request: NextRequest) {
       const effective = parsedIsLegacy ?? stored?.isLegacy ?? false;
       // Replacements only mean anything on a legacy row.
       if (!effective) return { isLegacy: false, replacedBy: [] };
+      if (deferReplacement) return { isLegacy: true, replacedBy: stored?.replacedBy ?? [] };
       // Through the same sanitiser every interactive write path uses. The import
       // was the one route that wrote `replacedBy` straight from the file, so a
       // misspelled or non-Cert/Accred title — easy to produce, since the export
@@ -359,6 +384,11 @@ export async function POST(request: NextRequest) {
         } else {
           skipped++;
         }
+        if (deferReplacement && parsedReplacedBy) {
+          pendingReplacements.push({
+            trainingTitle, rowNum, replacedBy: parsedReplacedBy, outcome: changed ? "updated" : "skipped",
+          });
+        }
       } else {
         const legacy = await resolveLegacy(null);
         const certification = resolveCertification(null);
@@ -378,6 +408,9 @@ export async function POST(request: NextRequest) {
           },
         });
         imported++;
+        if (deferReplacement && parsedReplacedBy) {
+          pendingReplacements.push({ trainingTitle, rowNum, replacedBy: parsedReplacedBy, outcome: "created" });
+        }
       }
 
       // Queue parent ↔ sub-item links for processing once all rows have
@@ -394,6 +427,44 @@ export async function POST(request: NextRequest) {
         `Row ${rowNum}: Failed to import "${trainingTitle}" - ${safeMessage}`
       );
       skipped++;
+    }
+  }
+
+  // Resolve deferred replacement lists now that every row in the file exists.
+  // The row's CURRENT type and legacy flag are re-read rather than carried
+  // over, so a later row for the same title that changed either one wins, as
+  // it would for any other column. A replacement that still does not resolve
+  // names nothing in the catalogue; it used to be dropped without a word, which
+  // was unavoidable while it might merely not have been written yet.
+  for (const p of pendingReplacements) {
+    try {
+      const current = await prisma.trainingData.findUnique({
+        where: { trainingTitle: p.trainingTitle },
+        select: { trainingType: true, isLegacy: true, replacedBy: true },
+      });
+      if (!current) continue;
+      const resolved = await sanitizeLegacyFields(p.trainingTitle, current.trainingType, current.isLegacy, p.replacedBy);
+      if (resolved.isLegacy) {
+        const dropped = p.replacedBy.filter((t) => !resolved.replacedBy.includes(t));
+        if (dropped.length > 0) {
+          errors.push(
+            `Row ${p.rowNum}: replacement ${dropped.map((t) => `"${t}"`).join(", ")} for "${p.trainingTitle}" was not saved — no Certification or Accreditation has that Training Title`
+          );
+        }
+      }
+      if (JSON.stringify(current.replacedBy) !== JSON.stringify(resolved.replacedBy)) {
+        await prisma.trainingData.update({
+          where: { trainingTitle: p.trainingTitle },
+          data: { replacedBy: resolved.replacedBy },
+        });
+        if (p.outcome === "skipped") {
+          skipped--;
+          updated++;
+        }
+      }
+    } catch (err) {
+      console.error(`Training data import row ${p.rowNum} replacement error:`, err);
+      errors.push(`Row ${p.rowNum}: Failed to save the replacement for "${p.trainingTitle}" - Failed to process`);
     }
   }
 
