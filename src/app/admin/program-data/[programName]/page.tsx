@@ -9,14 +9,31 @@ import TierModal from "../TierModal";
 import { ProgramDataRow, ProgramTierRow, SpecialisationRow } from "@/types";
 import { trainingTypeLabel } from "@/lib/utils";
 import { Plus, Trash2, Pencil, ChevronUp, ChevronDown, Layers } from "lucide-react";
+import {
+  AGGREGATIONS,
+  AGGREGATION_SHORT_LABELS,
+  LEVEL_LABELS,
+  REQ_LEVELS,
+  isMultiCountryLevel,
+  isReqLevel,
+  normaliseAggregation,
+} from "@/lib/program-levels";
 
-const LEVELS = ["Country", "Theatre", "Global"];
 const TRAINING_TYPES = ["Certification", "Accreditation", "InstructorLedTraining"];
 
-const LEVEL_LABELS: Record<string, string> = {
-  Country: "Country",
-  Theatre: "Theatre",
-  Global: "Global",
+const levelLabel = (level: string) => (isReqLevel(level) ? LEVEL_LABELS[level] : level);
+const levelRank = (level: string) => (isReqLevel(level) ? REQ_LEVELS.indexOf(level) : REQ_LEVELS.length);
+
+/** Filter key for the Count Mode column: the row's count mode on a
+ *  multi-country level, or "na" where a count mode does not apply. */
+const NOT_APPLICABLE = "na";
+const countModeKey = (row: ProgramDataRow) =>
+  isMultiCountryLevel(row.level) ? normaliseAggregation(row.level, row.aggregation) : NOT_APPLICABLE;
+
+/** Table-cell text: "—" for single-country levels, else "Total" / "Each country". */
+const countModeLabel = (row: ProgramDataRow) => {
+  const key = countModeKey(row);
+  return key === NOT_APPLICABLE ? "—" : AGGREGATION_SHORT_LABELS[key];
 };
 
 const PURPOSE_LABELS: Record<string, string> = {
@@ -47,6 +64,7 @@ export default function ProgramRequirementsPage() {
   const [filterSpec, setFilterSpec] = useState("");
   const [filterLevel, setFilterLevel] = useState("");
   const [filterType, setFilterType] = useState("");
+  const [filterCountMode, setFilterCountMode] = useState("");
 
   // Sort
   const [sortCol, setSortCol] = useState("specialisationName");
@@ -165,12 +183,13 @@ export default function ProgramRequirementsPage() {
         (r) =>
           (!filterSpec || r.specialisationName === filterSpec) &&
           (!filterLevel || r.level === filterLevel) &&
-          (!filterType || r.trainingType === filterType)
+          (!filterType || r.trainingType === filterType) &&
+          (!filterCountMode || countModeKey(r) === filterCountMode)
       ),
-    [specRows, filterSpec, filterLevel, filterType]
+    [specRows, filterSpec, filterLevel, filterType, filterCountMode]
   );
 
-  const hasFilters = !!filterSpec || !!filterLevel || !!filterType;
+  const hasFilters = !!filterSpec || !!filterLevel || !!filterType || !!filterCountMode;
 
   const sortedRows = useMemo(() => {
     const sorted = [...filteredRows];
@@ -178,7 +197,9 @@ export default function ProgramRequirementsPage() {
       let aVal = "", bVal = "";
       switch (sortCol) {
         case "specialisationName": aVal = a.specialisationName || ""; bVal = b.specialisationName || ""; break;
-        case "level": aVal = a.level; bVal = b.level; break;
+        case "level":
+          return sortDir === "asc" ? levelRank(a.level) - levelRank(b.level) : levelRank(b.level) - levelRank(a.level);
+        case "countMode": aVal = countModeLabel(a); bVal = countModeLabel(b); break;
         case "trainingType": aVal = a.trainingType || ""; bVal = b.trainingType || ""; break;
         case "trainingFullTitle": aVal = a.trainingFullTitle || ""; bVal = b.trainingFullTitle || ""; break;
         case "quantityRequired": return sortDir === "asc" ? a.quantityRequired - b.quantityRequired : b.quantityRequired - a.quantityRequired;
@@ -321,7 +342,11 @@ export default function ProgramRequirementsPage() {
                                   {r.specialisationName && (
                                     <span className="font-medium text-gray-700">{r.specialisationName}: </span>
                                   )}
-                                  <span className="text-gray-500">{LEVEL_LABELS[r.level] || r.level} · </span>
+                                  <span className="text-gray-500">
+                                    {levelLabel(r.level)}
+                                    {isMultiCountryLevel(r.level) && ` (${countModeLabel(r).toLowerCase()})`}
+                                    {" · "}
+                                  </span>
                                   {r.quantityRequired}× {r.trainingFullTitle || "—"}
                                   {r.alternatives.length > 0 && (
                                     <span className="text-xs text-gray-500"> or {r.alternatives.map((a) => a.trainingFullTitle).join(", ")}</span>
@@ -366,7 +391,7 @@ export default function ProgramRequirementsPage() {
           </button>
           {hasFilters && (
             <button
-              onClick={() => { setFilterSpec(""); setFilterLevel(""); setFilterType(""); }}
+              onClick={() => { setFilterSpec(""); setFilterLevel(""); setFilterType(""); setFilterCountMode(""); }}
               className="text-sm text-blue-600 hover:text-blue-800 whitespace-nowrap"
             >
               Clear Filters
@@ -401,7 +426,19 @@ export default function ProgramRequirementsPage() {
                     </button>
                     <select value={filterLevel} onChange={(e) => setFilterLevel(e.target.value)} className="w-full text-xs border border-gray-200 rounded px-1 py-0.5 font-normal">
                       <option value="">All</option>
-                      {LEVELS.map((l) => <option key={l} value={l}>{LEVEL_LABELS[l]}</option>)}
+                      {REQ_LEVELS.map((l) => <option key={l} value={l}>{LEVEL_LABELS[l]}</option>)}
+                    </select>
+                  </div>
+                </th>
+                <th className="px-4 py-3 text-left">
+                  <div className="space-y-1">
+                    <button onClick={() => toggleSort("countMode")} className="flex items-center gap-1 font-semibold text-gray-700 hover:text-gray-900 whitespace-nowrap">
+                      Count Mode {sortIcon("countMode")}
+                    </button>
+                    <select value={filterCountMode} onChange={(e) => setFilterCountMode(e.target.value)} className="w-full text-xs border border-gray-200 rounded px-1 py-0.5 font-normal">
+                      <option value="">All</option>
+                      {AGGREGATIONS.map((a) => <option key={a} value={a}>{AGGREGATION_SHORT_LABELS[a]}</option>)}
+                      <option value={NOT_APPLICABLE}>Not applicable</option>
                     </select>
                   </div>
                 </th>
@@ -433,7 +470,7 @@ export default function ProgramRequirementsPage() {
             <tbody>
               {sortedRows.length === 0 ? (
                 <tr>
-                  <td colSpan={isTiered ? 8 : 7} className="px-4 py-8 text-center text-gray-500">
+                  <td colSpan={isTiered ? 9 : 8} className="px-4 py-8 text-center text-gray-500">
                     {specRows.length === 0
                       ? <>No requirements yet for this program. Click &quot;Add Requirement&quot; to define the first one.</>
                       : "No requirements match the current filters."}
@@ -446,7 +483,13 @@ export default function ProgramRequirementsPage() {
                     {isTiered && (
                       <td className="px-4 py-3">{PURPOSE_LABELS[row.purpose] || row.purpose}</td>
                     )}
-                    <td className="px-4 py-3">{LEVEL_LABELS[row.level] || row.level}</td>
+                    <td className="px-4 py-3">{levelLabel(row.level)}</td>
+                    <td
+                      className="px-4 py-3"
+                      title={isMultiCountryLevel(row.level) ? undefined : "Count mode applies only to Region and Country Set requirements"}
+                    >
+                      {countModeLabel(row)}
+                    </td>
                     <td className="px-4 py-3">{row.trainingType ? trainingTypeLabel(row.trainingType) : "—"}</td>
                     <td className="px-4 py-3">
                       {row.trainingFullTitle || "—"}

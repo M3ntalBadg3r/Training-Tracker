@@ -5,13 +5,22 @@ import Modal from "@/components/ui/Modal";
 import { ProgramDataRow, SpecialisationRow } from "@/types";
 import { trainingTypeLabel } from "@/lib/utils";
 import { Plus, Save, X } from "lucide-react";
+import {
+  AGGREGATIONS,
+  AGGREGATION_LABELS,
+  LEVEL_LABELS,
+  REQ_LEVELS,
+  isMultiCountryLevel,
+  normaliseAggregation,
+  type Aggregation,
+} from "@/lib/program-levels";
 
 const TRAINING_TYPES = ["Certification", "Accreditation", "InstructorLedTraining"];
-const LEVELS = ["Country", "Theatre", "Global"];
-const LEVEL_LABELS: Record<string, string> = {
-  Country: "Country",
-  Theatre: "Theatre",
-  Global: "Global",
+
+/** One-line explanation under each count-mode option. */
+const AGGREGATION_HINTS: Record<Aggregation, string> = {
+  total: "Distinct holders are pooled across every country in the area; the quantity is the combined total.",
+  eachCountry: "Every country in the area must have at least this quantity on its own.",
 };
 
 interface TrainingOption {
@@ -28,6 +37,8 @@ interface FormState {
   specialisationId: number;
   purpose: string;
   level: string;
+  /** Count mode — only meaningful for Region / Country Set; "total" otherwise. */
+  aggregation: Aggregation;
   trainingType: string;
   trainingTitle: string;
   // The training is selected by its fullTitle (the dropdown is deduped per
@@ -41,6 +52,7 @@ const EMPTY_FORM: FormState = {
   specialisationId: 0,
   purpose: "qualification",
   level: "",
+  aggregation: "total",
   trainingType: "",
   trainingTitle: "",
   trainingFullTitle: "",
@@ -112,6 +124,7 @@ export default function RequirementModal({
           specialisationId: initial.specialisationId ?? 0,
           purpose: initial.purpose ?? "qualification",
           level: initial.level,
+          aggregation: normaliseAggregation(initial.level, initial.aggregation),
           trainingType: initial.trainingType ?? "",
           trainingTitle: initial.trainingTitle ?? "",
           trainingFullTitle: initial.trainingFullTitle ?? "",
@@ -189,10 +202,12 @@ export default function RequirementModal({
             }
           : { specialisationId: form.specialisationId, purpose: allowPurpose ? form.purpose : "qualification" }),
         level: form.level,
+        aggregation: normaliseAggregation(form.level, form.aggregation),
         trainingType: noTraining ? null : form.trainingType,
         trainingTitle: noTraining ? null : form.trainingTitle,
         quantityRequired: form.quantityRequired,
-        minimumPerTheatre: noTraining ? null : (form.minimumPerTheatre ?? null),
+        // Only Global requirements carry a per-theatre minimum.
+        minimumPerTheatre: noTraining || form.level !== "Global" ? null : (form.minimumPerTheatre ?? null),
         alternatives: showAlts ? alternatives.filter((a) => a.trainingTitle) : [],
       };
       const url = isEdit ? `/api/admin/program-data/${initial!.id}` : "/api/admin/program-data";
@@ -325,16 +340,53 @@ export default function RequirementModal({
               value={form.level}
               onChange={(e) => {
                 const lvl = e.target.value;
-                setForm((f) => ({ ...f, level: lvl }));
+                // Leaving Global clears the per-theatre minimum, and leaving a
+                // multi-country level resets the count mode — neither may ride
+                // along invisibly on a level that cannot use it.
+                setForm((f) => ({
+                  ...f,
+                  level: lvl,
+                  minimumPerTheatre: lvl === "Global" ? f.minimumPerTheatre : null,
+                  aggregation: isMultiCountryLevel(lvl) ? f.aggregation : "total",
+                }));
                 setNoTraining(false);
-                if (lvl !== "Global") fetchTrainingsByType(form.trainingType);
+                if (lvl !== "Global" && form.trainingType) fetchTrainingsByType(form.trainingType);
               }}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
             >
               <option value="">Select level...</option>
-              {LEVELS.map((l) => <option key={l} value={l}>{LEVEL_LABELS[l]}</option>)}
+              {REQ_LEVELS.map((l) => <option key={l} value={l}>{LEVEL_LABELS[l]}</option>)}
             </select>
+            {form.level === "Region" && (
+              <p className="mt-1 text-xs text-gray-500">Applies to whichever region is being viewed.</p>
+            )}
+            {form.level === "CountrySet" && (
+              <p className="mt-1 text-xs text-gray-500">Applies to whichever country set is being viewed.</p>
+            )}
           </div>
+          {isMultiCountryLevel(form.level) && (
+            <fieldset>
+              <legend className="block text-sm font-medium mb-1">Count mode</legend>
+              <div className="space-y-2">
+                {AGGREGATIONS.map((a) => (
+                  <label key={a} className="flex items-start gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="req-aggregation"
+                      value={a}
+                      checked={form.aggregation === a}
+                      onChange={() => setForm((f) => ({ ...f, aggregation: a }))}
+                      className="w-4 h-4 mt-0.5"
+                    />
+                    <span className="text-sm">
+                      {AGGREGATION_LABELS[a]}
+                      <span className="block text-xs text-gray-500">{AGGREGATION_HINTS[a]}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+          )}
           {form.level === "Global" && (
             <div className="flex items-center gap-2">
               <input
@@ -483,7 +535,11 @@ export default function RequirementModal({
             <p className="mt-1 text-xs text-gray-500">
               {form.level === "Global" && noTraining
                 ? "Number of compliant theatres needed."
-                : "Number of people with this training needed."}
+                : isMultiCountryLevel(form.level) && form.aggregation === "eachCountry"
+                  ? "Number of people with this training needed in each country."
+                  : isMultiCountryLevel(form.level)
+                    ? "Number of people with this training needed across the whole area."
+                    : "Number of people with this training needed."}
             </p>
           </div>
           <div className="flex justify-end gap-2 pt-2">
