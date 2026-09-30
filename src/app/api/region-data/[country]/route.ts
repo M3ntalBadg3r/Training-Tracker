@@ -125,14 +125,23 @@ export async function PUT(
     }
   }
 
-  const regionData = await prisma.regionData.update({
-    where: { country: decodedCountry },
-    data: {
-      ...(regionProvided ? { region: newRegion ?? "" } : {}),
-      ...(theatreProvided ? { theatre: newTheatre } : {}),
-      ...(isoProvided ? { isoCode: newIsoCode ?? null } : {}),
-    },
-  });
+  let regionData;
+  try {
+    regionData = await prisma.regionData.update({
+      where: { country: decodedCountry },
+      data: {
+        ...(regionProvided ? { region: newRegion ?? "" } : {}),
+        ...(theatreProvided ? { theatre: newTheatre } : {}),
+        ...(isoProvided ? { isoCode: newIsoCode ?? null } : {}),
+      },
+    });
+  } catch (err) {
+    if ((err as { code?: unknown })?.code === "P2025") {
+      return NextResponse.json({ error: "Country not found" }, { status: 404 });
+    }
+    console.warn("region-data update failed", err);
+    return NextResponse.json({ error: "Could not update the country" }, { status: 500 });
+  }
 
   // Region / theatre changes move countries between Region-level (and
   // theatre-scoped) compliance populations, so cached results are stale.

@@ -36,7 +36,7 @@ export { REQ_LEVELS };
  *  far below the bulk-import default `readJsonBody` applies. */
 export const REQUIREMENT_BODY_MAX_BYTES = 256 * 1024;
 
-export const REQ_TRAINING_TYPES =["Certification", "Accreditation", "InstructorLedTraining"] as const;
+export const REQ_TRAINING_TYPES = ["Certification", "Accreditation", "InstructorLedTraining"] as const;
 export const REQ_PURPOSES = ["qualification", "deployment"] as const;
 
 export interface ValidatedRequirement {
