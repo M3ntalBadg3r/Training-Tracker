@@ -9,6 +9,7 @@ import {
   emptyCompliancePlan,
 } from "@/lib/compliance-plan-request";
 import { buildPlanningOptions } from "@/lib/planning-options";
+import { listCountrySetNames } from "@/lib/country-sets";
 
 /**
  * GET /api/public/v1/programs/planning — read-only Compliance Planning, the
@@ -29,7 +30,8 @@ import { buildPlanningOptions } from "@/lib/planning-options";
  *
  * Two modes, mirroring the internal route:
  *  - `?options=true` → per-program selector metadata (name, isTiered, levels,
- *    tier names, specialisation names) so a caller can build a `targets` array.
+ *    tier names, specialisation names) so a caller can build a `targets` array,
+ *    plus `countrySets` — the names `level=countrySet&countrySet=` accepts.
  *    `/api/public/v1/programs` deliberately carries no tier or specialisation
  *    *names*, so without this a partner cannot construct a valid target.
  *  - default (plan) → the aggregates-only plan for the selected targets + scope.
@@ -37,8 +39,8 @@ import { buildPlanningOptions } from "@/lib/planning-options";
  * Query params (identical to the internal route):
  *  - `targets`  URL-encoded JSON array:
  *      [{ program, mode: "tier"|"specialisations"|"all", tier?, specialisations?[] }]
- *  - `level`    global (default) | theatre | region | country
- *  - `country` / `region` / `theatre`  the selector for the chosen level
+ *  - `level`    global (default) | theatre | region | countrySet | country
+ *  - `country` / `region` / `countrySet` / `theatre`  the selector for the chosen level
  *  - `renewalWindowMonths`  0 | 1 | 3 | 6 | 12 (default 3; 0 = no overlay)
  *  - `planForWindow`  true to size gaps from the projected end-of-window count
  *  - `companyId`  narrow to one of the key's companies (consumed by the guard)
@@ -59,7 +61,8 @@ export async function GET(request: NextRequest) {
   // ── Selector-metadata mode ──
   // Registry data, not tenant data: Program/ProgramData/ProgramTier/
   // Specialisation carry no `companyId`, and nothing read here derives from a
-  // student, completion or count. That is the same reasoning reviewed and
+  // student, completion or count. Country Sets are global reference data in
+  // the same sense (a name and a list of countries, like RegionData). That is the same reasoning reviewed and
   // written out at length in `src/app/api/public/v1/programs/route.ts`, and it
   // carries the same trigger: if `Program` ever gains a `companyId`, this
   // branch becomes tenant data and MUST be filtered by `ctx.companyIds`.
@@ -67,10 +70,14 @@ export async function GET(request: NextRequest) {
   // add rather than a shared-key leak to discover.
   if (p.get("options") === "true") {
     const options = await cachedReport(
-      `public-compliance-planning-options|${scope}`,
-      () => buildPlanningOptions(),
+      // "-v2": the value became `{programs, countrySets}`; see the internal route.
+      `public-compliance-planning-options-v2|${scope}`,
+      async () => {
+        const [programs, countrySets] = await Promise.all([buildPlanningOptions(), listCountrySetNames()]);
+        return { programs, countrySets };
+      },
     );
-    return NextResponse.json({ programs: options }, { headers: { "Cache-Control": "private, max-age=30" } });
+    return NextResponse.json(options, { headers: { "Cache-Control": "private, max-age=30" } });
   }
 
   const req = parsePlanRequest(p);
@@ -108,6 +115,7 @@ export async function GET(request: NextRequest) {
           level: req.level,
           country: req.country,
           region: req.region,
+          countrySet: req.countrySet,
           theatre: req.theatre,
           companyIds: ctx.companyIds,
           renewalWindowMonths: req.renewalWindowMonths,

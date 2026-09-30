@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
@@ -42,16 +42,32 @@ import { useRegionData } from "@/hooks/useRegionData";
 import { useTableSort } from "@/hooks/useTableSort";
 import { useDebounce } from "@/hooks/useDebounce";
 import { useFetchJson } from "@/hooks/useFetchJson";
+import {
+  AGGREGATION_SHORT_LABELS,
+  SCOPE_LEVELS,
+  SCOPE_LEVEL_LABELS,
+  SCOPE_VALUE_NOUN,
+  parseScopeLevel,
+  scopeLevelOffered,
+  type Aggregation,
+  type ReqLevel,
+  type ScopeLevel,
+} from "@/lib/program-levels";
 
 // ── API shapes (mirror lib/compliance-plan.ts) ──
 type CandidateTier = "renewal" | "easy-win" | "lapsed" | "legacy" | "net-new";
 
 interface PlanRequirement {
   instanceId: string;
+  /** Shared by every per-country instance of one "each country" requirement. */
+  requirementKey: string;
   specialisation: string | null;
   tierName: string | null;
   purpose: string;
-  nativeLevel: string;
+  nativeLevel: ReqLevel;
+  aggregation: Aggregation;
+  /** Set on one country of an "each country" requirement; null when pooled. */
+  country: string | null;
   scopeLabel: string;
   cert: string;
   required: number;
@@ -119,6 +135,8 @@ interface PlanRiskImpact {
   specialisation: string | null;
   tierName: string | null;
   cert: string;
+  aggregation: Aggregation;
+  country: string | null;
   scopeLabel: string;
   required: number;
   attained: number;
@@ -164,12 +182,16 @@ interface CompliancePlanResult {
 interface PlanningOption {
   name: string;
   isTiered: boolean;
+  /** Requirement levels the program's rows use (Country … Global). */
   levels: string[];
   tiers: string[];
   specialisations: string[];
 }
-
-type ScopeLevel = "global" | "theatre" | "region" | "country";
+interface PlanningOptionsResponse {
+  programs: PlanningOption[];
+  /** Country Sets with at least one member — the "By Country Set" pick-list. */
+  countrySets: string[];
+}
 
 interface TargetSelection {
   mode: "tier" | "specialisations" | "all";
@@ -189,7 +211,18 @@ const WINDOW_OPTIONS = [0, 1, 3, 6, 12];
 const DEFAULT_WINDOW_MONTHS = 3;
 
 function parseLevel(v: string | null): ScopeLevel {
-  return v === "theatre" || v === "region" || v === "country" ? v : "global";
+  return parseScopeLevel(v) ?? "global";
+}
+
+/**
+ * Whether the scope selector offers a level. Global, Theatre and Country are
+ * always offered, as they always were. Region and Country Set plan against
+ * their OWN requirement rows (a region no longer pools the Country rows), so
+ * offering one no program has rows at would only ever produce an empty plan.
+ */
+function levelAvailable(level: ScopeLevel, options: PlanningOption[]): boolean {
+  if (level === "global" || level === "theatre" || level === "country") return true;
+  return options.some((o) => scopeLevelOffered(level, o.levels));
 }
 
 function parseWindowMonths(v: string | null): number {
@@ -382,7 +415,11 @@ function riskImpactSegments(impact: PlanRiskImpact): Segment[] {
     { text: " — " },
     { text: `${impact.cert}: ` },
     { text: `${impact.attained} → ${impact.projectedAttained}`, bold: true },
-    { text: ` / ${impact.required} (${impact.scopeLabel})` },
+    {
+      text: ` / ${impact.required} (${impact.scopeLabel}${
+        impact.aggregation === "eachCountry" && impact.country !== null ? " · each country" : ""
+      })`,
+    },
     // `buildRiskImpactNote` runs these through `segmentsText`, so the PDF's
     // amber callout picks the marker up without a second code path.
     ...(impact.onPath ? [] : [{ text: " · not on the recommended path", muted: true }]),
@@ -516,6 +553,107 @@ function candidateChips(r: PlanRequirement): { text: string; className: string; 
     });
   }
   return chips;
+}
+
+/**
+ * One row of a specialisation block as the roadmap draws it. An "each country"
+ * requirement arrives from the server as one `PlanRequirement` per country, all
+ * sharing a `requirementKey`; the page folds them back under one heading so a
+ * forty-country set reads as one requirement rather than forty. Shared by the
+ * on-screen `SpecBlock` and the PDF's `buildSpecGroup`, so the two group alike.
+ *
+ * The single placeholder an "each country" requirement yields for a scope with
+ * no countries at all has `country === null` and stays a plain row.
+ */
+type RoadmapRow =
+  | { kind: "single"; r: PlanRequirement }
+  | { kind: "eachCountry"; key: string; summary: PlanRequirement; rows: PlanRequirement[] };
+
+function roadmapRows(reqs: PlanRequirement[]): RoadmapRow[] {
+  const order: (PlanRequirement | string)[] = [];
+  const groups = new Map<string, PlanRequirement[]>();
+  for (const r of reqs) {
+    if (r.aggregation !== "eachCountry" || r.country === null) {
+      order.push(r);
+      continue;
+    }
+    const g = groups.get(r.requirementKey);
+    if (g) {
+      g.push(r);
+    } else {
+      groups.set(r.requirementKey, [r]);
+      order.push(r.requirementKey);
+    }
+  }
+  return order.map((item): RoadmapRow => {
+    if (typeof item !== "string") return { kind: "single", r: item };
+    const rows = groups.get(item)!;
+    return { kind: "eachCountry", key: item, summary: summariseEachCountry(rows), rows };
+  });
+}
+
+/**
+ * An "each country" requirement's heading figures. `attained` is the LOWEST
+ * country's count — the same definition the program dashboard uses, and the one
+ * that makes `riskState(attained, projected, required)` right unchanged: the
+ * requirement is met exactly when every country is. The gap and the pools are
+ * summed, because every short country needs its own people.
+ */
+function summariseEachCountry(rows: PlanRequirement[]): PlanRequirement {
+  const first = rows[0];
+  const sum = (f: (r: PlanRequirement) => number) => rows.reduce((s, r) => s + f(r), 0);
+  const noWindow = rows.some((r) => r.projectedAttained === null);
+  return {
+    ...first,
+    instanceId: first.requirementKey,
+    country: null,
+    attained: Math.min(...rows.map((r) => r.attained)),
+    projectedAttained: noWindow ? null : Math.min(...rows.map((r) => r.projectedAttained ?? r.attained)),
+    shortfall: sum((r) => r.shortfall),
+    projectedShortfall: noWindow ? null : sum((r) => r.projectedShortfall ?? r.shortfall),
+    renewalPool: sum((r) => r.renewalPool),
+    easyWinPool: sum((r) => r.easyWinPool),
+    lapsedPool: sum((r) => r.lapsedPool),
+    legacyPool: sum((r) => r.legacyPool),
+    netNew: sum((r) => r.netNew),
+    expiringSoon: sum((r) => r.expiringSoon),
+    sharedWith: [...new Set(rows.flatMap((r) => r.sharedWith))].sort((a, b) => a.localeCompare(b)),
+  };
+}
+
+function countryState(r: PlanRequirement): RiskState {
+  return requirementState(r);
+}
+
+/**
+ * `riskState`, except that an "each country" placeholder for an area with no
+ * countries is never met — the server sizes its gap from at least 1 even at a
+ * quantity of 0, and the dashboard reports such a row not compliant, so a green
+ * "Met" here would contradict both.
+ */
+function requirementState(r: PlanRequirement): RiskState {
+  if (r.aggregation === "eachCountry" && r.country === null && r.shortfall > 0) return "nonCompliant";
+  return riskState(r.attained, r.projectedAttained ?? undefined, r.required);
+}
+
+/** "4 × Cert A — each country". */
+function eachCountryTitle(r: PlanRequirement): string {
+  return `${r.required} × ${r.cert} — each country`;
+}
+
+/** "2 of 5 countries short · 1 at risk" / "All 5 countries met". */
+function eachCountryStatus(rows: PlanRequirement[]): string {
+  const short = rows.filter((r) => countryState(r) === "nonCompliant").length;
+  const atRisk = rows.filter((r) => countryState(r) === "atRisk").length;
+  const parts: string[] = [];
+  if (short > 0) parts.push(`${short} of ${rows.length} countr${rows.length === 1 ? "y" : "ies"} short`);
+  if (atRisk > 0) parts.push(`${atRisk} at risk`);
+  return parts.length > 0 ? parts.join(" · ") : `All ${rows.length} countr${rows.length === 1 ? "y" : "ies"} met`;
+}
+
+/** The requirement cell for a plain row — names an empty-area placeholder for what it is. */
+function requirementLabel(r: PlanRequirement): string {
+  return r.aggregation === "eachCountry" ? `${eachCountryTitle(r)} (no countries in scope)` : r.cert;
 }
 
 /** A target's heading: the program, and the tier it is aiming at. */
@@ -732,6 +870,11 @@ function buildRoadmapSection(
           // Why the Net-new column can total more than the Summary sheet's
           // "Net-new training": these rows want the same certification.
           shared: r.sharedWith.join("; "),
+          // Appended rather than inserted, so a sheet someone already scripts
+          // against keeps its column positions. An "each country" requirement
+          // is one row per country here, the rectangle a pivot wants.
+          countMode: AGGREGATION_SHORT_LABELS[r.aggregation],
+          country: r.country ?? "",
         });
       }
     }
@@ -764,6 +907,8 @@ function buildRoadmapSection(
       { key: "legacy", header: "Legacy" },
       { key: "netNew", header: "Net-new" },
       { key: "shared", header: "Shared with" },
+      { key: "countMode", header: "Count Mode" },
+      { key: "country", header: "Country" },
     ],
     rows,
   };
@@ -783,6 +928,8 @@ function buildRiskImpactSection(impacts: PlanRiskImpact[], windowMonths: number)
       { key: "Required", header: "Required" },
       { key: "Shortfall", header: "Projected shortfall" },
       { key: "OnPath", header: "On recommended path" },
+      { key: "CountMode", header: "Count Mode" },
+      { key: "Country", header: "Country" },
     ],
     rows: impacts.map((i) => ({
       Program: i.program,
@@ -794,6 +941,8 @@ function buildRiskImpactSection(impacts: PlanRiskImpact[], windowMonths: number)
       Required: i.required,
       Shortfall: Math.max(0, i.required - i.projectedAttained),
       OnPath: i.onPath ? "Yes" : "No",
+      CountMode: AGGREGATION_SHORT_LABELS[i.aggregation],
+      Country: i.country ?? "",
     })),
   };
 }
@@ -915,8 +1064,12 @@ function buildSpecGroup(
   const dim = specDimmed(spec, tiered, state);
   const badges = specBadges(spec, tiered, windowMonths);
   const costLabel = specCostLabel(spec);
-  const rows: ReportTonedRow[] = spec.requirements.map((r) => {
-    const rowState = riskState(r.attained, r.projectedAttained ?? undefined, r.required);
+  const toRow = (
+    r: PlanRequirement,
+    labels: { cert: string; scope: string; haveNeed: ReturnType<typeof haveNeedCell> },
+    detail?: string[],
+  ): ReportTonedRow => {
+    const rowState = requirementState(r);
     const chips = candidateChips(r);
     // A cell tone overrides the row's, so a dimmed block has to surrender its
     // green "Met" as well, or one shaded cell per row survives the greying.
@@ -926,13 +1079,48 @@ function buildSpecGroup(
       // shaded; otherwise follow the page, which tints only the two bad states.
       tone: dim ? "muted" : rowState === "compliant" ? undefined : rowState === "atRisk" ? "amber" : "red",
       cells: {
-        cert: r.cert,
-        scope: r.scopeLabel,
-        haveNeed: haveNeedCell(r),
+        cert: labels.cert,
+        scope: labels.scope,
+        haveNeed: labels.haveNeed,
         gap: dim ? { ...gap, tone: undefined } : gap,
         candidates: chips.length === 0 ? "—" : chips.map((c) => c.text).join(", "),
       },
+      ...(detail && detail.length > 0 ? { detail } : {}),
     };
+  };
+  const rows: ReportTonedRow[] = roadmapRows(spec.requirements).map((row) => {
+    if (row.kind === "single") {
+      return toRow(row.r, { cert: requirementLabel(row.r), scope: row.r.scopeLabel, haveNeed: haveNeedCell(row.r) });
+    }
+    // One printed row per requirement, as on the page, with the countries that
+    // need attention as indented lines beneath it and the met ones on one line.
+    const s = row.summary;
+    const lowest = haveNeedCell(s);
+    const needy = row.rows.filter((r) => countryState(r) !== "compliant");
+    const met = row.rows.filter((r) => countryState(r) === "compliant").map((r) => r.country ?? "");
+    const detail = [
+      ...needy.map((r) => {
+        const projected = r.projectedAttained ?? undefined;
+        const have = showsProjection(r.attained, projected) ? `${r.attained} → ${projected}` : String(r.attained);
+        const gapNow = r.shortfall > 0 ? `need ${r.shortfall}` : `met now, need ${r.projectedShortfall ?? 0} in ${windowMonths}mo`;
+        return `${r.country}: ${have} / ${r.required} — ${gapNow}`;
+      }),
+      ...(met.length > 0 ? [`Met in: ${met.join(", ")}`] : []),
+    ];
+    return toRow(
+      s,
+      {
+        cert: eachCountryTitle(s),
+        scope: eachCountryStatus(row.rows),
+        // The heading's figure is the lowest country's, so its "N expiring" (the
+        // lowest country's drop) would mislead; name the whole-area count.
+        haveNeed: {
+          text: lowest.text,
+          sub: s.expiringSoon > 0 ? `lowest country · ${s.expiringSoon} expiring across countries` : "lowest country",
+        },
+      },
+      detail,
+    );
   });
   return {
     title: spec.name,
@@ -1152,7 +1340,7 @@ function buildPlanDocument(plan: CompliancePlanResult, level: ScopeLevel): Repor
     orientation: "portrait",
     meta: [
       { label: "Scope", value: plan.scopeLabel },
-      { label: "Level", value: level },
+      { label: "Level", value: SCOPE_LEVEL_LABELS[level] },
       {
         label: "Renewal window",
         value: plan.renewalWindowMonths === 0 ? "Off" : `${plan.renewalWindowMonths} month${plan.renewalWindowMonths === 1 ? "" : "s"}`,
@@ -1188,22 +1376,49 @@ function CompliancePlanningPageInner() {
     return companyScope.selected;
   }, [companyScope.loading, companyScope.selected]);
 
-  // Selector metadata.
+  // Selector metadata. `optionsLoaded` gates the re-validation below: until the
+  // response lands, a URL-seeded Region / Country Set scope must not be judged
+  // against an empty list and thrown away.
   const [options, setOptions] = useState<PlanningOption[]>([]);
+  const [countrySets, setCountrySets] = useState<string[]>([]);
+  const [optionsLoaded, setOptionsLoaded] = useState(false);
   useEffect(() => {
     fetch("/api/programs/planning?options=true")
       .then((r) => r.json())
-      .then((d) => setOptions(d.programs || []))
+      .then((d: Partial<PlanningOptionsResponse>) => {
+        setOptions(d.programs || []);
+        setCountrySets(d.countrySets || []);
+        setOptionsLoaded(true);
+      })
       .catch(() => {});
   }, []);
 
   // Scope. Seeded from the URL so Back from a record restores the view.
-  const [level, setLevel] = useState<ScopeLevel>(() => parseLevel(searchParams.get("level")));
-  const [scopeValue, setScopeValue] = useState(() => searchParams.get("scope") ?? "");
+  const [levelState, setLevel] = useState<ScopeLevel>(() => parseLevel(searchParams.get("level")));
+  const [scopeValueState, setScopeValue] = useState(() => searchParams.get("scope") ?? "");
   const theatres = useMemo(() => [...new Set(regionRows.map((r) => r.theatre).filter((t): t is string => !!t))].sort(), [regionRows]);
   const regions = useMemo(() => [...new Set(regionRows.map((r) => r.region).filter(Boolean))].sort(), [regionRows]);
   const countries = useMemo(() => [...new Set(regionRows.map((r) => r.country))].sort(), [regionRows]);
-  const scopeOptions = level === "theatre" ? theatres : level === "region" ? regions : level === "country" ? countries : [];
+  const offeredLevels = useMemo(() => SCOPE_LEVELS.filter((l) => levelAvailable(l, options)), [options]);
+
+  // The seeded level and value are re-validated against what exists, DERIVED
+  // rather than reconciled in an effect (which would need a mount guard and trip
+  // `react-hooks/set-state-in-effect`). A level no program offers falls back to
+  // Global; a value missing from its (loaded) list reads as "not chosen yet".
+  // While a list is still empty the seed passes through unchanged, which is what
+  // lets the mirror below run on mount without erasing it — and the mirror
+  // writes these effective values, so a stale link is corrected in the address
+  // bar rather than persisting.
+  const level: ScopeLevel = optionsLoaded && !offeredLevels.includes(levelState) ? "global" : levelState;
+  const scopeOptions =
+    level === "theatre" ? theatres
+      : level === "region" ? regions
+        : level === "countrySet" ? countrySets
+          : level === "country" ? countries
+            : [];
+  const listLoaded = level === "countrySet" ? optionsLoaded : regionRows.length > 0;
+  const scopeValue =
+    level === "global" || (listLoaded && !scopeOptions.includes(scopeValueState)) ? "" : scopeValueState;
 
   // Targets: program name → selection (only selected programs are keys).
   const [targets, setTargets] = useState<Record<string, TargetSelection>>(() => parseTargets(searchParams.get("targets")));
@@ -1279,6 +1494,7 @@ function CompliancePlanningPageInner() {
     params.set("level", level);
     if (level === "theatre") params.set("theatre", scopeValue);
     if (level === "region") params.set("region", scopeValue);
+    if (level === "countrySet") params.set("countrySet", scopeValue);
     if (level === "country") params.set("country", scopeValue);
     params.set("companyId", String(companyId));
     params.set("renewalWindowMonths", String(renewalWindowMonths));
@@ -1372,13 +1588,12 @@ function CompliancePlanningPageInner() {
           <span className="text-sm font-medium text-gray-700 mr-1">Scope</span>
           <select
             value={level}
-            onChange={(e) => { setLevel(e.target.value as ScopeLevel); setScopeValue(""); }}
+            onChange={(e) => { setLevel(parseLevel(e.target.value)); setScopeValue(""); }}
             className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm bg-white"
           >
-            <option value="global">Global</option>
-            <option value="theatre">By Theatre</option>
-            <option value="region">By Region</option>
-            <option value="country">By Country</option>
+            {offeredLevels.map((l) => (
+              <option key={l} value={l}>{SCOPE_LEVEL_LABELS[l]}</option>
+            ))}
           </select>
           {level !== "global" && (
             <select
@@ -1386,7 +1601,7 @@ function CompliancePlanningPageInner() {
               onChange={(e) => setScopeValue(e.target.value)}
               className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm bg-white"
             >
-              <option value="">Select {level}…</option>
+              <option value="">Select {SCOPE_VALUE_NOUN[level]}…</option>
               {scopeOptions.map((o) => <option key={o} value={o}>{o}</option>)}
             </select>
           )}
@@ -1536,7 +1751,7 @@ function CompliancePlanningPageInner() {
           <Sparkles className="mx-auto mb-2 text-blue-400" size={28} />
           {debouncedTargets.length === 0
             ? "Select one or more programs and a target above to generate a gap-closing plan."
-            : `Choose a ${level} to plan against.`}
+            : `Choose a ${level === "global" ? "scope" : SCOPE_VALUE_NOUN[level]} to plan against.`}
         </div>
       ))}
     </div>
@@ -1632,9 +1847,13 @@ function SpecBlock({
                 </tr>
               </thead>
               <tbody>
-                {spec.requirements.map((r) => (
-                  <ReqRow key={r.instanceId} r={r} windowMonths={windowMonths} />
-                ))}
+                {roadmapRows(spec.requirements).map((row) =>
+                  row.kind === "single" ? (
+                    <ReqRow key={row.r.instanceId} r={row.r} windowMonths={windowMonths} />
+                  ) : (
+                    <EachCountryRows key={row.key} row={row} windowMonths={windowMonths} />
+                  ),
+                )}
               </tbody>
             </table>
           </div>
@@ -1657,20 +1876,113 @@ function SpecBlock({
   );
 }
 
-function ReqRow({ r, windowMonths }: { r: PlanRequirement; windowMonths: number }) {
+/**
+ * An "each country" requirement: one heading row carrying the lowest country's
+ * figures and the summed gap, the countries that are short or at risk as
+ * indented rows beneath it, and the met ones folded into a single line of chips
+ * — so a large set stays readable without hiding which countries need work.
+ */
+function EachCountryRows({
+  row,
+  windowMonths,
+}: {
+  row: Extract<RoadmapRow, { kind: "eachCountry" }>;
+  windowMonths: number;
+}) {
+  const needy = row.rows.filter((r) => countryState(r) !== "compliant");
+  const met = row.rows.filter((r) => countryState(r) === "compliant");
+  return (
+    <>
+      <ReqRow
+        r={row.summary}
+        windowMonths={windowMonths}
+        label={
+          <span className="flex flex-wrap items-center gap-1.5">
+            <span className="font-medium">{row.summary.required} × {row.summary.cert}</span>
+            <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700">each country</span>
+          </span>
+        }
+        scope={
+          <span className="text-xs text-gray-600" title="The lowest country's count is shown; the gap is summed across countries.">
+            {eachCountryStatus(row.rows)}
+          </span>
+        }
+        haveNeed={
+          <>
+            <AttainedValue
+              attained={row.summary.attained}
+              projected={row.summary.projectedAttained ?? undefined}
+            />{" "}
+            / {row.summary.required}
+            <div className="text-[11px] text-gray-400 mt-0.5">lowest country</div>
+            {row.summary.expiringSoon > 0 && (
+              <div className="text-[11px] text-amber-600 font-medium">
+                ▼{row.summary.expiringSoon} expiring across countries
+              </div>
+            )}
+          </>
+        }
+      />
+      {needy.map((r) => (
+        <ReqRow
+          key={r.instanceId}
+          r={r}
+          windowMonths={windowMonths}
+          label={<span className="pl-4 text-gray-400">↳</span>}
+        />
+      ))}
+      {met.length > 0 && (
+        <tr className="border-b border-gray-50">
+          <td className="py-1.5 pr-3 pl-4 text-gray-400">↳</td>
+          <td colSpan={4} className="py-1.5 text-xs text-gray-500">
+            <span className="mr-1.5">Met in:</span>
+            <span className="inline-flex flex-wrap gap-1 align-middle">
+              {met.map((r) => (
+                <span key={r.instanceId} className="px-1.5 py-0.5 rounded bg-green-50 text-green-700">
+                  {r.country}
+                </span>
+              ))}
+            </span>
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
+function ReqRow({
+  r,
+  windowMonths,
+  label,
+  scope,
+  haveNeed,
+}: {
+  r: PlanRequirement;
+  windowMonths: number;
+  /** Replaces the requirement cell — the per-country sub-rows and group heading use it. */
+  label?: ReactNode;
+  /** Replaces the scope cell. */
+  scope?: ReactNode;
+  /** Replaces the Have / Need cell's contents (the tone is still the row's). */
+  haveNeed?: ReactNode;
+}) {
   const projected = r.projectedAttained ?? undefined;
-  const state = riskState(r.attained, projected, r.required);
+  const state = requirementState(r);
   const projectedGap = r.projectedShortfall ?? r.shortfall;
   const chips = candidateChips(r);
   return (
     <tr className={`border-b border-gray-50 ${ROW_BG[state]}`}>
-      <td className="py-1.5 pr-3">{r.cert}</td>
-      <td className="py-1.5 pr-3">{r.scopeLabel}</td>
+      <td className="py-1.5 pr-3">{label ?? requirementLabel(r)}</td>
+      <td className="py-1.5 pr-3">{scope ?? r.scopeLabel}</td>
       {/* The expiry marker lives here, under the numbers it changes — not beside
           the scope label, where it read as a property of the geography. */}
       <td className={`py-1.5 pr-3 ${RISK_TEXT[state]}`}>
-        <AttainedValue attained={r.attained} projected={projected} /> / {r.required}
-        <ExpiringNote attained={r.attained} projected={projected} />
+        {haveNeed ?? (
+          <>
+            <AttainedValue attained={r.attained} projected={projected} /> / {r.required}
+            <ExpiringNote attained={r.attained} projected={projected} />
+          </>
+        )}
       </td>
       <td className="py-1.5 pr-3">
         {state === "compliant" && <span className="text-green-600">✓</span>}

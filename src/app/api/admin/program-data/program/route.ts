@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { requireSuperAdmin, handleAuthError } from "@/lib/auth";
 import { invalidateReportCache } from "@/lib/report-cache";
+import { REQ_LEVELS } from "@/lib/program-levels";
+
+const levelRank = (l: string) => (REQ_LEVELS as readonly string[]).indexOf(l);
 
 /**
  * GET /api/admin/program-data/program
@@ -78,7 +81,9 @@ export async function GET(request: NextRequest) {
       name,
       requirementCount: a.requirementCount,
       specialisations: [...a.specialisations].sort(),
-      levels: [...a.levels].sort(),
+      // Canonical level order (Country, Region, Country Set, Theatre, Global)
+      // rather than alphabetical, so the admin card reads the same everywhere.
+      levels: [...a.levels].sort((x, y) => levelRank(x) - levelRank(y)),
       hasMinimumPerTheatre: a.hasMinimumPerTheatre,
       isTiered: a.isTiered,
       deploymentMode: a.deploymentMode,

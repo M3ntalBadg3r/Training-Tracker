@@ -10,6 +10,14 @@ import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import { exportReportToPdf, type ReportDocument, type ReportTone } from "@/lib/report-export";
 import SharedExportMenu, { type ExportFormat } from "@/components/ui/ExportMenu";
 import LoadingState from "@/components/ui/LoadingState";
+import {
+  AGGREGATION_SHORT_LABELS,
+  isMultiCountryLevel,
+  parseScopeLevel,
+  SCOPE_TO_REQ_LEVEL,
+  type Aggregation,
+  type CountryBreakdownRow,
+} from "@/lib/program-levels";
 
 export const TRAINING_TYPE_LABELS: Record<string, string> = {
   Certification: "Certification",
@@ -43,6 +51,23 @@ export interface Requirement {
   projectedGlobalAttained?: number;
   projectedTheatreBreakdown?: { theatre: string; count: number; compliant: boolean }[] | null;
   projectedCompliant?: boolean;
+  /**
+   * How the row counts. Always present from the current API; optional here so
+   * an older cached payload still renders. `"eachCountry"` only ever appears on
+   * a Region or Country Set view.
+   */
+  aggregation?: Aggregation;
+  // "eachCountry" rows only. For these, `attained`/`projectedAttained` are the
+  // LOWEST per-country count (so `riskState` shades them correctly), and the
+  // distinct holders across the whole area move to `pooledAttained`.
+  pooledAttained?: number;
+  projectedPooledAttained?: number;
+  countriesMet?: number;
+  countriesTotal?: number;
+  projectedCountriesMet?: number;
+  /** Every country in the area, zeros included, sorted by country. */
+  countryBreakdown?: CountryBreakdownRow[];
+  projectedCountryBreakdown?: CountryBreakdownRow[];
   alternatives: AlternativeEntry[];
 }
 
@@ -87,6 +112,17 @@ export interface TierDeploymentRequirement {
   projectedAttained: number | null;
   projectedCompliant: boolean | null;
   projectedTheatreBreakdown: { theatre: string; count: number; compliant: boolean }[] | null;
+  /** Optional only so an older cached payload still renders. */
+  aggregation?: Aggregation;
+  // Always present from the current API, and null unless the row is
+  // "eachCountry" — in which case `attained` is the lowest country's count.
+  pooledAttained?: number | null;
+  projectedPooledAttained?: number | null;
+  countriesMet?: number | null;
+  countriesTotal?: number | null;
+  projectedCountriesMet?: number | null;
+  countryBreakdown?: CountryBreakdownRow[] | null;
+  projectedCountryBreakdown?: CountryBreakdownRow[] | null;
   alternatives: AlternativeEntry[];
 }
 
@@ -232,6 +268,63 @@ export function alternativesText(alternatives: AlternativeEntry[] | undefined): 
   if (!alternatives || alternatives.length === 0) return undefined;
   const parts = alternatives.map((a) => `${a.trainingFullTitle} (${trainingTypeLabel(a.trainingType)})`);
   return `or ${parts.join(", ")}`;
+}
+
+/** Whether a requirement must be met in every country of its area. */
+export function isEachCountry(req: { aggregation?: Aggregation }): boolean {
+  return req.aggregation === "eachCountry";
+}
+
+/** "Each country" / "Total" — the count mode as a table cell or export value. */
+export function countModeLabel(aggregation: Aggregation | undefined): string {
+  return AGGREGATION_SHORT_LABELS[aggregation ?? "total"];
+}
+
+/**
+ * The Required cell's wording. An "each country" row reads "N per country"; a
+ * pooled row on a multi-country view reads "N total", so the two modes cannot be
+ * confused side by side; everything else keeps its unit ("N people").
+ */
+export function requiredText(
+  req: { quantityRequired: number; aggregation?: Aggregation },
+  level: string,
+  unitLabel: string
+): string {
+  if (isEachCountry(req)) return `${req.quantityRequired} per country`;
+  if (isMultiCountryScope(level)) return `${req.quantityRequired} total`;
+  return `${req.quantityRequired} ${unitLabel}`.trim();
+}
+
+/** Whether a view scope ("region", "countrySet", …) spans several countries. */
+export function isMultiCountryScope(level: string): boolean {
+  const scope = parseScopeLevel(level);
+  return scope !== null && isMultiCountryLevel(SCOPE_TO_REQ_LEVEL[scope]);
+}
+
+/**
+ * "2 / 3 countries met", or "2 -> 1 / 3 countries met" when the projection loses
+ * a country. ASCII arrow for the PDF, as in `attainedText`.
+ */
+export function countriesMetText(met: number, projectedMet: number | undefined | null, total: number): string {
+  return `${attainedText(met, projectedMet ?? undefined)} / ${total} countries met`;
+}
+
+/**
+ * The per-country breakdown as plain lines ("Country A: 4 -> 3 / 4 (At Risk, 1
+ * expiring)"), for a PDF, which has no expander.
+ */
+export function countryBreakdownLines(
+  breakdown: CountryBreakdownRow[] | null | undefined,
+  projectedBreakdown: CountryBreakdownRow[] | null | undefined,
+  required: number
+): string[] | undefined {
+  if (!breakdown || breakdown.length === 0) return undefined;
+  return breakdown.map((c) => {
+    const projected = projectedBreakdown?.find((p) => p.country === c.country)?.count;
+    const expiring = expiringText(c.count, projected);
+    const state = RISK_STATUS_LABEL[riskState(c.count, projected, required)];
+    return `${c.country}: ${attainedText(c.count, projected)} / ${required} (${state}${expiring ? `, ${expiring}` : ""})`;
+  });
 }
 
 /**
@@ -449,9 +542,7 @@ function RequirementRowGroup({
           return (
             <td key={spec.name} className="px-4 py-2 text-center border border-gray-200">
               {req ? (
-                <span className="font-semibold">
-                  {req.quantityRequired} {unitLabel}
-                </span>
+                <span className="font-semibold">{requiredText(req, level, unitLabel)}</span>
               ) : (
                 <span className="text-gray-300">—</span>
               )}
@@ -474,6 +565,24 @@ function RequirementRowGroup({
             );
           }
           const state = riskState(req.attained, req.projectedAttained, req.quantityRequired);
+          if (isEachCountry(req)) {
+            return (
+              <td
+                key={spec.name}
+                className={`px-4 py-2 text-center border border-gray-200 align-top ${RISK_BG[state]}`}
+              >
+                <EachCountryAttained
+                  req={req}
+                  state={state}
+                  onView={
+                    level !== "global" && req.trainingTitle
+                      ? () => onViewStudents(req.trainingTitle!, req.trainingFullTitle, level, filterValue, req.alternatives)
+                      : undefined
+                  }
+                />
+              </td>
+            );
+          }
           return (
             <td
               key={spec.name}
@@ -503,6 +612,127 @@ function RequirementRowGroup({
         <td colSpan={specialisations.length + 1} className="h-1 bg-gray-100 border-0" />
       </tr>
     </>
+  );
+}
+
+/**
+ * One country's row of an "each country" breakdown: its count (current →
+ * projected), whether it meets the quantity, and its own expiring note — the
+ * headline has no single expiring figure, since each country drops separately.
+ */
+function CountryBreakdownList({
+  breakdown,
+  projectedBreakdown,
+  required,
+}: {
+  breakdown: CountryBreakdownRow[];
+  projectedBreakdown: CountryBreakdownRow[] | null | undefined;
+  required: number;
+}) {
+  if (breakdown.length === 0) {
+    return <p className="text-xs text-gray-500">No countries in this area.</p>;
+  }
+  return (
+    <table className="w-full text-xs">
+      <thead>
+        <tr className="text-gray-500">
+          <th className="px-2 py-1 text-left font-medium">Country</th>
+          <th className="px-2 py-1 text-center font-medium">Holders</th>
+          <th className="px-2 py-1 text-center font-medium">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {breakdown.map((c) => {
+          const projected = projectedBreakdown?.find((p) => p.country === c.country)?.count;
+          const cState = riskState(c.count, projected, required);
+          return (
+            <tr key={c.country} className="border-t border-gray-200/70">
+              <td className="px-2 py-1 text-left">{c.country}</td>
+              <td className="px-2 py-1 text-center">
+                <AttainedValue
+                  attained={c.count}
+                  projected={projected}
+                  className={`font-semibold ${RISK_TEXT[cState]}`}
+                />{" "}
+                <span className="text-gray-400">/ {required}</span>
+                <ExpiringNote attained={c.count} projected={projected} />
+              </td>
+              <td className="px-2 py-1 text-center">
+                <span className={`inline-block px-1.5 py-0.5 rounded-full font-medium ${RISK_BADGE[cState]}`}>
+                  {RISK_STATUS_LABEL[cState]}
+                </span>
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
+/**
+ * The Attained cell of an "each country" requirement: how many of the area's
+ * countries meet the quantity (current → projected), the lowest country's count
+ * (the figure the row is shaded by), the pooled holder count for context, and an
+ * expander listing every country.
+ */
+function EachCountryAttained({
+  req,
+  state,
+  onView,
+}: {
+  req: Requirement;
+  state: RiskState;
+  onView?: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const breakdown = req.countryBreakdown ?? [];
+  const total = req.countriesTotal ?? breakdown.length;
+  const met = req.countriesMet ?? breakdown.filter((c) => c.compliant).length;
+  const projectedMet = req.projectedCountriesMet;
+  const losing = projectedMet !== undefined && projectedMet < met ? met - projectedMet : 0;
+  return (
+    <div>
+      <div className={`font-bold ${RISK_TEXT[state]}`}>
+        <AttainedValue attained={met} projected={projectedMet} /> / {total} countries met
+      </div>
+      <div className="text-xs text-gray-600 mt-0.5">
+        Lowest country: <AttainedValue attained={req.attained} projected={req.projectedAttained} />
+        {req.pooledAttained !== undefined && (
+          <span className="text-gray-400"> · {req.pooledAttained} holders in total</span>
+        )}
+      </div>
+      {losing > 0 && (
+        <div className="text-[11px] text-amber-600 mt-0.5 font-medium">
+          ▼{losing} {losing === 1 ? "country falls" : "countries fall"} below by the horizon
+        </div>
+      )}
+      <div className="mt-1 flex items-center justify-center gap-3">
+        {breakdown.length > 0 && (
+          <button
+            onClick={() => setExpanded((p) => !p)}
+            className="inline-flex items-center gap-1 text-xs text-gray-600 hover:text-gray-900"
+          >
+            {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+            {expanded ? "Hide countries" : "Show countries"}
+          </button>
+        )}
+        {onView && (
+          <button onClick={onView} className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline">
+            <Users size={12} /> View
+          </button>
+        )}
+      </div>
+      {expanded && (
+        <div className="mt-2 rounded border border-gray-200 bg-white/70">
+          <CountryBreakdownList
+            breakdown={breakdown}
+            projectedBreakdown={req.projectedCountryBreakdown}
+            required={req.quantityRequired}
+          />
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -749,12 +979,21 @@ export function LoadingSpinner() {
   return <LoadingState size="section" label="Loading…" />;
 }
 
-/** One deployment requirement row inside a tier card (with per-theatre expand). */
-function TierRequirementRow({ req }: { req: TierDeploymentRequirement }) {
+/**
+ * One deployment requirement row inside a tier card (with per-theatre expand,
+ * or — for an "each country" row — a per-country expand).
+ */
+function TierRequirementRow({ req, multiCountry }: { req: TierDeploymentRequirement; multiCountry: boolean }) {
   const [expanded, setExpanded] = useState(false);
   const projected = req.projectedAttained ?? undefined;
   const state = riskState(req.attained, projected, req.quantityRequired);
-  const hasBreakdown = req.theatreBreakdown && req.theatreBreakdown.length > 0;
+  const eachCountry = isEachCountry(req);
+  const countryBreakdown = req.countryBreakdown ?? [];
+  const hasBreakdown = eachCountry
+    ? countryBreakdown.length > 0
+    : !!req.theatreBreakdown && req.theatreBreakdown.length > 0;
+  const total = req.countriesTotal ?? countryBreakdown.length;
+  const met = req.countriesMet ?? countryBreakdown.filter((c) => c.compliant).length;
   return (
     <div className={`rounded border ${RISK_BG[state]} border-gray-200 px-3 py-2`}>
       <div className="flex items-center justify-between gap-2">
@@ -770,9 +1009,17 @@ function TierRequirementRow({ req }: { req: TierDeploymentRequirement }) {
           </span>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <span className={`text-sm font-semibold ${RISK_TEXT[state]}`}>
-            <AttainedValue attained={req.attained} projected={projected} /> / {req.quantityRequired}
-          </span>
+          {eachCountry ? (
+            <span className={`text-sm font-semibold ${RISK_TEXT[state]}`}>
+              <AttainedValue attained={met} projected={req.projectedCountriesMet ?? undefined} /> / {total} countries
+              <span className="font-normal text-gray-500"> · {req.quantityRequired} per country</span>
+            </span>
+          ) : (
+            <span className={`text-sm font-semibold ${RISK_TEXT[state]}`}>
+              <AttainedValue attained={req.attained} projected={projected} /> / {req.quantityRequired}
+              {multiCountry && <span className="font-normal text-gray-500"> total</span>}
+            </span>
+          )}
           {hasBreakdown && (
             <button onClick={() => setExpanded((p) => !p)} className="text-gray-400 hover:text-gray-600">
               {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
@@ -780,8 +1027,26 @@ function TierRequirementRow({ req }: { req: TierDeploymentRequirement }) {
           )}
         </div>
       </div>
-      <ExpiringNote attained={req.attained} projected={projected} />
-      {expanded && hasBreakdown && (
+      {eachCountry ? (
+        <div className="text-xs text-gray-600 mt-0.5">
+          Lowest country: <AttainedValue attained={req.attained} projected={projected} />
+          {req.pooledAttained != null && (
+            <span className="text-gray-400"> · {req.pooledAttained} holders in total</span>
+          )}
+        </div>
+      ) : (
+        <ExpiringNote attained={req.attained} projected={projected} />
+      )}
+      {expanded && hasBreakdown && eachCountry && (
+        <div className="mt-2 rounded border border-gray-200 bg-white/70">
+          <CountryBreakdownList
+            breakdown={countryBreakdown}
+            projectedBreakdown={req.projectedCountryBreakdown}
+            required={req.quantityRequired}
+          />
+        </div>
+      )}
+      {expanded && hasBreakdown && !eachCountry && (
         <div className="mt-2 grid grid-cols-2 sm:grid-cols-3 gap-1">
           {req.theatreBreakdown!.map((t) => {
             const tProj = req.projectedTheatreBreakdown?.find((p) => p.theatre === t.theatre)?.count;
@@ -803,8 +1068,13 @@ function TierRequirementRow({ req }: { req: TierDeploymentRequirement }) {
  * The tier ladder for a tiered program at a given level + scope: a highest-tier
  * banner, the achieved specialisations, and one card per tier showing the
  * specialisation gate + deployment requirements and whether it is reached.
+ *
+ * `level` is the view scope (optional, so existing callers are unaffected); on a
+ * multi-country view it labels pooled deployment rows "total" beside the "per
+ * country" ones.
  */
-export function TierLadder({ block }: { block: TierBlock }) {
+export function TierLadder({ block, level }: { block: TierBlock; level?: string }) {
+  const multiCountry = level !== undefined && isMultiCountryScope(level);
   const achieved = block.achievedSpecialisationCount;
   const projAchieved = block.projectedAchievedSpecialisationCount;
   const sorted = [...block.tiers].sort((a, b) => a.sortOrder - b.sortOrder);
@@ -884,7 +1154,11 @@ export function TierLadder({ block }: { block: TierBlock }) {
                 <div className="mt-3 space-y-1.5">
                   <div className="text-xs font-medium text-gray-600 uppercase tracking-wide">Deployment requirements</div>
                   {tier.deploymentRequirements.map((req, i) => (
-                    <TierRequirementRow key={`${req.trainingTitle ?? i}-${req.specialisationName ?? ""}`} req={req} />
+                    <TierRequirementRow
+                      key={`${req.trainingTitle ?? i}-${req.specialisationName ?? ""}`}
+                      req={req}
+                      multiCountry={multiCountry}
+                    />
                   ))}
                 </div>
               )}

@@ -110,15 +110,26 @@ function restoreSummary(data: any): {
   message: string;
 } {
   const c = data.counts;
+  const warnings: string[] = Array.isArray(data.warnings) ? data.warnings : [];
+  // Country Sets: an archive written before they existed carries none, and the
+  // restore then leaves the live sets alone — so only mention them when some
+  // actually came back.
+  const countrySets =
+    c.countrySets > 0
+      ? ` ${c.countrySets} country sets (${c.countrySetMembers} memberships).`
+      : "";
   if (data.kind === "config") {
     return {
-      type: "success",
-      message: `Config restore complete — ${c.trainingData} trainings, ${c.regionData} regions, ${c.programData} program rules, ${c.importAliases} import aliases. Student data was not touched.`,
+      type: warnings.length > 0 ? "warning" : "success",
+      message: [
+        `Config restore complete — ${c.trainingData} trainings, ${c.regionData} regions, ${c.programData} program rules, ${c.importAliases} import aliases.${countrySets} Student data was not touched.`,
+        ...warnings,
+      ].join(" "),
     };
   }
 
   const parts = [
-    `Restore complete — ${c.regionData} regions, ${c.trainingData} trainings, ${c.students} students, ${c.trainingTaken} training records restored.`,
+    `Restore complete — ${c.regionData} regions, ${c.trainingData} trainings, ${c.students} students, ${c.trainingTaken} training records restored.${countrySets}`,
   ];
   if (c.companies?.restored > 0) {
     parts.push(`${c.companies.restored} companies matched or created.`);
@@ -132,7 +143,6 @@ function restoreSummary(data: any): {
       }.`
     );
   }
-  const warnings: string[] = Array.isArray(data.warnings) ? data.warnings : [];
   if (data.sessionInvalidated) {
     parts.push("You have been signed out because the user accounts changed.");
   }

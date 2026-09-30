@@ -8,7 +8,7 @@ Data in — Bulk CSV/Excel import with automatic column mapping, name and email 
 
 Data out — Twelve interactive reports with KPI strips, drill-down charts, and grouping, including Trained but Not Certified, Legacy Replacement Gap, Learner Achievement Scorecard, Coverage/Compliance, Theatre/Region/Country Comparison, Catalogue Health, Program Compliance Trend, and Renewal Forecast. Everything exports to CSV, Excel, or PDF, and any report can be put on a schedule with delivery to local disk, email, Google Drive, Box, or OneDrive via guided OAuth wizards with credential-expiry monitoring.
 
-Partner programs — Fully data-driven compliance dashboards: every program defined in Program Data gets its own country, region, theatre, and global views with per-theatre minimums and OR-logic alternative trainings, with no code changes required.
+Partner programs — Fully data-driven compliance dashboards: every program defined in Program Data gets its own country, region, country-set, theatre, and global views — with per-country or pooled counting for regions and custom country sets, per-theatre minimums, and OR-logic alternative trainings — with no code changes required.
 
 Operations — One-command install on any Debian LXC or VM, systemd service, encrypted and passphrase-portable backups with scheduled retention, and an in-app updater with stable/dev channels, automatic database and build rollback, and optional unattended updates.
 
@@ -36,6 +36,7 @@ kept current here and when full audits happen.
 - [Reports](#reports)
 - [Admin](#admin)
   - [Region Data](#region-data)
+  - [Country Sets](#country-sets)
   - [Training Data](#training-data)
   - [User Management](#user-management)
   - [System Settings](#system-settings-superadmin-only)
@@ -740,7 +741,7 @@ Per-training metrics: total completions, last-12-month completions, active stude
 
 ### Program Compliance Trend
 
-Monthly snapshots — **12 months of history plus a 12-month forecast** — for the partner programs configured in **Admin > Program Data**. For each month-end, the same OR-logic union of primary + alternative trainings used by the live program dashboards is applied, counting only trainings that were completed by that month and still valid (so each point is a true snapshot of that moment, and historical lines reflect how compliance actually built up). The forecast (drawn as dashed lines after the "Forecast →" marker) assumes **no new completions** and shows compliance decaying as today's active certifications reach their expiry — an "if nothing changes" view of upcoming renewal gaps, summarised by the **Forecast 12-mo Δ** KPI. Use the **Theatre / Region / Country** filters to narrow the scope (shown in the "Showing" caption); the report is also scoped to the company selected in the header.
+Monthly snapshots — **12 months of history plus a 12-month forecast** — for the partner programs configured in **Admin > Program Data**. For each month-end, the same OR-logic union of primary + alternative trainings used by the live program dashboards is applied, counting only trainings that were completed by that month and still valid (so each point is a true snapshot of that moment, and historical lines reflect how compliance actually built up). The forecast (drawn as dashed lines after the "Forecast →" marker) assumes **no new completions** and shows compliance decaying as today's active certifications reach their expiry — an "if nothing changes" view of upcoming renewal gaps, summarised by the **Forecast 12-mo Δ** KPI. Use the **Theatre / Region / Country** filters to narrow the scope (shown in the "Showing" caption); the report is also scoped to the company selected in the header. The trend does not distinguish requirement levels — every requirement of a program is counted as distinct holders pooled across the chosen geography — so a Region or Country Set requirement counted *in each country* appears pooled here; use the program dashboard for the per-country view.
 
 ### Renewal Forecast
 
@@ -762,8 +763,8 @@ Manage the mapping between countries, regions, and theatres. This page is the so
 - **Search / Filter** — Filter by country, region, or theatre. The Theatre column has a "(missing)" filter to surface rows that still need a theatre assigned.
 - **Region** — Optional. Leaving it blank means the country has no region defined, and that is a real answer rather than an oversight: it is what a student import writes for a country it has never seen. A blank region shows as an **empty cell** wherever it appears — the Region Data table, a student's record, every report's Region column and every export — and it is not offered as a choice in the Region filters, so it cannot be mistaken for a region called "Unknown".
 - **Add** — Add a new country with its region (optional) and theatre (optional). A country without a theatre cannot be selected for new students — set the theatre before assigning students.
-- **Edit** — Click **Edit** on any row to modify the country, region, or theatre inline, then **Save** or **Cancel**.
-- **Delete** — Remove a country/region mapping.
+- **Edit** — Click **Edit** on any row to modify the country, region, or theatre inline, then **Save** or **Cancel**. Renaming a country carries its students and its [Country Set](#country-sets) memberships along to the new name.
+- **Delete** — Remove a country/region mapping, after a confirmation. Deleting a country also removes it from every Country Set it belongs to. A country that still has students assigned cannot be deleted, and the page says so.
 - **ISO Code** — Each country can carry its two-letter **ISO 3166-1** country code (`GB`, `US`, `DE`). It is optional: a country with no code shows as *(unmapped)*, and the page keeps a running count of how many are still unset. The code is what lets the app line your country names up with a map, or with any other system that identifies countries by code, so it is worth setting even before anything visibly uses it. Two things are worth knowing. The code does **not** have to be unique — if your geography lists England and Scotland separately, both are `GB`, and anything using the code adds those rows together. And leaving it blank is a real answer rather than an oversight: a geography that is not a single country genuinely has no code.
 - **Suggest ISO codes** — Looks at every country that has no code yet and tries to match it by name against the official ISO list. It shows you what it found, **including the name it matched against**, and applies nothing until you tick the rows you agree with. Anything it cannot match confidently is listed as *no suggestion* rather than guessed at. Treat the matches as proposals to check — a wrong code is worse than a blank one, because a blank one is visibly blank.
 - **Import** — Upload a CSV or Excel file with `Country`, `Region`, and (optionally) `Theatre` and `ISO Code` columns. The system auto-maps columns and shows a preview before importing. As with Theatre, **a column you do not map is not written at all**, so importing a file without an ISO Code column leaves every existing code exactly as it was. A blank `Region` cell is accepted and clears that country's region, so a file exported from this page can always be re-imported.
@@ -881,6 +882,17 @@ Navigate to **Admin > Specialisations** to manage the list of specialisations us
 - **Import** — Upload a CSV or Excel file with a single `Name` column to bulk-create specialisations. The wizard auto-maps the column and shows a preview; names that already exist are skipped.
 - **Export** — Download the current list as CSV, Excel, or PDF.
 
+### Country Sets
+
+Navigate to **Admin > Country Sets** (SuperAdmin only) to manage **custom groups of countries** that partner programs can report against — like a region, but chosen freely, and a country may belong to any number of sets. Country Sets are global reference data, shared by every company.
+
+- **Add / Edit** — a unique name, an optional description, and the member countries. The country picker lists every country in Region Data, with search, a **Selected only** toggle, **Clear**, and **Select all in region** / **Select all in theatre** helpers for adding a whole group at once. Only countries that exist in Region Data can be added.
+- **Search & Sort** — search matches a set's name, description or any of its countries; click a column header to sort by name, description or country count. Both are kept in the page address.
+- **Delete** — removes the set and its memberships, after a confirmation.
+- **Export** — download the list (name, description, countries) as CSV, Excel, or PDF.
+
+A program's **Country Set** requirements are generic — they apply to whichever set is being viewed — so there is nothing to link a set to a program; the page notes how many programs have Country Set requirements. A set with no countries is allowed but is not offered in the dashboards' set picker. Deleting a country in Region Data removes it from every set; renaming one keeps its memberships.
+
 ### User Management
 
 Navigate to **Admin > Users** to manage user accounts.
@@ -949,6 +961,7 @@ Click **Download Backup** to generate and download a `.zip` file containing all 
 | `training_taken.json` | All training completion records |
 | `companies.json` | Companies (tenants) |
 | `user_companies.json` | Which companies each user may access |
+| `country_sets.json`, `country_set_members.json` | Country Sets and the countries in each |
 | `users.json` | User accounts. Password hashes and MFA secrets are included **only** when "Include user credentials" is ticked — see below |
 | `import_metadata.json` | Import timestamps |
 | `import_aliases.json` | Import column aliases |
@@ -990,7 +1003,7 @@ To move data to a **different** installation, click **Portable backup…** and c
 
 When you stand up a new Training Tracker instance and want to carry over the catalogue, regions, programs, and import aliases — but **not** any learner data — click **Config Backup** (standard, tied to `ENCRYPTION_KEY`) or **Portable config backup…** (passphrase-encrypted, restores anywhere). The file is saved as `training-tracker-config-<timestamp>.zip[.enc]`.
 
-A config backup contains: product types, region data, the full training catalogue, OLX parent/sub-item relationships, programs (incl. tiered-program settings), program tiers, specialisations, program data + alternatives, import aliases, and the system settings singleton (including the date format, session timeout, public-API switch and all branding — name, colour, logo and favicon). It explicitly excludes students, training-taken records, users, companies, scheduled exports, export credentials, and import metadata.
+A config backup contains: product types, region data, Country Sets, the full training catalogue, OLX parent/sub-item relationships, programs (incl. tiered-program settings), program tiers, specialisations, program data + alternatives, import aliases, and the system settings singleton (including the date format, session timeout, public-API switch and all branding — name, colour, logo and favicon). It explicitly excludes students, training-taken records, users, companies, scheduled exports, export credentials, and import metadata.
 
 Restoring a config backup wipes and replaces only the included reference tables and **leaves student and training-taken rows untouched**, so it is safe to run on a populated system when you just need to refresh the catalogue. Archive type is auto-detected on upload via a `kind` flag in `backup_metadata.json`; the upload form is shared with the standard restore.
 
@@ -1012,6 +1025,8 @@ Click **Upload Backup File** and select a previously created backup file. If it 
 - A restore that *would* leave the system with no enabled SuperAdmin is **refused** before anything is changed.
 - Restoring accounts signs you out, because the restored accounts are not the ones your current session was issued for. Sign in again with an account from the archive.
 - **Restored accounts never carry an old session marker forward.** Each account tracks a counter that is raised whenever its sessions are deliberately ended (a password change, an admin password reset, a role change), and a sign-in is only accepted while it is level with that counter. A backup stores the counter as it stood when the backup was taken, which is usually *lower* than the account's current one, so restoring it verbatim would have wound the marker backwards. Every restored account is therefore given a counter above everything that existed before the restore — both the live values being replaced and whatever the archive itself held — so a restore cannot hand out a valid lease on an old sign-in, and an account number that is ever reused cannot arrive carrying one.
+
+**Country Sets** are replaced from the archive when it carries them. An archive taken before Country Sets existed carries none, and restoring it **keeps the Country Sets already on the system** — a member country the restore did not bring back is dropped from its set, and the result says how many. A config restore behaves the same way. A backup containing Region or Country Set program requirements cannot be restored onto an older version of the app that does not know those levels — update that system first.
 
 **Important:** Restoring a backup **replaces all existing data** other than the user accounts described above. Create a backup of the current system first if you need to preserve it. Uploaded archives are capped at 512 MB by default (override with `BACKUP_MAX_RESTORE_MB` in `.env`) so an oversized or malformed upload cannot exhaust server memory; the same ceiling applies to restoring a **saved** backup from the backups folder. Separately, an archive is refused if its contents would *decompress* to more than 1024 MB (override with `BACKUP_MAX_EXPANDED_MB`), which bounds a small file crafted to expand enormously. A genuine backup is stored uncompressed, so real archives are nowhere near either limit.
 
@@ -1219,7 +1234,7 @@ Click **Scan for Issues** under **Catalogue Integrity** to check the training ca
 
 The **Danger Zone** at the bottom of the Data Clean-Up page offers two destructive actions. **Both cannot be undone.**
 
-- **Wipe All Data (Keep Accounts)** — Permanently deletes all students, training records, training data, product types, region data, programs, companies, and scheduled exports, but **keeps your user accounts** so you stay signed in. Type `WIPE` to confirm.
+- **Wipe All Data (Keep Accounts)** — Permanently deletes all students, training records, training data, product types, region data, Country Sets, programs, companies, and scheduled exports, but **keeps your user accounts** so you stay signed in. Type `WIPE` to confirm.
 - **Factory Reset (Wipe Everything)** — Deletes **everything, including all user accounts**, returning the system to its brand-new state. You are taken straight to the first-run setup wizard to create a new admin. Type `RESET` to confirm.
 
 ---
@@ -1235,11 +1250,11 @@ The page shows a **box for each program**. From here you can:
 - **Delete** (bin icon on a box) — deletes the program together with all of its requirements.
 - **Import / Export** — bulk-import (CSV/Excel drag-and-drop or browse) or export (CSV/Excel/PDF) across all programs at once. Export/import round-trips the **full program structure**: alongside each requirement it carries the program-level **Deployment Handling** (deployment mode) and, for tiered programs, each tier's **Tier Order** and **Tier Specialisations Required** — tiers that have no requirement rows of their own are exported as blank tier-definition rows so they survive a round-trip. Import is **replace, not merge**: for every program named in the file, its existing requirements are deleted and re-created from the file (programs not in the file are untouched), so re-importing an edited export never duplicates rows. The import preview warns you which programs will be replaced and asks you to confirm before it runs. After a successful import the page header shows a **Last imported** date/time.
 
-Click a box to open the program's page, which lists just that program's requirements and lets you **Add / Edit / Delete** them. When you add a requirement from a program's page it is attached to that program automatically — there is no program picker to get wrong. The requirements table can be filtered by **Specialisation**, **Level**, and **Type** via the column-header dropdowns. New specialisations are added inline from the **+** next to the Specialisation dropdown in the requirement form.
+Click a box to open the program's page, which lists just that program's requirements and lets you **Add / Edit / Delete** them. When you add a requirement from a program's page it is attached to that program automatically — there is no program picker to get wrong. The requirements table can be filtered by **Specialisation**, **Level**, **Type** and **Count Mode** via the column-header dropdowns. New specialisations are added inline from the **+** next to the Specialisation dropdown in the requirement form.
 
 #### Tiered programs
 
-Tick **Tiered program** when creating a program to unlock **tiers** (e.g. Tier A, Tier B, Tier C) that a partner reaches based on how many **specialisations** they have achieved. A specialisation is *achieved* (at a given country/theatre/global scope) once all of its qualifying (Sales/Pre-Sales) cert requirements are met by enough distinct people.
+Tick **Tiered program** when creating a program to unlock **tiers** (e.g. Tier A, Tier B, Tier C) that a partner reaches based on how many **specialisations** they have achieved. A specialisation is *achieved* (at a given country/region/country-set/theatre/global scope) once all of its qualifying (Sales/Pre-Sales) cert requirements are met by enough distinct people — and, for a requirement counted *in each country*, only once every country meets it.
 
 On a tiered program's page a **Tiers** section lets you add tiers (name, ladder order, and how many achieved specialisations each requires) and choose how each tier's **Deployment** cert requirements are handled:
 
@@ -1254,10 +1269,20 @@ Each requirement specifies:
 | Field | Description |
 |-------|-------------|
 | **Specialisation** | The product or solution area for this requirement. Shared across programs; managed via a controlled dropdown — click **+** or **Manage Specialisations** to add new ones. |
-| **Level** | Whether the requirement applies at Country, Theatre, or Global level |
+| **Level** | Whether the requirement applies at Country, Region, Country Set, Theatre, or Global level. Each dashboard view reads only its own level's requirements |
+| **Count Mode** | Region and Country Set only: **Total across the area** (distinct holders anywhere in the region or set) or **In each country** (every country must reach the quantity on its own). Always Total at every other level |
 | **Type** | Certification, Accreditation, Instructor-Led Training, OLX, or OLX Sub-Item |
 | **Training** | The specific training required (filtered by the selected Type). Listed once per name even if backed by multiple catalogue records; a requirement counts anyone holding **any** record under that name |
-| **Quantity Required** | For Country/Theatre: number of people needed. For Global: number of compliant theatres needed. |
+| **Quantity Required** | For Country/Theatre: number of people needed there. For Region/Country Set: people needed across the area (Total) or in every country (In each country). For Global with a training: people needed globally; without one: number of compliant theatres needed. |
+| **Minimum per Theatre** | Optional, **Global rows only** — the minimum number of holders per theatre, which adds a per-theatre breakdown to the dashboard. Not offered at other levels |
+
+#### Region and Country Set requirements
+
+**Region** and **Country Set** requirements are written once and apply to *whichever* region or [Country Set](#country-sets) is being viewed — they are not tied to one named region or set. Because both span several countries, each carries a **count mode**: *Total* pools distinct holders across the area; *In each country* requires every country in it to reach the quantity, and is never met by an area with no countries. The two combine: a specialisation needing **4 × Cert A in each country** plus **2 × Cert B in total** is achieved only when both hold, and only then counts toward a tier.
+
+> **Behaviour change — By Region.** The dashboard's **By Region** view used to be built from the **Country** requirements, pooled across the region's countries with the per-country quantity unchanged. It now reads **Region** requirements only, and is offered only when the program has some. A program with only Country requirements therefore no longer offers By Region; to keep a region view, add Region requirements (count mode *Total*) that mirror the Country ones. The same applies to Compliance Planning and to `level=region` on the public API.
+
+**Import / export columns:** Program Name, Specialisation, Tier, Purpose, Level, **Count Mode**, Training Type, Training, Quantity Required, Minimum per Theatre, Alternatives, Deployment Handling, Tier Order, Tier Specialisations Required. **Level** accepts Country, Region, Country Set, Theatre or Global; **Count Mode** accepts *Total* or *Each country*, and a blank cell means Total (so older files import unchanged). *Each country* on a Country, Theatre or Global row, or an unrecognised value, is a row error. A **Minimum per Theatre** on a non-Global row is dropped with a warning in the preview.
 
 Each distinct program automatically gets its own compliance dashboard under **Programs**.
 
@@ -1317,8 +1342,8 @@ curl -H "Authorization: Bearer tt_live_xxxxxxxx" \
 | `GET /api/public/v1/reports/{reportType}` | Report aggregates — `trained-not-certified`, `legacy-gap`, `learner-scorecard`, `by-product`, `by-function`, `expiring-soon`, `currently-expired`, `last-12-months` |
 | `GET /api/public/v1/offerings` | Offering definitions (specialisations + supporting trainings) for the key's companies. Add `?country=` or `?region=` for Onshore/Nearshore/Offshore compliance figures; `?name=` for one offering |
 | `GET /api/public/v1/programs` | Partner program list (configured levels, per-theatre-minimum flag, tiered flag) |
-| `GET /api/public/v1/programs/{programName}` | Per-program compliance. `?level=country\|region\|theatre\|global` with `?country=`/`?region=`/`?theatre=`; `?horizonMonths=3\|6\|12` for a forward-looking projection; `?trainingTitle=&students=true` for the holder roster |
-| `GET /api/public/v1/programs/planning` | **Compliance planning — aggregates only.** The roadmap, per-requirement gaps and costs, risk impacts and totals. `?options=true` lists the program / tier / specialisation names you need to build a target; `?targets=` takes a URL-encoded JSON array `[{program, mode:"tier"\|"specialisations"\|"all", tier?, specialisations?[]}]`, with `?level=`, `?country=`/`?region=`/`?theatre=`, `?renewalWindowMonths=0\|1\|3\|6\|12` and `?planForWindow=true` |
+| `GET /api/public/v1/programs/{programName}` | Per-program compliance. `?level=country\|region\|countrySet\|theatre\|global` with `?country=`/`?region=`/`?countrySet=`/`?theatre=` — each level counts only the requirements authored at it (`region` reads Region requirements, no longer the pooled Country ones); `?horizonMonths=3\|6\|12` for a forward-looking projection; `?trainingTitle=&students=true` for the holder roster |
+| `GET /api/public/v1/programs/planning` | **Compliance planning — aggregates only.** The roadmap, per-requirement gaps and costs, risk impacts and totals. `?options=true` lists the program / tier / specialisation names you need to build a target; `?targets=` takes a URL-encoded JSON array `[{program, mode:"tier"\|"specialisations"\|"all", tier?, specialisations?[]}]`, with `?level=` (including `countrySet`), `?country=`/`?region=`/`?countrySet=`/`?theatre=`, `?renewalWindowMonths=0\|1\|3\|6\|12` and `?planForWindow=true`. `?options=true` also lists the non-empty Country Sets |
 | `GET /api/public/v1/reports/program-compliance-trend` | 12 months of compliance history plus a 12-month expiry-driven forecast, per program and specialisation. `?program=`, `?country=`/`?region=`/`?theatre=` |
 | `GET /api/public/v1/reports/renewal-forecast` | Projected renewals vs lapses over the next 12 months, plus an at-risk-by-training breakdown. `?country=`/`?region=`/`?theatre=` |
 
@@ -1406,18 +1431,19 @@ Compliance figures only mean something within a single company, so the dashboard
 
 ### One scope selector drives the page
 
-A single **View** selector at the top of the dashboard — a **Level** dropdown (Global / By Theatre / By Region / By Country, limited to the program's configured levels) plus a **Value** dropdown for the chosen level (which theatre/region/country; hidden for Global) — drives the whole page. Picking a scope shows, for that scope, the **Tier Status** (for tiered programs) and the **one matching report**:
+A single **View** selector at the top of the dashboard — a **Level** dropdown (Global / By Theatre / By Region / By Country Set / By Country, limited to the levels the program has requirements at) plus a **Value** dropdown for the chosen level (which theatre/region/country set/country; hidden for Global) — drives the whole page. Each view reads **only its own level's requirements**. Picking a scope shows, for that scope, the **Tier Status** (for tiered programs) and the **one matching report**:
 
 | Report shown | When Level is | Shows |
 |---------|-----------|-------|
 | **Country Report** | By Country (Program has Country-level requirements) | People in that country with each required training vs. the requirement |
-| **Region Report** | By Region (Program has Country-level requirements) | The same, aggregated across all countries in the region |
+| **Region Report** | By Region (Program has Region-level requirements) | Region requirements over the region's countries, each counted in total or in each country |
+| **Country Set Report** | By Country Set (Program has Country Set-level requirements) | Country Set requirements over the set's countries, each counted in total or in each country |
 | **Theatre Report** | By Theatre (Program has Theatre-level requirements) | People in that theatre with each required training vs. the requirement |
 | **Global Report** | Global (Program has Global-level requirements) | See below |
 
-For a **tiered** program the **Tier Status** section appears above the report and reflects the same scope — including **By Region** (aggregated across the region's countries). It shows the partner's **highest tier achieved** and, for each tier, how many specialisations are achieved versus required — the tier box also **lists which specialisations** are currently achieved at that scope — plus any **Deployment** cert requirements (with distinct-holder counts and a per-theatre breakdown). With a "Compliance as of" horizon selected, the banner also shows the projected highest tier once certificates expiring within the window drop out.
+For a **tiered** program the **Tier Status** section appears above the report and reflects the same scope — at every level, including **By Region** and **By Country Set**, where it is worked out from that level's own requirements. It shows the partner's **highest tier achieved** and, for each tier, how many specialisations are achieved versus required — the tier box also **lists which specialisations** are currently achieved at that scope — plus any **Deployment** cert requirements (with distinct-holder counts and a per-theatre breakdown). With a "Compliance as of" horizon selected, the banner also shows the projected highest tier once certificates expiring within the window drop out.
 
-The Country/Region/Theatre reports display specialisations as columns with grouped rows showing the training name, required count, and attained count. Attained values are colour-coded **green** (met) or **red** (not met). Click **View** on any attained cell to see the qualifying students. Where a specialisation has **Deployment** requirements (tiered programs in *per-achieved-specialisation* mode) they appear in a labelled **Deployment requirements** sub-section beneath the qualifying rows: a specialisation is still achieved on its qualifying requirements alone, but a tier that uses it also needs these deployment requirements, so they're surfaced here (with their own met/not-met state) rather than only inside Tier Status. The Global report shows the same deployment sub-section per specialisation card plus a **Deployment: Met / Not met** badge. Exports gain a **Purpose** column (Qualification / Deployment).
+The Country/Region/Country Set/Theatre reports display specialisations as columns with grouped rows showing the training name, required count, and attained count. On a Region or Country Set view a *total* requirement reads **N total**, while an *each country* requirement reads **N per country** and shows **X / Y countries met** with the lowest country's count and the total holders beneath it; expand it for a per-country breakdown (each country with its own holders, status and, under a projection, its own expiring count). The row is only met when every country is. Exports on these views add **Count Mode**, **Countries Met** and **Total Holders** columns, and the PDF lists the per-country breakdown under each each-country row. Attained values are colour-coded **green** (met) or **red** (not met). Click **View** on any attained cell to see the qualifying students. Where a specialisation has **Deployment** requirements (tiered programs in *per-achieved-specialisation* mode) they appear in a labelled **Deployment requirements** sub-section beneath the qualifying rows: a specialisation is still achieved on its qualifying requirements alone, but a tier that uses it also needs these deployment requirements, so they're surfaced here (with their own met/not-met state) rather than only inside Tier Status. The Global report shows the same deployment sub-section per specialisation card plus a **Deployment: Met / Not met** badge. Exports gain a **Purpose** column (Qualification / Deployment).
 
 ### Global report — two presentations
 
@@ -1442,7 +1468,7 @@ The headline metric is **People to certify**: how many people still need to earn
 
 The dedup applies to **certifications** as well as to named people. Where several specialisations require the *same* certification over the same population, one group of people earning it closes all of them — so three specialisations each needing 2 holders of one certification cost **2** people, not 6. Those requirements are tagged **shared** in the roadmap (and in the exported Roadmap sheet's *Shared with* column), with the other specialisations named on hover. The consequence is worth expecting: each specialisation block shows what it costs *on its own*, so the blocks can add up to more than the program's headline — the headline is the figure that counts a shared certification once.
 
-Pick a **scope** (Global / Theatre / Region / Country) and one or more **programs**, then choose a target per program:
+Pick a **scope** (Global / Theatre / Region / Country Set / Country) and one or more **programs**, then choose a target per program. Region and Country Set are offered only when at least one program has requirements at that level.
 
 - **Tiered program** → target a **tier** (the tool picks the cheapest specialisations to reach it) or specific specialisation(s). Reaching a tier only needs as many specialisations as the tier requires, so exactly that many are flagged **Recommended** — and they are chosen by what each one *adds* to the set, not by what it costs on its own. That matters because specialisations share certifications: one that reads "4 to certify" but shares half its requirements with a specialisation already recommended really adds 2, and is the better pick over one that reads 4 and shares nothing. Where a swap genuinely costs the same either way, the alternative is shown as **Equal-cost alternative** so you can take the one that suits the business better.
 - **Flat program** → pick specialisation(s) or **all requirements**.
@@ -1466,7 +1492,7 @@ By default the window is **informational**: the KPIs and "Who to certify" still 
 
 Compliance Planning reports on **one company at a time** for the same reason the program dashboards do, and asks you to pick one from the header switcher if **All companies** is selected.
 
-Each scope plans against **only its own-level requirements**, exactly like the dashboards: planning one country shows that country's Country-level requirements, not the theatre-wide requirement above it (select the theatre to plan against theatre-level requirements). An **Export report** button in the page header downloads the **whole plan** as one file — a KPI summary, the aggregate roadmap, the "Who to certify" list, a **Requirements at risk** section, and the renewals-at-risk list — as CSV, Excel (one sheet per section), or PDF. **CSV and Excel keep the wide machine-readable tables** — every column, including the ones the page keeps out of sight — while **the PDF mirrors the page**: the coloured metric cards, the projection note, a card per specialisation with its badges and shared-certification footnote, the combined `4 → 2 / 4` figures under the same red/amber/green shading, each candidate's reasons as indented lines beneath their row, the renewals split into the same two cards the page shows, and an explanation instead of an empty header row where a section has nothing in it. CSV and Excel flatten that split into an **On recommended path** column on both the renewals and the requirements-at-risk tables. With a window selected the CSV and Excel roadmap gains **Projected**, **Expiring**, **Projected gap** and **Projected achieved** columns, and the file name carries a `-plusNmo` suffix (plus `-planned` when planning for the window). The candidate list and the renewals list also keep their own per-section export buttons for a quick single-table download. This release is a **live view** (no saved plans yet).
+Each scope plans against **only its own-level requirements**, exactly like the dashboards: planning one country shows that country's Country-level requirements, not the theatre-wide requirement above it (select the theatre to plan against theatre-level requirements); a region plans its Region requirements and a country set its Country Set requirements. A requirement counted **in each country** is planned **country by country** — each country's gap can only be closed by people in that country, so a shortfall of 1 in one country and 2 in another is 3 people to certify. The roadmap folds those countries under one **N × Cert — each country** row that expands per country, and CSV/Excel carry one row per country with **Count Mode** and **Country** columns appended. People certified to close per-country gaps also count toward a *total* requirement on the same certification in that area, so the two are never charged twice. An **Export report** button in the page header downloads the **whole plan** as one file — a KPI summary, the aggregate roadmap, the "Who to certify" list, a **Requirements at risk** section, and the renewals-at-risk list — as CSV, Excel (one sheet per section), or PDF. **CSV and Excel keep the wide machine-readable tables** — every column, including the ones the page keeps out of sight — while **the PDF mirrors the page**: the coloured metric cards, the projection note, a card per specialisation with its badges and shared-certification footnote, the combined `4 → 2 / 4` figures under the same red/amber/green shading, each candidate's reasons as indented lines beneath their row, the renewals split into the same two cards the page shows, and an explanation instead of an empty header row where a section has nothing in it. CSV and Excel flatten that split into an **On recommended path** column on both the renewals and the requirements-at-risk tables. With a window selected the CSV and Excel roadmap gains **Projected**, **Expiring**, **Projected gap** and **Projected achieved** columns, and the file name carries a `-plusNmo` suffix (plus `-planned` when planning for the window). The candidate list and the renewals list also keep their own per-section export buttons for a quick single-table download. This release is a **live view** (no saved plans yet).
 
 Your selection — scope, programs and targets, the renewal window and **Plan for this window** — is mirrored into the page address, so opening a person's record from "Who to certify" or "Renewals at risk" and pressing **Back** returns you to the same plan instead of an empty one. It also makes a plan bookmarkable and shareable as a link.
 
@@ -1643,6 +1669,18 @@ Product types are an admin-managed list (not a fixed set), maintained in **Admin
 ### Function Types
 
 Sales, Pre-Sales, Deployments
+
+### Program Requirement Levels
+
+| Level | Counted over | Count mode |
+|-------|--------------|------------|
+| **Country** | One country | Total |
+| **Region** | Whichever region is viewed — its countries | Total, or In each country |
+| **Country Set** | Whichever [Country Set](#country-sets) is viewed — its member countries | Total, or In each country |
+| **Theatre** | One theatre | Total |
+| **Global** | Everyone (optionally with a per-theatre minimum) | Total |
+
+A **Country Set** is a named, admin-managed group of countries from Region Data; a country may belong to several. Sets are shared reference data, not per company.
 
 ### Expiry
 

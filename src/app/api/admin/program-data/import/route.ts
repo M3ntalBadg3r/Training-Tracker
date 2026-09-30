@@ -3,6 +3,14 @@ import prisma from "@/lib/prisma";
 import { requireSuperAdmin, handleAuthError } from "@/lib/auth";
 import { invalidateReportCache } from "@/lib/report-cache";
 import { readJsonBody } from "@/lib/request-body";
+import {
+  AGGREGATION_SHORT_LABELS,
+  LEVEL_LABELS,
+  REQ_LEVELS,
+  isMultiCountryLevel,
+  type Aggregation,
+  type ReqLevel,
+} from "@/lib/program-levels";
 
 interface RawRow {
   programName?: string;
@@ -10,6 +18,8 @@ interface RawRow {
   tierName?: string;
   purpose?: string;
   level?: string;
+  /** Count mode for a Region / Country Set row ("Total" | "Each country"). */
+  aggregation?: string;
   trainingType?: string;
   trainingFullTitle?: string;
   quantityRequired?: string | number;
@@ -21,10 +31,34 @@ interface RawRow {
   tierSpecialisationsRequired?: string | number | null;
 }
 
-const LEVEL_MAP: Record<string, string> = {
+// Keyed on the punctuation-stripped lowercase form (see `normalise`), so
+// "Country Set", "country_set", "country-set" and "CountrySet" all resolve.
+const LEVEL_MAP: Record<string, ReqLevel> = {
   country: "Country",
+  region: "Region",
+  countryset: "CountrySet",
   theatre: "Theatre",
   global: "Global",
+};
+
+/** Human list of the levels for error text: "Country, Region, Country Set, Theatre, or Global". */
+const LEVEL_LIST = (() => {
+  const labels = REQ_LEVELS.map((l) => LEVEL_LABELS[l]);
+  return `${labels.slice(0, -1).join(", ")}, or ${labels[labels.length - 1]}`;
+})();
+
+// Count-mode cell values, keyed like LEVEL_MAP. Accepts the short labels the
+// export writes ("Total" / "Each country"), the long form the editor shows
+// ("Total across the area" / "In each country"), the stored values, and a few
+// everyday variants.
+const AGGREGATION_MAP: Record<string, Aggregation> = {
+  total: "total",
+  totalacrossthearea: "total",
+  pooled: "total",
+  eachcountry: "eachCountry",
+  ineachcountry: "eachCountry",
+  each: "eachCountry",
+  percountry: "eachCountry",
 };
 
 const DEPLOYMENT_MODES = ["flat", "perAchievedSpecialisation", "perTierPerSpecialisation"];
@@ -51,9 +85,15 @@ function normalise(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
-function resolveLevel(raw: string): string | null {
-  const key = raw.trim().toLowerCase();
-  return LEVEL_MAP[key] ?? null;
+function resolveLevel(raw: string): ReqLevel | null {
+  return LEVEL_MAP[normalise(raw)] ?? null;
+}
+
+/** Resolve a Count Mode cell. Blank / a null marker means "total"; an
+ *  unrecognised value is `undefined` (a per-row error, never a silent default). */
+function resolveAggregation(raw: string): Aggregation | undefined {
+  if (raw.trim() === "" || isNullMarker(raw)) return "total";
+  return AGGREGATION_MAP[normalise(raw)];
 }
 
 function resolveTrainingType(raw: string): string | null {
@@ -94,7 +134,8 @@ interface ResolvedRow {
   requirement: {
     specialisationName: string | null;
     purpose: string;
-    level: "Country" | "Theatre" | "Global";
+    level: ReqLevel;
+    aggregation: Aggregation;
     trainingType: "Certification" | "Accreditation" | "InstructorLedTraining" | null;
     trainingTitle: string | null;
     quantityRequired: number;
@@ -103,7 +144,9 @@ interface ResolvedRow {
   } | null;
 }
 
-type ValidateResult = { ok: true; value: ResolvedRow } | { ok: false; message: string };
+type ValidateResult =
+  | { ok: true; value: ResolvedRow; warnings: string[] }
+  | { ok: false; message: string };
 
 export async function POST(request: NextRequest) {
   try {
@@ -149,6 +192,7 @@ export async function POST(request: NextRequest) {
     const tierName = isNullMarker(raw.tierName?.trim() ?? "") ? "" : (raw.tierName?.trim() ?? "");
     const purpose = raw.purpose?.trim().toLowerCase() === "deployment" ? "deployment" : "qualification";
     const rawLevel = raw.level?.trim() ?? "";
+    const rawAggregation = String(raw.aggregation ?? "").trim();
     const rawTrainingType = isNullMarker(raw.trainingType?.trim() ?? "") ? "" : (raw.trainingType?.trim() ?? "");
     const rawTrainingFullTitle = isNullMarker(raw.trainingFullTitle?.trim() ?? "") ? "" : (raw.trainingFullTitle?.trim() ?? "");
     const rawQty = raw.quantityRequired;
@@ -183,12 +227,28 @@ export async function POST(request: NextRequest) {
           tierSpecialisationsRequired,
           requirement: null,
         },
+        warnings: [],
       };
     }
 
     if (!rawLevel) return { ok: false, message: "Level is required" };
     const level = resolveLevel(rawLevel);
-    if (!level) return { ok: false, message: `Unknown level "${rawLevel}". Use: Country, Theatre, or Global` };
+    if (!level) return { ok: false, message: `Unknown level "${rawLevel}". Use: ${LEVEL_LIST}` };
+
+    const aggregation = resolveAggregation(rawAggregation);
+    if (!aggregation) {
+      return {
+        ok: false,
+        message: `Unknown Count Mode "${rawAggregation}". Use: ${AGGREGATION_SHORT_LABELS.total} or ${AGGREGATION_SHORT_LABELS.eachCountry}`,
+      };
+    }
+    if (aggregation === "eachCountry" && !isMultiCountryLevel(level)) {
+      return {
+        ok: false,
+        message: `Count Mode "${AGGREGATION_SHORT_LABELS.eachCountry}" is only valid for Region or Country Set rows, not ${LEVEL_LABELS[level]}`,
+      };
+    }
+    const warnings: string[] = [];
 
     const quantityRequired = typeof rawQty === "number" ? rawQty : parseInt(String(rawQty ?? ""), 10);
     if (isNaN(quantityRequired) || quantityRequired < 1) {
@@ -197,8 +257,21 @@ export async function POST(request: NextRequest) {
 
     let minimumPerTheatre: number | null = null;
     if (rawMinPerTheatre !== null && rawMinPerTheatre !== undefined && String(rawMinPerTheatre).trim() !== "" && !isNullMarker(String(rawMinPerTheatre))) {
-      const parsed = typeof rawMinPerTheatre === "number" ? rawMinPerTheatre : parseInt(String(rawMinPerTheatre), 10);
-      if (!isNaN(parsed) && parsed >= 0) minimumPerTheatre = parsed;
+      // Strict: a present-but-unparseable value is an error, never a silent
+      // null (parseInt would also have truncated "2.5" to 2).
+      const text = String(rawMinPerTheatre).trim();
+      const parsed = typeof rawMinPerTheatre === "number" ? rawMinPerTheatre : /^\d+$/.test(text) ? Number(text) : NaN;
+      if (!Number.isInteger(parsed) || parsed < 0) {
+        return { ok: false, message: `Minimum per Theatre "${text}" must be a whole number ≥ 0` };
+      }
+      minimumPerTheatre = parsed;
+    }
+    // Minimum per Theatre is only evaluated for Global requirements; at any
+    // other level it would be stored and never read, so it is dropped — with a
+    // warning, since the file asked for something that will not happen.
+    if (minimumPerTheatre !== null && level !== "Global") {
+      warnings.push(`Minimum per Theatre ignored — it only applies to Global rows, not ${LEVEL_LABELS[level]}`);
+      minimumPerTheatre = null;
     }
 
     let resolvedTrainingTitle: string | null = null;
@@ -216,7 +289,7 @@ export async function POST(request: NextRequest) {
     } else if (level !== "Global" || hasTier) {
       // Non-global rows must have training; tier deployment requirements always
       // name a training (they can't be the "count compliant theatres" placeholder).
-      return { ok: false, message: "Training Type and Training are required for Country/Theatre level rows and tier deployment requirements" };
+      return { ok: false, message: "Training Type and Training are required for every non-Global row and for tier deployment requirements" };
     }
     // Global + no training = "count compliant theatres" mode (allowed)
 
@@ -242,7 +315,8 @@ export async function POST(request: NextRequest) {
         requirement: {
           specialisationName: hasSpec ? specialisationName : null,
           purpose: hasTier ? "deployment" : purpose,
-          level: level as "Country" | "Theatre" | "Global",
+          level,
+          aggregation,
           trainingType: resolvedTrainingType,
           trainingTitle: resolvedTrainingTitle,
           quantityRequired,
@@ -250,11 +324,13 @@ export async function POST(request: NextRequest) {
           altData,
         },
       },
+      warnings,
     };
   }
 
   // --- Validation pass: collect resolved rows + per-row errors ---
   const errors: { row: number; message: string }[] = [];
+  const warnings: { row: number; message: string }[] = [];
   const resolved: ResolvedRow[] = [];
   let skipped = 0;
 
@@ -266,11 +342,12 @@ export async function POST(request: NextRequest) {
       continue;
     }
     resolved.push(result.value);
+    for (const message of result.warnings) warnings.push({ row: i + 1, message });
   }
 
   if (dryRun) {
     // In dry-run mode, "created" = number of rows that would succeed
-    return NextResponse.json({ created: resolved.length, skipped, errors });
+    return NextResponse.json({ created: resolved.length, skipped, errors, warnings });
   }
 
   // Programs named in this file are overwritten: their existing requirements are
@@ -382,6 +459,7 @@ export async function POST(request: NextRequest) {
             tierId,
             purpose: req.purpose,
             level: req.level,
+            aggregation: req.aggregation,
             trainingType: req.trainingType,
             trainingTitle: req.trainingTitle,
             quantityRequired: req.quantityRequired,
@@ -408,5 +486,5 @@ export async function POST(request: NextRequest) {
     create: { key: "program-data", timestamp: new Date() },
   });
 
-  return NextResponse.json({ created, skipped, errors });
+  return NextResponse.json({ created, skipped, errors, warnings });
 }

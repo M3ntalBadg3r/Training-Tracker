@@ -24,12 +24,21 @@ import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import { checkImportFile } from "@/lib/import-file";
+import {
+  AGGREGATION_SHORT_LABELS,
+  LEVEL_LABELS,
+  isMultiCountryLevel,
+  isReqLevel,
+  normaliseAggregation,
+} from "@/lib/program-levels";
 
-const LEVEL_LABELS: Record<string, string> = {
-  Country: "Country",
-  Theatre: "Theatre",
-  Global: "Global",
-};
+const levelLabel = (level: string) => (isReqLevel(level) ? LEVEL_LABELS[level] : level);
+
+/** Export cell for the Count Mode column: blank where a count mode does not
+ *  apply (single-country levels), else "Total" / "Each country" — the same
+ *  strings the import reads back. */
+const countModeExport = (r: ProgramDataRow) =>
+  isMultiCountryLevel(r.level) ? AGGREGATION_SHORT_LABELS[normaliseAggregation(r.level, r.aggregation)] : "";
 
 export default function ProgramDataPage() {
   const router = useRouter();
@@ -63,6 +72,7 @@ export default function ProgramDataPage() {
     tierName?: string;
     purpose?: string;
     level?: string;
+    aggregation?: string;
     trainingType?: string;
     trainingFullTitle?: string;
     quantityRequired?: string | number;
@@ -76,12 +86,15 @@ export default function ProgramDataPage() {
     created: number;
     skipped: number;
     errors: { row: number; message: string }[];
+    /** Rows imported with something dropped (e.g. Min per Theatre on a non-Global row). */
+    warnings?: { row: number; message: string }[];
   }
   const [showImport, setShowImport] = useState(false);
   const [importStep, setImportStep] = useState<ImportStep>("upload");
   const [importRows, setImportRows] = useState<ImportRow[]>([]);
   const [importValidated, setImportValidated] = useState(false);
   const [importValidationErrors, setImportValidationErrors] = useState<{ row: number; message: string }[]>([]);
+  const [importValidationWarnings, setImportValidationWarnings] = useState<{ row: number; message: string }[]>([]);
   const [importLoading, setImportLoading] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [importFileError, setImportFileError] = useState("");
@@ -194,7 +207,7 @@ export default function ProgramDataPage() {
       parts.push(`${p.specialisations.length} specialisation${p.specialisations.length === 1 ? "" : "s"}`);
     }
     if (p.levels.length > 0) {
-      parts.push(`levels: ${p.levels.map((l) => LEVEL_LABELS[l] || l).join(", ")}`);
+      parts.push(`levels: ${p.levels.map(levelLabel).join(", ")}`);
     }
     if (p.isTiered) {
       parts.push(`tiered · ${p.tierCount} tier${p.tierCount === 1 ? "" : "s"}`);
@@ -214,6 +227,7 @@ export default function ProgramDataPage() {
     { key: "tierName" as const, header: "Tier" },
     { key: "purpose" as const, header: "Purpose" },
     { key: "level" as const, header: "Level" },
+    { key: "aggregation" as const, header: "Count Mode" },
     { key: "trainingType" as const, header: "Training Type" },
     { key: "trainingFullTitle" as const, header: "Training" },
     { key: "quantityRequired" as const, header: "Quantity Required" },
@@ -230,6 +244,7 @@ export default function ProgramDataPage() {
     tierName: string;
     purpose: string;
     level: string;
+    aggregation: string;
     trainingType: string;
     trainingFullTitle: string;
     quantityRequired: string | number;
@@ -254,7 +269,8 @@ export default function ProgramDataPage() {
       specialisationName: r.specialisationName ?? "",
       tierName: r.tierName ?? "",
       purpose: r.purpose,
-      level: r.level,
+      level: levelLabel(r.level),
+      aggregation: countModeExport(r),
       trainingType: r.trainingType ? trainingTypeLabel(r.trainingType) : "—",
       trainingFullTitle: r.trainingFullTitle || "—",
       quantityRequired: r.quantityRequired,
@@ -275,6 +291,7 @@ export default function ProgramDataPage() {
       tierName: t.name,
       purpose: "",
       level: "",
+      aggregation: "",
       trainingType: "",
       trainingFullTitle: "",
       quantityRequired: "",
@@ -309,6 +326,8 @@ export default function ProgramDataPage() {
     tiername: "tierName",
     purpose: "purpose",
     level: "level",
+    countmode: "aggregation",
+    aggregation: "aggregation",
     trainingtype: "trainingType",
     type: "trainingType",
     training: "trainingFullTitle",
@@ -421,6 +440,7 @@ export default function ProgramDataPage() {
   const handleValidate = async () => {
     setImportLoading(true);
     setImportValidationErrors([]);
+    setImportValidationWarnings([]);
     try {
       const res = await fetch("/api/admin/program-data/import?dryRun=true", {
         method: "POST",
@@ -429,6 +449,7 @@ export default function ProgramDataPage() {
       });
       const result = await res.json();
       setImportValidationErrors(result.errors ?? []);
+      setImportValidationWarnings(result.warnings ?? []);
       setImportValidated(true);
     } catch {
       setImportValidationErrors([{ row: 0, message: "Validation request failed" }]);
@@ -468,6 +489,7 @@ export default function ProgramDataPage() {
         "Tier": "",
         "Purpose": "qualification",
         "Level": "Global",
+        "Count Mode": "",
         "Training Type": "Certification",
         "Training": "Example Certification",
         "Quantity Required": 30,
@@ -483,6 +505,7 @@ export default function ProgramDataPage() {
         "Tier": "",
         "Purpose": "qualification",
         "Level": "Country",
+        "Count Mode": "",
         "Training Type": "Certification",
         "Training": "Example Certification",
         "Quantity Required": 2,
@@ -493,11 +516,47 @@ export default function ProgramDataPage() {
         "Tier Specialisations Required": "",
       },
       {
+        // Country Set, each country: every country in the set being viewed
+        // needs at least 4 holders of its own.
+        "Program Name": "Example Program",
+        "Specialisation": "Example Specialisation",
+        "Tier": "",
+        "Purpose": "qualification",
+        "Level": "Country Set",
+        "Count Mode": "Each country",
+        "Training Type": "Certification",
+        "Training": "Cert A",
+        "Quantity Required": 4,
+        "Minimum per Theatre": "",
+        "Alternatives": "",
+        "Deployment Handling": "",
+        "Tier Order": "",
+        "Tier Specialisations Required": "",
+      },
+      {
+        // Region, total: 2 holders pooled across the whole region being viewed.
+        "Program Name": "Example Program",
+        "Specialisation": "Example Specialisation",
+        "Tier": "",
+        "Purpose": "qualification",
+        "Level": "Region",
+        "Count Mode": "Total",
+        "Training Type": "Certification",
+        "Training": "Cert B",
+        "Quantity Required": 2,
+        "Minimum per Theatre": "",
+        "Alternatives": "",
+        "Deployment Handling": "",
+        "Tier Order": "",
+        "Tier Specialisations Required": "",
+      },
+      {
         "Program Name": "Example Tiered Program",
         "Specialisation": "",
         "Tier": "Tier A",
         "Purpose": "",
         "Level": "",
+        "Count Mode": "",
         "Training Type": "",
         "Training": "",
         "Quantity Required": "",
@@ -514,6 +573,7 @@ export default function ProgramDataPage() {
       { key: "Tier", header: "Tier" },
       { key: "Purpose", header: "Purpose" },
       { key: "Level", header: "Level" },
+      { key: "Count Mode", header: "Count Mode" },
       { key: "Training Type", header: "Training Type" },
       { key: "Training", header: "Training" },
       { key: "Quantity Required", header: "Quantity Required" },
@@ -531,6 +591,7 @@ export default function ProgramDataPage() {
     setImportRows([]);
     setImportValidated(false);
     setImportValidationErrors([]);
+    setImportValidationWarnings([]);
     setImportLoading(false);
     setImportResult(null);
     setImportFileError("");
@@ -813,8 +874,9 @@ export default function ProgramDataPage() {
               </div>
             )}
             <div className="pt-1 text-xs text-gray-500 space-y-1">
-              <p><strong>Expected columns:</strong> Program Name, Specialisation, Tier, Purpose, Level, Training Type, Training, Quantity Required, Minimum per Theatre, Deployment Handling, Tier Order, Tier Specialisations Required</p>
-              <p>Training Type and Training are optional for Global-level rows with no specific training (these count compliant theatres).</p>
+              <p><strong>Expected columns:</strong> Program Name, Specialisation, Tier, Purpose, Level, Count Mode, Training Type, Training, Quantity Required, Minimum per Theatre, Alternatives, Deployment Handling, Tier Order, Tier Specialisations Required</p>
+              <p>Level is Country, Region, Country Set, Theatre or Global. For Region and Country Set rows, Count Mode is &ldquo;Total&rdquo; (holders pooled across the area) or &ldquo;Each country&rdquo; (every country must meet the quantity); blank means Total. Other levels leave it blank.</p>
+              <p>Training Type and Training are optional for Global-level rows with no specific training (these count compliant theatres). Minimum per Theatre applies to Global rows only.</p>
               <p>Programs, tiers, and specialisations are auto-created if they don&apos;t already exist.</p>
               <p><strong>Importing replaces</strong> the existing requirements of every program named in the file — it does not merge or add to them.</p>
             </div>
@@ -829,7 +891,7 @@ export default function ProgramDataPage() {
                 <strong>{importRows.length}</strong> row{importRows.length !== 1 ? "s" : ""} parsed from file.
               </p>
               <button
-                onClick={() => { setImportStep("upload"); setImportValidated(false); setImportValidationErrors([]); }}
+                onClick={() => { setImportStep("upload"); setImportValidated(false); setImportValidationErrors([]); setImportValidationWarnings([]); }}
                 className="text-sm text-blue-600 hover:text-blue-800"
               >
                 ← Back
@@ -844,6 +906,7 @@ export default function ProgramDataPage() {
                     <th className="px-2 py-2 text-left font-medium text-gray-600">Program</th>
                     <th className="px-2 py-2 text-left font-medium text-gray-600">Specialisation</th>
                     <th className="px-2 py-2 text-left font-medium text-gray-600">Level</th>
+                    <th className="px-2 py-2 text-left font-medium text-gray-600">Count Mode</th>
                     <th className="px-2 py-2 text-left font-medium text-gray-600">Type</th>
                     <th className="px-2 py-2 text-left font-medium text-gray-600">Training</th>
                     <th className="px-2 py-2 text-left font-medium text-gray-600">Qty</th>
@@ -862,6 +925,7 @@ export default function ProgramDataPage() {
                         <td className="px-2 py-1.5">{row.programName || <span className="text-red-400">—</span>}</td>
                         <td className="px-2 py-1.5">{row.specialisationName || <span className="text-red-400">—</span>}</td>
                         <td className="px-2 py-1.5">{row.level || <span className="text-red-400">—</span>}</td>
+                        <td className="px-2 py-1.5">{row.aggregation ? String(row.aggregation) : "—"}</td>
                         <td className="px-2 py-1.5">{row.trainingType || "—"}</td>
                         <td className="px-2 py-1.5 max-w-[160px] truncate">{row.trainingFullTitle || "—"}</td>
                         <td className="px-2 py-1.5">{String(row.quantityRequired ?? "—")}</td>
@@ -871,7 +935,7 @@ export default function ProgramDataPage() {
                   })}
                   {importRows.length > 10 && (
                     <tr className="border-t border-gray-100 bg-gray-50">
-                      <td colSpan={8} className="px-2 py-2 text-center text-gray-400 text-xs">
+                      <td colSpan={9} className="px-2 py-2 text-center text-gray-400 text-xs">
                         … and {importRows.length - 10} more rows
                       </td>
                     </tr>
@@ -886,6 +950,17 @@ export default function ProgramDataPage() {
                   <div key={i} className="flex items-start gap-2 p-2 bg-red-50 text-red-700 rounded text-xs">
                     <AlertCircle size={14} className="shrink-0 mt-0.5" />
                     <span>Row {e.row}: {e.message}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {importValidated && importValidationWarnings.length > 0 && (
+              <div className="space-y-1 max-h-[120px] overflow-y-auto">
+                {importValidationWarnings.map((w, i) => (
+                  <div key={i} className="flex items-start gap-2 p-2 bg-amber-50 text-amber-800 rounded text-xs">
+                    <AlertCircle size={14} className="shrink-0 mt-0.5" />
+                    <span>Row {w.row}: {w.message}</span>
                   </div>
                 ))}
               </div>
@@ -968,6 +1043,17 @@ export default function ProgramDataPage() {
                   <div key={i} className="flex items-start gap-2 p-2 bg-red-50 text-red-700 rounded text-xs">
                     <AlertCircle size={14} className="shrink-0 mt-0.5" />
                     <span>Row {e.row}: {e.message}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {(importResult.warnings?.length ?? 0) > 0 && (
+              <div className="space-y-1 max-h-[160px] overflow-y-auto">
+                <p className="text-sm font-medium text-amber-800">Imported with warnings:</p>
+                {importResult.warnings!.map((w, i) => (
+                  <div key={i} className="flex items-start gap-2 p-2 bg-amber-50 text-amber-800 rounded text-xs">
+                    <AlertCircle size={14} className="shrink-0 mt-0.5" />
+                    <span>Row {w.row}: {w.message}</span>
                   </div>
                 ))}
               </div>
