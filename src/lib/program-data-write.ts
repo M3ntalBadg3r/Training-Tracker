@@ -8,11 +8,35 @@
  * tiers in "perAchievedSpecialisation" mode). Tier rows are always deployment;
  * a tier row may ALSO carry a specialisationId (a "perTierPerSpecialisation"
  * deployment requirement: that tier's deployment certs for that specialisation).
+ *
+ * A multi-country level (Region, CountrySet) carries a count mode
+ * (`aggregation`): "total" pools distinct holders across the area's countries,
+ * "eachCountry" requires every country in the area to reach the quantity on its
+ * own. Every other level is always "total" — an explicit "eachCountry" there is
+ * a 400 rather than silently dropped, because the author asked for a rule the
+ * level cannot express. `minimumPerTheatre` only means anything at Global level
+ * and is nulled elsewhere (silently: the engine never reads it there).
  */
 import prisma from "@/lib/prisma";
+import type { ProgramDataRow } from "@/types";
+import {
+  REQ_LEVELS,
+  LEVEL_LABELS,
+  isReqLevel,
+  isAggregation,
+  isMultiCountryLevel,
+  normaliseAggregation,
+  type Aggregation,
+  type ReqLevel,
+} from "@/lib/program-levels";
 
-export const REQ_TRAINING_TYPES = ["Certification", "Accreditation", "InstructorLedTraining"] as const;
-export const REQ_LEVELS = ["Country", "Theatre", "Global"] as const;
+export { REQ_LEVELS };
+
+/** Body cap for a single requirement write — one row plus its alternatives,
+ *  far below the bulk-import default `readJsonBody` applies. */
+export const REQUIREMENT_BODY_MAX_BYTES = 256 * 1024;
+
+export const REQ_TRAINING_TYPES =["Certification", "Accreditation", "InstructorLedTraining"] as const;
 export const REQ_PURPOSES = ["qualification", "deployment"] as const;
 
 export interface ValidatedRequirement {
@@ -20,7 +44,8 @@ export interface ValidatedRequirement {
   specialisationId: number | null;
   tierId: number | null;
   purpose: string;
-  level: string;
+  level: ReqLevel;
+  aggregation: Aggregation;
   trainingType: string | null;
   trainingTitle: string | null;
   quantityRequired: number;
@@ -47,10 +72,25 @@ export async function validateRequirementBody(body: Record<string, unknown>): Pr
     return err("Requirement must belong to a specialisation or a tier");
   }
 
-  const level = typeof body.level === "string" ? body.level : "";
-  if (!REQ_LEVELS.includes(level as (typeof REQ_LEVELS)[number])) {
+  const level = body.level;
+  if (!isReqLevel(level)) {
     return err("Valid level is required");
   }
+
+  // Count mode: absent/empty = "total". Anything else must be a known value,
+  // and "eachCountry" is only meaningful on a level spanning several countries.
+  const aggregationRaw = body.aggregation;
+  if (aggregationRaw != null && aggregationRaw !== "") {
+    if (!isAggregation(aggregationRaw)) {
+      return err('Count mode must be "total" or "eachCountry"');
+    }
+    if (aggregationRaw === "eachCountry" && !isMultiCountryLevel(level)) {
+      return err(
+        `The "In each country" count mode is only valid for Region or Country Set requirements, not ${LEVEL_LABELS[level]}`,
+      );
+    }
+  }
+  const aggregation = normaliseAggregation(level, aggregationRaw);
 
   const trainingTitleRaw = typeof body.trainingTitle === "string" ? body.trainingTitle : "";
   const trainingType = typeof body.trainingType === "string" ? body.trainingType : "";
@@ -63,10 +103,19 @@ export async function validateRequirementBody(body: Record<string, unknown>): Pr
   }
 
   const quantityRequired = Number(body.quantityRequired);
-  if (!quantityRequired || quantityRequired < 1) return err("Quantity must be at least 1");
+  if (!Number.isInteger(quantityRequired) || quantityRequired < 1) {
+    return err("Quantity must be a whole number of at least 1");
+  }
 
+  // Only Global requirements are evaluated per theatre; at any other level the
+  // value would be stored and never read, so it is dropped.
   const minimumPerTheatre =
-    body.minimumPerTheatre == null || body.minimumPerTheatre === "" ? null : Number(body.minimumPerTheatre);
+    level !== "Global" || body.minimumPerTheatre == null || body.minimumPerTheatre === ""
+      ? null
+      : Number(body.minimumPerTheatre);
+  if (minimumPerTheatre != null && (!Number.isInteger(minimumPerTheatre) || minimumPerTheatre < 0)) {
+    return err("Minimum per theatre must be a whole number");
+  }
 
   // Purpose: tier rows are always deployment; specialisation rows default to
   // qualification unless explicitly a deployment requirement.
@@ -114,6 +163,7 @@ export async function validateRequirementBody(body: Record<string, unknown>): Pr
       tierId: hasTier ? tierId! : null,
       purpose,
       level,
+      aggregation,
       trainingType: hasTraining ? trainingType : null,
       trainingTitle: hasTraining ? trainingTitleRaw : null,
       quantityRequired,
@@ -131,6 +181,7 @@ export interface ProgramDataRecord {
   tierId: number | null;
   purpose: string;
   level: string;
+  aggregation: string;
   trainingType: string | null;
   trainingTitle: string | null;
   quantityRequired: number;
@@ -150,7 +201,7 @@ export const programDataInclude = {
 } as const;
 
 /** Serialize a ProgramData record to the camelCase API row shape. */
-export function serializeProgramDataRow(record: ProgramDataRecord) {
+export function serializeProgramDataRow(record: ProgramDataRecord): ProgramDataRow {
   return {
     id: record.id,
     programName: record.programName,
@@ -160,6 +211,9 @@ export function serializeProgramDataRow(record: ProgramDataRecord) {
     tierName: record.tier?.name ?? null,
     purpose: record.purpose,
     level: record.level,
+    // Re-normalised on read so a row can never report a count mode its level
+    // cannot carry (the DB CHECK enforces the same rule on write).
+    aggregation: normaliseAggregation(record.level, record.aggregation),
     trainingType: record.trainingType ?? null,
     trainingTitle: record.trainingTitle ?? null,
     trainingFullTitle: record.trainingData?.fullTitle ?? "—",
