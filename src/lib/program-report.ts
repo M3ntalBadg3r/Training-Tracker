@@ -27,10 +27,12 @@ import {
 
 export interface BuildProgramReportOptions {
   programName: string;
-  /** "country" | "region" | "theatre" | "global" (anything else → empty spec list). */
+  /** "country" | "region" | "countrySet" | "theatre" | "global" (anything else → empty spec list). */
   level: string;
   country: string;
   region: string;
+  /** Country Set name, used when level is "countrySet". */
+  countrySet?: string;
   theatre: string;
   /** Already validated to one of 0 | 3 | 6 | 12. */
   horizonMonths: number;
@@ -654,6 +656,8 @@ export interface GetProgramStudentsOptions {
   level: string;
   country: string;
   region: string;
+  /** Country Set name, used when level is "countrySet". */
+  countrySet?: string;
   theatre: string;
   companyIds: number[] | null;
 }

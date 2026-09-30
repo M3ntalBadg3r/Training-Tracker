@@ -161,7 +161,8 @@ model RegionData {
   /// 20260916000000_region_data_iso_code; the write routes enforce it too.
   isoCode String? @map("iso_code") @db.VarChar(2)
 
-  students Student[]
+  students          Student[]
+  countrySetMembers CountrySetMember[]
 
   @@map("region_data")
 }
@@ -181,8 +182,45 @@ enum Role {
 
 enum ProgramLevel {
   Country
+  /// A requirement set for "a region" generically — it applies to whichever
+  /// region is viewed, over that region's countries. See ProgramData.aggregation.
+  Region
+  /// A requirement set for "a country set" generically — it applies to
+  /// whichever CountrySet is viewed, over that set's member countries.
+  CountrySet
   Theatre
   Global
+}
+
+/// A custom, SuperAdmin-managed grouping of countries (similar to a region,
+/// but chosen freely; a country may belong to any number of sets). Global
+/// reference data, deliberately never company-scoped — like RegionData.
+/// Partner programs report against a set via ProgramLevel.CountrySet.
+model CountrySet {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  members CountrySetMember[]
+
+  @@map("country_sets")
+}
+
+/// Membership of a country in a CountrySet. The country FK is ON UPDATE
+/// CASCADE so a Region Data rename carries memberships with it, and ON DELETE
+/// CASCADE so deleting a country removes it from every set.
+model CountrySetMember {
+  countrySetId Int    @map("country_set_id")
+  country      String
+
+  countrySet CountrySet @relation(fields: [countrySetId], references: [id], onDelete: Cascade)
+  regionData RegionData @relation(fields: [country], references: [country], onDelete: Cascade, onUpdate: Cascade)
+
+  @@id([countrySetId, country])
+  @@index([country])
+  @@map("country_set_members")
 }
 
 model Program {
@@ -247,6 +285,14 @@ model ProgramData {
   // Tier-scoped rows (tierId set) are always deployment requirements.
   purpose           String        @default("qualification")
   level             ProgramLevel
+  // How a multi-country level (Region / CountrySet) counts this requirement:
+  //  "total"       → pooled distinct holders across every country in the area.
+  //  "eachCountry" → every country in the area must individually reach
+  //                  quantityRequired.
+  // Always "total" for Country/Theatre/Global — two CHECK constraints enforce
+  // the value set and that rule (migration 20260930000001_country_sets), and
+  // lib/program-levels.ts:normaliseAggregation applies it on every write path.
+  aggregation       String        @default("total")
   trainingType      TrainingType? @map("training_type")
   trainingTitle     String?       @map("training_title")
   quantityRequired  Int           @map("quantity_required")
