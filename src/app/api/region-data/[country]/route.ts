@@ -19,9 +19,22 @@ export async function PUT(
   if (decodedCountry === null) {
     return NextResponse.json({ error: "Invalid country parameter" }, { status: 400 });
   }
-  const body = await request.json();
+  let body: Record<string, unknown>;
+  try {
+    const raw: unknown = await request.json();
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+      return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+    }
+    body = raw as Record<string, unknown>;
+  } catch {
+    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+  }
 
-  const newCountry = body.country?.trim();
+  // A wrong type used to reach `.trim()` and surface as a 500.
+  if (body.country !== undefined && body.country !== null && typeof body.country !== "string") {
+    return NextResponse.json({ error: "Country must be text" }, { status: 400 });
+  }
+  const newCountry = typeof body.country === "string" ? body.country.trim() : undefined;
   // Region follows the same present/absent rule as theatre and isoCode below:
   // omitting the key leaves the stored value alone, and an explicit blank is
   // the first-class "no region defined" state rather than an error. It stores
@@ -121,6 +134,9 @@ export async function PUT(
     },
   });
 
+  // Region / theatre changes move countries between Region-level (and
+  // theatre-scoped) compliance populations, so cached results are stale.
+  invalidateReportCache();
   return NextResponse.json(regionData);
 }
 
@@ -139,7 +155,22 @@ export async function DELETE(
     return NextResponse.json({ error: "Invalid country parameter" }, { status: 400 });
   }
 
-  await prisma.regionData.delete({ where: { country: decodedCountry } });
+  try {
+    await prisma.regionData.delete({ where: { country: decodedCountry } });
+  } catch (err) {
+    const code = (err as { code?: unknown })?.code;
+    // students.country is ON DELETE RESTRICT: a country still in use cannot go.
+    if (code === "P2003") {
+      return NextResponse.json({ error: "Country is still assigned to students" }, { status: 409 });
+    }
+    if (code === "P2025") {
+      return NextResponse.json({ error: "Country not found" }, { status: 404 });
+    }
+    console.warn("region-data delete failed", err);
+    return NextResponse.json({ error: "Could not delete the country" }, { status: 500 });
+  }
 
+  // The delete cascades the country out of every Country Set.
+  invalidateReportCache();
   return NextResponse.json({ success: true });
 }

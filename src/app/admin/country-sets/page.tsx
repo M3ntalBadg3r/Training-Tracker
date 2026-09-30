@@ -14,11 +14,7 @@ import { useRegionData, type RegionDataRow } from "@/hooks/useRegionData";
 import { useTableSort, type SortAccessor } from "@/hooks/useTableSort";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import type { CountrySetRow } from "@/types";
-
-/** GET rows carry the global Country Set level usage alongside each set. */
-interface CountrySetListRow extends CountrySetRow {
-  usage: number;
-}
+import type { CountrySetListResponse } from "@/app/api/admin/country-sets/route";
 
 interface FormState {
   id: number | null;
@@ -30,7 +26,7 @@ interface FormState {
 const EMPTY_FORM: FormState = { id: null, name: "", description: "", countries: [] };
 
 // Module-level so the sorter's memo is not invalidated on every render.
-const SORT_ACCESSORS: Record<string, SortAccessor<CountrySetListRow>> = {
+const SORT_ACCESSORS: Record<string, SortAccessor<CountrySetRow>> = {
   name: (s) => s.name,
   description: (s) => s.description ?? "",
   countries: (s) => s.countries.length,
@@ -186,9 +182,9 @@ function CountrySetsInner() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  const { data, loading, error, reload } = useFetchJson<CountrySetListRow[]>("/api/admin/country-sets");
-  const sets = useMemo(() => (Array.isArray(data) ? data : []), [data]);
-  const usage = sets[0]?.usage ?? 0;
+  const { data, loading, error, reload } = useFetchJson<CountrySetListResponse>("/api/admin/country-sets");
+  const sets = useMemo(() => (Array.isArray(data?.sets) ? data.sets : []), [data]);
+  const usage = data?.programsUsingCountrySetLevel ?? 0;
 
   // View state seeded from the URL (re-validated — it is user-editable text).
   const [search, setSearch] = useState(() => searchParams.get("q") ?? "");
@@ -240,7 +236,7 @@ function CountrySetsInner() {
   const [saving, setSaving] = useState(false);
   const { rows: regionRows, loading: regionLoading } = useRegionData(formOpen);
 
-  const [deleteTarget, setDeleteTarget] = useState<CountrySetListRow | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<CountrySetRow | null>(null);
   const [deleteError, setDeleteError] = useState("");
   const [deleting, setDeleting] = useState(false);
 
@@ -250,7 +246,7 @@ function CountrySetsInner() {
     setFormOpen(true);
   };
 
-  const openEdit = (s: CountrySetListRow) => {
+  const openEdit = (s: CountrySetRow) => {
     setForm({ id: s.id, name: s.name, description: s.description ?? "", countries: [...s.countries] });
     setFormError("");
     setFormOpen(true);

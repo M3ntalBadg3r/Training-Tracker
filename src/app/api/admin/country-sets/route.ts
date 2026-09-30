@@ -18,6 +18,7 @@ import type { CountrySetRow } from "@/types";
 const MAX_NAME_LENGTH = 200;
 const MAX_DESCRIPTION_LENGTH = 2000;
 const MAX_COUNTRIES = 5000;
+const MAX_COUNTRY_NAME_LENGTH = 200;
 
 /** Every list/detail read selects exactly this, so the serializer sees one shape. */
 export const COUNTRY_SET_SELECT = {
@@ -55,8 +56,20 @@ export function toCountrySetRow(s: SelectedCountrySet): CountrySetRow {
 
 export interface CountrySetInput {
   name: string;
-  description: string | null;
-  countries: string[];
+  /** `undefined` (partial mode only) = key absent, leave the stored value alone. */
+  description: string | null | undefined;
+  /** `undefined` (partial mode only) = key absent, keep the current members. */
+  countries: string[] | undefined;
+}
+
+/** GET response: the sets plus the global Country Set level usage. */
+export interface CountrySetListResponse {
+  sets: CountrySetRow[];
+  /**
+   * Distinct programs with any Country Set requirement. The level is generic —
+   * it applies to whichever set is viewed — so this is not per-set usage.
+   */
+  programsUsingCountrySetLevel: number;
 }
 
 /**
@@ -65,9 +78,15 @@ export interface CountrySetInput {
  * RegionData (the member FK would reject it anyway — this turns that into a
  * readable 400 naming the country, which is safe because region data is
  * global reference data). An empty country list is allowed.
+ *
+ * `partial` (PUT): an absent `description` / `countries` key parses to
+ * `undefined`, meaning "leave it alone" — only an explicit `null`/`""` clears
+ * the description and only an explicit `[]` clears the members. `name` is
+ * required either way. POST (not partial) treats absent as empty.
  */
 export async function parseCountrySetBody(
-  body: unknown
+  body: unknown,
+  { partial = false }: { partial?: boolean } = {}
 ): Promise<{ ok: true; input: CountrySetInput } | { ok: false; response: NextResponse }> {
   const bad = (error: string) => ({
     ok: false as const,
@@ -85,7 +104,9 @@ export async function parseCountrySetBody(
     return bad(`Name must be at most ${MAX_NAME_LENGTH} characters`);
   }
 
-  let description: string | null = null;
+  const has = (key: string) => Object.prototype.hasOwnProperty.call(b, key);
+
+  let description: string | null | undefined = partial && !has("description") ? undefined : null;
   if (b.description !== undefined && b.description !== null) {
     if (typeof b.description !== "string") return bad("Description must be text");
     const trimmed = b.description.trim();
@@ -95,6 +116,9 @@ export async function parseCountrySetBody(
     description = trimmed || null;
   }
 
+  if (partial && !has("countries")) {
+    return { ok: true, input: { name, description, countries: undefined } };
+  }
   const rawCountries = b.countries ?? [];
   if (!Array.isArray(rawCountries) || rawCountries.some((c) => typeof c !== "string")) {
     return bad("Countries must be a list of country names");
@@ -103,6 +127,9 @@ export async function parseCountrySetBody(
   const countries = [
     ...new Set((rawCountries as string[]).map((c) => c.trim()).filter(Boolean)),
   ];
+  if (countries.some((c) => c.length > MAX_COUNTRY_NAME_LENGTH)) {
+    return bad(`Country names must be at most ${MAX_COUNTRY_NAME_LENGTH} characters`);
+  }
 
   if (countries.length > 0) {
     const known = await prisma.regionData.findMany({
@@ -156,18 +183,18 @@ export async function GET(request: NextRequest) {
       prisma.countrySet.findMany({ orderBy: { name: "asc" }, select: COUNTRY_SET_SELECT }),
       // The CountrySet requirement level is generic — it applies to whichever
       // set is being viewed — so there is no per-set usage to report. This is
-      // the global figure (distinct programs with any Country Set row), the
-      // same on every row.
+      // the global figure (distinct programs with any Country Set row).
       prisma.programData.findMany({
         where: { level: "CountrySet" },
         distinct: ["programName"],
         select: { programName: true },
       }),
     ]);
-    const usage = programsUsingLevel.length;
-    return NextResponse.json(
-      sets.map((s: SelectedCountrySet) => ({ ...toCountrySetRow(s), usage }))
-    );
+    const response: CountrySetListResponse = {
+      sets: sets.map((s: SelectedCountrySet) => toCountrySetRow(s)),
+      programsUsingCountrySetLevel: programsUsingLevel.length,
+    };
+    return NextResponse.json(response);
   } catch (err) {
     console.warn("country-sets GET failed", err);
     return NextResponse.json({ error: "Could not load country sets" }, { status: 500 });
@@ -192,10 +219,10 @@ export async function POST(request: NextRequest) {
   try {
     const created = await prisma.$transaction(async (tx: PrismaTransactionClient) => {
       const set = await tx.countrySet.create({
-        data: { name, description },
+        data: { name, description: description ?? null },
         select: { id: true },
       });
-      if (countries.length > 0) {
+      if (countries && countries.length > 0) {
         await tx.countrySetMember.createMany({
           data: countries.map((country) => ({ countrySetId: set.id, country })),
         });

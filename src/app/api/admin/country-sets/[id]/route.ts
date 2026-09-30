@@ -37,7 +37,7 @@ export async function PUT(
 
   const parsed = await readJsonBody(request);
   if (!parsed.ok) return parsed.response;
-  const validated = await parseCountrySetBody(parsed.body);
+  const validated = await parseCountrySetBody(parsed.body, { partial: true });
   if (!validated.ok) return validated.response;
   const { name, description, countries } = validated.input;
 
@@ -46,15 +46,21 @@ export async function PUT(
   if (await nameTaken(name, setId)) return DUPLICATE_NAME_RESPONSE();
 
   try {
-    // Members are replaced wholesale, inside one transaction, so a failure
-    // part-way can never leave a set with half its old membership.
+    // An absent `description`/`countries` key (undefined) leaves that value
+    // alone. When `countries` is sent, members are replaced wholesale inside
+    // one transaction, so a failure part-way can never leave half the old set.
     const updated = await prisma.$transaction(async (tx: PrismaTransactionClient) => {
-      await tx.countrySet.update({ where: { id: setId }, data: { name, description } });
-      await tx.countrySetMember.deleteMany({ where: { countrySetId: setId } });
-      if (countries.length > 0) {
-        await tx.countrySetMember.createMany({
-          data: countries.map((country) => ({ countrySetId: setId, country })),
-        });
+      await tx.countrySet.update({
+        where: { id: setId },
+        data: { name, ...(description !== undefined ? { description } : {}) },
+      });
+      if (countries !== undefined) {
+        await tx.countrySetMember.deleteMany({ where: { countrySetId: setId } });
+        if (countries.length > 0) {
+          await tx.countrySetMember.createMany({
+            data: countries.map((country) => ({ countrySetId: setId, country })),
+          });
+        }
       }
       return tx.countrySet.findUniqueOrThrow({ where: { id: setId }, select: COUNTRY_SET_SELECT });
     });
