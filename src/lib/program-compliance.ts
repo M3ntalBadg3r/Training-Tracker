@@ -12,6 +12,7 @@
 
 import prisma from "@/lib/prisma";
 import { ELIGIBLE_TRAINING_DATA } from "@/lib/reportable-training";
+import type { Aggregation, CountryBreakdownRow } from "@/lib/program-levels";
 
 export interface ComplianceScope {
   country?: string;
@@ -40,6 +41,32 @@ export interface ProgramRequirement {
   alternatives: { trainingTitle: string }[];
   quantityRequired: number;
   minimumPerTheatre?: number | null;
+  /**
+   * How a multi-country (Region / Country Set) row is counted. `"total"` (the
+   * default, and the only value a single-population level may carry) pools the
+   * distinct holders across the area; `"eachCountry"` requires EVERY country in
+   * the area to reach `quantityRequired` on its own, and so needs a
+   * `CountryBucketContext` to be evaluated at all — without one it fails closed.
+   *
+   * Typed as the `Aggregation` union widened to `string` so a raw Prisma
+   * `ProgramData` row (whose column is plain TEXT) still satisfies this shape,
+   * as it did before the field existed. Only the exact value `"eachCountry"`
+   * changes anything; callers building a requirement for display should pass
+   * the value through `program-levels.ts:normaliseAggregation` first.
+   */
+  aggregation?: Aggregation | (string & Record<never, never>);
+}
+
+/**
+ * The per-country holder sets an `"eachCountry"` requirement is judged against:
+ * the area's countries (every one, including those with nobody in them) and the
+ * holders of each title bucketed by the holder's country. Built with
+ * `buildCountryBucketContext`, one bucketed query for the whole area — never a
+ * query per country.
+ */
+export interface CountryBucketContext {
+  countries: string[];
+  byTitleAndCountry: Map<string, Map<string, Set<string>>>;
 }
 
 /** Resolve a region name to its member countries (via RegionData). */
@@ -410,18 +437,111 @@ export function unionAttainedByTheatre(
 }
 
 /**
+ * Build the per-country context for `"eachCountry"` requirements over an area's
+ * `countries`, as of `asOf`. One bucketed query (`getEmailSetsByTitleAndGeo`),
+ * scoped to exactly those countries, so the same sibling expansion, point-in-time
+ * rule and company filter apply as to every other count here. The country list
+ * is de-duplicated and sorted so every breakdown built from it reads in a stable
+ * order. An empty area (or no titles) yields an empty map without querying — the
+ * requirement then fails closed on the empty country list, not on a missing
+ * context.
+ */
+export async function buildCountryBucketContext(
+  trainingTitles: string[],
+  asOf: Date,
+  countries: string[],
+  companyIds?: number[] | null
+): Promise<CountryBucketContext> {
+  const sorted = [...new Set(countries)].sort((a, b) => a.localeCompare(b));
+  const byTitleAndCountry =
+    sorted.length > 0 && trainingTitles.length > 0
+      ? await getEmailSetsByTitleAndGeo(trainingTitles, asOf, "country", { countries: sorted, companyIds })
+      : new Map<string, Map<string, Set<string>>>();
+  return { countries: sorted, byTitleAndCountry };
+}
+
+/**
+ * One row per country in the context — zeros included, in the context's order —
+ * with that country's distinct holders (primary + alternatives) and whether it
+ * alone reaches `quantityRequired`. A requirement naming no training has no
+ * breakdown.
+ */
+export function countryBreakdownFor(
+  req: ProgramRequirement,
+  ctx: CountryBucketContext
+): CountryBreakdownRow[] {
+  if (!req.trainingTitle) return [];
+  return unionAttainedByGeo(req, ctx.byTitleAndCountry, ctx.countries).map((r) => ({
+    country: r.bucket,
+    count: r.count,
+    compliant: r.count >= req.quantityRequired,
+  }));
+}
+
+/**
+ * The headline figures of an `"eachCountry"` requirement, from its breakdown.
+ *
+ * `attained` is the LOWEST per-country count (0 for an empty area), which is what
+ * lets every existing consumer keep reading `attained >= quantityRequired` as
+ * "compliant": that holds exactly when every country meets the quantity. It is
+ * also what `riskState(attained, projected, required)` needs to shade correctly.
+ * An empty area is never compliant — there is no country that met it.
+ */
+export function summariseCountryBreakdown(
+  breakdown: CountryBreakdownRow[],
+  hasTraining: boolean
+): { attained: number; countriesMet: number; countriesTotal: number; compliant: boolean } {
+  const countriesTotal = breakdown.length;
+  const countriesMet = breakdown.filter((c) => c.compliant).length;
+  const attained = countriesTotal > 0 ? Math.min(...breakdown.map((c) => c.count)) : 0;
+  const compliant = hasTraining && countriesTotal > 0 && countriesMet === countriesTotal;
+  return { attained, countriesMet, countriesTotal, compliant };
+}
+
+/**
  * Evaluate a single requirement against an email-set snapshot: the distinct
  * attained count, an optional per-theatre breakdown (when a minimumPerTheatre is
  * set), and whether it is compliant (global count met AND every theatre minimum
  * met). Shared by specialisation-achievement and tier-ladder evaluation.
+ *
+ * An `"eachCountry"` requirement is judged per country instead: compliant iff the
+ * area has at least one country AND every country's own count reaches the
+ * quantity. `attained` is then the lowest per-country count (see
+ * `summariseCountryBreakdown`), `pooledAttained` the distinct holders across the
+ * whole area, and `countryBreakdown` the per-country rows. Without a
+ * `countryCtx` it fails closed — a missing context must never read as "met".
  */
-function requirementCompliant(
+export function requirementCompliant(
   req: ProgramRequirement,
   emailSets: Map<string, Set<string>>,
   byTitleAndTheatre?: Map<string, Map<string, Set<string>>>,
-  theatres?: string[]
-): { attained: number; compliant: boolean; theatreBreakdown: { theatre: string; count: number; compliant: boolean }[] | null } {
-  if (!req.trainingTitle) return { attained: 0, compliant: false, theatreBreakdown: null };
+  theatres?: string[],
+  countryCtx?: CountryBucketContext
+): {
+  attained: number;
+  compliant: boolean;
+  theatreBreakdown: { theatre: string; count: number; compliant: boolean }[] | null;
+  countryBreakdown: CountryBreakdownRow[] | null;
+  pooledAttained: number | null;
+} {
+  if (req.aggregation === "eachCountry") {
+    const pooledAttained = req.trainingTitle ? unionAttained(req, emailSets) : 0;
+    if (!countryCtx) {
+      return { attained: 0, compliant: false, theatreBreakdown: null, countryBreakdown: null, pooledAttained };
+    }
+    const countryBreakdown = countryBreakdownFor(req, countryCtx);
+    const summary = summariseCountryBreakdown(countryBreakdown, req.trainingTitle !== null);
+    return {
+      attained: summary.attained,
+      compliant: summary.compliant,
+      theatreBreakdown: null,
+      countryBreakdown,
+      pooledAttained,
+    };
+  }
+  if (!req.trainingTitle) {
+    return { attained: 0, compliant: false, theatreBreakdown: null, countryBreakdown: null, pooledAttained: null };
+  }
   const attained = unionAttained(req, emailSets);
   const min = req.minimumPerTheatre ?? null;
   let theatreBreakdown: { theatre: string; count: number; compliant: boolean }[] | null = null;
@@ -434,24 +554,32 @@ function requirementCompliant(
   }
   const primaryMet = attained >= req.quantityRequired;
   const theatresMet = theatreBreakdown === null || theatreBreakdown.every((t) => t.compliant);
-  return { attained, compliant: primaryMet && theatresMet, theatreBreakdown };
+  return {
+    attained,
+    compliant: primaryMet && theatresMet,
+    theatreBreakdown,
+    countryBreakdown: null,
+    pooledAttained: null,
+  };
 }
 
 /**
  * A specialisation is "achieved" when *every* one of its qualifying requirements
  * is compliant (distinct-people union >= quantityRequired, and — where a
- * minimumPerTheatre is set — every theatre meets it). An empty requirement list
- * is never achieved.
+ * minimumPerTheatre is set — every theatre meets it; for an `"eachCountry"` row,
+ * every country in `countryCtx` meets it). An empty requirement list is never
+ * achieved.
  */
 export function isSpecialisationAchieved(
   qualifyingReqs: ProgramRequirement[],
   emailSets: Map<string, Set<string>>,
   byTitleAndTheatre?: Map<string, Map<string, Set<string>>>,
-  theatres?: string[]
+  theatres?: string[],
+  countryCtx?: CountryBucketContext
 ): boolean {
   if (qualifyingReqs.length === 0) return false;
   return qualifyingReqs.every(
-    (req) => requirementCompliant(req, emailSets, byTitleAndTheatre, theatres).compliant
+    (req) => requirementCompliant(req, emailSets, byTitleAndTheatre, theatres, countryCtx).compliant
   );
 }
 
@@ -488,6 +616,13 @@ export interface TierLadderSnapshot {
   reqAttained: Map<number, number>;
   reqCompliant: Map<number, boolean>;
   reqTheatreBreakdown: Map<number, { theatre: string; count: number; compliant: boolean }[] | null>;
+  /**
+   * `"eachCountry"` requirements only (absent for every other id): the
+   * per-country rows, and the distinct holders pooled across the whole area.
+   * For these ids `reqAttained` holds the LOWEST per-country count.
+   */
+  reqCountryBreakdown: Map<number, CountryBreakdownRow[]>;
+  reqPooledAttained: Map<number, number>;
   tierCompliant: Map<number, boolean>;
   /** Distinct achieved-specialisation count (same for every tier). */
   achievedSpecCount: number;
@@ -507,7 +642,8 @@ export interface TierLadderSnapshot {
  * Evaluate the whole tier ladder for a single email-set snapshot (a given level
  * + scope, at a given as-of date). Pure — reuses `unionAttained` /
  * `unionAttainedByTheatre` so it counts distinct people. Called once for "now"
- * and again at the projection horizon.
+ * and again at the projection horizon. `countryCtx` (optional) is what
+ * `"eachCountry"` requirements are judged against; without it they fail closed.
  *
  * A specialisation is achieved when all its qualifying requirements are met. A
  * tier is compliant when the achieved-specialisation count meets its
@@ -528,13 +664,16 @@ export function evaluateTierLadder(
   input: TierLadderInput,
   emailSets: Map<string, Set<string>>,
   byTitleAndTheatre: Map<string, Map<string, Set<string>>>,
-  theatres: string[]
+  theatres: string[],
+  countryCtx?: CountryBucketContext
 ): TierLadderSnapshot {
   const { tiers, specs, requirements, deploymentMode } = input;
 
   const reqAttained = new Map<number, number>();
   const reqCompliant = new Map<number, boolean>();
   const reqTheatreBreakdown = new Map<number, { theatre: string; count: number; compliant: boolean }[] | null>();
+  const reqCountryBreakdown = new Map<number, CountryBreakdownRow[]>();
+  const reqPooledAttained = new Map<number, number>();
 
   const referenced = new Set<number>();
   for (const s of specs) {
@@ -554,10 +693,14 @@ export function evaluateTierLadder(
       reqTheatreBreakdown.set(id, null);
       continue;
     }
-    const r = requirementCompliant(req, emailSets, byTitleAndTheatre, theatres);
+    const r = requirementCompliant(req, emailSets, byTitleAndTheatre, theatres, countryCtx);
     reqAttained.set(id, r.attained);
     reqCompliant.set(id, r.compliant);
     reqTheatreBreakdown.set(id, r.theatreBreakdown);
+    if (req.aggregation === "eachCountry") {
+      reqCountryBreakdown.set(id, r.countryBreakdown ?? []);
+      reqPooledAttained.set(id, r.pooledAttained ?? 0);
+    }
   }
 
   const achievedSpecs = new Set<string>();
@@ -603,6 +746,8 @@ export function evaluateTierLadder(
     reqAttained,
     reqCompliant,
     reqTheatreBreakdown,
+    reqCountryBreakdown,
+    reqPooledAttained,
     tierCompliant,
     achievedSpecCount,
     tierSatisfiedSpecCount,

@@ -10,7 +10,9 @@ import { cachedReport, scopeKey } from "@/lib/report-cache";
  * in ProgramData gets a dashboard without code changes. This is the union of
  * the two hardcoded per-program routes it replaced, whose two shapes it still
  * supports:
- *  - Country / Region / Theatre levels count attained people.
+ *  - Country / Region / Country Set / Theatre levels count attained people,
+ *    each against its own level's rows (a Region or Country Set row may be
+ *    pooled across the area or required in every country of it).
  *  - The Global level supports both "count the compliant theatres" semantics
  *    (for a row naming no training) and per-title global holder counts with an
  *    optional per-theatre minimum.
@@ -49,6 +51,7 @@ export async function GET(
       countries: [],
       regions: [],
       theatres: [],
+      countrySets: [],
       meta: { levels: [], hasMinimumPerTheatre: false },
       horizonMonths: 0,
     });
@@ -58,6 +61,7 @@ export async function GET(
   const country = request.nextUrl.searchParams.get("country") || "";
   const theatre = request.nextUrl.searchParams.get("theatre") || "";
   const region = request.nextUrl.searchParams.get("region") || "";
+  const countrySet = request.nextUrl.searchParams.get("countrySet") || "";
   const trainingTitleParam = request.nextUrl.searchParams.get("trainingTitle") || "";
   const studentsMode = request.nextUrl.searchParams.get("students") === "true";
 
@@ -71,19 +75,22 @@ export async function GET(
   // value can't collide with the key delimiter and cross views.
   const scope = scopeKey(companyFilter);
   const progKey = encodeURIComponent(programName);
+  // A Country Set name is admin-chosen free text, so it is encoded like the
+  // program name: a literal "|" must not be able to shift the key's fields.
+  const setKey = encodeURIComponent(countrySet);
 
   if (studentsMode && trainingTitleParam) {
     const titles = trainingTitleParam.split(",").map((t) => t.trim()).filter(Boolean);
     const result = await cachedReport(
-      `program-students|${progKey}|${scope}|${level}|${country}|${region}|${theatre}|${encodeURIComponent(trainingTitleParam)}`,
-      () => getProgramStudents({ trainingTitles: titles, level, country, region, theatre, companyIds: companyFilter }),
+      `program-students|${progKey}|${scope}|${level}|${country}|${region}|${setKey}|${theatre}|${encodeURIComponent(trainingTitleParam)}`,
+      () => getProgramStudents({ trainingTitles: titles, level, country, region, countrySet, theatre, companyIds: companyFilter }),
     );
     return NextResponse.json(result, { headers: { "Cache-Control": "private, max-age=30" } });
   }
 
   const report = await cachedReport(
-    `program|${progKey}|${scope}|${level}|${country}|${region}|${theatre}|${horizonMonths}`,
-    () => buildProgramReport({ programName, level, country, region, theatre, horizonMonths, companyIds: companyFilter }),
+    `program|${progKey}|${scope}|${level}|${country}|${region}|${setKey}|${theatre}|${horizonMonths}`,
+    () => buildProgramReport({ programName, level, country, region, countrySet, theatre, horizonMonths, companyIds: companyFilter }),
   );
   return NextResponse.json(report, { headers: { "Cache-Control": "private, max-age=30" } });
 }
