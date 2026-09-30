@@ -40,6 +40,14 @@ import type {
  * and `PlanRiskImpact` are counts, labels and certification names throughout —
  * verified field by field, no person identifier at any depth. If one of those
  * ever gains an email or a name, it must be projected here too.
+ *
+ * Re-audited when count modes arrived: `PlanRequirement` gained
+ * `requirementKey` (`program::programDataId`), `aggregation` (an enum) and
+ * `country` (a geography name), and `PlanRiskImpact` gained `aggregation` and
+ * `country`. None identifies a person, so the by-reference pass-through stands.
+ * A per-country instance's `scopeLabel` is a country name for the same reason.
+ * (`PlanCandidateClose.scopeLabel` becomes a country too, but closes live only
+ * under `candidates`/`eligible`, which never reach this surface.)
  */
 export interface PublicCompliancePlan {
   scopeLabel: string;

@@ -12,8 +12,8 @@ import { buildProgramReport, getProgramStudents } from "@/lib/program-report";
  * `authorizePublicRequest`.
  *
  * Query params (same as the internal route):
- *  - `level`   country (default) | region | theatre | global
- *  - `country` / `region` / `theatre`  the selector for the chosen level
+ *  - `level`   country (default) | region | countrySet | theatre | global
+ *  - `country` / `region` / `countrySet` / `theatre`  the selector for the chosen level
  *  - `horizonMonths`  3 | 6 | 12 — forward-looking projection of upcoming expiries
  *  - `trainingTitle` + `students=true`  roster drill-down (comma-separated titles)
  *  - `companyId`  narrow to one of the key's companies (consumed by the guard)
@@ -41,6 +41,7 @@ export async function GET(
   const country = sp.get("country") || "";
   const theatre = sp.get("theatre") || "";
   const region = sp.get("region") || "";
+  const countrySet = sp.get("countrySet") || "";
   const trainingTitleParam = sp.get("trainingTitle") || "";
   const studentsMode = sp.get("students") === "true";
 
@@ -55,6 +56,7 @@ export async function GET(
       specialisations: [],
       countries: [],
       regions: [],
+      countrySets: [],
       theatres: [],
       meta: { levels: [], hasMinimumPerTheatre: false },
       horizonMonths: 0,
@@ -71,20 +73,28 @@ export async function GET(
   // surface later starts projecting its payload.
   const scope = scopeKey(ctx.companyIds);
   const progKey = encodeURIComponent(programName);
-  const geoKey = `${level}|${encodeURIComponent(country)}|${encodeURIComponent(region)}|${encodeURIComponent(theatre)}`;
+  const geoKey =
+    `${encodeURIComponent(level)}|${encodeURIComponent(country)}|${encodeURIComponent(region)}|` +
+    `${encodeURIComponent(countrySet)}|${encodeURIComponent(theatre)}`;
 
   if (studentsMode && trainingTitleParam) {
     const titles = trainingTitleParam.split(",").map((t) => t.trim()).filter(Boolean);
     const result = await cachedReport(
       `public-program-students|${progKey}|${scope}|${geoKey}|${encodeURIComponent(trainingTitleParam)}`,
-      () => getProgramStudents({ trainingTitles: titles, level, country, region, theatre, companyIds: ctx.companyIds }),
+      () =>
+        getProgramStudents({
+          trainingTitles: titles, level, country, region, countrySet, theatre, companyIds: ctx.companyIds,
+        }),
     );
     return NextResponse.json(result, { headers: { "Cache-Control": "private, max-age=30" } });
   }
 
   const report = await cachedReport(
     `public-program|${progKey}|${scope}|${geoKey}|${horizonMonths}`,
-    () => buildProgramReport({ programName, level, country, region, theatre, horizonMonths, companyIds: ctx.companyIds }),
+    () =>
+      buildProgramReport({
+        programName, level, country, region, countrySet, theatre, horizonMonths, companyIds: ctx.companyIds,
+      }),
   );
   return NextResponse.json(report, { headers: { "Cache-Control": "private, max-age=30" } });
 }
