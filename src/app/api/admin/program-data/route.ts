@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { requireSuperAdmin, handleAuthError } from "@/lib/auth";
 import { invalidateReportCache } from "@/lib/report-cache";
+import { readJsonBody } from "@/lib/request-body";
 import {
+  REQUIREMENT_BODY_MAX_BYTES,
   validateRequirementBody,
   serializeProgramDataRow,
   programDataInclude,
@@ -32,8 +34,12 @@ export async function POST(request: NextRequest) {
     return handleAuthError(error);
   }
 
-  const body = await request.json();
-  const result = await validateRequirementBody(body);
+  const parsed = await readJsonBody(request, REQUIREMENT_BODY_MAX_BYTES);
+  if (!parsed.ok) return parsed.response;
+  if (!parsed.body || typeof parsed.body !== "object" || Array.isArray(parsed.body)) {
+    return NextResponse.json({ error: "Expected a JSON object" }, { status: 400 });
+  }
+  const result = await validateRequirementBody(parsed.body);
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: result.status });
   }

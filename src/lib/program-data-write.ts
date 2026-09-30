@@ -32,7 +32,11 @@ import {
 
 export { REQ_LEVELS };
 
-export const REQ_TRAINING_TYPES = ["Certification", "Accreditation", "InstructorLedTraining"] as const;
+/** Body cap for a single requirement write — one row plus its alternatives,
+ *  far below the bulk-import default `readJsonBody` applies. */
+export const REQUIREMENT_BODY_MAX_BYTES = 256 * 1024;
+
+export const REQ_TRAINING_TYPES =["Certification", "Accreditation", "InstructorLedTraining"] as const;
 export const REQ_PURPOSES = ["qualification", "deployment"] as const;
 
 export interface ValidatedRequirement {
@@ -99,7 +103,9 @@ export async function validateRequirementBody(body: Record<string, unknown>): Pr
   }
 
   const quantityRequired = Number(body.quantityRequired);
-  if (!quantityRequired || quantityRequired < 1) return err("Quantity must be at least 1");
+  if (!Number.isInteger(quantityRequired) || quantityRequired < 1) {
+    return err("Quantity must be a whole number of at least 1");
+  }
 
   // Only Global requirements are evaluated per theatre; at any other level the
   // value would be stored and never read, so it is dropped.

@@ -257,8 +257,14 @@ export async function POST(request: NextRequest) {
 
     let minimumPerTheatre: number | null = null;
     if (rawMinPerTheatre !== null && rawMinPerTheatre !== undefined && String(rawMinPerTheatre).trim() !== "" && !isNullMarker(String(rawMinPerTheatre))) {
-      const parsed = typeof rawMinPerTheatre === "number" ? rawMinPerTheatre : parseInt(String(rawMinPerTheatre), 10);
-      if (!isNaN(parsed) && parsed >= 0) minimumPerTheatre = parsed;
+      // Strict: a present-but-unparseable value is an error, never a silent
+      // null (parseInt would also have truncated "2.5" to 2).
+      const text = String(rawMinPerTheatre).trim();
+      const parsed = typeof rawMinPerTheatre === "number" ? rawMinPerTheatre : /^\d+$/.test(text) ? Number(text) : NaN;
+      if (!Number.isInteger(parsed) || parsed < 0) {
+        return { ok: false, message: `Minimum per Theatre "${text}" must be a whole number ≥ 0` };
+      }
+      minimumPerTheatre = parsed;
     }
     // Minimum per Theatre is only evaluated for Global requirements; at any
     // other level it would be stored and never read, so it is dropped — with a
