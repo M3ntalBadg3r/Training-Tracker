@@ -7,6 +7,7 @@ import {
   isRequestSecure,
 } from "@/lib/auth";
 import { invalidateSystemSettingsCache } from "@/lib/system-settings";
+import { invalidateReportCache } from "@/lib/report-cache";
 
 type WipeScope = "data" | "all";
 
@@ -79,6 +80,10 @@ export async function POST(request: NextRequest) {
       await tx.user.deleteMany({});
     }
   });
+
+  // Every report input is gone. After the commit, never inside the callback,
+  // or a concurrent request could re-cache the pre-wipe rows for a full TTL.
+  invalidateReportCache();
 
   if (scope === "all") {
     // The settings singleton (including branding) is gone; drop the 30s cache

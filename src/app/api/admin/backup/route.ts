@@ -23,6 +23,7 @@ import {
 import { prepareBackupRestore } from "@/lib/product-types";
 import { normaliseAggregation } from "@/lib/program-levels";
 import { invalidateSystemSettingsCache } from "@/lib/system-settings";
+import { invalidateReportCache } from "@/lib/report-cache";
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 
 // Backup archive variants. A "full" backup is the historical shape (everything,
@@ -1035,6 +1036,10 @@ export async function restoreFullArchive(
   // A restored account's disabled state must take effect now, not up to 15s
   // later when the cached snapshot expires.
   if (usersRestored > 0) invalidateUserStatusCache();
+  // Every report input was just replaced. After the commit, never inside the
+  // callback: flushing before the commit lands lets a concurrent request
+  // re-cache the pre-restore rows for a full TTL.
+  invalidateReportCache();
 
   const counts: RestoreCounts = {
     regionData: regionData.length,
@@ -1071,7 +1076,7 @@ export async function restoreFullArchive(
   }
   if (countrySetResult && countrySetResult.droppedMembers > 0) {
     warnings.push(
-      `${countrySetResult.droppedMembers} Country Set membership(s) named a country that is not in the restored Region Data and were removed. Review the Country Sets page.`
+      `${countrySetResult.droppedMembers} Country Set membership(s) named a country or set that is not in the restored data and were removed. Review the Country Sets page.`
     );
   }
   if (studentsReassigned > 0) {
@@ -1530,10 +1535,21 @@ async function restoreConfigArchive(zip: JSZip): Promise<NextResponse> {
   // cache, so drop it — otherwise the restored date format and branding stay
   // invisible (and the stale values keep being served) until the TTL expires.
   invalidateSystemSettingsCache();
+  // Catalogue, programs, regions and Country Sets all feed the reports. After
+  // the commit, for the same reason as the full restore.
+  invalidateReportCache();
+
+  const configWarnings: string[] = [];
+  if (countrySetResult && countrySetResult.droppedMembers > 0) {
+    configWarnings.push(
+      `${countrySetResult.droppedMembers} Country Set membership(s) named a country or set that is not in the restored data and were removed. Review the Country Sets page.`
+    );
+  }
 
   return NextResponse.json({
     success: true,
     kind: "config" satisfies BackupKind,
+    ...(configWarnings.length > 0 ? { warnings: configWarnings } : {}),
     counts: {
       productTypes: archiveProductTypes.length,
       regionData: archiveRegionData.length,
@@ -1906,6 +1922,20 @@ export async function readCountrySetArchive(zip: JSZip): Promise<CountrySetArchi
   };
 }
 
+/** Postgres `integer` ceiling — the type of every serial id column here. */
+const MAX_PG_INT = 2147483647;
+
+/**
+ * A timestamp from a (possibly hand-edited) archive. `new Date(garbage)` does
+ * not throw — it yields an Invalid Date, which Prisma then rejects and aborts
+ * the restore — so an absent or unparseable value falls back to now.
+ */
+function archiveDate(v: unknown): Date {
+  if (typeof v !== "string" && typeof v !== "number") return new Date();
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? new Date() : d;
+}
+
 /**
  * Rebuild Country Sets inside a restore transaction. MUST run after Region
  * Data is in place: every membership FKs to `region_data.country`.
@@ -1933,13 +1963,15 @@ export async function restoreCountrySets(
     const rows = liveSnapshot
       .filter((m) => countries.has(m.country) && liveSetIds.has(m.countrySetId))
       .map((m) => ({ countrySetId: m.countrySetId, country: m.country }));
-    if (rows.length > 0) {
-      await tx.countrySetMember.createMany({ data: rows, skipDuplicates: true });
-    }
+    // `count` is what was actually written: skipDuplicates can skip rows.
+    const written =
+      rows.length > 0
+        ? (await tx.countrySetMember.createMany({ data: rows, skipDuplicates: true })).count
+        : 0;
     return {
       source: "preserved",
       sets: liveSets.length,
-      members: rows.length,
+      members: written,
       droppedMembers: liveSnapshot.length - rows.length,
     };
   }
@@ -1956,7 +1988,9 @@ export async function restoreCountrySets(
     .map((s: any) => {
       const id = s?.id;
       const name = typeof s?.name === "string" ? s.name.trim() : "";
-      if (!Number.isInteger(id) || id <= 0 || !name) return null;
+      // Upper bound is the Postgres `integer` ceiling: a larger id would abort
+      // the whole restore on an out-of-range write.
+      if (!Number.isInteger(id) || id <= 0 || id > MAX_PG_INT || !name) return null;
       if (seenIds.has(id) || seenNames.has(name)) return null;
       seenIds.add(id);
       seenNames.add(name);
@@ -1964,8 +1998,8 @@ export async function restoreCountrySets(
         id: id as number,
         name,
         description: typeof s.description === "string" ? s.description : null,
-        createdAt: s.createdAt ? new Date(s.createdAt) : new Date(),
-        updatedAt: s.updatedAt ? new Date(s.updatedAt) : new Date(),
+        createdAt: archiveDate(s.createdAt),
+        updatedAt: archiveDate(s.updatedAt),
       };
     })
     .filter((x): x is NonNullable<typeof x> => x !== null);
@@ -1978,9 +2012,10 @@ export async function restoreCountrySets(
     .filter((m: any) => seenIds.has(m?.countrySetId) && typeof m?.country === "string" && countries.has(m.country))
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .map((m: any) => ({ countrySetId: m.countrySetId as number, country: m.country as string }));
-  if (memberRows.length > 0) {
-    await tx.countrySetMember.createMany({ data: memberRows, skipDuplicates: true });
-  }
+  const membersWritten =
+    memberRows.length > 0
+      ? (await tx.countrySetMember.createMany({ data: memberRows, skipDuplicates: true })).count
+      : 0;
 
   // Explicit ids were inserted, so move the sequence past them (same pattern
   // as the program/offering tables above).
@@ -1991,7 +2026,7 @@ export async function restoreCountrySets(
   return {
     source: "archive",
     sets: setRows.length,
-    members: memberRows.length,
+    members: membersWritten,
     droppedMembers: archive.members.length - memberRows.length,
   };
 }
