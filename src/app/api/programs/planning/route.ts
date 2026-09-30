@@ -3,6 +3,7 @@ import { requireAuth, handleAuthError } from "@/lib/auth";
 import { getAuthorizedCompanyIds, resolveCompanyFilter } from "@/lib/company-scope";
 import { cachedReport, scopeKey } from "@/lib/report-cache";
 import { buildPlanningOptions } from "@/lib/planning-options";
+import { listCountrySetNames } from "@/lib/country-sets";
 import { computeCompliancePlan } from "@/lib/compliance-plan";
 import {
   parsePlanRequest,
@@ -16,7 +17,9 @@ import {
  * Two modes:
  *  - `?options=true`  → per-program selector metadata (name, isTiered, levels,
  *    tier names, specialisation names) so the page can build the target selector
- *    without one detail fetch per program.
+ *    without one detail fetch per program, plus `countrySets` — the names a
+ *    "By Country Set" scope can pick from (global reference data, like the
+ *    region list the page reads from `useRegionData`).
  *  - default (plan)   → a gap-closing plan for the selected `targets` + scope:
  *    aggregate roadmap, greedy-allocated candidate drill-down, and renewal-at-risk
  *    overlay. Mirrors the report skeleton (auth → company scope → fail-closed empty
@@ -50,10 +53,15 @@ export async function GET(request: NextRequest) {
     // gains a company dimension this key becomes a cross-tenant leak with no
     // compiler error and no reviewer signal to catch it.
     const options = await cachedReport(
-      `compliance-planning-options|${scopeKey(companyFilter)}`,
-      () => buildPlanningOptions()
+      // "-v2": the value became `{programs, countrySets}` (it was the bare
+      // programs array), so no entry of the old shape can ever be served.
+      `compliance-planning-options-v2|${scopeKey(companyFilter)}`,
+      async () => {
+        const [programs, countrySets] = await Promise.all([buildPlanningOptions(), listCountrySetNames()]);
+        return { programs, countrySets };
+      },
     );
-    return NextResponse.json({ programs: options }, { headers: { "Cache-Control": "private, max-age=30" } });
+    return NextResponse.json(options, { headers: { "Cache-Control": "private, max-age=30" } });
   }
 
   // Fail closed on empty company scope (before the cache), like the reports.
@@ -80,6 +88,7 @@ export async function GET(request: NextRequest) {
         level: req.level,
         country: req.country,
         region: req.region,
+        countrySet: req.countrySet,
         theatre: req.theatre,
         companyIds: companyFilter,
         renewalWindowMonths: req.renewalWindowMonths,

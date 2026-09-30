@@ -1,4 +1,5 @@
 import type { CompliancePlanResult, PlanTarget } from "@/lib/compliance-plan";
+import { parseScopeLevel, type ScopeLevel } from "@/lib/program-levels";
 
 /**
  * Request parsing shared by the two Compliance Planning routes — the internal
@@ -19,9 +20,12 @@ export interface ParsedPlanRequest {
   targets: PlanTarget[];
   /** The raw `targets` string, for the cache key. Empty when absent. */
   rawTargets: string;
-  level: string;
+  /** Validated; anything unrecognised is "global". */
+  level: ScopeLevel;
   country: string;
   region: string;
+  /** Country Set name, read when `level` is "countrySet". */
+  countrySet: string;
   theatre: string;
   renewalWindowMonths: number;
   planForWindow: boolean;
@@ -63,9 +67,13 @@ export function parsePlanRequest(p: URLSearchParams): ParsedPlanRequest | null {
   return {
     targets,
     rawTargets: rawTargets ?? "",
-    level: p.get("level") || "global",
+    // Validated rather than passed through as a raw string: an unknown level
+    // used to reach the engine (which fell back to global) and the cache key
+    // (which did not), so every misspelling was its own cache entry.
+    level: parseScopeLevel(p.get("level")) ?? "global",
     country: p.get("country") || "",
     region: p.get("region") || "",
+    countrySet: p.get("countrySet") || "",
     theatre: p.get("theatre") || "",
     renewalWindowMonths,
     // Normalised so `renewalWindowMonths=0&planForWindow=true` can neither reach
@@ -77,12 +85,16 @@ export function parsePlanRequest(p: URLSearchParams): ParsedPlanRequest | null {
 
 /** The cache-key fragment covering every result-affecting plan parameter. */
 export function planCacheKeyParts(req: ParsedPlanRequest): string {
+  // Every free-text fragment is percent-encoded so a literal "|" in a country,
+  // region, set or theatre name cannot shift the key's fields and cross two
+  // views onto one entry.
   return [
     encodeURIComponent(req.rawTargets),
     req.level,
-    req.country,
-    req.region,
-    req.theatre,
+    encodeURIComponent(req.country),
+    encodeURIComponent(req.region),
+    encodeURIComponent(req.countrySet),
+    encodeURIComponent(req.theatre),
     req.renewalWindowMonths,
     req.planForWindow ? "plan" : "status",
   ].join("|");

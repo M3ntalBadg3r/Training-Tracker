@@ -116,6 +116,43 @@ const GEO_PARAMS: readonly PublicApiParam[] = [
   },
 ];
 
+/**
+ * The scope selectors of the two per-program endpoints (`programs/{programName}`
+ * and `programs/planning`), where the chosen `level` decides which one is read
+ * and which requirement rows are counted. Deliberately separate from
+ * `GEO_PARAMS`: those three are shared by endpoints that filter by geography
+ * without a level, and `countrySet` must not be documented on an endpoint that
+ * never reads it — `check:api-spec` fails on exactly that.
+ */
+const PROGRAM_SCOPE_PARAMS: readonly PublicApiParam[] = [
+  {
+    name: "country",
+    in: "query",
+    description: "The country to report on when level=country. Counts Country-level requirements over that country.",
+    schema: { type: "string" },
+  },
+  {
+    name: "region",
+    in: "query",
+    description:
+      "The region to report on when level=region. Counts Region-level requirements over the region's countries — not the Country-level rows pooled across them, which is what a region view used to mean.",
+    schema: { type: "string" },
+  },
+  {
+    name: "countrySet",
+    in: "query",
+    description:
+      "The Country Set to report on when level=countrySet — a named group of countries configured by an administrator. Counts CountrySet-level requirements over the set's countries. An unknown or empty set has no countries and so meets nothing.",
+    schema: { type: "string" },
+  },
+  {
+    name: "theatre",
+    in: "query",
+    description: "The theatre to report on when level=theatre. Counts Theatre-level requirements over that theatre.",
+    schema: { type: "string" },
+  },
+];
+
 // ─── Reusable schema fragments ───────────────────────────────────────────────
 
 const STR = { type: "string" } as const;
@@ -139,13 +176,37 @@ const ALTERNATIVE = obj({
   trainingFullTitle: NULLABLE_STR,
 });
 
+const LEVEL_ENUM = ["Country", "Region", "CountrySet", "Theatre", "Global"] as const;
+
+const AGGREGATION = {
+  type: "string",
+  enum: ["total", "eachCountry"],
+  description:
+    'How a Region or CountrySet requirement is counted: "total" pools distinct holders across the whole area; "eachCountry" requires every country in the area to reach the quantity on its own. Always "total" at the other levels.',
+} as const;
+
 const PLAN_REQUIREMENT = obj({
   instanceId: STR,
+  requirementKey: {
+    type: "string",
+    description:
+      'The authored requirement this instance came from. An "eachCountry" requirement yields one instance per country, all sharing this key.',
+  },
   specialisation: NULLABLE_STR,
   tierName: NULLABLE_STR,
   purpose: STR,
-  nativeLevel: { type: "string", description: "The requirement's authored level: Country, Theatre or Global." },
-  scopeLabel: { type: "string", description: "The population this instance is counted over." },
+  nativeLevel: {
+    type: "string",
+    enum: LEVEL_ENUM,
+    description: "The requirement's authored level: Country, Region, CountrySet, Theatre or Global.",
+  },
+  aggregation: AGGREGATION,
+  country: {
+    ...NULLABLE_STR,
+    description:
+      'The one country this instance is counted over, for an "eachCountry" requirement. Null for a pooled requirement — and for the single placeholder an "eachCountry" requirement yields when the scope has no countries, which is never met.',
+  },
+  scopeLabel: { type: "string", description: "The population this instance is counted over (the country, for a per-country instance)." },
   cert: STR,
   required: INT,
   attained: INT,
@@ -157,7 +218,11 @@ const PLAN_REQUIREMENT = obj({
   lapsedPool: INT,
   legacyPool: INT,
   netNew: { type: "integer", description: "Slots needing brand-new training, true of this requirement read alone." },
-  sharedWith: { ...arr(STR), description: "Other specialisations in this target needing the same certification over the same population." },
+  sharedWith: {
+    ...arr(STR),
+    description:
+      "Other specialisations in this target needing the same certification over a shared population — the same one, or this instance's country inside the other's area (or the reverse). Two different countries never share.",
+  },
   expiringSoon: INT,
 });
 
@@ -196,6 +261,8 @@ const PLAN_RISK_IMPACT = obj({
   specialisation: NULLABLE_STR,
   tierName: NULLABLE_STR,
   cert: STR,
+  aggregation: AGGREGATION,
+  country: { ...NULLABLE_STR, description: 'Set for one country of an "eachCountry" requirement.' },
   scopeLabel: STR,
   required: INT,
   attained: INT,
@@ -203,19 +270,76 @@ const PLAN_RISK_IMPACT = obj({
   onPath: { type: "boolean", description: "Whether the plan is costed against this requirement." },
 });
 
-const PROGRAM_REQUIREMENT = obj({
+const COUNTRY_BREAKDOWN = arr(obj({ country: STR, count: INT, compliant: BOOL }));
+
+/**
+ * The count-mode fields every compliance requirement carries, in two shapes
+ * that genuinely differ on the wire, so the descriptions branch on `nullable`:
+ *  - a specialisation requirement (`nullable = false`): the eachCountry-only
+ *    figures are present only on eachCountry rows, and the projected ones only
+ *    with horizonMonths — absent, not null, otherwise;
+ *  - a tier's deployment requirement (`nullable = true`): every field is always
+ *    present, and null when it does not apply or there is no horizon.
+ */
+function countModeFields(nullable: boolean) {
+  const n = (t: "integer" | "boolean") => (nullable ? { type: [t, "null"] } : { type: t });
+  const breakdown = nullable ? { type: ["array", "null"], items: COUNTRY_BREAKDOWN.items } : COUNTRY_BREAKDOWN;
+  /** "eachCountry only …" — and what happens on the other rows, per shape. */
+  const eachOnly = (what: string) =>
+    nullable ? `${what} eachCountry rows only; null on a total row.` : `${what} Present on eachCountry rows only.`;
+  /** A horizon figure — absent without horizonMonths, or null in the nullable shape. */
+  const atHorizon = (what: string, eachCountryOnly: boolean) =>
+    nullable
+      ? `${what} Null without horizonMonths${eachCountryOnly ? " and on a total row" : ""}.`
+      : `${what} Present only with horizonMonths${eachCountryOnly ? ", and on eachCountry rows only" : ""}.`;
+  return {
+    aggregation: AGGREGATION,
+    compliant: {
+      ...n("boolean"),
+      description:
+        "Whether the requirement is met, at every level. For an eachCountry requirement: every country meets the quantity; an area with no countries is never met." +
+        (nullable ? " Null when the tier block has no scope to count it over." : ""),
+    },
+    projectedCompliant: { ...n("boolean"), description: atHorizon("Whether it is still met at the horizon.", false) },
+    pooledAttained: {
+      ...n("integer"),
+      description: eachOnly("Distinct holders across the whole area; for these rows attained is the LOWEST country's count."),
+    },
+    projectedPooledAttained: { ...n("integer"), description: atHorizon("pooledAttained at the horizon.", true) },
+    countriesMet: { ...n("integer"), description: eachOnly("Countries meeting the quantity.") },
+    countriesTotal: { ...n("integer"), description: eachOnly("Countries in the area.") },
+    projectedCountriesMet: { ...n("integer"), description: atHorizon("countriesMet at the horizon.", true) },
+    countryBreakdown: {
+      ...breakdown,
+      description: eachOnly("One entry per country in the area, zeros included."),
+    },
+    projectedCountryBreakdown: {
+      ...breakdown,
+      description: atHorizon("countryBreakdown at the horizon.", true),
+    },
+  };
+}
+
+const PROGRAM_REQUIREMENT_BASE = {
   trainingType: NULLABLE_STR,
   trainingTitle: NULLABLE_STR,
   trainingFullTitle: { type: "string", description: 'Falls back to "—" when the training has been deleted.' },
   quantityRequired: INT,
-  attained: INT,
+  attained: { type: "integer", description: "Distinct holders; for an eachCountry requirement, the lowest country's count." },
   projectedAttained: { type: ["integer", "null"] },
   alternatives: arr(ALTERNATIVE),
   globalAttained: { type: "integer", description: "Global level only." },
   minimumPerTheatre: { type: ["integer", "null"], description: "Global level only." },
-  theatreBreakdown: { type: "object", description: "Global level only: holders per theatre.", additionalProperties: INT },
-  compliant: { type: "boolean", description: "Global level only." },
-});
+  theatreBreakdown: {
+    ...arr(obj({ theatre: STR, count: INT, compliant: BOOL })),
+    description: "Global level only: holders per theatre, and whether each theatre meets minimumPerTheatre.",
+  },
+};
+
+const PROGRAM_REQUIREMENT = obj({ ...PROGRAM_REQUIREMENT_BASE, ...countModeFields(false) });
+
+/** A tier's deployment requirement: the same shape, with the count-mode figures nullable. */
+const TIER_DEPLOYMENT_REQUIREMENT = obj({ ...PROGRAM_REQUIREMENT_BASE, ...countModeFields(true) });
 
 // ─── Endpoints ───────────────────────────────────────────────────────────────
 
@@ -387,7 +511,10 @@ export const PUBLIC_API_ENDPOINTS: readonly PublicApiEndpoint[] = [
       programs: arr(
         obj({
           name: STR,
-          levels: { ...arr(STR), description: "Configured compliance levels: Country, Theatre, Global." },
+          levels: {
+            ...arr({ type: "string", enum: LEVEL_ENUM }),
+            description: "Configured requirement levels: Country, Region, CountrySet, Theatre, Global.",
+          },
           hasMinimumPerTheatre: BOOL,
           isTiered: BOOL,
         })
@@ -413,10 +540,11 @@ export const PUBLIC_API_ENDPOINTS: readonly PublicApiEndpoint[] = [
       {
         name: "level",
         in: "query",
-        description: "Which level to report at.",
-        schema: { type: "string", enum: ["country", "region", "theatre", "global"], default: "country" },
+        description:
+          "Which level to report at. Each level counts only the requirements authored at it: region means Region-level requirements over the region's countries, and countrySet means CountrySet-level requirements over the set's countries.",
+        schema: { type: "string", enum: ["country", "region", "countrySet", "theatre", "global"], default: "country" },
       },
-      ...GEO_PARAMS,
+      ...PROGRAM_SCOPE_PARAMS,
       {
         name: "horizonMonths",
         in: "query",
@@ -444,6 +572,8 @@ export const PUBLIC_API_ENDPOINTS: readonly PublicApiEndpoint[] = [
             specialisations: arr(
               obj({
                 name: STR,
+                compliant: { type: "boolean", description: "Every qualifying requirement met, at every level." },
+                projectedCompliant: { type: "boolean", description: "Still met at the horizon. Present only with horizonMonths." },
                 requirements: arr(PROGRAM_REQUIREMENT),
                 deploymentRequirements: arr(PROGRAM_REQUIREMENT),
                 deploymentCompliant: BOOL,
@@ -452,9 +582,13 @@ export const PUBLIC_API_ENDPOINTS: readonly PublicApiEndpoint[] = [
             ),
             countries: arr(STR),
             regions: arr(STR),
+            countrySets: { ...arr(STR), description: "Country Sets with at least one member — the values countrySet accepts." },
             theatres: arr(STR),
             meta: obj({
-              levels: arr(STR),
+              levels: {
+                ...arr({ type: "string", enum: LEVEL_ENUM }),
+                description: "The requirement levels this program's rows use: Country, Region, CountrySet, Theatre, Global.",
+              },
               hasMinimumPerTheatre: BOOL,
               isTiered: { type: "boolean", description: "Absent from the empty out-of-scope payload." },
               deploymentMode: { type: "string", enum: ["flat", "perAchievedSpecialisation", "perTierPerSpecialisation"] },
@@ -477,7 +611,7 @@ export const PUBLIC_API_ENDPOINTS: readonly PublicApiEndpoint[] = [
                     projectedCompliant: NULLABLE_BOOL,
                     satisfiedSpecialisationCount: INT,
                     projectedSatisfiedSpecialisationCount: { type: ["integer", "null"] },
-                    deploymentRequirements: arr(PROGRAM_REQUIREMENT),
+                    deploymentRequirements: arr(TIER_DEPLOYMENT_REQUIREMENT),
                   })
                 ),
               }),
@@ -536,10 +670,11 @@ export const PUBLIC_API_ENDPOINTS: readonly PublicApiEndpoint[] = [
       {
         name: "level",
         in: "query",
-        description: "The scope to plan at. Each scope plans against its own level's requirements only.",
-        schema: { type: "string", enum: ["global", "theatre", "region", "country"], default: "global" },
+        description:
+          'The scope to plan at. Each scope plans against its own level\'s requirements only: region plans Region-level requirements over the region\'s countries, countrySet plans CountrySet-level requirements over the set\'s countries. An "eachCountry" requirement becomes one gap per country. An unrecognised value plans globally.',
+        schema: { type: "string", enum: ["global", "theatre", "region", "countrySet", "country"], default: "global" },
       },
-      ...GEO_PARAMS,
+      ...PROGRAM_SCOPE_PARAMS,
       {
         name: "renewalWindowMonths",
         in: "query",
@@ -582,11 +717,15 @@ export const PUBLIC_API_ENDPOINTS: readonly PublicApiEndpoint[] = [
               obj({
                 name: STR,
                 isTiered: BOOL,
-                levels: arr(STR),
+                levels: {
+                  ...arr({ type: "string", enum: LEVEL_ENUM }),
+                  description: "The requirement levels this program's rows use: Country, Region, CountrySet, Theatre, Global.",
+                },
                 tiers: arr(STR),
                 specialisations: arr(STR),
               })
             ),
+            countrySets: { ...arr(STR), description: "Country Sets with at least one member — the values countrySet accepts." },
           }),
           title: "Selector metadata (options=true)",
         },
