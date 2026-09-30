@@ -91,6 +91,7 @@ export default function RegionDataPage() {
   // open with no message. The ISO field makes that reachable in normal use —
   // one letter in the box is a valid keystroke and an invalid code.
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [newCountry, setNewCountry] = useState("");
   const [newRegionValue, setNewRegionValue] = useState("");
   const [newTheatreValue, setNewTheatreValue] = useState("");
@@ -375,8 +376,23 @@ export default function RegionDataPage() {
   };
 
   const handleDeleteRegion = async (country: string) => {
+    // Deleting a country also removes it from every Country Set (the
+    // membership FK cascades), which changes partner-program compliance for
+    // those sets — so say so before doing it.
+    const ok = window.confirm(
+      `Delete "${country}" from Region Data?\n\nIt will also be removed from any Country Set it belongs to. A country still assigned to students cannot be deleted.`
+    );
+    if (!ok) return;
+    setDeleteError(null);
     const res = await fetch(`/api/region-data/${encodeURIComponent(country)}`, { method: "DELETE" });
-    if (res.ok) setRegions((prev) => prev.filter((r) => r.country !== country));
+    if (res.ok) {
+      setRegions((prev) => prev.filter((r) => r.country !== country));
+      return;
+    }
+    const data = await res.json().catch(() => null);
+    setDeleteError(
+      data && typeof data.error === "string" ? data.error : `Could not delete "${country}".`
+    );
   };
 
   // Import handlers
@@ -573,6 +589,11 @@ export default function RegionDataPage() {
             {unmappedCount} {unmappedCount === 1 ? "country has" : "countries have"} no ISO
             code. Unmapped countries cannot be matched to a map or to any other
             system that keys on ISO 3166-1.
+          </p>
+        )}
+        {deleteError && (
+          <p className="mt-3 text-sm text-red-700" role="alert">
+            {deleteError}
           </p>
         )}
       </section>
