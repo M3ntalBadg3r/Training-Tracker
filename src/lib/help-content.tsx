@@ -817,6 +817,7 @@ const helpSections: Record<string, HelpSection> = {
           <li>The <strong>Forecast 12-mo Δ</strong> KPI shows the projected change (in percentage points) from now to 12 months out — a negative value flags certifications due to lapse.</li>
           <li>Narrow the view with the <strong>Theatre / Region / Country</strong>{" "}filters (the &quot;Showing&quot; caption states the active scope); the report is also scoped to the company selected in the header. The program dropdown lists every program found in Program Data.</li>
           <li>This report is also available over the <strong>public API</strong>{" "}at <code>/api/public/v1/reports/program-compliance-trend</code>, for a partner portal or BI tool holding an API key.</li>
+          <li>The trend does not distinguish requirement levels: it counts every requirement of a program as distinct holders pooled across the chosen geography. A Region or Country Set requirement counted <em>in each country</em>{" "}is therefore shown pooled here, not country by country &mdash; use the program dashboard for the per-country view.</li>
         </ul>
       </>
     ),
@@ -971,6 +972,10 @@ const helpSections: Record<string, HelpSection> = {
           <li>
             <strong>Region Data</strong>{" "}&mdash; Manage the mapping between
             countries and regions.
+          </li>
+          <li>
+            <strong>Country Sets</strong>{" "}&mdash; Group countries into custom
+            sets that partner programs can report against.
           </li>
           <li>
             <strong>Training Data</strong>{" "}&mdash; Manage training program
@@ -1136,7 +1141,7 @@ const helpSections: Record<string, HelpSection> = {
           <li>
             <strong>Wipe All Data (Keep Accounts)</strong> — Permanently deletes
             all students, training records, training data, product types, region
-            data, programs, companies, and scheduled exports, but keeps your user
+            data, country sets, programs, companies, and scheduled exports, but keeps your user
             accounts so you stay signed in. Type <code>WIPE</code> to confirm.
           </li>
           <li>
@@ -1212,10 +1217,16 @@ const helpSections: Record<string, HelpSection> = {
           <li>
             <strong>Edit</strong>{" "}&mdash; Click <strong>Edit</strong> on any row
             to modify the country, region, or theatre inline, then{" "}
-            <strong>Save</strong> or <strong>Cancel</strong>.
+            <strong>Save</strong> or <strong>Cancel</strong>. Renaming a country
+            carries everything attached to it along &mdash; its students and its
+            membership of any Country Set follow the new name.
           </li>
           <li>
-            <strong>Delete</strong>{" "}&mdash; Remove a country/region mapping.
+            <strong>Delete</strong>{" "}&mdash; Remove a country/region mapping,
+            after a confirmation. Deleting a country also removes it from every
+            Country Set it belongs to, which changes partner-program results for
+            those sets. A country that still has students assigned cannot be
+            deleted; the page says so rather than failing silently.
           </li>
           <li>
             <strong>Import</strong>{" "}&mdash; Upload a CSV or Excel file with{" "}
@@ -2093,6 +2104,10 @@ const helpSections: Record<string, HelpSection> = {
               <td>Which companies each user may access</td>
             </tr>
             <tr>
+              <td><code>country_sets.json</code>, <code>country_set_members.json</code></td>
+              <td>Country Sets and the countries in each</td>
+            </tr>
+            <tr>
               <td><code>users.json</code></td>
               <td>
                 User accounts. Password hashes and MFA secrets are included
@@ -2153,8 +2168,9 @@ const helpSections: Record<string, HelpSection> = {
         <h3>Config Backup</h3>
         <p>
           A <strong>config backup</strong> contains the reference dataset only
-          — product types, regions, the training catalogue, OLX relationships,
-          specialisations, programs, import aliases, and system settings — and
+          — product types, regions, country sets, the training catalogue, OLX
+          relationships, specialisations, programs, import aliases, and system
+          settings — and
           excludes students and training records. Use this to clone the
           catalogue/program setup into a freshly installed instance without
           carrying any learner data across.
@@ -2255,6 +2271,17 @@ const helpSections: Record<string, HelpSection> = {
             than trusting the account data inside it.
           </li>
         </ul>
+        <p>
+          <strong>Country Sets</strong>{" "}are replaced from the archive when it
+          carries them. An archive taken before Country Sets existed carries
+          none, and restoring it <strong>keeps the Country Sets already on this
+          system</strong>{" "}(any member country the restore did not bring back is
+          dropped from its set, and the result says how many). A config restore
+          behaves the same way. Note that a backup containing Region or Country
+          Set program requirements cannot be restored onto an older version of
+          the app that does not know those levels &mdash; update that system
+          first.
+        </p>
         <p>
           <strong>Important:</strong> Restoring a backup{" "}
           <strong>replaces all existing data</strong> other than the user
@@ -2548,7 +2575,11 @@ const helpSections: Record<string, HelpSection> = {
             </tr>
             <tr>
               <td><strong>Level</strong></td>
-              <td>Whether this requirement applies at Country, Theatre, or Global level.</td>
+              <td>Whether this requirement applies at Country, Region, Country Set, Theatre, or Global level. Each dashboard view reads only the requirements at its own level — see <em>Levels and count modes</em> below.</td>
+            </tr>
+            <tr>
+              <td><strong>Count mode</strong></td>
+              <td>Region and Country Set requirements only. <strong>Total across the area</strong>{" "}counts distinct holders anywhere in the region or set; <strong>In each country</strong>{" "}requires every country in it to reach the quantity on its own. Every other level always counts in total.</td>
             </tr>
             <tr>
               <td><strong>Type</strong></td>
@@ -2560,11 +2591,11 @@ const helpSections: Record<string, HelpSection> = {
             </tr>
             <tr>
               <td><strong>Quantity Required</strong></td>
-              <td>For Country/Theatre: number of people needed. For Global with training: number of people globally. For Global without training: number of compliant theatres needed.</td>
+              <td>For Country/Theatre: number of people needed in that country or theatre. For Region/Country Set: the number of people needed across the whole area (<em>Total</em>) or in every one of its countries (<em>In each country</em>). For Global with training: number of people globally. For Global without training: number of compliant theatres needed.</td>
             </tr>
             <tr>
               <td><strong>Minimum per Theatre</strong></td>
-              <td>Optional. For Global-level requirements with training — the minimum number of certified people required per theatre. When set, the dashboard shows a per-theatre breakdown.</td>
+              <td>Optional, and <strong>Global-level only</strong>. For a Global requirement with training — the minimum number of certified people required per theatre. When set, the dashboard shows a per-theatre breakdown. It is not offered at any other level, and an import row that supplies one for another level has it dropped with a warning.</td>
             </tr>
           </tbody>
         </table>
@@ -2581,8 +2612,46 @@ const helpSections: Record<string, HelpSection> = {
         </p>
         <p>
           A program&apos;s requirements table can be narrowed with the{" "}
-          <strong>Specialisation</strong>, <strong>Level</strong>, and <strong>Type</strong>{" "}
-          filters in the column headers; use <strong>Clear Filters</strong> to reset them.
+          <strong>Specialisation</strong>, <strong>Level</strong>, <strong>Type</strong>{" "}
+          and <strong>Count Mode</strong>{" "}filters in the column headers; use{" "}
+          <strong>Clear Filters</strong> to reset them. The Count Mode column shows a dash
+          for levels where a count mode does not apply.
+        </p>
+
+        <h3>Levels and count modes</h3>
+        <p>
+          <strong>Region</strong> and <strong>Country Set</strong>{" "}requirements are
+          written once and apply to <em>whichever</em>{" "}region or country set is being
+          viewed on the dashboard — a Region requirement is not tied to one named region.
+          Country Sets are custom groups of countries managed under{" "}
+          <strong>Admin &rsaquo; Country Sets</strong>.
+        </p>
+        <p>
+          Because both levels span several countries, each of their requirements has a{" "}
+          <strong>count mode</strong>:
+        </p>
+        <ul>
+          <li>
+            <strong>Total across the area</strong>{" "}— distinct holders anywhere in the
+            region or set count toward the quantity.
+          </li>
+          <li>
+            <strong>In each country</strong>{" "}— every country in the region or set must
+            reach the quantity on its own. A region or set with no countries in it never
+            meets such a requirement.
+          </li>
+        </ul>
+        <p>
+          The two can be combined. A specialisation that needs{" "}
+          <em>4 &times; Cert A in each country</em>{" "}plus <em>2 &times; Cert B in total</em>{" "}
+          is achieved only when both hold, and only then does it count toward a tier.
+        </p>
+        <p>
+          <strong>By Region reads Region requirements only.</strong>{" "}It used to be built
+          from the Country requirements, pooled across the region&apos;s countries with the
+          per-country quantity unchanged. A program with only Country requirements no longer
+          offers a By Region view; to keep one, add Region requirements (count mode{" "}
+          <em>Total</em>) that mirror the Country ones.
         </p>
 
         <h3>Alternative Trainings (OR Logic)</h3>
@@ -2607,11 +2676,20 @@ const helpSections: Record<string, HelpSection> = {
           import dialog to get a CSV template with example rows.
         </p>
         <p>
-          Expected columns: Program Name, Specialisation, Level, Training Type, Training,
-          Quantity Required, Minimum per Theatre, Alternatives. Column names are matched
-          case-insensitively. Specialisations are auto-created if they don&apos;t exist.
-          Training is matched by display name against the training catalog. Alternatives
-          are specified as pipe-separated training names (e.g., &quot;Training A|Training B&quot;).
+          Expected columns: Program Name, Specialisation, Level, Count Mode, Training Type,
+          Training, Quantity Required, Minimum per Theatre, Alternatives. Column names are
+          matched case-insensitively. Specialisations are auto-created if they don&apos;t
+          exist. Training is matched by display name against the training catalog.
+          Alternatives are specified as pipe-separated training names (e.g.,
+          &quot;Training A|Training B&quot;).
+        </p>
+        <p>
+          <strong>Level</strong>{" "}accepts Country, Region, Country Set, Theatre or Global.{" "}
+          <strong>Count Mode</strong>{" "}accepts <em>Total</em>{" "}or <em>Each country</em>;
+          a blank cell means Total, so older files without the column import unchanged.{" "}
+          <em>Each country</em>{" "}on a Country, Theatre or Global row is an error, as is an
+          unrecognised value. A <strong>Minimum per Theatre</strong>{" "}on a row that is not
+          Global is dropped and reported as a warning in the preview.
         </p>
         <p>
           Use <strong>Validate</strong> to check all rows for errors before committing,
@@ -2669,9 +2747,11 @@ const helpSections: Record<string, HelpSection> = {
 
         <h3>Choosing a target</h3>
         <p>
-          Pick a <strong>Scope</strong> (Global / Theatre / Region / Country) and
-          one or more <strong>programs</strong>. For each program you choose what to
-          aim at:
+          Pick a <strong>Scope</strong> (Global / Theatre / Region / Country Set /
+          Country) and one or more <strong>programs</strong>. Region and Country Set
+          are offered only when at least one program has requirements at that
+          level, since there would be nothing to plan otherwise. For each program
+          you choose what to aim at:
         </p>
         <ul>
           <li>
@@ -2767,7 +2847,28 @@ const helpSections: Record<string, HelpSection> = {
           exactly like the program dashboards: choosing a <em>country</em>{" "}shows
           that country&apos;s Country-level requirements — not the theatre-wide
           requirement above it. Select the <em>theatre</em> if you want to plan
-          against theatre-level requirements.
+          against theatre-level requirements. A <em>region</em>{" "}plans the
+          Region-level requirements over that region&apos;s countries, and a{" "}
+          <em>country set</em>{" "}plans the Country Set requirements over the
+          set&apos;s countries. (A region used to plan the Country requirements
+          pooled across its countries; it no longer does, matching the
+          dashboards.)
+        </p>
+        <p>
+          A Region or Country Set requirement counted <strong>in each
+          country</strong>{" "}is planned <strong>country by country</strong>: each
+          country&apos;s gap is its own, and only people in that country can close
+          it, so a shortfall of 1 in one country and 2 in another is 3 people to
+          certify. The roadmap folds those countries back under one row &mdash;{" "}
+          <em>4 &times; Cert A &mdash; each country</em>{" "}&mdash; saying how many
+          countries are short, and expands to one line per country. People
+          certified to close the per-country gaps also count toward a{" "}
+          <em>total</em>{" "}requirement on the same certification in that area, so
+          the two are never charged twice. A region or set with no countries in it
+          shows the requirement as unmet rather than dropping it. In the CSV and
+          Excel exports an each-country requirement is one row per country, with{" "}
+          <strong>Count Mode</strong>{" "}and <strong>Country</strong>{" "}columns
+          added at the end.
         </p>
         <p>
           The <strong>Renewal window</strong> (Off / 1 / 3 / 6 / 12 months) projects
@@ -2886,8 +2987,9 @@ const helpSections: Record<string, HelpSection> = {
             <strong>Program name</strong>{" "}— opens that program&apos;s dashboard.
           </li>
           <li>
-            A summary line describing how the program is configured, including
-            whether it is <strong>tiered</strong>.
+            A summary line describing how the program is configured &mdash;
+            which levels it has requirements at (country, region, country set,
+            theatre, global) and whether it is <strong>tiered</strong>.
           </li>
         </ul>
       </>
@@ -2905,11 +3007,18 @@ const helpSections: Record<string, HelpSection> = {
         <p>
           A single <strong>View</strong> selector at the top drives the whole
           page: a <strong>Level</strong>{" "}dropdown (Global / By Theatre / By Region
-          / By Country, limited to the program&apos;s configured levels) plus a{" "}
-          <strong>Value</strong> dropdown for the chosen level (which theatre /
-          region / country; hidden for Global). Picking a scope shows the{" "}
-          <strong>Tier Status</strong> (for tiered programs) and the one matching
-          report for that scope.
+          / By Country Set / By Country, limited to the levels the program has
+          requirements at) plus a <strong>Value</strong> dropdown for the chosen
+          level (which theatre / region / country set / country; hidden for
+          Global). Picking a scope shows the <strong>Tier Status</strong> (for
+          tiered programs) and the one matching report for that scope.
+        </p>
+        <p>
+          Each view reads <strong>only its own level&apos;s requirements</strong>:
+          By Country shows Country requirements, By Region shows Region
+          requirements over the region&apos;s countries, By Country Set shows
+          Country Set requirements over the set&apos;s countries, and so on. A
+          view is offered only when the program has requirements at that level.
         </p>
         <p>
           The dashboard reports on <strong>one company at a time</strong>, and it
@@ -2932,8 +3041,11 @@ const helpSections: Record<string, HelpSection> = {
         <h3>Tier Status</h3>
         <p>
           Shown for <strong>tiered</strong> programs, above the report and
-          following the page <strong>View</strong>{" "}scope (including By Region,
-          aggregated across the region&apos;s countries). It shows the
+          following the page <strong>View</strong>{" "}scope &mdash; at every level,
+          including By Region and By Country Set, where it is worked out from
+          that level&apos;s own requirements (a specialisation needing a
+          certification <em>in each country</em>{" "}counts toward a tier only once
+          every country has it). It shows the
           partner&apos;s <strong>highest tier achieved</strong> and progress toward
           the next one. Each tier card shows how many specialisations are achieved
           versus required (and <strong>lists which specialisations</strong>{" "}are
@@ -2944,14 +3056,39 @@ const helpSections: Record<string, HelpSection> = {
           certs drop out.
         </p>
 
-        <h3>Country &amp; Region Reports</h3>
+        <h3>Country, Region &amp; Country Set Reports</h3>
         <p>
-          Shown when the <strong>View</strong> level is By Country or By Region
-          (available when the program has country-level requirements). A region
-          aggregates all of its countries. Each column is a specialisation, with
-          rows for the training name, required count, and attained count. Green
-          means the requirement is met; red means it is not. Click{" "}
-          <strong>View</strong> to list the qualifying students.
+          Shown when the <strong>View</strong> level is By Country, By Region or
+          By Country Set (each available when the program has requirements at
+          that level). Each column is a specialisation, with rows for the
+          training name, required count, and attained count. Green means the
+          requirement is met; red means it is not. Click <strong>View</strong>{" "}
+          to list the qualifying students (for a region or country set, the
+          holders across its countries).
+        </p>
+        <p>
+          On a By Region or By Country Set view each requirement follows its{" "}
+          <strong>count mode</strong>. A <em>total</em>{" "}requirement reads{" "}
+          <em>N total</em>{" "}and counts distinct holders across the whole area.
+          An <em>each country</em>{" "}requirement reads <em>N per country</em>{" "}
+          and shows <strong>X / Y countries met</strong>, with the lowest
+          country&apos;s count and the total holders across the area beneath it
+          &mdash; the row is only met when every country is. Expand it for a per-country breakdown, where each country
+          shows its own holders, status and (under a projection) its own
+          expiring count. A region or set with no countries never meets an
+          each-country requirement. A specialisation is achieved only when all
+          of its requirements, of either mode, are met. Exports add{" "}
+          <strong>Count Mode</strong>, <strong>Countries Met</strong>{" "}and{" "}
+          <strong>Total Holders</strong>{" "}columns on these views, and the PDF
+          lists the per-country breakdown under each each-country row.
+        </p>
+        <p>
+          <strong>By Region used to work differently.</strong>{" "}It was built
+          from the Country requirements, pooled across the region with the
+          per-country quantity unchanged. It now reads Region requirements only,
+          so a program that has only Country requirements no longer offers By
+          Region &mdash; add Region requirements in Program Data to bring it
+          back.
         </p>
         <p>
           Where a specialisation has <strong>Deployment requirements</strong> (tiered
@@ -3161,6 +3298,85 @@ const helpSections: Record<string, HelpSection> = {
           created or skipped (names that already exist are skipped).{" "}
           <strong>Export</strong> downloads the current list as CSV, Excel, or
           PDF.
+        </p>
+      </>
+    ),
+  },
+  "country-sets": {
+    title: "Country Sets",
+    content: (
+      <>
+        <p>
+          A <strong>Country Set</strong>{" "}is a custom group of countries &mdash;
+          like a region, but chosen freely rather than taken from Region Data.
+          Partner programs can set requirements at the{" "}
+          <strong>Country Set</strong>{" "}level, and the program dashboards and
+          Compliance Planning can then report <strong>By Country Set</strong>. A
+          country may belong to any number of sets.
+        </p>
+        <p>
+          Country Sets are shared reference data for the whole system, not
+          per company, and only a SuperAdmin can manage them.
+        </p>
+
+        <h3>Adding &amp; Editing</h3>
+        <p>
+          Use <strong>Add Country Set</strong>{" "}to create one. Give it a unique{" "}
+          <strong>Name</strong>, an optional <strong>Description</strong>, and
+          pick its countries. The country picker lists every country in Region
+          Data and has a search box, a <strong>Selected only</strong>{" "}toggle and
+          a <strong>Clear</strong>{" "}button. To add a whole group at once, choose
+          a region and click <strong>Select all in region</strong>, or a theatre
+          and <strong>Select all in theatre</strong>{" "}&mdash; you can then
+          untick individual countries. Only countries that exist in Region Data
+          can be added.
+        </p>
+        <p>
+          Country Set requirements are written once and apply to{" "}
+          <em>whichever</em>{" "}set is being viewed, so there is nothing to link a
+          set to a program. When any program has Country Set requirements, the
+          page says how many, since every set here can then be reported
+          against. A set with no countries is allowed but is not offered in the
+          dashboards&apos; set picker, as it could only ever show an empty
+          report.
+        </p>
+
+        <h3>Searching &amp; Sorting</h3>
+        <p>
+          The search box matches a set&apos;s name, its description, or any of
+          its countries. Click a column header to sort by name, description or
+          number of countries. The search and sort are kept in the page
+          address, so <strong>Back</strong>{" "}returns you to the same view.
+        </p>
+
+        <h3>Deleting</h3>
+        <p>
+          <strong>Delete</strong>{" "}removes the set and its memberships after a
+          confirmation. Programs with Country Set requirements can no longer be
+          reported against a deleted set.
+        </p>
+
+        <h3>Changes made elsewhere</h3>
+        <ul>
+          <li>
+            <strong>Deleting a country</strong>{" "}in Region Data removes it from
+            every set it belongs to.
+          </li>
+          <li>
+            <strong>Renaming a country</strong>{" "}in Region Data keeps its set
+            memberships &mdash; the sets follow the new name.
+          </li>
+          <li>
+            Backups (full and config) include Country Sets. Restoring an archive
+            taken before Country Sets existed leaves the sets on this system in
+            place.
+          </li>
+        </ul>
+
+        <h3>Export</h3>
+        <p>
+          <strong>Export</strong>{" "}downloads the list &mdash; name, description
+          and countries &mdash; as CSV, Excel, or PDF.
         </p>
       </>
     ),
