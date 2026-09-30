@@ -70,7 +70,8 @@ export async function GET(request: NextRequest) {
   // add rather than a shared-key leak to discover.
   if (p.get("options") === "true") {
     const options = await cachedReport(
-      `public-compliance-planning-options|${scope}`,
+      // "-v2": the value became `{programs, countrySets}`; see the internal route.
+      `public-compliance-planning-options-v2|${scope}`,
       async () => {
         const [programs, countrySets] = await Promise.all([buildPlanningOptions(), listCountrySetNames()]);
         return { programs, countrySets };

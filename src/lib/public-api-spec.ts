@@ -273,36 +273,49 @@ const PLAN_RISK_IMPACT = obj({
 const COUNTRY_BREAKDOWN = arr(obj({ country: STR, count: INT, compliant: BOOL }));
 
 /**
- * The count-mode fields every compliance requirement carries. `nullable` is set
- * for a tier's deployment requirements, whose figures are absent where the
- * tier block has no scope to count them over.
+ * The count-mode fields every compliance requirement carries, in two shapes
+ * that genuinely differ on the wire, so the descriptions branch on `nullable`:
+ *  - a specialisation requirement (`nullable = false`): the eachCountry-only
+ *    figures are present only on eachCountry rows, and the projected ones only
+ *    with horizonMonths — absent, not null, otherwise;
+ *  - a tier's deployment requirement (`nullable = true`): every field is always
+ *    present, and null when it does not apply or there is no horizon.
  */
 function countModeFields(nullable: boolean) {
   const n = (t: "integer" | "boolean") => (nullable ? { type: [t, "null"] } : { type: t });
   const breakdown = nullable ? { type: ["array", "null"], items: COUNTRY_BREAKDOWN.items } : COUNTRY_BREAKDOWN;
+  /** "eachCountry only …" — and what happens on the other rows, per shape. */
+  const eachOnly = (what: string) =>
+    nullable ? `${what} eachCountry rows only; null on a total row.` : `${what} Present on eachCountry rows only.`;
+  /** A horizon figure — absent without horizonMonths, or null in the nullable shape. */
+  const atHorizon = (what: string, eachCountryOnly: boolean) =>
+    nullable
+      ? `${what} Null without horizonMonths${eachCountryOnly ? " and on a total row" : ""}.`
+      : `${what} Present only with horizonMonths${eachCountryOnly ? ", and on eachCountry rows only" : ""}.`;
   return {
     aggregation: AGGREGATION,
     compliant: {
       ...n("boolean"),
       description:
-        "Whether the requirement is met, at every level. For an eachCountry requirement: every country meets the quantity; an area with no countries is never met.",
+        "Whether the requirement is met, at every level. For an eachCountry requirement: every country meets the quantity; an area with no countries is never met." +
+        (nullable ? " Null when the tier block has no scope to count it over." : ""),
     },
-    projectedCompliant: { ...n("boolean"), description: "Whether it is still met at the horizon; null without horizonMonths." },
+    projectedCompliant: { ...n("boolean"), description: atHorizon("Whether it is still met at the horizon.", false) },
     pooledAttained: {
       ...n("integer"),
-      description: "eachCountry only: distinct holders across the whole area. For these rows attained is the LOWEST country's count.",
+      description: eachOnly("Distinct holders across the whole area; for these rows attained is the LOWEST country's count."),
     },
-    projectedPooledAttained: { ...n("integer"), description: "eachCountry only: pooledAttained at the horizon." },
-    countriesMet: { ...n("integer"), description: "eachCountry only: countries meeting the quantity." },
-    countriesTotal: { ...n("integer"), description: "eachCountry only: countries in the area." },
-    projectedCountriesMet: { ...n("integer"), description: "eachCountry only: countriesMet at the horizon." },
+    projectedPooledAttained: { ...n("integer"), description: atHorizon("pooledAttained at the horizon.", true) },
+    countriesMet: { ...n("integer"), description: eachOnly("Countries meeting the quantity.") },
+    countriesTotal: { ...n("integer"), description: eachOnly("Countries in the area.") },
+    projectedCountriesMet: { ...n("integer"), description: atHorizon("countriesMet at the horizon.", true) },
     countryBreakdown: {
       ...breakdown,
-      description: "eachCountry only: one entry per country in the area, zeros included.",
+      description: eachOnly("One entry per country in the area, zeros included."),
     },
     projectedCountryBreakdown: {
       ...breakdown,
-      description: "eachCountry only: countryBreakdown at the horizon; absent without horizonMonths.",
+      description: atHorizon("countryBreakdown at the horizon.", true),
     },
   };
 }
@@ -317,7 +330,10 @@ const PROGRAM_REQUIREMENT_BASE = {
   alternatives: arr(ALTERNATIVE),
   globalAttained: { type: "integer", description: "Global level only." },
   minimumPerTheatre: { type: ["integer", "null"], description: "Global level only." },
-  theatreBreakdown: { type: "object", description: "Global level only: holders per theatre.", additionalProperties: INT },
+  theatreBreakdown: {
+    ...arr(obj({ theatre: STR, count: INT, compliant: BOOL })),
+    description: "Global level only: holders per theatre, and whether each theatre meets minimumPerTheatre.",
+  },
 };
 
 const PROGRAM_REQUIREMENT = obj({ ...PROGRAM_REQUIREMENT_BASE, ...countModeFields(false) });
@@ -557,7 +573,7 @@ export const PUBLIC_API_ENDPOINTS: readonly PublicApiEndpoint[] = [
               obj({
                 name: STR,
                 compliant: { type: "boolean", description: "Every qualifying requirement met, at every level." },
-                projectedCompliant: { type: ["boolean", "null"], description: "Still met at the horizon; null without horizonMonths." },
+                projectedCompliant: { type: "boolean", description: "Still met at the horizon. Present only with horizonMonths." },
                 requirements: arr(PROGRAM_REQUIREMENT),
                 deploymentRequirements: arr(PROGRAM_REQUIREMENT),
                 deploymentCompliant: BOOL,

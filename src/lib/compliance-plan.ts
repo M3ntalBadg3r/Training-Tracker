@@ -962,6 +962,13 @@ async function buildEachCountryInstances(
   const countries = geo.countries ?? [];
   if (countries.length === 0) {
     const projectedAttained = horizon ? 0 : null;
+    // The gap is sized from at least 1, so the placeholder is never met — not
+    // even for a row whose quantity is 0 (a restored or SQL-written row the
+    // write paths would not produce). With `quantityRequired` itself, 0 short
+    // would read as achieved and count toward a tier, while the dashboard
+    // reports the same row not compliant; `isAchievedNow`/`isAchievedAtHorizon`
+    // read this shortfall too, so the badge and the tier gate agree with it.
+    const gapFloor = Math.max(1, row.quantityRequired);
     return [
       makeInstance(
         program, row, certKey, geo,
@@ -969,7 +976,7 @@ async function buildEachCountryInstances(
         {
           attained: 0,
           projectedAttained,
-          gap: sizeGap(row.quantityRequired, 0, projectedAttained, planForWindow),
+          gap: sizeGap(gapFloor, 0, projectedAttained, planForWindow),
           pool: [],
           expiringEmails: [],
         },
@@ -1489,7 +1496,11 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
       const needed = Math.max(0, chosenTier.specialisationsRequired - achievedCount);
       targetResult.tierPlan.alreadyAchieved = achievedCount;
       targetResult.tierPlan.needed = needed;
-      targetResult.tierPlan.deliveryCertShortfall = tierDeployInsts.reduce((s, i) => s + i.shortfall, 0);
+      // Deduped by the same rule as the totals, so the headline's "N more
+      // delivery-cert people" cannot claim more than peopleMoves charges for
+      // (two delivery rows on one cert, or a pooled row beside an each-country
+      // one, are one cohort, not two).
+      targetResult.tierPlan.deliveryCertShortfall = groupCost(tierDeployInsts, (i) => i.shortfall);
 
       // Reaching the tier needs only `needed` more specialisations, so pick that
       // many — greedily, by **marginal** cost (v2). A standalone per-specialisation
@@ -1893,15 +1904,22 @@ function tierOrder(t: CandidateTier): number {
   return t === "renewal" ? -1 : t === "easy-win" ? 0 : t === "lapsed" ? 1 : t === "legacy" ? 2 : 3;
 }
 
-/** Met today — the plain requirement check, independent of the planning basis. */
+/**
+ * Met today — the plain requirement check, independent of the planning basis.
+ * The shortfall test is redundant for an ordinary row (its shortfall is exactly
+ * `max(0, required - attained)`) and is what keeps an empty-area "each country"
+ * placeholder unmet even when its quantity is 0 (see `buildEachCountryInstances`).
+ */
 function isAchievedNow(reqs: PlanRequirement[]): boolean {
-  return reqs.every((r) => r.attained >= r.required);
+  return reqs.every((r) => r.attained >= r.required && r.shortfall === 0);
 }
 
 /** Still met at the end of the renewal window; null when no window is selected. */
 function isAchievedAtHorizon(reqs: PlanRequirement[]): boolean | null {
   if (reqs.some((r) => r.projectedAttained === null)) return null;
-  return reqs.every((r) => (r.projectedAttained ?? r.attained) >= r.required);
+  return reqs.every(
+    (r) => (r.projectedAttained ?? r.attained) >= r.required && (r.projectedShortfall ?? r.shortfall) === 0,
+  );
 }
 
 function toPlanRequirement(

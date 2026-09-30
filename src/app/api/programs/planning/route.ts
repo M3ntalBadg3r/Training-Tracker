@@ -53,7 +53,9 @@ export async function GET(request: NextRequest) {
     // gains a company dimension this key becomes a cross-tenant leak with no
     // compiler error and no reviewer signal to catch it.
     const options = await cachedReport(
-      `compliance-planning-options|${scopeKey(companyFilter)}`,
+      // "-v2": the value became `{programs, countrySets}` (it was the bare
+      // programs array), so no entry of the old shape can ever be served.
+      `compliance-planning-options-v2|${scopeKey(companyFilter)}`,
       async () => {
         const [programs, countrySets] = await Promise.all([buildPlanningOptions(), listCountrySetNames()]);
         return { programs, countrySets };

@@ -622,6 +622,17 @@ function summariseEachCountry(rows: PlanRequirement[]): PlanRequirement {
 }
 
 function countryState(r: PlanRequirement): RiskState {
+  return requirementState(r);
+}
+
+/**
+ * `riskState`, except that an "each country" placeholder for an area with no
+ * countries is never met — the server sizes its gap from at least 1 even at a
+ * quantity of 0, and the dashboard reports such a row not compliant, so a green
+ * "Met" here would contradict both.
+ */
+function requirementState(r: PlanRequirement): RiskState {
+  if (r.aggregation === "eachCountry" && r.country === null && r.shortfall > 0) return "nonCompliant";
   return riskState(r.attained, r.projectedAttained ?? undefined, r.required);
 }
 
@@ -1058,7 +1069,7 @@ function buildSpecGroup(
     labels: { cert: string; scope: string; haveNeed: ReturnType<typeof haveNeedCell> },
     detail?: string[],
   ): ReportTonedRow => {
-    const rowState = riskState(r.attained, r.projectedAttained ?? undefined, r.required);
+    const rowState = requirementState(r);
     const chips = candidateChips(r);
     // A cell tone overrides the row's, so a dimmed block has to surrender its
     // green "Met" as well, or one shaded cell per row survives the greying.
@@ -1956,7 +1967,7 @@ function ReqRow({
   haveNeed?: ReactNode;
 }) {
   const projected = r.projectedAttained ?? undefined;
-  const state = riskState(r.attained, projected, r.required);
+  const state = requirementState(r);
   const projectedGap = r.projectedShortfall ?? r.shortfall;
   const chips = candidateChips(r);
   return (

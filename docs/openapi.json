@@ -1107,11 +1107,8 @@
                                 "description": "Every qualifying requirement met, at every level."
                               },
                               "projectedCompliant": {
-                                "type": [
-                                  "boolean",
-                                  "null"
-                                ],
-                                "description": "Still met at the horizon; null without horizonMonths."
+                                "type": "boolean",
+                                "description": "Still met at the horizon. Present only with horizonMonths."
                               },
                               "requirements": {
                                 "type": "array",
@@ -1179,11 +1176,22 @@
                                       "description": "Global level only."
                                     },
                                     "theatreBreakdown": {
-                                      "type": "object",
-                                      "description": "Global level only: holders per theatre.",
-                                      "additionalProperties": {
-                                        "type": "integer"
-                                      }
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "theatre": {
+                                            "type": "string"
+                                          },
+                                          "count": {
+                                            "type": "integer"
+                                          },
+                                          "compliant": {
+                                            "type": "boolean"
+                                          }
+                                        }
+                                      },
+                                      "description": "Global level only: holders per theatre, and whether each theatre meets minimumPerTheatre."
                                     },
                                     "aggregation": {
                                       "type": "string",
@@ -1199,27 +1207,27 @@
                                     },
                                     "projectedCompliant": {
                                       "type": "boolean",
-                                      "description": "Whether it is still met at the horizon; null without horizonMonths."
+                                      "description": "Whether it is still met at the horizon. Present only with horizonMonths."
                                     },
                                     "pooledAttained": {
                                       "type": "integer",
-                                      "description": "eachCountry only: distinct holders across the whole area. For these rows attained is the LOWEST country's count."
+                                      "description": "Distinct holders across the whole area; for these rows attained is the LOWEST country's count. Present on eachCountry rows only."
                                     },
                                     "projectedPooledAttained": {
                                       "type": "integer",
-                                      "description": "eachCountry only: pooledAttained at the horizon."
+                                      "description": "pooledAttained at the horizon. Present only with horizonMonths, and on eachCountry rows only."
                                     },
                                     "countriesMet": {
                                       "type": "integer",
-                                      "description": "eachCountry only: countries meeting the quantity."
+                                      "description": "Countries meeting the quantity. Present on eachCountry rows only."
                                     },
                                     "countriesTotal": {
                                       "type": "integer",
-                                      "description": "eachCountry only: countries in the area."
+                                      "description": "Countries in the area. Present on eachCountry rows only."
                                     },
                                     "projectedCountriesMet": {
                                       "type": "integer",
-                                      "description": "eachCountry only: countriesMet at the horizon."
+                                      "description": "countriesMet at the horizon. Present only with horizonMonths, and on eachCountry rows only."
                                     },
                                     "countryBreakdown": {
                                       "type": "array",
@@ -1237,7 +1245,7 @@
                                           }
                                         }
                                       },
-                                      "description": "eachCountry only: one entry per country in the area, zeros included."
+                                      "description": "One entry per country in the area, zeros included. Present on eachCountry rows only."
                                     },
                                     "projectedCountryBreakdown": {
                                       "type": "array",
@@ -1255,7 +1263,7 @@
                                           }
                                         }
                                       },
-                                      "description": "eachCountry only: countryBreakdown at the horizon; absent without horizonMonths."
+                                      "description": "countryBreakdown at the horizon. Present only with horizonMonths, and on eachCountry rows only."
                                     }
                                   }
                                 }
@@ -1326,11 +1334,22 @@
                                       "description": "Global level only."
                                     },
                                     "theatreBreakdown": {
-                                      "type": "object",
-                                      "description": "Global level only: holders per theatre.",
-                                      "additionalProperties": {
-                                        "type": "integer"
-                                      }
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "theatre": {
+                                            "type": "string"
+                                          },
+                                          "count": {
+                                            "type": "integer"
+                                          },
+                                          "compliant": {
+                                            "type": "boolean"
+                                          }
+                                        }
+                                      },
+                                      "description": "Global level only: holders per theatre, and whether each theatre meets minimumPerTheatre."
                                     },
                                     "aggregation": {
                                       "type": "string",
@@ -1346,27 +1365,27 @@
                                     },
                                     "projectedCompliant": {
                                       "type": "boolean",
-                                      "description": "Whether it is still met at the horizon; null without horizonMonths."
+                                      "description": "Whether it is still met at the horizon. Present only with horizonMonths."
                                     },
                                     "pooledAttained": {
                                       "type": "integer",
-                                      "description": "eachCountry only: distinct holders across the whole area. For these rows attained is the LOWEST country's count."
+                                      "description": "Distinct holders across the whole area; for these rows attained is the LOWEST country's count. Present on eachCountry rows only."
                                     },
                                     "projectedPooledAttained": {
                                       "type": "integer",
-                                      "description": "eachCountry only: pooledAttained at the horizon."
+                                      "description": "pooledAttained at the horizon. Present only with horizonMonths, and on eachCountry rows only."
                                     },
                                     "countriesMet": {
                                       "type": "integer",
-                                      "description": "eachCountry only: countries meeting the quantity."
+                                      "description": "Countries meeting the quantity. Present on eachCountry rows only."
                                     },
                                     "countriesTotal": {
                                       "type": "integer",
-                                      "description": "eachCountry only: countries in the area."
+                                      "description": "Countries in the area. Present on eachCountry rows only."
                                     },
                                     "projectedCountriesMet": {
                                       "type": "integer",
-                                      "description": "eachCountry only: countriesMet at the horizon."
+                                      "description": "countriesMet at the horizon. Present only with horizonMonths, and on eachCountry rows only."
                                     },
                                     "countryBreakdown": {
                                       "type": "array",
@@ -1384,7 +1403,7 @@
                                           }
                                         }
                                       },
-                                      "description": "eachCountry only: one entry per country in the area, zeros included."
+                                      "description": "One entry per country in the area, zeros included. Present on eachCountry rows only."
                                     },
                                     "projectedCountryBreakdown": {
                                       "type": "array",
@@ -1402,7 +1421,7 @@
                                           }
                                         }
                                       },
-                                      "description": "eachCountry only: countryBreakdown at the horizon; absent without horizonMonths."
+                                      "description": "countryBreakdown at the horizon. Present only with horizonMonths, and on eachCountry rows only."
                                     }
                                   }
                                 }
@@ -1609,11 +1628,22 @@
                                           "description": "Global level only."
                                         },
                                         "theatreBreakdown": {
-                                          "type": "object",
-                                          "description": "Global level only: holders per theatre.",
-                                          "additionalProperties": {
-                                            "type": "integer"
-                                          }
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "theatre": {
+                                                "type": "string"
+                                              },
+                                              "count": {
+                                                "type": "integer"
+                                              },
+                                              "compliant": {
+                                                "type": "boolean"
+                                              }
+                                            }
+                                          },
+                                          "description": "Global level only: holders per theatre, and whether each theatre meets minimumPerTheatre."
                                         },
                                         "aggregation": {
                                           "type": "string",
@@ -1628,49 +1658,49 @@
                                             "boolean",
                                             "null"
                                           ],
-                                          "description": "Whether the requirement is met, at every level. For an eachCountry requirement: every country meets the quantity; an area with no countries is never met."
+                                          "description": "Whether the requirement is met, at every level. For an eachCountry requirement: every country meets the quantity; an area with no countries is never met. Null when the tier block has no scope to count it over."
                                         },
                                         "projectedCompliant": {
                                           "type": [
                                             "boolean",
                                             "null"
                                           ],
-                                          "description": "Whether it is still met at the horizon; null without horizonMonths."
+                                          "description": "Whether it is still met at the horizon. Null without horizonMonths."
                                         },
                                         "pooledAttained": {
                                           "type": [
                                             "integer",
                                             "null"
                                           ],
-                                          "description": "eachCountry only: distinct holders across the whole area. For these rows attained is the LOWEST country's count."
+                                          "description": "Distinct holders across the whole area; for these rows attained is the LOWEST country's count. eachCountry rows only; null on a total row."
                                         },
                                         "projectedPooledAttained": {
                                           "type": [
                                             "integer",
                                             "null"
                                           ],
-                                          "description": "eachCountry only: pooledAttained at the horizon."
+                                          "description": "pooledAttained at the horizon. Null without horizonMonths and on a total row."
                                         },
                                         "countriesMet": {
                                           "type": [
                                             "integer",
                                             "null"
                                           ],
-                                          "description": "eachCountry only: countries meeting the quantity."
+                                          "description": "Countries meeting the quantity. eachCountry rows only; null on a total row."
                                         },
                                         "countriesTotal": {
                                           "type": [
                                             "integer",
                                             "null"
                                           ],
-                                          "description": "eachCountry only: countries in the area."
+                                          "description": "Countries in the area. eachCountry rows only; null on a total row."
                                         },
                                         "projectedCountriesMet": {
                                           "type": [
                                             "integer",
                                             "null"
                                           ],
-                                          "description": "eachCountry only: countriesMet at the horizon."
+                                          "description": "countriesMet at the horizon. Null without horizonMonths and on a total row."
                                         },
                                         "countryBreakdown": {
                                           "type": [
@@ -1691,7 +1721,7 @@
                                               }
                                             }
                                           },
-                                          "description": "eachCountry only: one entry per country in the area, zeros included."
+                                          "description": "One entry per country in the area, zeros included. eachCountry rows only; null on a total row."
                                         },
                                         "projectedCountryBreakdown": {
                                           "type": [
@@ -1712,7 +1742,7 @@
                                               }
                                             }
                                           },
-                                          "description": "eachCountry only: countryBreakdown at the horizon; absent without horizonMonths."
+                                          "description": "countryBreakdown at the horizon. Null without horizonMonths and on a total row."
                                         }
                                       }
                                     }
