@@ -54,6 +54,11 @@ export async function POST(request: NextRequest) {
     await tx.scheduledExport.deleteMany({});
     await tx.trainingData.deleteMany({});
     await tx.productType.deleteMany({});
+    // Country Sets before Region Data. Deleting a country cascades its
+    // memberships away, but the set rows themselves would be left behind —
+    // empty sets surviving a wipe — so clear both explicitly.
+    await tx.countrySetMember.deleteMany({});
+    await tx.countrySet.deleteMany({});
     await tx.regionData.deleteMany({});
     await tx.exportCredential.deleteMany({});
     await tx.importMetadata.deleteMany({});
