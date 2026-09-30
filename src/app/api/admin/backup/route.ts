@@ -21,7 +21,9 @@ import {
   decryptBufferWithPassphrase,
 } from "@/lib/crypto";
 import { prepareBackupRestore } from "@/lib/product-types";
+import { normaliseAggregation } from "@/lib/program-levels";
 import { invalidateSystemSettingsCache } from "@/lib/system-settings";
+import { invalidateReportCache } from "@/lib/report-cache";
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 
 // Backup archive variants. A "full" backup is the historical shape (everything,
@@ -290,6 +292,8 @@ export async function generateBackupZip(opts: BackupOptions = {}): Promise<{
     offeringDataAlternatives,
     companies,
     userCompanies,
+    countrySets,
+    countrySetMembers,
   ] = await Promise.all([
     prisma.productType.findMany({ orderBy: { id: "asc" } }),
     prisma.regionData.findMany({ orderBy: { country: "asc" } }),
@@ -311,6 +315,8 @@ export async function generateBackupZip(opts: BackupOptions = {}): Promise<{
     prisma.offeringDataAlternative.findMany({ orderBy: { id: "asc" } }),
     prisma.company.findMany({ orderBy: { id: "asc" } }),
     prisma.userCompany.findMany({ orderBy: [{ userId: "asc" }, { companyId: "asc" }] }),
+    prisma.countrySet.findMany({ orderBy: { id: "asc" } }),
+    prisma.countrySetMember.findMany({ orderBy: [{ countrySetId: "asc" }, { country: "asc" }] }),
   ]);
 
   const zip = new JSZip();
@@ -354,6 +360,10 @@ export async function generateBackupZip(opts: BackupOptions = {}): Promise<{
   // and deleting users cascades user_companies away.
   zip.file("companies.json", JSON.stringify(companies, null, 2));
   zip.file("user_companies.json", JSON.stringify(userCompanies, null, 2));
+  // Country Sets (custom groupings of Region Data countries). Deliberately NOT
+  // part of ReferenceArchive — see restoreCountrySets for why.
+  zip.file("country_sets.json", JSON.stringify(countrySets, null, 2));
+  zip.file("country_set_members.json", JSON.stringify(countrySetMembers, null, 2));
   // Credentials (password hashes, MFA secrets) are stripped unless the caller
   // explicitly opted in — and generateBackupArchive only honours that opt-in
   // for an encrypted archive. Without them a restore cannot recreate accounts,
@@ -404,6 +414,8 @@ export async function generateConfigZip(): Promise<{
     offeringDataAlternatives,
     importAliases,
     systemSetting,
+    countrySets,
+    countrySetMembers,
   ] = await Promise.all([
     prisma.productType.findMany({ orderBy: { id: "asc" } }),
     prisma.regionData.findMany({ orderBy: { country: "asc" } }),
@@ -420,6 +432,8 @@ export async function generateConfigZip(): Promise<{
     prisma.offeringDataAlternative.findMany({ orderBy: { id: "asc" } }),
     prisma.importAlias.findMany({ orderBy: { id: "asc" } }),
     prisma.systemSetting.findUnique({ where: { id: 1 } }),
+    prisma.countrySet.findMany({ orderBy: { id: "asc" } }),
+    prisma.countrySetMember.findMany({ orderBy: [{ countrySetId: "asc" }, { country: "asc" }] }),
   ]);
 
   const zip = new JSZip();
@@ -450,6 +464,10 @@ export async function generateConfigZip(): Promise<{
   zip.file("offering_data_alternatives.json", JSON.stringify(offeringDataAlternatives, null, 2));
   zip.file("import_aliases.json", JSON.stringify(importAliases, null, 2));
   zip.file("system_setting.json", JSON.stringify(systemSetting, null, 2));
+  // Country Sets are reference data (groupings of RegionData countries), so a
+  // config backup carries them too.
+  zip.file("country_sets.json", JSON.stringify(countrySets, null, 2));
+  zip.file("country_set_members.json", JSON.stringify(countrySetMembers, null, 2));
 
   const buffer = await zip.generateAsync({ type: "arraybuffer" });
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
@@ -603,6 +621,9 @@ export interface RestoreCounts {
   programData: number;
   offerings: number;
   offeringData: number;
+  /** Sets / memberships in place after the restore (see restoreCountrySets). */
+  countrySets: number;
+  countrySetMembers: number;
   /**
    * Split rather than a bare number: reporting the archive's row count as
    * "restored" is what let a restore that deleted every account and recreated
@@ -688,6 +709,9 @@ export async function restoreFullArchive(
   // Reference/config tables (Programs + Offerings) — present in newer full
   // backups only; older archives leave these untouched.
   const referenceArchive = await readReferenceArchive(zip);
+  // Country Sets — present in newer archives only. Kept separate
+  // from referenceArchive on purpose (see CountrySetArchive).
+  const countrySetArchive = await readCountrySetArchive(zip);
 
   // Does this archive actually carry credentials? The metadata flag is the
   // authoritative answer; the per-row check is the belt-and-braces fallback,
@@ -767,6 +791,9 @@ export async function restoreFullArchive(
   let companiesRestored = 0;
   let userCompaniesRestored = 0;
   let studentsReassigned = 0;
+  // Cast, not an annotation: assigned inside the transaction callback, which
+  // control-flow analysis cannot see, so an annotated `= null` narrows to never.
+  let countrySetResult = null as CountrySetRestoreResult | null;
   // Highest sessionEpoch among the accounts this restore is about to delete.
   // Read inside the transaction, *before* the deleteMany destroys it.
   let liveSessionEpochMax = 0;
@@ -776,6 +803,13 @@ export async function restoreFullArchive(
   // any real dataset can exceed — and a P2028 here would surface as the same
   // opaque failure this change is meant to eliminate.
   await prisma.$transaction(async (tx: PrismaTransactionClient) => {
+    // The regionData.deleteMany below cascades every Country Set membership
+    // away. An archive that carries the country-set files replaces them
+    // outright; one that predates them must not silently empty every live
+    // set, so snapshot the memberships first and put them back afterwards.
+    const liveCountrySetMembers: CountrySetMemberSnapshot[] = countrySetArchive
+      ? []
+      : await tx.countrySetMember.findMany({ select: { countrySetId: true, country: true } });
     await tx.trainingTaken.deleteMany({});
     await tx.student.deleteMany({});
     await tx.trainingData.deleteMany({});
@@ -828,6 +862,8 @@ export async function restoreFullArchive(
     if (regionData.length > 0) {
       await tx.regionData.createMany({ data: regionData });
     }
+    // Memberships FK to region_data, so this must follow the insert above.
+    countrySetResult = await restoreCountrySets(tx, countrySetArchive, liveCountrySetMembers);
     if (trainingData.length > 0) {
       await tx.trainingData.createMany({ data: trainingData });
     }
@@ -1000,6 +1036,10 @@ export async function restoreFullArchive(
   // A restored account's disabled state must take effect now, not up to 15s
   // later when the cached snapshot expires.
   if (usersRestored > 0) invalidateUserStatusCache();
+  // Every report input was just replaced. After the commit, never inside the
+  // callback: flushing before the commit lands lets a concurrent request
+  // re-cache the pre-restore rows for a full TTL.
+  invalidateReportCache();
 
   const counts: RestoreCounts = {
     regionData: regionData.length,
@@ -1011,6 +1051,8 @@ export async function restoreFullArchive(
     programData: referenceArchive.programData.length,
     offerings: referenceArchive.offerings.length,
     offeringData: referenceArchive.offeringData.length,
+    countrySets: countrySetResult?.sets ?? 0,
+    countrySetMembers: countrySetResult?.members ?? 0,
     users: {
       inArchive: users.length,
       restored: usersRestored,
@@ -1030,6 +1072,11 @@ export async function restoreFullArchive(
   if (!replacingUsers && users.length > 0) {
     warnings.push(
       `This archive was created without user credentials, so its ${users.length} user account(s) could not be restored. Existing accounts were left untouched. To carry accounts across, take a backup with "Include user credentials" enabled.`
+    );
+  }
+  if (countrySetResult && countrySetResult.droppedMembers > 0) {
+    warnings.push(
+      `${countrySetResult.droppedMembers} Country Set membership(s) named a country or set that is not in the restored data and were removed. Review the Country Sets page.`
     );
   }
   if (studentsReassigned > 0) {
@@ -1174,6 +1221,12 @@ async function restoreConfigArchive(zip: JSZip): Promise<NextResponse> {
     "offering_data_alternatives.json"
   );
   const archiveImportAliases = await readJson<ImportAliasRow[]>("import_aliases.json");
+  // Country Sets are optional (older config archives predate them) and are
+  // NOT in requiredFiles: absent, the live sets are left exactly as they are.
+  const archiveCountrySets = await readCountrySetArchive(zip);
+  // Cast, not an annotation: assigned inside the transaction callback, which
+  // control-flow analysis cannot see, so an annotated `= null` narrows to never.
+  let countrySetResult = null as CountrySetRestoreResult | null;
   const systemSettingFile = zip.file("system_setting.json");
   const archiveSystemSetting: SystemSettingRow = systemSettingFile
     ? JSON.parse(await systemSettingFile.async("string"))
@@ -1251,6 +1304,12 @@ async function restoreConfigArchive(zip: JSZip): Promise<NextResponse> {
           },
         });
       }
+
+      // 3a. Country Sets. Region data is upserted and never deleted here, so
+      //     live memberships survive; the sets are only replaced when the
+      //     archive carries them. After step 3 so every member's country FK
+      //     target exists.
+      countrySetResult = await restoreCountrySets(tx, archiveCountrySets, []);
 
       // 4. Upsert TrainingData by trainingTitle (PK). Translate productTypeId
       //    via the archive id → name → target id chain. If we can't resolve
@@ -1346,6 +1405,9 @@ async function restoreConfigArchive(zip: JSZip): Promise<NextResponse> {
             tierId: p.tierId ?? null,
             purpose: p.purpose ?? "qualification",
             level: p.level,
+            // Older archives predate the column; normalising also stops a
+            // hand-edited value tripping the aggregation CHECK constraints.
+            aggregation: normaliseAggregation(p.level, p.aggregation),
             trainingType: p.trainingType ?? null,
             trainingTitle: p.trainingTitle ?? null,
             quantityRequired: p.quantityRequired,
@@ -1473,10 +1535,21 @@ async function restoreConfigArchive(zip: JSZip): Promise<NextResponse> {
   // cache, so drop it — otherwise the restored date format and branding stay
   // invisible (and the stale values keep being served) until the TTL expires.
   invalidateSystemSettingsCache();
+  // Catalogue, programs, regions and Country Sets all feed the reports. After
+  // the commit, for the same reason as the full restore.
+  invalidateReportCache();
+
+  const configWarnings: string[] = [];
+  if (countrySetResult && countrySetResult.droppedMembers > 0) {
+    configWarnings.push(
+      `${countrySetResult.droppedMembers} Country Set membership(s) named a country or set that is not in the restored data and were removed. Review the Country Sets page.`
+    );
+  }
 
   return NextResponse.json({
     success: true,
     kind: "config" satisfies BackupKind,
+    ...(configWarnings.length > 0 ? { warnings: configWarnings } : {}),
     counts: {
       productTypes: archiveProductTypes.length,
       regionData: archiveRegionData.length,
@@ -1489,6 +1562,8 @@ async function restoreConfigArchive(zip: JSZip): Promise<NextResponse> {
       offeringData: archiveOfferingData.length,
       importAliases: archiveImportAliases.length,
       systemSetting: archiveSystemSetting ? 1 : 0,
+      countrySets: countrySetResult?.source === "archive" ? countrySetResult.sets : 0,
+      countrySetMembers: countrySetResult?.source === "archive" ? countrySetResult.members : 0,
     },
   });
 }
@@ -1719,6 +1794,9 @@ export async function restoreReferenceData(
         tierId: p.tierId ?? null,
         purpose: p.purpose ?? "qualification",
         level: p.level,
+        // Older archives predate the column (they restore as "total"); the
+        // normaliser also keeps a hand-edited value off the CHECK constraints.
+        aggregation: normaliseAggregation(p.level, p.aggregation),
         trainingType: p.trainingType ?? null,
         trainingTitle: p.trainingTitle ?? null,
         quantityRequired: p.quantityRequired,
@@ -1790,4 +1868,165 @@ export async function restoreReferenceData(
   await resetSequence("offerings");
   await resetSequence("offering_data");
   await resetSequence("offering_data_alternatives");
+}
+
+/**
+ * Country Sets (custom groupings of Region Data countries) as carried by a
+ * backup archive. `null` means the archive predates the files.
+ *
+ * Deliberately kept OUT of {@link ReferenceArchive} and its `present` flag:
+ * that flag decides whether the Programs/Offerings tables are wiped and
+ * rebuilt, and an archive written between the two features carries
+ * programs.json but no country-set files. Folding these in would either make
+ * such an archive wipe the live sets, or make a country-sets-only archive
+ * wipe programs — each a silent loss.
+ */
+export interface CountrySetArchive {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  sets: any[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  members: any[];
+}
+
+/** A live membership row, snapshotted before a full restore's region wipe. */
+export type CountrySetMemberSnapshot = { countrySetId: number; country: string };
+
+/** Outcome of {@link restoreCountrySets}. */
+export interface CountrySetRestoreResult {
+  /** "archive" = replaced from the archive; "preserved" = live sets kept. */
+  source: "archive" | "preserved";
+  /** Sets in place after the restore. */
+  sets: number;
+  /** Memberships written back. */
+  members: number;
+  /**
+   * Memberships dropped because their country (or set) does not exist after
+   * the restore. Reported, never silent.
+   */
+  droppedMembers: number;
+}
+
+/**
+ * Read `country_sets.json` / `country_set_members.json`. Presence keys on the
+ * sets file; a members file on its own means nothing and is ignored.
+ */
+export async function readCountrySetArchive(zip: JSZip): Promise<CountrySetArchive | null> {
+  const setsFile = zip.file("country_sets.json");
+  if (!setsFile) return null;
+  const parsedSets = JSON.parse(await setsFile.async("string"));
+  const membersFile = zip.file("country_set_members.json");
+  const parsedMembers = membersFile ? JSON.parse(await membersFile.async("string")) : [];
+  return {
+    sets: Array.isArray(parsedSets) ? parsedSets : [],
+    members: Array.isArray(parsedMembers) ? parsedMembers : [],
+  };
+}
+
+/** Postgres `integer` ceiling — the type of every serial id column here. */
+const MAX_PG_INT = 2147483647;
+
+/**
+ * A timestamp from a (possibly hand-edited) archive. `new Date(garbage)` does
+ * not throw — it yields an Invalid Date, which Prisma then rejects and aborts
+ * the restore — so an absent or unparseable value falls back to now.
+ */
+function archiveDate(v: unknown): Date {
+  if (typeof v !== "string" && typeof v !== "number") return new Date();
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? new Date() : d;
+}
+
+/**
+ * Rebuild Country Sets inside a restore transaction. MUST run after Region
+ * Data is in place: every membership FKs to `region_data.country`.
+ *
+ *  - `archive` given: replace the sets wholesale — explicit ids preserved (so
+ *    the archive's members line up), members filtered to countries that exist
+ *    now and to sets actually inserted, and the id sequence reset.
+ *  - `archive` null (an older archive): the sets themselves are untouched.
+ *    A full restore's `regionData.deleteMany` has already cascaded every
+ *    membership away, so `liveSnapshot` — read before that delete — is
+ *    re-inserted, filtered to the countries the restore put back. The config
+ *    restore never deletes region data and passes an empty snapshot.
+ */
+export async function restoreCountrySets(
+  tx: PrismaTransactionClient,
+  archive: CountrySetArchive | null,
+  liveSnapshot: CountrySetMemberSnapshot[]
+): Promise<CountrySetRestoreResult> {
+  const countryRows = await tx.regionData.findMany({ select: { country: true } });
+  const countries = new Set(countryRows.map((r) => r.country));
+
+  if (!archive) {
+    const liveSets = await tx.countrySet.findMany({ select: { id: true } });
+    const liveSetIds = new Set(liveSets.map((s) => s.id));
+    const rows = liveSnapshot
+      .filter((m) => countries.has(m.country) && liveSetIds.has(m.countrySetId))
+      .map((m) => ({ countrySetId: m.countrySetId, country: m.country }));
+    // `count` is what was actually written: skipDuplicates can skip rows.
+    const written =
+      rows.length > 0
+        ? (await tx.countrySetMember.createMany({ data: rows, skipDuplicates: true })).count
+        : 0;
+    return {
+      source: "preserved",
+      sets: liveSets.length,
+      members: written,
+      droppedMembers: liveSnapshot.length - rows.length,
+    };
+  }
+
+  await tx.countrySetMember.deleteMany({});
+  await tx.countrySet.deleteMany({});
+
+  // Tolerate a hand-edited archive: a duplicate id or name would otherwise
+  // abort the whole restore on a unique violation. First occurrence wins.
+  const seenIds = new Set<number>();
+  const seenNames = new Set<string>();
+  const setRows = archive.sets
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .map((s: any) => {
+      const id = s?.id;
+      const name = typeof s?.name === "string" ? s.name.trim() : "";
+      // Upper bound is the Postgres `integer` ceiling: a larger id would abort
+      // the whole restore on an out-of-range write.
+      if (!Number.isInteger(id) || id <= 0 || id > MAX_PG_INT || !name) return null;
+      if (seenIds.has(id) || seenNames.has(name)) return null;
+      seenIds.add(id);
+      seenNames.add(name);
+      return {
+        id: id as number,
+        name,
+        description: typeof s.description === "string" ? s.description : null,
+        createdAt: archiveDate(s.createdAt),
+        updatedAt: archiveDate(s.updatedAt),
+      };
+    })
+    .filter((x): x is NonNullable<typeof x> => x !== null);
+  if (setRows.length > 0) {
+    await tx.countrySet.createMany({ data: setRows });
+  }
+
+  const memberRows = archive.members
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .filter((m: any) => seenIds.has(m?.countrySetId) && typeof m?.country === "string" && countries.has(m.country))
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .map((m: any) => ({ countrySetId: m.countrySetId as number, country: m.country as string }));
+  const membersWritten =
+    memberRows.length > 0
+      ? (await tx.countrySetMember.createMany({ data: memberRows, skipDuplicates: true })).count
+      : 0;
+
+  // Explicit ids were inserted, so move the sequence past them (same pattern
+  // as the program/offering tables above).
+  await tx.$executeRawUnsafe(
+    `SELECT setval(pg_get_serial_sequence('"country_sets"', 'id'), COALESCE((SELECT MAX(id) FROM "country_sets"), 1))`
+  );
+
+  return {
+    source: "archive",
+    sets: setRows.length,
+    members: membersWritten,
+    droppedMembers: archive.members.length - memberRows.length,
+  };
 }
