@@ -266,6 +266,21 @@ export async function loadBackupArchive(
   return { bytes: buf, encrypted: false };
 }
 
+/**
+ * Country Sets as both archive kinds write them: the stored row plus
+ * `companyName`. Sets are company-scoped, and an archived `companyId` is only
+ * meaningful beside the companies.json it indexes — which a config archive does
+ * not carry — so the name rides in every row and both restore paths resolve
+ * through one rule (see {@link countrySetCompanyResolver}).
+ */
+async function findCountrySetsForArchive() {
+  const rows = await prisma.countrySet.findMany({
+    orderBy: { id: "asc" },
+    include: { company: { select: { name: true } } },
+  });
+  return rows.map(({ company, ...rest }) => ({ ...rest, companyName: company.name }));
+}
+
 export async function generateBackupZip(opts: BackupOptions = {}): Promise<{
   buffer: ArrayBuffer;
   timestamp: string;
@@ -315,7 +330,7 @@ export async function generateBackupZip(opts: BackupOptions = {}): Promise<{
     prisma.offeringDataAlternative.findMany({ orderBy: { id: "asc" } }),
     prisma.company.findMany({ orderBy: { id: "asc" } }),
     prisma.userCompany.findMany({ orderBy: [{ userId: "asc" }, { companyId: "asc" }] }),
-    prisma.countrySet.findMany({ orderBy: { id: "asc" } }),
+    findCountrySetsForArchive(),
     prisma.countrySetMember.findMany({ orderBy: [{ countrySetId: "asc" }, { country: "asc" }] }),
   ]);
 
@@ -360,8 +375,10 @@ export async function generateBackupZip(opts: BackupOptions = {}): Promise<{
   // and deleting users cascades user_companies away.
   zip.file("companies.json", JSON.stringify(companies, null, 2));
   zip.file("user_companies.json", JSON.stringify(userCompanies, null, 2));
-  // Country Sets (custom groupings of Region Data countries). Deliberately NOT
-  // part of ReferenceArchive — see restoreCountrySets for why.
+  // Country Sets (each company's own groupings of Region Data countries).
+  // Deliberately NOT part of ReferenceArchive — see restoreCountrySets for why.
+  // Rows carry both `companyId` (mapped through companies.json on restore) and
+  // `companyName` (the fallback when the id does not map).
   zip.file("country_sets.json", JSON.stringify(countrySets, null, 2));
   zip.file("country_set_members.json", JSON.stringify(countrySetMembers, null, 2));
   // Credentials (password hashes, MFA secrets) are stripped unless the caller
@@ -432,7 +449,7 @@ export async function generateConfigZip(): Promise<{
     prisma.offeringDataAlternative.findMany({ orderBy: { id: "asc" } }),
     prisma.importAlias.findMany({ orderBy: { id: "asc" } }),
     prisma.systemSetting.findUnique({ where: { id: 1 } }),
-    prisma.countrySet.findMany({ orderBy: { id: "asc" } }),
+    findCountrySetsForArchive(),
     prisma.countrySetMember.findMany({ orderBy: [{ countrySetId: "asc" }, { country: "asc" }] }),
   ]);
 
@@ -465,7 +482,9 @@ export async function generateConfigZip(): Promise<{
   zip.file("import_aliases.json", JSON.stringify(importAliases, null, 2));
   zip.file("system_setting.json", JSON.stringify(systemSetting, null, 2));
   // Country Sets are reference data (groupings of RegionData countries), so a
-  // config backup carries them too.
+  // config backup carries them too. They are per-company, and a config archive
+  // has no companies.json, so the archived companyId means nothing on another
+  // install: each row carries `companyName`, which is what the restore matches.
   zip.file("country_sets.json", JSON.stringify(countrySets, null, 2));
   zip.file("country_set_members.json", JSON.stringify(countrySetMembers, null, 2));
 
@@ -843,7 +862,7 @@ export async function restoreFullArchive(
       companyIdMap.set(c.id, row.id);
       companiesRestored++;
     }
-    const localCompanies = await tx.company.findMany({ select: { id: true } });
+    const localCompanies = await tx.company.findMany({ select: { id: true, name: true } });
     const localCompanyIds = new Set(localCompanies.map((c) => c.id));
     const oldestCompanyId =
       localCompanies.length > 0 ? Math.min(...localCompanyIds) : null;
@@ -863,7 +882,15 @@ export async function restoreFullArchive(
       await tx.regionData.createMany({ data: regionData });
     }
     // Memberships FK to region_data, so this must follow the insert above.
-    countrySetResult = await restoreCountrySets(tx, countrySetArchive, liveCountrySetMembers);
+    // Sets are company-scoped: an archived set's companyId goes through the
+    // same companyIdMap the students and offerings use (built above, after the
+    // company upserts), with its companyName as the fallback.
+    countrySetResult = await restoreCountrySets(
+      tx,
+      countrySetArchive,
+      liveCountrySetMembers,
+      countrySetCompanyResolver(localCompanies, companyIdMap)
+    );
     if (trainingData.length > 0) {
       await tx.trainingData.createMany({ data: trainingData });
     }
@@ -1074,11 +1101,7 @@ export async function restoreFullArchive(
       `This archive was created without user credentials, so its ${users.length} user account(s) could not be restored. Existing accounts were left untouched. To carry accounts across, take a backup with "Include user credentials" enabled.`
     );
   }
-  if (countrySetResult && countrySetResult.droppedMembers > 0) {
-    warnings.push(
-      `${countrySetResult.droppedMembers} Country Set membership(s) named a country or set that is not in the restored data and were removed. Review the Country Sets page.`
-    );
-  }
+  warnings.push(...countrySetWarnings(countrySetResult));
   if (studentsReassigned > 0) {
     warnings.push(
       `${studentsReassigned} student(s) referenced a company that does not exist here and were assigned to the oldest company. Review their company on the Students page.`
@@ -1309,7 +1332,16 @@ async function restoreConfigArchive(zip: JSZip): Promise<NextResponse> {
       //     live memberships survive; the sets are only replaced when the
       //     archive carries them. After step 3 so every member's country FK
       //     target exists.
-      countrySetResult = await restoreCountrySets(tx, archiveCountrySets, []);
+      //     A config archive carries no companies.json, so each set finds its
+      //     company by name among the companies that exist here.
+      countrySetResult = await restoreCountrySets(
+        tx,
+        archiveCountrySets,
+        [],
+        countrySetCompanyResolver(
+          await tx.company.findMany({ select: { id: true, name: true } })
+        )
+      );
 
       // 4. Upsert TrainingData by trainingTitle (PK). Translate productTypeId
       //    via the archive id → name → target id chain. If we can't resolve
@@ -1539,12 +1571,7 @@ async function restoreConfigArchive(zip: JSZip): Promise<NextResponse> {
   // the commit, for the same reason as the full restore.
   invalidateReportCache();
 
-  const configWarnings: string[] = [];
-  if (countrySetResult && countrySetResult.droppedMembers > 0) {
-    configWarnings.push(
-      `${countrySetResult.droppedMembers} Country Set membership(s) named a country or set that is not in the restored data and were removed. Review the Country Sets page.`
-    );
-  }
+  const configWarnings: string[] = countrySetWarnings(countrySetResult);
 
   return NextResponse.json({
     success: true,
@@ -1901,9 +1928,107 @@ export interface CountrySetRestoreResult {
   members: number;
   /**
    * Memberships dropped because their country (or set) does not exist after
-   * the restore. Reported, never silent.
+   * the restore. Reported, never silent. Excludes the memberships of sets
+   * counted in `droppedSets`, which that warning already covers.
    */
   droppedMembers: number;
+  /**
+   * Archived sets dropped because their company could not be resolved on this
+   * install (always 0 on the preserve branch). Reported, never silent — and
+   * never re-homed to some other company, since a set on the wrong partner
+   * silently gives that partner wrong compliance results.
+   */
+  droppedSets: number;
+}
+
+/**
+ * Decides which local company an archived Country Set belongs to. Built per
+ * restore from the live companies read inside the transaction, so both
+ * restore paths answer the question the same way. See
+ * {@link countrySetCompanyResolver} for the rules.
+ */
+export interface CountrySetCompanyResolver {
+  /**
+   * The local company ids an archived set lands in: one id when it resolves,
+   * every live company for a legacy (pre-per-company) row, and `[]` when it
+   * cannot be resolved and must be dropped.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  resolve(set: any): number[];
+}
+
+/**
+ * The warnings a Country Set restore produces, shared by both restore paths so
+ * the wording cannot drift between them.
+ */
+export function countrySetWarnings(result: CountrySetRestoreResult | null): string[] {
+  const out: string[] = [];
+  if (!result) return out;
+  if (result.droppedSets > 0) {
+    out.push(
+      `${result.droppedSets} Country Set(s) belonged to a company that does not exist on this system and were not restored. Create the company and restore again, or recreate the set on the Country Sets page.`
+    );
+  }
+  if (result.droppedMembers > 0) {
+    out.push(
+      `${result.droppedMembers} Country Set membership(s) named a country or set that is not in the restored data and were removed. Review the Country Sets page.`
+    );
+  }
+  return out;
+}
+
+/**
+ * Build the company resolver for {@link restoreCountrySets}.
+ *
+ *  - **Legacy row** — neither `companyId` nor `companyName` (written before
+ *    sets were per-company, when every company could report against every
+ *    set): COPIED into every live company, mirroring the
+ *    `company_scoped_country_sets` migration, so no company's view changes.
+ *  - **Full restore** (`companyIdMap` given): the archived `companyId` goes
+ *    through the restore's archived-id → local-id map, which is built from
+ *    companies.json by name, so it is the authoritative answer. Failing that,
+ *    `companyName` → the live company of exactly that name.
+ *  - **Config restore** (no map): `companyName` → the live company of exactly
+ *    that name. A config archive carries no companies.json, so its `companyId`
+ *    indexes another install's table and could name a different partner here.
+ *    It is used only when the row carries NO `companyName` at all (an archive
+ *    from a build that wrote ids alone) and the id exists locally — a carried
+ *    name that does not match is a definite "that company is not here", and
+ *    falling through to the id would be exactly the wrong-partner placement
+ *    the drop rule exists to prevent.
+ *  - Anything else resolves to `[]` and the set is dropped. There is
+ *    deliberately no oldest-company fallback (contrast offerings/students).
+ */
+export function countrySetCompanyResolver(
+  liveCompanies: { id: number; name: string }[],
+  companyIdMap?: Map<number, number>
+): CountrySetCompanyResolver {
+  const allIds = liveCompanies.map((c) => c.id);
+  const liveIds = new Set(allIds);
+  const idByName = new Map(liveCompanies.map((c) => [c.name, c.id] as const));
+  return {
+    resolve(set) {
+      const rawId = set?.companyId;
+      const rawName = set?.companyName;
+      const hasId = rawId !== undefined && rawId !== null;
+      const name = typeof rawName === "string" && rawName.trim() ? rawName.trim() : null;
+      if (!hasId && rawName == null) return [...allIds];
+
+      if (companyIdMap && Number.isInteger(rawId)) {
+        const mapped = companyIdMap.get(rawId as number);
+        if (mapped !== undefined) return [mapped];
+      }
+      if (name !== null) {
+        // Exact first; the trimmed form only rescues stray whitespace.
+        const byName = idByName.get(rawName as string) ?? idByName.get(name);
+        return byName !== undefined ? [byName] : [];
+      }
+      if (!companyIdMap && rawName == null && Number.isInteger(rawId) && liveIds.has(rawId as number)) {
+        return [rawId as number];
+      }
+      return [];
+    },
+  };
 }
 
 /**
@@ -1940,19 +2065,27 @@ function archiveDate(v: unknown): Date {
  * Rebuild Country Sets inside a restore transaction. MUST run after Region
  * Data is in place: every membership FKs to `region_data.country`.
  *
- *  - `archive` given: replace the sets wholesale — explicit ids preserved (so
- *    the archive's members line up), members filtered to countries that exist
- *    now and to sets actually inserted, and the id sequence reset.
+ *  - `archive` given: replace the sets wholesale. Each archived set is placed
+ *    in the company (or, for a legacy row, companies) `resolver` names and is
+ *    inserted with a FRESH id — sets are tenant data now, and one archived set
+ *    may become several rows, so archived ids cannot be kept. They are used
+ *    only to map the archive's members onto the new rows, which is why no
+ *    sequence reset is needed any more. Sets whose company does not resolve
+ *    are dropped and counted. Members are filtered to countries that exist now
+ *    and to sets actually inserted.
  *  - `archive` null (an older archive): the sets themselves are untouched.
  *    A full restore's `regionData.deleteMany` has already cascaded every
  *    membership away, so `liveSnapshot` — read before that delete — is
- *    re-inserted, filtered to the countries the restore put back. The config
- *    restore never deletes region data and passes an empty snapshot.
+ *    re-inserted, filtered to the countries the restore put back and to sets
+ *    that still exist (a full restore upserts companies and never deletes
+ *    them, so the live sets and their ids survive it). The config restore
+ *    never deletes region data and passes an empty snapshot.
  */
 export async function restoreCountrySets(
   tx: PrismaTransactionClient,
   archive: CountrySetArchive | null,
-  liveSnapshot: CountrySetMemberSnapshot[]
+  liveSnapshot: CountrySetMemberSnapshot[],
+  resolver: CountrySetCompanyResolver
 ): Promise<CountrySetRestoreResult> {
   const countryRows = await tx.regionData.findMany({ select: { country: true } });
   const countries = new Set(countryRows.map((r) => r.country));
@@ -1973,60 +2106,104 @@ export async function restoreCountrySets(
       sets: liveSets.length,
       members: written,
       droppedMembers: liveSnapshot.length - rows.length,
+      droppedSets: 0,
     };
   }
 
   await tx.countrySetMember.deleteMany({});
   await tx.countrySet.deleteMany({});
 
-  // Tolerate a hand-edited archive: a duplicate id or name would otherwise
-  // abort the whole restore on a unique violation. First occurrence wins.
+  // Tolerate a hand-edited archive. A duplicate archived id would make member
+  // mapping ambiguous, and two sets resolving to the same (company, name)
+  // would abort the whole restore on the unique index. First occurrence wins.
   const seenIds = new Set<number>();
-  const seenNames = new Set<string>();
-  const setRows = archive.sets
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .map((s: any) => {
-      const id = s?.id;
-      const name = typeof s?.name === "string" ? s.name.trim() : "";
-      // Upper bound is the Postgres `integer` ceiling: a larger id would abort
-      // the whole restore on an out-of-range write.
-      if (!Number.isInteger(id) || id <= 0 || id > MAX_PG_INT || !name) return null;
-      if (seenIds.has(id) || seenNames.has(name)) return null;
-      seenIds.add(id);
-      seenNames.add(name);
-      return {
-        id: id as number,
+  const seenKeys = new Set<string>();
+  // Archived ids dropped for an unresolved company. Their memberships are
+  // covered by the droppedSets warning rather than counted a second time.
+  const unresolvedIds = new Set<number>();
+  let droppedSets = 0;
+  const keyOf = (companyId: number, name: string) => `${companyId}\u0000${name}`;
+  // (company, name) of each row to insert → the archived id it came from. The
+  // insert returns rows keyed by that unique pair, which is how members are
+  // remapped without relying on RETURNING preserving input order.
+  const archivedIdByKey = new Map<string, number>();
+  const setRows: {
+    companyId: number;
+    name: string;
+    description: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+  }[] = [];
+  for (const s of archive.sets) {
+    const id = s?.id;
+    const name = typeof s?.name === "string" ? s.name.trim() : "";
+    // Ids are only used to map members now, but a set whose id is not a
+    // positive Postgres `integer` cannot have members pointing at it reliably,
+    // so it is skipped exactly as before.
+    if (!Number.isInteger(id) || id <= 0 || id > MAX_PG_INT || !name) continue;
+    if (seenIds.has(id)) continue;
+    seenIds.add(id);
+    const companyIds = resolver.resolve(s);
+    if (companyIds.length === 0) {
+      droppedSets++;
+      unresolvedIds.add(id);
+      continue;
+    }
+    for (const companyId of companyIds) {
+      const key = keyOf(companyId, name);
+      if (seenKeys.has(key)) continue;
+      seenKeys.add(key);
+      archivedIdByKey.set(key, id);
+      setRows.push({
+        companyId,
         name,
         description: typeof s.description === "string" ? s.description : null,
         createdAt: archiveDate(s.createdAt),
         updatedAt: archiveDate(s.updatedAt),
-      };
-    })
-    .filter((x): x is NonNullable<typeof x> => x !== null);
-  if (setRows.length > 0) {
-    await tx.countrySet.createMany({ data: setRows });
+      });
+    }
+  }
+  // Fresh ids from the sequence — so, unlike the explicit-id insert this
+  // replaced, there is no sequence to move past them afterwards.
+  const inserted =
+    setRows.length > 0
+      ? await tx.countrySet.createManyAndReturn({
+          data: setRows,
+          select: { id: true, companyId: true, name: true },
+        })
+      : [];
+  // Archived id → the new ids it became: one, or one per company for a legacy
+  // row copied into every company.
+  const newIdsByArchivedId = new Map<number, number[]>();
+  for (const row of inserted) {
+    const archivedId = archivedIdByKey.get(keyOf(row.companyId, row.name));
+    if (archivedId === undefined) continue;
+    const ids = newIdsByArchivedId.get(archivedId) ?? [];
+    ids.push(row.id);
+    newIdsByArchivedId.set(archivedId, ids);
   }
 
-  const memberRows = archive.members
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .filter((m: any) => seenIds.has(m?.countrySetId) && typeof m?.country === "string" && countries.has(m.country))
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .map((m: any) => ({ countrySetId: m.countrySetId as number, country: m.country as string }));
+  const memberRows: { countrySetId: number; country: string }[] = [];
+  let droppedMembers = 0;
+  for (const m of archive.members) {
+    const setId = m?.countrySetId;
+    const newIds = Number.isInteger(setId) ? newIdsByArchivedId.get(setId) : undefined;
+    if (!newIds || typeof m?.country !== "string" || !countries.has(m.country)) {
+      if (!(Number.isInteger(setId) && unresolvedIds.has(setId))) droppedMembers++;
+      continue;
+    }
+    for (const countrySetId of newIds) memberRows.push({ countrySetId, country: m.country });
+  }
   const membersWritten =
     memberRows.length > 0
       ? (await tx.countrySetMember.createMany({ data: memberRows, skipDuplicates: true })).count
       : 0;
 
-  // Explicit ids were inserted, so move the sequence past them (same pattern
-  // as the program/offering tables above).
-  await tx.$executeRawUnsafe(
-    `SELECT setval(pg_get_serial_sequence('"country_sets"', 'id'), COALESCE((SELECT MAX(id) FROM "country_sets"), 1))`
-  );
-
   return {
     source: "archive",
-    sets: setRows.length,
+    sets: inserted.length,
     members: membersWritten,
-    droppedMembers: archive.members.length - memberRows.length,
+    droppedMembers,
+    droppedSets,
   };
 }
