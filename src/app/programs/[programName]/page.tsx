@@ -240,7 +240,19 @@ function ProgramDetailPageInner() {
         setListsCompanyId(companyId);
         setMeta(data.meta || { levels: [], hasMinimumPerTheatre: false });
       })
-      .catch(() => {});
+      .catch(() => {
+        // A failed load still settles the company-scoped lists, as loaded-empty
+        // for this company — the same fallback the roster modal uses. Leaving
+        // `listsCompanyId` unset would park a selected Country Set on
+        // "unverified" for ever (a permanent spinner); marking the lists loaded
+        // and empty lets the stale-set pass fall back to the default scope.
+        // `meta`, countries and regions are not company data and are left as
+        // they were.
+        if (cancelled) return;
+        setTheatres([]);
+        setCountrySets([]);
+        setListsCompanyId(companyId);
+      });
     return () => {
       cancelled = true;
     };

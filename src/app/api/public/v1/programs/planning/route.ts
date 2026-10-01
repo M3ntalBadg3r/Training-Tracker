@@ -84,7 +84,8 @@ export async function GET(request: NextRequest) {
     }
     const options = await cachedReport(
       // "-v2": the value became `{programs, countrySets}`; see the internal route.
-      `public-compliance-planning-options-v2|${scope}`,
+      // "-v3": the value now carries company-scoped set names.
+      `public-compliance-planning-options-v3|${scope}`,
       async () => {
         const [programs, countrySets] = await Promise.all([buildPlanningOptions(), listCountrySetNames(ctx.companyIds)]);
         return { programs, countrySets };
