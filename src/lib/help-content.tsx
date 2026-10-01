@@ -2278,7 +2278,9 @@ const helpSections: Record<string, HelpSection> = {
           <strong>Country Sets</strong>{" "}are replaced from the archive when it
           carries them. Each set belongs to a company, and is restored to the
           same company: a full restore follows the companies it restores, and a
-          config restore matches the company by name. A set whose company does
+          config restore matches the company by name and only replaces the sets
+          of the companies the archive names &mdash; every other company keeps
+          its own sets, and the result says how many sets were replaced. A set whose company does
           not exist on this system is <strong>not restored</strong>{" "}rather than
           being given to another company, and the result says how many were left
           out. Sets from an archive taken before Country Sets became per-company
