@@ -884,14 +884,16 @@ Navigate to **Admin > Specialisations** to manage the list of specialisations us
 
 ### Country Sets
 
-Navigate to **Admin > Country Sets** (SuperAdmin only) to manage **custom groups of countries** that partner programs can report against — like a region, but chosen freely, and a country may belong to any number of sets. Country Sets are global reference data, shared by every company.
+Navigate to **Admin > Country Sets** to manage **custom groups of countries** that partner programs can report against — like a region, but chosen freely, and a country may belong to any number of a company's sets.
 
-- **Add / Edit** — a unique name, an optional description, and the member countries. The country picker lists every country in Region Data, with search, a **Selected only** toggle, **Clear**, and **Select all in region** / **Select all in theatre** helpers for adding a whole group at once. Only countries that exist in Region Data can be added.
-- **Search & Sort** — search matches a set's name, description or any of its countries; click a column header to sort by name, description or country count. Both are kept in the page address.
+**Each Country Set belongs to one company.** Another company can have a set with the same name holding different countries, or no sets at all. A company's Admins manage that company's sets, and SuperAdmins manage every company's. The list follows the company switcher in the page header; under **All companies** a **Company** column shows which company owns each set. Sets created before Country Sets became per-company were copied into **every** company on upgrade, so no company lost a set it could report against; each company can now change or delete its own copy without affecting the others. Deleting a company deletes its Country Sets.
+
+- **Add / Edit** — the **company** the set belongs to (required; the company selected in the header is picked for you, and the header switches to it after saving so the new set is visible), a name unique within that company, an optional description, and the member countries. A set cannot be moved to another company: when editing, its company is shown read-only. The country picker lists every country in Region Data, with search, a **Selected only** toggle, **Clear**, and **Select all in region** / **Select all in theatre** helpers for adding a whole group at once. Only countries that exist in Region Data can be added.
+- **Search & Sort** — search matches a set's name, company, description or any of its countries; click a column header to sort by name, company, description or country count. Both are kept in the page address.
 - **Delete** — removes the set and its memberships, after a confirmation.
-- **Export** — download the list (name, description, countries) as CSV, Excel, or PDF.
+- **Export** — download the list (company, name, description, countries) as CSV, Excel, or PDF.
 
-A program's **Country Set** requirements are generic — they apply to whichever set is being viewed — so there is nothing to link a set to a program; the page notes how many programs have Country Set requirements. A set with no countries is allowed but is not offered in the dashboards' set picker. Deleting a country in Region Data removes it from every set; renaming one keeps its memberships.
+A program's **Country Set** requirements are generic — they apply to whichever set is being viewed — so there is nothing to link a set to a program; the page notes how many programs have Country Set requirements. The requirements are shared by every company — what differs is which countries each company's set holds. Because a set name only has a meaning inside one company, the program dashboards and Compliance Planning report **By Country Set** for one company at a time, using that company's own sets, and a company with no sets is not offered that view. A set with no countries is allowed but is not offered in the dashboards' set picker. Deleting a country in Region Data removes it from every set; renaming one keeps its memberships.
 
 ### User Management
 
@@ -961,7 +963,7 @@ Click **Download Backup** to generate and download a `.zip` file containing all 
 | `training_taken.json` | All training completion records |
 | `companies.json` | Companies (tenants) |
 | `user_companies.json` | Which companies each user may access |
-| `country_sets.json`, `country_set_members.json` | Country Sets and the countries in each |
+| `country_sets.json`, `country_set_members.json` | Each company's Country Sets (with the owning company) and the countries in each |
 | `users.json` | User accounts. Password hashes and MFA secrets are included **only** when "Include user credentials" is ticked — see below |
 | `import_metadata.json` | Import timestamps |
 | `import_aliases.json` | Import column aliases |
@@ -1026,7 +1028,7 @@ Click **Upload Backup File** and select a previously created backup file. If it 
 - Restoring accounts signs you out, because the restored accounts are not the ones your current session was issued for. Sign in again with an account from the archive.
 - **Restored accounts never carry an old session marker forward.** Each account tracks a counter that is raised whenever its sessions are deliberately ended (a password change, an admin password reset, a role change), and a sign-in is only accepted while it is level with that counter. A backup stores the counter as it stood when the backup was taken, which is usually *lower* than the account's current one, so restoring it verbatim would have wound the marker backwards. Every restored account is therefore given a counter above everything that existed before the restore — both the live values being replaced and whatever the archive itself held — so a restore cannot hand out a valid lease on an old sign-in, and an account number that is ever reused cannot arrive carrying one.
 
-**Country Sets** are replaced from the archive when it carries them. An archive taken before Country Sets existed carries none, and restoring it **keeps the Country Sets already on the system** — a member country the restore did not bring back is dropped from its set, and the result says how many. A config restore behaves the same way. A backup containing Region or Country Set program requirements cannot be restored onto an older version of the app that does not know those levels — update that system first.
+**Country Sets** are replaced from the archive when it carries them. Each set is recorded with its company and restored to the same company: a full restore follows the companies it restores, and a config restore (which carries no companies) matches the company **by name**, so create those companies on the target system first. A set whose company does not exist on the system being restored is **left out**, and the result says how many — it is never given to a different company, because a set on the wrong partner would quietly give that partner wrong compliance figures. Sets from an archive taken before Country Sets became per-company are copied into every company. An archive taken before Country Sets existed carries none, and restoring it **keeps the Country Sets already on the system** — a member country the restore did not bring back is dropped from its set, and the result says how many. A config restore behaves the same way. A backup containing Region or Country Set program requirements cannot be restored onto an older version of the app that does not know those levels — update that system first.
 
 **Important:** Restoring a backup **replaces all existing data** other than the user accounts described above. Create a backup of the current system first if you need to preserve it. Uploaded archives are capped at 512 MB by default (override with `BACKUP_MAX_RESTORE_MB` in `.env`) so an oversized or malformed upload cannot exhaust server memory; the same ceiling applies to restoring a **saved** backup from the backups folder. Separately, an archive is refused if its contents would *decompress* to more than 1024 MB (override with `BACKUP_MAX_EXPANDED_MB`), which bounds a small file crafted to expand enormously. A genuine backup is stored uncompressed, so real archives are nowhere near either limit.
 
@@ -1342,8 +1344,8 @@ curl -H "Authorization: Bearer tt_live_xxxxxxxx" \
 | `GET /api/public/v1/reports/{reportType}` | Report aggregates — `trained-not-certified`, `legacy-gap`, `learner-scorecard`, `by-product`, `by-function`, `expiring-soon`, `currently-expired`, `last-12-months` |
 | `GET /api/public/v1/offerings` | Offering definitions (specialisations + supporting trainings) for the key's companies. Add `?country=` or `?region=` for Onshore/Nearshore/Offshore compliance figures; `?name=` for one offering |
 | `GET /api/public/v1/programs` | Partner program list (configured levels, per-theatre-minimum flag, tiered flag) |
-| `GET /api/public/v1/programs/{programName}` | Per-program compliance. `?level=country\|region\|countrySet\|theatre\|global` with `?country=`/`?region=`/`?countrySet=`/`?theatre=` — each level counts only the requirements authored at it (`region` reads Region requirements, no longer the pooled Country ones); `?horizonMonths=3\|6\|12` for a forward-looking projection; `?trainingTitle=&students=true` for the holder roster |
-| `GET /api/public/v1/programs/planning` | **Compliance planning — aggregates only.** The roadmap, per-requirement gaps and costs, risk impacts and totals. `?options=true` lists the program / tier / specialisation names you need to build a target; `?targets=` takes a URL-encoded JSON array `[{program, mode:"tier"\|"specialisations"\|"all", tier?, specialisations?[]}]`, with `?level=` (including `countrySet`), `?country=`/`?region=`/`?countrySet=`/`?theatre=`, `?renewalWindowMonths=0\|1\|3\|6\|12` and `?planForWindow=true`. `?options=true` also lists the non-empty Country Sets |
+| `GET /api/public/v1/programs/{programName}` | Per-program compliance. `?level=country\|region\|countrySet\|theatre\|global` with `?country=`/`?region=`/`?countrySet=`/`?theatre=` — each level counts only the requirements authored at it (`region` reads Region requirements, no longer the pooled Country ones); `countrySet` names the company's own set, so a `level=countrySet` request must be narrowed to **one company** (see below); `?horizonMonths=3\|6\|12` for a forward-looking projection; `?trainingTitle=&students=true` for the holder roster |
+| `GET /api/public/v1/programs/planning` | **Compliance planning — aggregates only.** The roadmap, per-requirement gaps and costs, risk impacts and totals. `?options=true` lists the program / tier / specialisation names you need to build a target; `?targets=` takes a URL-encoded JSON array `[{program, mode:"tier"\|"specialisations"\|"all", tier?, specialisations?[]}]`, with `?level=` (including `countrySet`), `?country=`/`?region=`/`?countrySet=`/`?theatre=`, `?renewalWindowMonths=0\|1\|3\|6\|12` and `?planForWindow=true`. `?options=true` also lists the company's non-empty Country Sets (empty unless the request is narrowed to one company); `level=countrySet` must be narrowed to one company |
 | `GET /api/public/v1/reports/program-compliance-trend` | 12 months of compliance history plus a 12-month expiry-driven forecast, per program and specialisation. `?program=`, `?country=`/`?region=`/`?theatre=` |
 | `GET /api/public/v1/reports/renewal-forecast` | Projected renewals vs lapses over the next 12 months, plus an at-risk-by-training breakdown. `?country=`/`?region=`/`?theatre=` |
 
@@ -1355,6 +1357,14 @@ result, which an integration could not tell apart from a company that genuinely
 holds no data, so a misconfigured key looked like an honest zero. The index
 endpoint lists the company ids a key may use. (Program compliance figures are
 scoped to the key's companies the same way.)
+
+Country Sets belong to one company, and the same set name can mean different
+countries for different companies. So a program report, roster or plan at
+`level=countrySet` must be narrowed to **exactly one company** — a key granted
+several companies must pass `?companyId=` — or it is refused with a **400**
+("Select a single company to report on a Country Set"). The `countrySets` list
+those endpoints return is likewise empty unless the request names a single
+company.
 
 Requests that exceed the per-key rate limit answer **429 with a `Retry-After`
 header** giving the seconds to wait. The separate limit on *invalid*-key
@@ -1437,7 +1447,7 @@ A single **View** selector at the top of the dashboard — a **Level** dropdown 
 |---------|-----------|-------|
 | **Country Report** | By Country (Program has Country-level requirements) | People in that country with each required training vs. the requirement |
 | **Region Report** | By Region (Program has Region-level requirements) | Region requirements over the region's countries, each counted in total or in each country |
-| **Country Set Report** | By Country Set (Program has Country Set-level requirements) | Country Set requirements over the set's countries, each counted in total or in each country |
+| **Country Set Report** | By Country Set (Program has Country Set-level requirements, and the selected company has at least one Country Set) | Country Set requirements over the countries in the selected company's set, each counted in total or in each country |
 | **Theatre Report** | By Theatre (Program has Theatre-level requirements) | People in that theatre with each required training vs. the requirement |
 | **Global Report** | Global (Program has Global-level requirements) | See below |
 
@@ -1468,7 +1478,7 @@ The headline metric is **People to certify**: how many people still need to earn
 
 The dedup applies to **certifications** as well as to named people. Where several specialisations require the *same* certification over the same population, one group of people earning it closes all of them — so three specialisations each needing 2 holders of one certification cost **2** people, not 6. Those requirements are tagged **shared** in the roadmap (and in the exported Roadmap sheet's *Shared with* column), with the other specialisations named on hover. The consequence is worth expecting: each specialisation block shows what it costs *on its own*, so the blocks can add up to more than the program's headline — the headline is the figure that counts a shared certification once.
 
-Pick a **scope** (Global / Theatre / Region / Country Set / Country) and one or more **programs**, then choose a target per program. Region and Country Set are offered only when at least one program has requirements at that level.
+Pick a **scope** (Global / Theatre / Region / Country Set / Country) and one or more **programs**, then choose a target per program. Region and Country Set are offered only when at least one program has requirements at that level; Country Set also needs the selected company to have at least one Country Set, and its list is that company's own sets.
 
 - **Tiered program** → target a **tier** (the tool picks the cheapest specialisations to reach it) or specific specialisation(s). Reaching a tier only needs as many specialisations as the tier requires, so exactly that many are flagged **Recommended** — and they are chosen by what each one *adds* to the set, not by what it costs on its own. That matters because specialisations share certifications: one that reads "4 to certify" but shares half its requirements with a specialisation already recommended really adds 2, and is the better pick over one that reads 4 and shares nothing. Where a swap genuinely costs the same either way, the alternative is shown as **Equal-cost alternative** so you can take the one that suits the business better.
 - **Flat program** → pick specialisation(s) or **all requirements**.
@@ -1676,11 +1686,11 @@ Sales, Pre-Sales, Deployments
 |-------|--------------|------------|
 | **Country** | One country | Total |
 | **Region** | Whichever region is viewed — its countries | Total, or In each country |
-| **Country Set** | Whichever [Country Set](#country-sets) is viewed — its member countries | Total, or In each country |
+| **Country Set** | Whichever of the company's [Country Sets](#country-sets) is viewed — its member countries | Total, or In each country |
 | **Theatre** | One theatre | Total |
 | **Global** | Everyone (optionally with a per-theatre minimum) | Total |
 
-A **Country Set** is a named, admin-managed group of countries from Region Data; a country may belong to several. Sets are shared reference data, not per company.
+A **Country Set** is a named group of countries from Region Data that belongs to one company and is managed by that company's Admins; a country may belong to several of a company's sets. Two companies may each have a set with the same name holding different countries, so a Country Set view always reports on one company at a time. The Country Set *requirements* on a program are the same for every company.
 
 ### Expiry
 
