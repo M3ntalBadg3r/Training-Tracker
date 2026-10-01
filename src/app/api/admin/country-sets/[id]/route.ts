@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma, { type PrismaTransactionClient } from "@/lib/prisma";
-import { requireSuperAdmin, handleAuthError } from "@/lib/auth";
+import { requireAuth, handleAuthError } from "@/lib/auth";
+import { canAccessCompany } from "@/lib/company-scope";
 import { readJsonBody } from "@/lib/request-body";
 import { invalidateReportCache } from "@/lib/report-cache";
 import {
@@ -8,6 +9,7 @@ import {
   DUPLICATE_NAME_RESPONSE,
   isUniqueViolation,
   nameTaken,
+  parseCompanyId,
   parseCountrySetBody,
   toCountrySetRow,
 } from "../route";
@@ -20,12 +22,33 @@ function parseId(raw: string): number | null {
 
 const NOT_FOUND = () => NextResponse.json({ error: "Country set not found" }, { status: 404 });
 
+/**
+ * Load a set's owning company and confirm the caller may act on it.
+ *
+ * A set in a company the caller cannot access answers exactly like a set that
+ * does not exist (`null` → the same 404). A 403 there would confirm that the id
+ * belongs to another tenant, turning sequential ids into an enumeration oracle.
+ */
+async function loadAccessibleSet(
+  auth: { sub: number; role: string },
+  setId: number
+): Promise<{ id: number; companyId: number } | null> {
+  const row = await prisma.countrySet.findUnique({
+    where: { id: setId },
+    select: { id: true, companyId: true },
+  });
+  if (!row) return null;
+  if (!(await canAccessCompany(auth.sub, auth.role, row.companyId))) return null;
+  return row;
+}
+
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  let auth;
   try {
-    await requireSuperAdmin(request);
+    auth = await requireAuth(request, "Admin");
   } catch (error) {
     return handleAuthError(error);
   }
@@ -37,21 +60,40 @@ export async function PUT(
 
   const parsed = await readJsonBody(request);
   if (!parsed.ok) return parsed.response;
+
+  const existing = await loadAccessibleSet(auth, setId);
+  if (!existing) return NOT_FOUND();
+
+  // The owning company is immutable. An absent key (or the same company) is
+  // fine; anything else is refused rather than silently ignored, so a client
+  // that believes it moved a set is told it did not.
+  if (parsed.body && typeof parsed.body === "object" && !Array.isArray(parsed.body)) {
+    const b = parsed.body as Record<string, unknown>;
+    if (Object.prototype.hasOwnProperty.call(b, "companyId") && b.companyId !== undefined) {
+      if (parseCompanyId(b.companyId) !== existing.companyId) {
+        return NextResponse.json(
+          { error: "A country set's company cannot be changed" },
+          { status: 400 }
+        );
+      }
+    }
+  }
+
   const validated = await parseCountrySetBody(parsed.body, { partial: true });
   if (!validated.ok) return validated.response;
   const { name, description, countries } = validated.input;
 
-  const existing = await prisma.countrySet.findUnique({ where: { id: setId }, select: { id: true } });
-  if (!existing) return NOT_FOUND();
-  if (await nameTaken(name, setId)) return DUPLICATE_NAME_RESPONSE();
+  if (await nameTaken(existing.companyId, name, setId)) return DUPLICATE_NAME_RESPONSE();
 
   try {
     // An absent `description`/`countries` key (undefined) leaves that value
     // alone. When `countries` is sent, members are replaced wholesale inside
     // one transaction, so a failure part-way can never leave half the old set.
+    // `companyId` is never written here — the update is pinned to the row's own
+    // company, so even a concurrent change cannot re-home it.
     const updated = await prisma.$transaction(async (tx: PrismaTransactionClient) => {
       await tx.countrySet.update({
-        where: { id: setId },
+        where: { id: setId, companyId: existing.companyId },
         data: { name, ...(description !== undefined ? { description } : {}) },
       });
       if (countries !== undefined) {
@@ -78,8 +120,9 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  let auth;
   try {
-    await requireSuperAdmin(request);
+    auth = await requireAuth(request, "Admin");
   } catch (error) {
     return handleAuthError(error);
   }
@@ -90,10 +133,16 @@ export async function DELETE(
   }
 
   try {
+    const existing = await loadAccessibleSet(auth, setId);
+    if (!existing) return NOT_FOUND();
+
     // Members go with the set (ON DELETE CASCADE). Program requirements are
     // not tied to a particular set — the Country Set level applies to
-    // whichever set is viewed — so nothing else references it.
-    const result = await prisma.countrySet.deleteMany({ where: { id: setId } });
+    // whichever set is viewed — so nothing else references it. The delete is
+    // pinned to the company that was access-checked above.
+    const result = await prisma.countrySet.deleteMany({
+      where: { id: setId, companyId: existing.companyId },
+    });
     if (result.count === 0) return NOT_FOUND();
     invalidateReportCache();
     return NextResponse.json({ success: true });

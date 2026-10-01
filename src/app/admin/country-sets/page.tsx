@@ -9,6 +9,7 @@ import Button from "@/components/ui/Button";
 import SearchInput, { INPUT_CLASS, SELECT_CLASS } from "@/components/ui/FormControls";
 import LoadingState from "@/components/ui/LoadingState";
 import ExportMenu, { type ExportFormat } from "@/components/ui/ExportMenu";
+import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
 import { useFetchJson } from "@/hooks/useFetchJson";
 import { useRegionData, type RegionDataRow } from "@/hooks/useRegionData";
 import { useTableSort, type SortAccessor } from "@/hooks/useTableSort";
@@ -18,16 +19,21 @@ import type { CountrySetListResponse } from "@/app/api/admin/country-sets/route"
 
 interface FormState {
   id: number | null;
+  /** The owning company. Chosen on create; read-only on edit (it is immutable). */
+  companyId: number | "";
+  /** Display only, for the read-only edit view. */
+  companyName: string;
   name: string;
   description: string;
   countries: string[];
 }
 
-const EMPTY_FORM: FormState = { id: null, name: "", description: "", countries: [] };
+const EMPTY_FORM: FormState = { id: null, companyId: "", companyName: "", name: "", description: "", countries: [] };
 
 // Module-level so the sorter's memo is not invalidated on every render.
 const SORT_ACCESSORS: Record<string, SortAccessor<CountrySetRow>> = {
   name: (s) => s.name,
+  company: (s) => s.companyName,
   description: (s) => s.description ?? "",
   countries: (s) => s.countries.length,
 };
@@ -182,7 +188,16 @@ function CountrySetsInner() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  const { data, loading, error, reload } = useFetchJson<CountrySetListResponse>("/api/admin/country-sets");
+  // Country sets are tenant data: the list follows the header company switcher,
+  // exactly like /admin/offerings. The company scope is deliberately not
+  // mirrored to the URL — CompanyScopeProvider already persists it.
+  const companyScope = useCompanyScope();
+  const { selected: selectedCompany, setSelected: setSelectedCompany, companies } = companyScope;
+  const showCompanyColumn = selectedCompany === "all";
+  const { data, loading, error, reload } = useFetchJson<CountrySetListResponse>(
+    withCompany("/api/admin/country-sets", selectedCompany),
+    { enabled: !companyScope.loading }
+  );
   const sets = useMemo(() => (Array.isArray(data?.sets) ? data.sets : []), [data]);
   const usage = data?.programsUsingCountrySetLevel ?? 0;
 
@@ -201,6 +216,7 @@ function CountrySetsInner() {
     return sets.filter(
       (s) =>
         s.name.toLowerCase().includes(q) ||
+        s.companyName.toLowerCase().includes(q) ||
         (s.description ?? "").toLowerCase().includes(q) ||
         s.countries.some((c) => c.toLowerCase().includes(q))
     );
@@ -240,30 +256,64 @@ function CountrySetsInner() {
   const [deleteError, setDeleteError] = useState("");
   const [deleting, setDeleting] = useState(false);
 
+  // Point the header company switcher at `companyId` when the current view would
+  // not show that company's sets — otherwise a set created for another company
+  // lands out of sight and looks like it never arrived. "All companies" already
+  // shows it, so that selection is left alone. Returns true when the selection
+  // actually moved: the list URL then changes and useFetchJson refetches on its
+  // own, so the caller skips its reload rather than racing it.
+  const focusCompany = useCallback(
+    (companyId: number): boolean => {
+      if (selectedCompany === "all" || selectedCompany === companyId) return false;
+      setSelectedCompany(companyId);
+      return true;
+    },
+    [selectedCompany, setSelectedCompany]
+  );
+
   const openAdd = () => {
-    setForm(EMPTY_FORM);
+    setForm({
+      ...EMPTY_FORM,
+      companyId:
+        selectedCompany !== "all" ? selectedCompany : companies.length === 1 ? companies[0].id : "",
+    });
     setFormError("");
     setFormOpen(true);
   };
 
   const openEdit = (s: CountrySetRow) => {
-    setForm({ id: s.id, name: s.name, description: s.description ?? "", countries: [...s.countries] });
+    setForm({
+      id: s.id,
+      companyId: s.companyId,
+      companyName: s.companyName,
+      name: s.name,
+      description: s.description ?? "",
+      countries: [...s.countries],
+    });
     setFormError("");
     setFormOpen(true);
   };
 
   const handleSave = async () => {
     setFormError("");
+    if (form.id === null && form.companyId === "") {
+      setFormError("Please pick a company");
+      return;
+    }
     if (!form.name.trim()) {
       setFormError("Name is required");
       return;
     }
+    const isCreate = form.id === null;
+    const companyId = form.companyId;
     setSaving(true);
     try {
       const res = await fetch(form.id === null ? "/api/admin/country-sets" : `/api/admin/country-sets/${form.id}`, {
         method: form.id === null ? "POST" : "PUT",
         headers: { "Content-Type": "application/json" },
+        // `companyId` only on create: it is immutable, so PUT never sends it.
         body: JSON.stringify({
+          ...(isCreate ? { companyId } : {}),
           name: form.name,
           description: form.description,
           countries: form.countries,
@@ -274,7 +324,8 @@ function CountrySetsInner() {
         return;
       }
       setFormOpen(false);
-      reload();
+      const switched = isCreate && typeof companyId === "number" && focusCompany(companyId);
+      if (!switched) reload();
     } catch {
       setFormError("Could not save the country set");
     } finally {
@@ -303,11 +354,13 @@ function CountrySetsInner() {
 
   const handleExport = (fmt: ExportFormat) => {
     const rows = sorted.map((s) => ({
+      company: s.companyName,
       name: s.name,
       description: s.description ?? "",
       countries: s.countries.join(", "),
     }));
     const columns: { key: keyof (typeof rows)[number]; header: string }[] = [
+      { key: "company", header: "Company" },
       { key: "name", header: "Name" },
       { key: "description", header: "Description" },
       { key: "countries", header: "Countries" },
@@ -319,11 +372,14 @@ function CountrySetsInner() {
 
   if (loading) return <LoadingState label="Loading country sets…" />;
 
+  // A scoped Admin holding no companies has nowhere to put a set.
+  const noCompanies = !companyScope.loading && companies.length === 0;
+
   return (
     <div>
       <PageHeader
         title="Country Sets"
-        description="Custom groupings of countries that partner programs can report against."
+        description="A company's own groupings of countries that partner programs can report against."
         showBack
         helpSlug="country-sets"
         rightContent={<ExportMenu onExport={(fmt) => handleExport(fmt)} />}
@@ -331,10 +387,21 @@ function CountrySetsInner() {
 
       <section className="mb-4 flex flex-wrap items-center gap-3">
         <SearchInput value={search} onChange={setSearch} placeholder="Search country sets…" />
-        <Button onClick={openAdd}>
+        <Button onClick={openAdd} disabled={noCompanies}>
           <Plus size={16} /> Add Country Set
         </Button>
       </section>
+
+      <p className="mb-4 text-sm text-gray-600">
+        Each set belongs to one company. Another company can have a set with the same name holding different
+        countries, or no sets at all.
+      </p>
+
+      {noCompanies && (
+        <div className="mb-4 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
+          You do not have access to any companies, so there is nowhere to add a country set.
+        </div>
+      )}
 
       {usage > 0 && (
         <p className="mb-4 text-sm text-gray-600">
@@ -358,6 +425,14 @@ function CountrySetsInner() {
               >
                 Name{sortIndicator("name")}
               </th>
+              {showCompanyColumn && (
+                <th
+                  className="px-4 py-3 text-left font-semibold text-gray-700 cursor-pointer select-none"
+                  onClick={() => toggleSort("company")}
+                >
+                  Company{sortIndicator("company")}
+                </th>
+              )}
               <th
                 className="px-4 py-3 text-left font-semibold text-gray-700 cursor-pointer select-none"
                 onClick={() => toggleSort("description")}
@@ -376,7 +451,7 @@ function CountrySetsInner() {
           <tbody>
             {sorted.length === 0 && (
               <tr>
-                <td colSpan={4} className="px-4 py-8 text-center text-gray-500">
+                <td colSpan={showCompanyColumn ? 5 : 4} className="px-4 py-8 text-center text-gray-500">
                   {sets.length === 0 ? "No country sets yet." : "No country sets match your search."}
                 </td>
               </tr>
@@ -389,6 +464,15 @@ function CountrySetsInner() {
                     {s.name}
                   </span>
                 </td>
+                {showCompanyColumn && (
+                  <td className="px-4 py-3">
+                    {s.companyName && (
+                      <span className="inline-block px-2 py-0.5 text-xs bg-gray-100 text-gray-600 rounded">
+                        {s.companyName}
+                      </span>
+                    )}
+                  </td>
+                )}
                 <td className="px-4 py-3 text-gray-600">{s.description ?? ""}</td>
                 <td className="px-4 py-3 text-gray-700" title={s.countries.join(", ")}>
                   {countriesPreview(s.countries)}
@@ -439,6 +523,33 @@ function CountrySetsInner() {
         }
       >
         <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="country-set-company">
+              Company
+            </label>
+            {form.id === null ? (
+              <select
+                id="country-set-company"
+                value={form.companyId === "" ? "" : String(form.companyId)}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, companyId: e.target.value === "" ? "" : Number(e.target.value) }))
+                }
+                className={`${SELECT_CLASS} w-full`}
+              >
+                <option value="">-- Select a company --</option>
+                {companies.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <div id="country-set-company" className="text-sm text-gray-800">
+                {form.companyName}
+                <span className="ml-2 text-xs text-gray-400">(a set cannot be moved to another company)</span>
+              </div>
+            )}
+          </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="country-set-name">
               Name
@@ -498,11 +609,13 @@ function CountrySetsInner() {
         }
       >
         <p className="text-gray-600">
-          Are you sure you want to delete <strong>{deleteTarget?.name}</strong>? This cannot be undone.
+          Are you sure you want to delete <strong>{deleteTarget?.name}</strong>
+          {deleteTarget?.companyName ? ` (${deleteTarget.companyName})` : ""}? This cannot be undone.
         </p>
         {usage > 0 && (
           <p className="mt-2 text-sm text-amber-700">
-            Programs with Country Set requirements will no longer be able to report against this set.
+            Programs with Country Set requirements will no longer be able to report against this set for its
+            company.
           </p>
         )}
         {deleteError && (
