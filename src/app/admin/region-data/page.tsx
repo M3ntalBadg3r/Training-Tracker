@@ -22,6 +22,7 @@ import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import { checkImportFile } from "@/lib/import-file";
+import { invalidateRegionData } from "@/hooks/useRegionData";
 // Type-only: erased at build, so the country table itself stays out of this
 // page's bundle. The data module is pulled in with a dynamic import when the
 // admin actually asks for suggestions.
@@ -237,6 +238,7 @@ export default function RegionDataPage() {
       }),
     });
     if (res.ok) {
+      invalidateRegionData();
       setAddModalOpen(false);
       setSaveError(null);
       setNewCountry("");
@@ -277,6 +279,7 @@ export default function RegionDataPage() {
       }),
     });
     if (res.ok) {
+      invalidateRegionData();
       setRegions((prev) =>
         prev
           .map((r) =>
@@ -372,6 +375,9 @@ export default function RegionDataPage() {
       setSuggestOpen(false);
       setSuggestions(null);
     }
+    // Once for the whole batch, not per row: some may have saved even if
+    // others failed.
+    invalidateRegionData();
     fetchRegions();
   };
 
@@ -386,6 +392,7 @@ export default function RegionDataPage() {
     setDeleteError(null);
     const res = await fetch(`/api/region-data/${encodeURIComponent(country)}`, { method: "DELETE" });
     if (res.ok) {
+      invalidateRegionData();
       setRegions((prev) => prev.filter((r) => r.country !== country));
       return;
     }
@@ -510,6 +517,7 @@ export default function RegionDataPage() {
       const result = await res.json();
       setImportSummary(result);
       setImportStep("summary");
+      invalidateRegionData();
       fetchRegions();
       fetchLastImport();
     } catch (err) {

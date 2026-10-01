@@ -3393,8 +3393,11 @@ const helpSections: Record<string, HelpSection> = {
           a <strong>Clear</strong>{" "}button. To add a whole group at once, choose
           a region and click <strong>Select all in region</strong>, or a theatre
           and <strong>Select all in theatre</strong>{" "}&mdash; you can then
-          untick individual countries. Only countries that exist in Region Data
-          can be added.
+          untick individual countries. Countries whose region is not set yet
+          are grouped under <strong>(no region)</strong>{" "}in the region list.
+          Only countries that exist in Region Data can be added. A country added
+          in Region Data appears in the picker the next time you open it, with
+          no page reload needed.
         </p>
         <p>
           Country Set requirements are written once and apply to{" "}
