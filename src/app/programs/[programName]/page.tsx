@@ -152,6 +152,12 @@ function ProgramDetailPageInner() {
   const [regions, setRegions] = useState<string[]>([]);
   const [theatres, setTheatres] = useState<string[]>([]);
   const [countrySets, setCountrySets] = useState<string[]>([]);
+  // The company the lists above were last loaded for. Country Sets are
+  // per-company tenant data, so `countrySets` describes ONE company and is
+  // stale between a header company switch and its refetch landing; this is
+  // what lets the page tell "this company has no such set" apart from "the new
+  // company's list has not arrived yet".
+  const [listsCompanyId, setListsCompanyId] = useState<number | null>(null);
 
   // Single page-level scope: a level plus (for non-global levels) a value. This
   // one selection drives BOTH the Tier Status block and the matching report,
@@ -190,8 +196,14 @@ function ProgramDetailPageInner() {
 
   // The views this program offers, in selector order (Global > Theatre > Region >
   // Country Set > Country). Each is offered only when the program carries rows
-  // at its own level — "By Region" no longer rides on Country rows.
-  const offeredLevels = SCOPE_LEVELS.filter((l) => scopeLevelOffered(l, meta?.levels ?? []));
+  // at its own level — "By Region" no longer rides on Country rows. "By Country
+  // Set" additionally needs the selected company to own at least one set: sets
+  // are per-company, so a company with none has nothing to pick from even when
+  // the program carries CountrySet rows.
+  const levelOffered = (l: ScopeLevel, levels: readonly string[]): boolean =>
+    scopeLevelOffered(l, levels) && (l !== "countrySet" || countrySets.length > 0);
+  const offeredLevels = SCOPE_LEVELS.filter((l) => levelOffered(l, meta?.levels ?? []));
+  const listsCurrent = companyId !== null && listsCompanyId === companyId;
   const gdStyleGlobal = meta?.hasMinimumPerTheatre ?? false;
   const isTiered = meta?.isTiered ?? false;
 
@@ -210,18 +222,28 @@ function ProgramDetailPageInner() {
   const scopeMissing = needsValue && !scopeValue;
 
   // Initial load — fetch metadata + available countries/regions/theatres.
+  // Re-runs on a header company switch: the theatre and Country Set lists are
+  // company-scoped. The `cancelled` guard drops a response for a company the
+  // header has since moved away from, so a slow reply can never pin the lists
+  // (and `listsCompanyId`) to the wrong company.
   useEffect(() => {
     if (companyId === null) return;
+    let cancelled = false;
     fetch(`${apiBase}?level=country${companyQS}`)
       .then((r) => r.json())
       .then((data) => {
+        if (cancelled) return;
         setCountries(data.countries || []);
         setRegions(data.regions || []);
         setTheatres(data.theatres || []);
         setCountrySets(data.countrySets || []);
+        setListsCompanyId(companyId);
         setMeta(data.meta || { levels: [], hasMinimumPerTheatre: false });
       })
       .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, [companyId, companyQS, apiBase]);
 
   // Default the scope once we know which levels exist: pick the broadest
@@ -238,10 +260,10 @@ function ProgramDetailPageInner() {
   if (meta && !scopeInitialised && meta.levels.length > 0) {
     const seedUsable =
       urlScope.level !== null &&
-      scopeLevelOffered(urlScope.level, meta.levels) &&
+      levelOffered(urlScope.level, meta.levels) &&
       (urlScope.level === "global" || valuesForLevel(urlScope.level).includes(urlScope.value));
     if (!seedUsable) {
-      const fallback = SCOPE_LEVELS.find((l) => scopeLevelOffered(l, meta.levels));
+      const fallback = SCOPE_LEVELS.find((l) => levelOffered(l, meta.levels));
       if (fallback) {
         setScopeLevel(fallback);
         setScopeValue(fallback === "global" ? "" : valuesForLevel(fallback)[0] ?? "");
@@ -249,6 +271,38 @@ function ProgramDetailPageInner() {
     }
     setScopeInitialised(true);
   }
+
+  // A Country Set belongs to one company, so switching the header company can
+  // strand a selected set: the new company may own no set of that name. (A
+  // same-named set over different countries is fine — the report is simply
+  // that company's.) Once the new company's list has loaded, a selected set
+  // missing from it falls back to the default scope, exactly as a stale link
+  // does in the pass above. Adjusted while rendering, like that pass, rather
+  // than in an effect; it converges because the fallback never yields a
+  // countrySet value outside the list. An empty value is the user's own
+  // "Select a country set…" choice and is left alone — unless the company owns
+  // no sets at all, when "By Country Set" is no longer an option to sit on.
+  const countrySetStale =
+    scopeInitialised &&
+    scopeLevel === "countrySet" &&
+    listsCurrent &&
+    (scopeValue === "" ? countrySets.length === 0 : !countrySets.includes(scopeValue));
+  if (countrySetStale && meta) {
+    const fallback = SCOPE_LEVELS.find((l) => levelOffered(l, meta.levels));
+    if (fallback) {
+      setScopeLevel(fallback);
+      setScopeValue(fallback === "global" ? "" : valuesForLevel(fallback)[0] ?? "");
+    }
+  }
+  // Until the current company's list has landed, a selected set cannot be
+  // checked against it, so the report waits (it shows as loading) rather than
+  // asking for a name the new company may not own.
+  const countrySetUnverified =
+    scopeLevel === "countrySet" && scopeValue !== "" && (!listsCurrent || !countrySets.includes(scopeValue));
+  // The program has levels, but none this company can view — only possible when
+  // its rows are all CountrySet and the company owns no sets.
+  const noOfferedLevels =
+    !companyRequired && meta !== null && meta.levels.length > 0 && listsCurrent && offeredLevels.length === 0;
 
   const changeScopeLevel = (level: ScopeLevel) => {
     setScopeLevel(level);
@@ -283,7 +337,7 @@ function ProgramDetailPageInner() {
   // is masked by `scopeMissing` below — the render checks loading first, and an
   // incomplete scope must show the "pick a value" state, not a spinner.
   const reportUrl = (() => {
-    if (companyId === null || !scopeInitialised || scopeMissing) return null;
+    if (companyId === null || !scopeInitialised || scopeMissing || countrySetUnverified) return null;
     const qs = new URLSearchParams({ level: scopeLevel });
     if (scopeLevel === "country") qs.set("country", scopeValue);
     else if (scopeLevel === "region") qs.set("region", scopeValue);
@@ -879,7 +933,7 @@ function ProgramDetailPageInner() {
       */}
       {companyRequired && <CompanyRequired what="dashboard" />}
 
-      {!companyRequired && horizonMonths > 0 && meta && meta.levels.length > 0 && (
+      {!companyRequired && !noOfferedLevels && horizonMonths > 0 && meta && meta.levels.length > 0 && (
         <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800">
           <span className="font-medium">Projection:</span>
           <span>
@@ -898,7 +952,15 @@ function ProgramDetailPageInner() {
         </div>
       )}
 
-      {!companyRequired && meta && meta.levels.length > 0 && (
+      {noOfferedLevels && (
+        <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-500">
+          <strong>{programName}</strong> reports by Country Set, and the selected company has no Country
+          Sets defined. Add one in{" "}
+          <Link href="/admin/country-sets" className="text-blue-600 hover:underline">Admin &rsaquo; Country Sets</Link>.
+        </div>
+      )}
+
+      {!companyRequired && !noOfferedLevels && meta && meta.levels.length > 0 && (
         <>
           {/* Page-level scope selector — drives both the tier status and report. */}
           <FilterBar>

@@ -66,7 +66,7 @@ import {
   countriesInRegion,
   type ComplianceScope,
 } from "@/lib/program-compliance";
-import { countriesInCountrySet } from "@/lib/country-sets";
+import { countriesInCountrySet, singleCompanyId } from "@/lib/country-sets";
 import {
   normaliseAggregation,
   type Aggregation,
@@ -363,9 +363,9 @@ interface ReqInstance {
   country: string | null;
   /**
    * The population this instance is counted over: `global`, `theatre:X`,
-   * `country:X`, `region:X` or `countrySet:X`. Used instead of `scopeLabel` in
-   * ids and group keys, because a country set may be named like a country and
-   * the two must not collide. A per-country instance carries `country:X`.
+   * `country:X`, `region:X` or `countrySet:<companyId>:X` (a set is per-company).
+   * Used instead of `scopeLabel` in ids and group keys, because a country set
+   * may be named like a country and the two must not collide. A per-country instance carries `country:X`.
    */
   populationKey: string;
   /**
@@ -597,7 +597,8 @@ function unionEmails(map: Map<string, Set<string>>): Set<string> {
  * population. Planning a country shows Country requirements over that country —
  * NOT the theatre-wide requirement above it (select the theatre to see that).
  * A region plans against Region-level rows over the region's countries, and a
- * country set against CountrySet-level rows over the set's countries. (A region
+ * country set against CountrySet-level rows over the set's countries — the set
+ * being the single scoped company's own (sets are per-company tenant data). (A region
  * used to pool the Country-level rows across its countries; that derivation is
  * gone — the dashboards dropped it too, and the two must agree.)
  */
@@ -607,7 +608,10 @@ interface GeoPlan {
   /** The single population these requirements are counted over. */
   scope: ComplianceScope;
   scopeLabel: string;
-  /** `global` | `theatre:X` | `country:X` | `region:X` | `countrySet:X`. */
+  /**
+   * `global` | `theatre:X` | `country:X` | `region:X` | `countrySet:<companyId>:X`.
+   * A set's key carries its company because set names are unique only per company.
+   */
   populationKey: string;
   /**
    * The countries an "each country" row splits over — the region's or the set's
@@ -644,12 +648,22 @@ async function resolveGeoPlan(
     };
   }
   if (level === "countrySet" && countrySet) {
+    // A Country Set is per-company tenant data: its name resolves only within
+    // ONE company, and two companies may each own a same-named set over
+    // different countries. The routes refuse a countrySet plan whose scope is
+    // not exactly one company (400); should a caller skip that,
+    // `countriesInCountrySet` answers `[]` for an ambiguous scope, so the plan
+    // runs over an empty, never-met area rather than merging two companies'
+    // sets. The company is in `populationKey` for the same reason the set name
+    // is: "Set 1" of company 3 and "Set 1" of company 7 are different
+    // populations and must never share a group or instance id.
+    const companyId = singleCompanyId(companyIds);
     const countries = await countriesInCountrySet(countrySet, companyIds);
     return {
       reqLevel: "CountrySet",
       scope: { countries, companyIds },
       scopeLabel: countrySet,
-      populationKey: `countrySet:${countrySet}`,
+      populationKey: `countrySet:${companyId ?? "none"}:${countrySet}`,
       countries,
     };
   }

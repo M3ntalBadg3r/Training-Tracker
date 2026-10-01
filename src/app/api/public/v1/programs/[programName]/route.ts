@@ -3,6 +3,7 @@ import { authorizePublicRequest } from "@/lib/public-api";
 import { cachedReport, scopeKey } from "@/lib/report-cache";
 import { safeDecodeParam } from "@/lib/utils";
 import { buildProgramReport, getProgramStudents } from "@/lib/program-report";
+import { COUNTRY_SET_SCOPE_ERROR, singleCompanyId } from "@/lib/country-sets";
 
 /**
  * GET /api/public/v1/programs/{programName} — read-only per-program compliance,
@@ -14,6 +15,8 @@ import { buildProgramReport, getProgramStudents } from "@/lib/program-report";
  * Query params (same as the internal route):
  *  - `level`   country (default) | region | countrySet | theatre | global
  *  - `country` / `region` / `countrySet` / `theatre`  the selector for the chosen level
+ *    (`level=countrySet` needs the request narrowed to exactly one company —
+ *    a Country Set belongs to one company — else 400)
  *  - `horizonMonths`  3 | 6 | 12 — forward-looking projection of upcoming expiries
  *  - `trainingTitle` + `students=true`  roster drill-down (comma-separated titles)
  *  - `companyId`  narrow to one of the key's companies (consumed by the guard)
@@ -61,6 +64,17 @@ export async function GET(
       meta: { levels: [], hasMinimumPerTheatre: false },
       horizonMonths: 0,
     });
+  }
+
+  // A Country Set belongs to one company and its name resolves only within it,
+  // so a countrySet report or roster needs the request narrowed to exactly one
+  // company — `?companyId=` (already intersected with the key's grant by the
+  // guard), or a key granted a single company. Otherwise two partners'
+  // same-named sets would be ambiguous; refuse with a 400 rather than answer
+  // with an empty area that reads as an honest zero. Naming the rule discloses
+  // nothing: it depends only on the key's own grant, never on the DB.
+  if (level === "countrySet" && singleCompanyId(ctx.companyIds) === null) {
+    return NextResponse.json({ error: COUNTRY_SET_SCOPE_ERROR }, { status: 400 });
   }
 
   // Every free-text fragment is percent-encoded so a literal "|" in a program

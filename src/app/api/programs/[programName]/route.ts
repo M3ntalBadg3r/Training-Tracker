@@ -3,6 +3,7 @@ import { requireAuth, handleAuthError } from "@/lib/auth";
 import { getAuthorizedCompanyIds, resolveCompanyFilter } from "@/lib/company-scope";
 import { buildProgramReport, getProgramStudents } from "@/lib/program-report";
 import { cachedReport, scopeKey } from "@/lib/report-cache";
+import { COUNTRY_SET_SCOPE_ERROR, singleCompanyId } from "@/lib/country-sets";
 
 /**
  * Unified, data-driven program compliance endpoint. The program is identified
@@ -64,6 +65,18 @@ export async function GET(
   const countrySet = request.nextUrl.searchParams.get("countrySet") || "";
   const trainingTitleParam = request.nextUrl.searchParams.get("trainingTitle") || "";
   const studentsMode = request.nextUrl.searchParams.get("students") === "true";
+
+  // A Country Set is per-company tenant data: its name resolves only within one
+  // company, and two companies may each own a same-named set over different
+  // countries. A countrySet report or roster whose scope is not exactly one
+  // company (a SuperAdmin under "All companies", or an Admin holding several)
+  // is therefore refused rather than answered — the helpers would fail closed to
+  // an empty area, which reads as an honest "nothing here" and is not one. The
+  // page always sends a single company (it is company-gated), so only a
+  // hand-built request reaches this. Applies to both modes below.
+  if (level === "countrySet" && singleCompanyId(companyFilter) === null) {
+    return NextResponse.json({ error: COUNTRY_SET_SCOPE_ERROR }, { status: 400 });
+  }
 
   // Optional forward-looking projection: recompute compliance as it will stand
   // `horizonMonths` from now, so upcoming certificate expiries surface before
