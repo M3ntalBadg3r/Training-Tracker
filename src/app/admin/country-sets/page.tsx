@@ -2,7 +2,7 @@
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { MapPinned, Pencil, Plus, Trash2 } from "lucide-react";
+import { MapPinned, Pencil, Plus, Trash2, Upload } from "lucide-react";
 import PageHeader from "@/components/layout/PageHeader";
 import Modal from "@/components/ui/Modal";
 import Button from "@/components/ui/Button";
@@ -16,6 +16,7 @@ import { useTableSort, type SortAccessor } from "@/hooks/useTableSort";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import type { CountrySetRow } from "@/types";
 import type { CountrySetListResponse } from "@/app/api/admin/country-sets/route";
+import ImportCountrySetsModal from "./ImportModal";
 
 interface FormState {
   id: number | null;
@@ -252,6 +253,8 @@ function CountrySetsInner() {
   const [saving, setSaving] = useState(false);
   const { rows: regionRows, loading: regionLoading } = useRegionData(formOpen);
 
+  const [importOpen, setImportOpen] = useState(false);
+
   const [deleteTarget, setDeleteTarget] = useState<CountrySetRow | null>(null);
   const [deleteError, setDeleteError] = useState("");
   const [deleting, setDeleting] = useState(false);
@@ -357,7 +360,9 @@ function CountrySetsInner() {
       company: s.companyName,
       name: s.name,
       description: s.description ?? "",
-      countries: s.countries.join(", "),
+      // "; " rather than ", ": some country names contain a comma ("Korea,
+      // Republic of"), and this file must import back unchanged.
+      countries: s.countries.join("; "),
     }));
     const columns: { key: keyof (typeof rows)[number]; header: string }[] = [
       { key: "company", header: "Company" },
@@ -382,11 +387,17 @@ function CountrySetsInner() {
         description="A company's own groupings of countries that partner programs can report against."
         showBack
         helpSlug="country-sets"
-        rightContent={<ExportMenu onExport={(fmt) => handleExport(fmt)} />}
       />
 
+      {/* Import and Export sit in the toolbar beside Add, where every other
+          admin list page (Region Data, Specialisations, Product Types) puts
+          them. */}
       <section className="mb-4 flex flex-wrap items-center gap-3">
         <SearchInput value={search} onChange={setSearch} placeholder="Search country sets…" />
+        <Button variant="secondary" onClick={() => setImportOpen(true)} disabled={noCompanies}>
+          <Upload size={16} /> Import Country Sets
+        </Button>
+        <ExportMenu onExport={(fmt) => handleExport(fmt)} label="Export Country Sets" />
         <Button onClick={openAdd} disabled={noCompanies}>
           <Plus size={16} /> Add Country Set
         </Button>
@@ -622,6 +633,22 @@ function CountrySetsInner() {
           <div className="mt-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2">{deleteError}</div>
         )}
       </Modal>
+      {importOpen && (
+        <ImportCountrySetsModal
+          open={importOpen}
+          onClose={() => setImportOpen(false)}
+          onImported={(companyIds) => {
+            // Mirror Add: if everything landed in one company the header is not
+            // showing, switch to it (the list then refetches on its own).
+            const switched = companyIds.length === 1 && focusCompany(companyIds[0]);
+            if (!switched) reload();
+          }}
+          companies={companies}
+          defaultCompanyId={
+            selectedCompany !== "all" ? selectedCompany : companies.length === 1 ? companies[0].id : ""
+          }
+        />
+      )}
     </div>
   );
 }
