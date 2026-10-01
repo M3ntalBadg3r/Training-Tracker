@@ -46,6 +46,7 @@ model Company {
   scheduledExports ScheduledExport[]
   apiKeys          ApiKeyCompany[]
   offerings        Offering[]
+  countrySets      CountrySet[]
 
   @@map("companies")
 }
@@ -192,19 +193,26 @@ enum ProgramLevel {
   Global
 }
 
-/// A custom, SuperAdmin-managed grouping of countries (similar to a region,
-/// but chosen freely; a country may belong to any number of sets). Global
-/// reference data, deliberately never company-scoped — like RegionData.
-/// Partner programs report against a set via ProgramLevel.CountrySet.
+/// A partner's (Company's) own grouping of countries — like a region, but
+/// chosen freely, and a country may belong to any number of a company's sets.
+/// **Tenant data**: each set belongs to exactly one Company, names are unique
+/// per company, and a set name only ever resolves within one company (see
+/// lib/country-sets.ts). The ProgramLevel.CountrySet requirement level stays
+/// generic and global — only which countries a set holds is per company.
 model CountrySet {
   id          Int      @id @default(autoincrement())
-  name        String   @unique
+  companyId   Int      @map("company_id")
+  name        String
   description String?
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
+  // Cascade: a set only describes its company's geography.
+  company Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
   members CountrySetMember[]
 
+  @@unique([companyId, name])
+  @@index([companyId])
   @@map("country_sets")
 }
 

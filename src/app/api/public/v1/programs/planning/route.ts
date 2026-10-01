@@ -73,7 +73,7 @@ export async function GET(request: NextRequest) {
       // "-v2": the value became `{programs, countrySets}`; see the internal route.
       `public-compliance-planning-options-v2|${scope}`,
       async () => {
-        const [programs, countrySets] = await Promise.all([buildPlanningOptions(), listCountrySetNames()]);
+        const [programs, countrySets] = await Promise.all([buildPlanningOptions(), listCountrySetNames(ctx.companyIds)]);
         return { programs, countrySets };
       },
     );

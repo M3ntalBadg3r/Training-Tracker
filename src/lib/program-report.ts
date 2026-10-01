@@ -125,7 +125,7 @@ export async function buildProgramReport(opts: BuildProgramReportOptions) {
   const theatreList = await listTheatres(companyIds);
   // Country Sets are global reference data exactly like RegionData (country
   // names only, no tenant values), so this list is unscoped for the same reason.
-  const countrySetList = await listCountrySetNames();
+  const countrySetList = await listCountrySetNames(companyIds);
   const lists = { countries, regions: regionList, theatres: theatreList, countrySets: countrySetList };
 
   // `specMap` holds the qualifying, specialisation-scoped rows (these define
@@ -171,7 +171,7 @@ export async function buildProgramReport(opts: BuildProgramReportOptions) {
     level === "region" && region
       ? { reqLevel: "Region" as const, countries: await countriesInRegion(region) }
       : level === "countrySet" && countrySet
-        ? { reqLevel: "CountrySet" as const, countries: await countriesInCountrySet(countrySet) }
+        ? { reqLevel: "CountrySet" as const, countries: await countriesInCountrySet(countrySet, companyIds) }
         : null;
   if (multi) {
     const levelRows = programData.filter((pd: ProgramDataRow) => pd.level === multi.reqLevel);
@@ -837,7 +837,7 @@ export async function getProgramStudents(opts: GetProgramStudentsOptions) {
   } else if (level === "countrySet" && countrySet) {
     // An unknown or empty set resolves to `[]`, and `in: []` matches nobody —
     // the honest roster for an area with no countries.
-    studentFilter.country = { in: await countriesInCountrySet(countrySet) };
+    studentFilter.country = { in: await countriesInCountrySet(countrySet, companyIds) };
   } else if (level === "theatre" && theatre) {
     studentFilter.theatre = theatre;
   }

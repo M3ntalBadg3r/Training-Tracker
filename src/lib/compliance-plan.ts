@@ -644,7 +644,7 @@ async function resolveGeoPlan(
     };
   }
   if (level === "countrySet" && countrySet) {
-    const countries = await countriesInCountrySet(countrySet);
+    const countries = await countriesInCountrySet(countrySet, companyIds);
     return {
       reqLevel: "CountrySet",
       scope: { countries, companyIds },

@@ -57,7 +57,7 @@ export async function GET(request: NextRequest) {
       // programs array), so no entry of the old shape can ever be served.
       `compliance-planning-options-v2|${scopeKey(companyFilter)}`,
       async () => {
-        const [programs, countrySets] = await Promise.all([buildPlanningOptions(), listCountrySetNames()]);
+        const [programs, countrySets] = await Promise.all([buildPlanningOptions(), listCountrySetNames(companyFilter)]);
         return { programs, countrySets };
       },
     );
