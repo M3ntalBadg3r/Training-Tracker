@@ -1,14 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma, { type PrismaTransactionClient } from "@/lib/prisma";
-import { requireSuperAdmin, handleAuthError } from "@/lib/auth";
+import { requireAuth, handleAuthError } from "@/lib/auth";
+import { canAccessCompany, getAuthorizedCompanyIds, resolveCompanyFilter } from "@/lib/company-scope";
 import { readJsonBody } from "@/lib/request-body";
 import { invalidateReportCache } from "@/lib/report-cache";
 import type { CountrySetRow } from "@/types";
 
 /**
- * Country Sets admin API — SuperAdmin-only (also gated by `proxy.ts`'s
- * `SUPER_ADMIN_PREFIXES`). A set is global reference data, like RegionData:
- * no company dimension, country names only.
+ * Country Sets admin API — **company-scoped**, Admin-accessible (the same
+ * arrangement as `/api/admin/offerings`). A set is tenant data: it belongs to
+ * exactly one Company and its name is unique only within that company. A
+ * company Admin manages the sets of the companies they hold; a SuperAdmin
+ * manages all of them. The path is deliberately NOT in `proxy.ts`'s
+ * `SUPER_ADMIN_PREFIXES`; the proxy's general admin gate still refuses a
+ * read-only `User`, and every handler here re-checks `requireAuth("Admin")`
+ * and the company scope itself.
  *
  * The body parser and the row serializer are exported so `[id]/route.ts`
  * shares them rather than carrying a second copy that could drift (the same
@@ -23,6 +29,8 @@ const MAX_COUNTRY_NAME_LENGTH = 200;
 /** Every list/detail read selects exactly this, so the serializer sees one shape. */
 export const COUNTRY_SET_SELECT = {
   id: true,
+  companyId: true,
+  company: { select: { name: true } },
   name: true,
   description: true,
   createdAt: true,
@@ -32,6 +40,8 @@ export const COUNTRY_SET_SELECT = {
 
 interface SelectedCountrySet {
   id: number;
+  companyId: number;
+  company: { name: string } | null;
   name: string;
   description: string | null;
   createdAt: Date;
@@ -46,6 +56,8 @@ interface SelectedCountrySet {
 export function toCountrySetRow(s: SelectedCountrySet): CountrySetRow {
   return {
     id: s.id,
+    companyId: s.companyId,
+    companyName: s.company?.name ?? "",
     name: s.name,
     description: s.description,
     countries: s.members.map((m) => m.country).sort((a, b) => a.localeCompare(b)),
@@ -68,6 +80,7 @@ export interface CountrySetListResponse {
   /**
    * Distinct programs with any Country Set requirement. The level is generic —
    * it applies to whichever set is viewed — so this is not per-set usage.
+   * Programs are a global registry, so this figure is not company-scoped.
    */
   programsUsingCountrySetLevel: number;
 }
@@ -83,6 +96,9 @@ export interface CountrySetListResponse {
  * `undefined`, meaning "leave it alone" — only an explicit `null`/`""` clears
  * the description and only an explicit `[]` clears the members. `name` is
  * required either way. POST (not partial) treats absent as empty.
+ *
+ * `companyId` is not parsed here: POST reads it separately (it must be
+ * scope-checked before anything else), and PUT never accepts a change to it.
  */
 export async function parseCountrySetBody(
   body: unknown,
@@ -148,10 +164,32 @@ export async function parseCountrySetBody(
   return { ok: true, input: { name, description, countries } };
 }
 
-/** Case-insensitive name clash, so "Set A" and "set a" cannot both exist. */
-export async function nameTaken(name: string, exceptId?: number): Promise<boolean> {
+/**
+ * A positive integer company id from an untrusted value, else null. Accepts a
+ * JSON number or a digit-only string (a `<select>` value); anything else —
+ * missing, blank, fractional, negative, `"1e3"` — is rejected rather than
+ * coerced, so `Number("")` can never become company 0.
+ */
+export function parseCompanyId(raw: unknown): number | null {
+  if (typeof raw === "number") {
+    return Number.isSafeInteger(raw) && raw > 0 ? raw : null;
+  }
+  if (typeof raw === "string" && /^\d+$/.test(raw.trim())) {
+    const n = Number(raw.trim());
+    return Number.isSafeInteger(n) && n > 0 ? n : null;
+  }
+  return null;
+}
+
+/**
+ * Case-insensitive name clash **within one company**, so "Set A" and "set a"
+ * cannot both exist for the same company — while two companies may each own a
+ * "Set A" holding different countries.
+ */
+export async function nameTaken(companyId: number, name: string, exceptId?: number): Promise<boolean> {
   const clash = await prisma.countrySet.findFirst({
     where: {
+      companyId,
       name: { equals: name, mode: "insensitive" },
       ...(exceptId !== undefined ? { NOT: { id: exceptId } } : {}),
     },
@@ -169,30 +207,56 @@ export function isUniqueViolation(err: unknown): boolean {
 }
 
 export const DUPLICATE_NAME_RESPONSE = () =>
-  NextResponse.json({ error: "A country set with that name already exists" }, { status: 409 });
+  NextResponse.json(
+    { error: "A country set with that name already exists for this company" },
+    { status: 409 }
+  );
+
+/** Distinct programs with any Country Set row — programs are global, not tenant data. */
+async function countProgramsUsingCountrySetLevel(): Promise<number> {
+  // The CountrySet requirement level is generic — it applies to whichever
+  // set is being viewed — so there is no per-set usage to report. This is
+  // the global figure (distinct programs with any Country Set row).
+  const rows = await prisma.programData.findMany({
+    where: { level: "CountrySet" },
+    distinct: ["programName"],
+    select: { programName: true },
+  });
+  return rows.length;
+}
 
 export async function GET(request: NextRequest) {
+  let auth;
   try {
-    await requireSuperAdmin(request);
+    auth = await requireAuth(request, "Admin");
   } catch (error) {
     return handleAuthError(error);
   }
 
   try {
+    const allowed = await getAuthorizedCompanyIds(auth.sub, auth.role);
+    const companyFilter = resolveCompanyFilter(allowed, request.nextUrl.searchParams.get("companyId"));
+    // `[]` = a scoped caller with no companies, or one asking for a company
+    // outside their grant: answer nothing rather than drop the filter.
+    if (companyFilter !== null && companyFilter.length === 0) {
+      const empty: CountrySetListResponse = {
+        sets: [],
+        programsUsingCountrySetLevel: await countProgramsUsingCountrySetLevel(),
+      };
+      return NextResponse.json(empty);
+    }
+
     const [sets, programsUsingLevel] = await Promise.all([
-      prisma.countrySet.findMany({ orderBy: { name: "asc" }, select: COUNTRY_SET_SELECT }),
-      // The CountrySet requirement level is generic — it applies to whichever
-      // set is being viewed — so there is no per-set usage to report. This is
-      // the global figure (distinct programs with any Country Set row).
-      prisma.programData.findMany({
-        where: { level: "CountrySet" },
-        distinct: ["programName"],
-        select: { programName: true },
+      prisma.countrySet.findMany({
+        where: companyFilter ? { companyId: { in: companyFilter } } : {},
+        orderBy: [{ name: "asc" }, { id: "asc" }],
+        select: COUNTRY_SET_SELECT,
       }),
+      countProgramsUsingCountrySetLevel(),
     ]);
     const response: CountrySetListResponse = {
       sets: sets.map((s: SelectedCountrySet) => toCountrySetRow(s)),
-      programsUsingCountrySetLevel: programsUsingLevel.length,
+      programsUsingCountrySetLevel: programsUsingLevel,
     };
     return NextResponse.json(response);
   } catch (err) {
@@ -202,24 +266,44 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  let auth;
   try {
-    await requireSuperAdmin(request);
+    auth = await requireAuth(request, "Admin");
   } catch (error) {
     return handleAuthError(error);
   }
 
   const parsed = await readJsonBody(request);
   if (!parsed.ok) return parsed.response;
+
+  // The owning company comes from the body and is checked against the
+  // caller's grant before anything else is looked up.
+  const rawCompanyId =
+    parsed.body && typeof parsed.body === "object" && !Array.isArray(parsed.body)
+      ? (parsed.body as Record<string, unknown>).companyId
+      : undefined;
+  const companyId = parseCompanyId(rawCompanyId);
+  if (companyId === null) {
+    return NextResponse.json({ error: "A company is required" }, { status: 400 });
+  }
+  if (!(await canAccessCompany(auth.sub, auth.role, companyId))) {
+    return NextResponse.json({ error: "You do not have access to that company" }, { status: 403 });
+  }
+  const company = await prisma.company.findUnique({ where: { id: companyId }, select: { id: true } });
+  if (!company) {
+    return NextResponse.json({ error: "Company not found" }, { status: 404 });
+  }
+
   const validated = await parseCountrySetBody(parsed.body);
   if (!validated.ok) return validated.response;
   const { name, description, countries } = validated.input;
 
-  if (await nameTaken(name)) return DUPLICATE_NAME_RESPONSE();
+  if (await nameTaken(companyId, name)) return DUPLICATE_NAME_RESPONSE();
 
   try {
     const created = await prisma.$transaction(async (tx: PrismaTransactionClient) => {
       const set = await tx.countrySet.create({
-        data: { name, description: description ?? null },
+        data: { companyId, name, description: description ?? null },
         select: { id: true },
       });
       if (countries && countries.length > 0) {
