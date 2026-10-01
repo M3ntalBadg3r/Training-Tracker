@@ -3431,9 +3431,9 @@ const helpSections: Record<string, HelpSection> = {
           <strong>Import Country Sets</strong>{" "}takes a CSV or Excel file with the
           same columns as the export &mdash; <strong>Company</strong>,{" "}
           <strong>Name</strong>, <strong>Description</strong>{" "}and{" "}
-          <strong>Countries</strong>{" "}(comma-separated, or one country per
-          row). Use <strong>Download Template</strong>, or export, edit and
-          import the file back.
+          <strong>Countries</strong>{" "}(separated by semicolons or commas, or
+          one country per row). Use <strong>Download Template</strong>, or
+          export, edit and import the file back.
         </p>
         <ul>
           <li>
@@ -3448,6 +3448,10 @@ const helpSections: Record<string, HelpSection> = {
           </li>
           <li>
             A blank Description keeps the set&apos;s current description.
+          </li>
+          <li>
+            A set with no countries listed is an error. To empty a set on
+            purpose, put <strong>none</strong>{" "}in its Countries cell.
           </li>
           <li>
             <strong>Preview</strong>{" "}shows which sets will be created, updated or

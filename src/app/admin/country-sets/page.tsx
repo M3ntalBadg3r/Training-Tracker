@@ -360,7 +360,9 @@ function CountrySetsInner() {
       company: s.companyName,
       name: s.name,
       description: s.description ?? "",
-      countries: s.countries.join(", "),
+      // "; " rather than ", ": some country names contain a comma ("Korea,
+      // Republic of"), and this file must import back unchanged.
+      countries: s.countries.join("; "),
     }));
     const columns: { key: keyof (typeof rows)[number]; header: string }[] = [
       { key: "company", header: "Company" },
@@ -635,7 +637,12 @@ function CountrySetsInner() {
         <ImportCountrySetsModal
           open={importOpen}
           onClose={() => setImportOpen(false)}
-          onImported={reload}
+          onImported={(companyIds) => {
+            // Mirror Add: if everything landed in one company the header is not
+            // showing, switch to it (the list then refetches on its own).
+            const switched = companyIds.length === 1 && focusCompany(companyIds[0]);
+            if (!switched) reload();
+          }}
           companies={companies}
           defaultCompanyId={
             selectedCompany !== "all" ? selectedCompany : companies.length === 1 ? companies[0].id : ""

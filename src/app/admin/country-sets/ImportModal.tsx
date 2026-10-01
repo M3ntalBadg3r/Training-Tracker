@@ -28,7 +28,7 @@ const TARGET_FIELDS: { key: FieldKey; label: string; required: boolean; aliases:
 
 const TEMPLATE_CSV =
   'Company,Name,Description,Countries\n' +
-  'Company A,Set 1,Example set,"Country A, Country B"\n' +
+  'Company A,Set 1,Example set,Country A; Country B\n' +
   'Company A,Set 2,,Country C\n';
 
 interface ImportResult {
@@ -36,7 +36,12 @@ interface ImportResult {
   created: number;
   updated: number;
   unchanged?: number;
+  /** Sets the import will leave (or left) with no countries — an explicit "none". */
+  emptied?: number;
   skippedSets: number;
+  errorsTruncated?: boolean;
+  /** Companies the import wrote to (real imports only). */
+  companyIds?: number[];
   errors: { row: number; message: string }[];
   sets?: { company: string; name: string; countries: number; action: "create" | "update" | "unchanged" }[];
 }
@@ -57,11 +62,13 @@ export default function ImportCountrySetsModal({
   open: boolean;
   onClose: () => void;
   /**
-   * Called when the dialog closes after an import wrote something. Deferred to
-   * close on purpose: refreshing the list puts the page back in its loading
-   * state, which unmounts this dialog and would swallow the summary.
+   * Called when the dialog closes after a real import was sent, with the
+   * companies it wrote to (empty when unknown, e.g. the request failed in
+   * flight). Deferred to close on purpose: refreshing the list puts the page
+   * back in its loading state, which unmounts this dialog and would swallow
+   * the summary.
    */
-  onImported: () => void;
+  onImported: (companyIds: number[]) => void;
   companies: { id: number; name: string }[];
   defaultCompanyId: number | "";
 }) {
@@ -74,7 +81,10 @@ export default function ImportCountrySetsModal({
   const [companyId, setCompanyId] = useState<number | "">(defaultCompanyId);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ImportResult | null>(null);
+  // Set as soon as a real import is SENT, not when it succeeds: the write may
+  // land even if the response is lost, so the list must refresh either way.
   const [wrote, setWrote] = useState(false);
+  const [wroteCompanies, setWroteCompanies] = useState<number[]>([]);
 
   const reset = () => {
     setStep("upload");
@@ -88,9 +98,11 @@ export default function ImportCountrySetsModal({
   };
 
   const close = () => {
+    // Closing mid-import would unmount the dialog before it learns the result.
+    if (step === "importing") return;
     reset();
     onClose();
-    if (wrote) onImported();
+    if (wrote) onImported(wroteCompanies);
   };
 
   const loaded = (hdrs: string[], data: Record<string, string>[]) => {
@@ -176,6 +188,7 @@ export default function ImportCountrySetsModal({
     }
     setError(null);
     setStep(dryRun ? "mapping" : "importing");
+    if (!dryRun) setWrote(true);
     try {
       const res = await fetch(`/api/admin/country-sets/import${dryRun ? "?dryRun=true" : ""}`, {
         method: "POST",
@@ -197,7 +210,7 @@ export default function ImportCountrySetsModal({
         setStep("preview");
       } else {
         setStep("summary");
-        if ((data as ImportResult).created + (data as ImportResult).updated > 0) setWrote(true);
+        setWroteCompanies((prev) => [...new Set([...prev, ...((data as ImportResult).companyIds ?? [])])]);
       }
     } catch {
       setError("Import failed");
@@ -248,8 +261,9 @@ export default function ImportCountrySetsModal({
           <>
             <p className="text-sm text-gray-600">
               Use the same columns as the export: Company, Name, Description and Countries (separate countries with
-              commas, or put one country per row). Each set named in the file ends up with exactly the countries the
-              file lists for it; sets the file does not mention are left alone.
+              semicolons or commas, or put one country per row). Each set named in the file ends up with exactly the
+              countries the file lists for it; sets the file does not mention are left alone. To empty a set on
+              purpose, put &ldquo;none&rdquo; in its Countries cell.
             </p>
             <div
               onDrop={(e) => {
@@ -391,7 +405,15 @@ export default function ImportCountrySetsModal({
                     </table>
                   </div>
                 )}
+                {(result.emptied ?? 0) > 0 && (
+                  <div className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                    {result.emptied} set{result.emptied === 1 ? "" : "s"} will be left with no countries.
+                  </div>
+                )}
                 {errorList(result.errors)}
+                {result.errorsTruncated && (
+                  <p className="text-xs text-gray-500">Only the first errors are listed.</p>
+                )}
               </div>
             )}
 
