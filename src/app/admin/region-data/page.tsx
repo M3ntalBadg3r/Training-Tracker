@@ -22,6 +22,7 @@ import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import { checkImportFile } from "@/lib/import-file";
+import { invalidateRegionData } from "@/hooks/useRegionData";
 // Type-only: erased at build, so the country table itself stays out of this
 // page's bundle. The data module is pulled in with a dynamic import when the
 // admin actually asks for suggestions.
@@ -91,6 +92,7 @@ export default function RegionDataPage() {
   // open with no message. The ISO field makes that reachable in normal use —
   // one letter in the box is a valid keystroke and an invalid code.
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [newCountry, setNewCountry] = useState("");
   const [newRegionValue, setNewRegionValue] = useState("");
   const [newTheatreValue, setNewTheatreValue] = useState("");
@@ -236,6 +238,7 @@ export default function RegionDataPage() {
       }),
     });
     if (res.ok) {
+      invalidateRegionData();
       setAddModalOpen(false);
       setSaveError(null);
       setNewCountry("");
@@ -276,6 +279,7 @@ export default function RegionDataPage() {
       }),
     });
     if (res.ok) {
+      invalidateRegionData();
       setRegions((prev) =>
         prev
           .map((r) =>
@@ -371,12 +375,31 @@ export default function RegionDataPage() {
       setSuggestOpen(false);
       setSuggestions(null);
     }
+    // Once for the whole batch, not per row: some may have saved even if
+    // others failed.
+    invalidateRegionData();
     fetchRegions();
   };
 
   const handleDeleteRegion = async (country: string) => {
+    // Deleting a country also removes it from every Country Set (the
+    // membership FK cascades), which changes partner-program compliance for
+    // those sets — so say so before doing it.
+    const ok = window.confirm(
+      `Delete "${country}" from Region Data?\n\nIt will also be removed from any Country Set it belongs to. A country still assigned to students cannot be deleted.`
+    );
+    if (!ok) return;
+    setDeleteError(null);
     const res = await fetch(`/api/region-data/${encodeURIComponent(country)}`, { method: "DELETE" });
-    if (res.ok) setRegions((prev) => prev.filter((r) => r.country !== country));
+    if (res.ok) {
+      invalidateRegionData();
+      setRegions((prev) => prev.filter((r) => r.country !== country));
+      return;
+    }
+    const data = await res.json().catch(() => null);
+    setDeleteError(
+      data && typeof data.error === "string" ? data.error : `Could not delete "${country}".`
+    );
   };
 
   // Import handlers
@@ -494,6 +517,7 @@ export default function RegionDataPage() {
       const result = await res.json();
       setImportSummary(result);
       setImportStep("summary");
+      invalidateRegionData();
       fetchRegions();
       fetchLastImport();
     } catch (err) {
@@ -575,6 +599,11 @@ export default function RegionDataPage() {
             system that keys on ISO 3166-1.
           </p>
         )}
+        {deleteError && (
+          <p className="mt-3 text-sm text-red-700" role="alert">
+            {deleteError}
+          </p>
+        )}
       </section>
 
       {/* Import Modal */}
@@ -638,15 +667,15 @@ export default function RegionDataPage() {
                 </p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {TARGET_FIELDS.map((field) => (
-                    <div key={field.key} className="flex items-center gap-3">
-                      <label className="w-20 text-sm font-medium text-gray-700">
+                    <div key={field.key} className="flex items-center gap-3 min-w-0">
+                      <label className="w-20 shrink-0 text-sm font-medium text-gray-700">
                         {field.label}
                         {field.required && <span className="text-red-500 ml-1">*</span>}
                       </label>
                       <select
                         value={columnMapping[field.key] || ""}
                         onChange={(e) => setColumnMapping((prev) => ({ ...prev, [field.key]: e.target.value }))}
-                        className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                        className="flex-1 min-w-0 border border-gray-300 rounded-lg px-3 py-2 text-sm"
                       >
                         <option value="">-- Select column --</option>
                         {headers.map((h) => <option key={h} value={h}>{h}</option>)}

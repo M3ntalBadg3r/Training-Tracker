@@ -1,9 +1,17 @@
 import prisma from "@/lib/prisma";
+import { REQ_LEVELS } from "@/lib/program-levels";
 
 /** Per-program metadata for the Compliance Planning target selector. */
 export interface PlanningOption {
   name: string;
   isTiered: boolean;
+  /**
+   * The requirement levels this program's rows are authored at — any of
+   * Country, Region, CountrySet, Theatre and Global, in that order. A planning
+   * scope is only worth offering when some program carries its level
+   * (`scopeLevelOffered`), because each scope plans against its own level's
+   * rows and nothing else.
+   */
   levels: string[];
   tiers: string[];
   specialisations: string[];
@@ -40,7 +48,8 @@ export async function buildPlanningOptions(): Promise<PlanningOption[]> {
   const result: PlanningOption[] = [];
   for (const name of [...names].sort()) {
     const rows = programData.filter((d) => d.programName === name);
-    const levels = [...new Set(rows.map((d) => d.level))];
+    const present = new Set<string>(rows.map((d) => d.level));
+    const levels = REQ_LEVELS.filter((l) => present.has(l));
     const specialisations = [
       ...new Set(rows.map((d) => d.specialisation?.name).filter((n): n is string => !!n)),
     ].sort();

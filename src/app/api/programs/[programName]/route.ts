@@ -3,6 +3,7 @@ import { requireAuth, handleAuthError } from "@/lib/auth";
 import { getAuthorizedCompanyIds, resolveCompanyFilter } from "@/lib/company-scope";
 import { buildProgramReport, getProgramStudents } from "@/lib/program-report";
 import { cachedReport, scopeKey } from "@/lib/report-cache";
+import { COUNTRY_SET_SCOPE_ERROR, singleCompanyId } from "@/lib/country-sets";
 
 /**
  * Unified, data-driven program compliance endpoint. The program is identified
@@ -10,7 +11,9 @@ import { cachedReport, scopeKey } from "@/lib/report-cache";
  * in ProgramData gets a dashboard without code changes. This is the union of
  * the two hardcoded per-program routes it replaced, whose two shapes it still
  * supports:
- *  - Country / Region / Theatre levels count attained people.
+ *  - Country / Region / Country Set / Theatre levels count attained people,
+ *    each against its own level's rows (a Region or Country Set row may be
+ *    pooled across the area or required in every country of it).
  *  - The Global level supports both "count the compliant theatres" semantics
  *    (for a row naming no training) and per-title global holder counts with an
  *    optional per-theatre minimum.
@@ -49,6 +52,7 @@ export async function GET(
       countries: [],
       regions: [],
       theatres: [],
+      countrySets: [],
       meta: { levels: [], hasMinimumPerTheatre: false },
       horizonMonths: 0,
     });
@@ -58,8 +62,24 @@ export async function GET(
   const country = request.nextUrl.searchParams.get("country") || "";
   const theatre = request.nextUrl.searchParams.get("theatre") || "";
   const region = request.nextUrl.searchParams.get("region") || "";
+  const countrySet = request.nextUrl.searchParams.get("countrySet") || "";
   const trainingTitleParam = request.nextUrl.searchParams.get("trainingTitle") || "";
   const studentsMode = request.nextUrl.searchParams.get("students") === "true";
+  // With students=true: the "Trained not certified" roster rather than the
+  // holder roster (see lib/program-trained-not-certified.ts).
+  const trainedNotCertified = request.nextUrl.searchParams.get("trainedNotCertified") === "true";
+
+  // A Country Set is per-company tenant data: its name resolves only within one
+  // company, and two companies may each own a same-named set over different
+  // countries. A countrySet report or roster whose scope is not exactly one
+  // company (a SuperAdmin under "All companies", or an Admin holding several)
+  // is therefore refused rather than answered — the helpers would fail closed to
+  // an empty area, which reads as an honest "nothing here" and is not one. The
+  // page always sends a single company (it is company-gated), so only a
+  // hand-built request reaches this. Applies to both modes below.
+  if (level === "countrySet" && singleCompanyId(companyFilter) === null) {
+    return NextResponse.json({ error: COUNTRY_SET_SCOPE_ERROR }, { status: 400 });
+  }
 
   // Optional forward-looking projection: recompute compliance as it will stand
   // `horizonMonths` from now, so upcoming certificate expiries surface before
@@ -71,19 +91,28 @@ export async function GET(
   // value can't collide with the key delimiter and cross views.
   const scope = scopeKey(companyFilter);
   const progKey = encodeURIComponent(programName);
+  // A Country Set name is admin-chosen free text, so it is encoded like the
+  // program name: a literal "|" must not be able to shift the key's fields.
+  const setKey = encodeURIComponent(countrySet);
 
   if (studentsMode && trainingTitleParam) {
     const titles = trainingTitleParam.split(",").map((t) => t.trim()).filter(Boolean);
+    // The roster mode is part of the key: the two rosters for the same titles
+    // and scope are different people.
+    const mode = trainedNotCertified ? "tnc" : "holders";
     const result = await cachedReport(
-      `program-students|${progKey}|${scope}|${level}|${country}|${region}|${theatre}|${encodeURIComponent(trainingTitleParam)}`,
-      () => getProgramStudents({ trainingTitles: titles, level, country, region, theatre, companyIds: companyFilter }),
+      `program-students|${progKey}|${scope}|${level}|${country}|${region}|${setKey}|${theatre}|${mode}|${encodeURIComponent(trainingTitleParam)}`,
+      () =>
+        getProgramStudents({
+          trainingTitles: titles, level, country, region, countrySet, theatre, companyIds: companyFilter, trainedNotCertified,
+        }),
     );
     return NextResponse.json(result, { headers: { "Cache-Control": "private, max-age=30" } });
   }
 
   const report = await cachedReport(
-    `program|${progKey}|${scope}|${level}|${country}|${region}|${theatre}|${horizonMonths}`,
-    () => buildProgramReport({ programName, level, country, region, theatre, horizonMonths, companyIds: companyFilter }),
+    `program|${progKey}|${scope}|${level}|${country}|${region}|${setKey}|${theatre}|${horizonMonths}`,
+    () => buildProgramReport({ programName, level, country, region, countrySet, theatre, horizonMonths, companyIds: companyFilter }),
   );
   return NextResponse.json(report, { headers: { "Cache-Control": "private, max-age=30" } });
 }

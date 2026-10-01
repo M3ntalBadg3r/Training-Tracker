@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useFetchJson } from "@/hooks/useFetchJson";
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -14,6 +14,7 @@ import {
   MapPin,
   Map,
   Layers,
+  Boxes,
   ExternalLink,
 } from "lucide-react";
 import { useCompanyScope } from "@/components/company/CompanyScopeProvider";
@@ -32,7 +33,12 @@ import {
   alternativesText,
   attainedText,
   complianceRiskState,
+  countModeLabel,
+  countriesMetText,
+  countryBreakdownLines,
   expiringText,
+  isEachCountry,
+  isMultiCountryScope,
   riskState,
   tierGate,
   trainingTypeLabel,
@@ -42,6 +48,7 @@ import {
   type StudentEntry,
   type TierBlock,
   type TierDeploymentRequirement,
+  type ViewStudentsFn,
 } from "@/components/programs/ProgramCompliance";
 import type {
   ReportCellValue,
@@ -51,6 +58,14 @@ import type {
   ReportSection,
   ReportTonedRow,
 } from "@/lib/report-export";
+import {
+  SCOPE_LEVELS,
+  SCOPE_LEVEL_LABELS,
+  SCOPE_VALUE_NOUN,
+  parseScopeLevel,
+  scopeLevelOffered,
+  type ScopeLevel,
+} from "@/lib/program-levels";
 
 interface ProgramMeta {
   levels: string[];
@@ -58,8 +73,6 @@ interface ProgramMeta {
   isTiered?: boolean;
   deploymentMode?: string;
 }
-
-type ScopeLevel = "global" | "theatre" | "region" | "country";
 
 // ── URL round-trip for the view ──
 // Scope and horizon are mirrored to the query string so Back from a student
@@ -71,23 +84,14 @@ type ScopeLevel = "global" | "theatre" | "region" | "country";
 /** The "Compliance as of" options — a value outside this set has no option to render. */
 const HORIZON_OPTIONS = [0, 3, 6, 12];
 
-function parseScopeLevel(v: string | null): ScopeLevel | null {
-  return v === "global" || v === "theatre" || v === "region" || v === "country" ? v : null;
-}
-
 function parseHorizon(v: string | null): number {
   const n = parseInt(v ?? "", 10);
   return HORIZON_OPTIONS.includes(n) ? n : 0;
 }
 
-/**
- * Whether the program offers a level. Region is not a configured level of its
- * own — it is derived from Country-level requirements, so it rides on Country.
- */
-function levelOffered(level: ScopeLevel, levels: string[]): boolean {
-  if (level === "global") return levels.includes("Global");
-  if (level === "theatre") return levels.includes("Theatre");
-  return levels.includes("Country");
+/** The prompt noun for a scope's value ("country set"), or "" for Global. */
+function valueNoun(level: ScopeLevel): string {
+  return level === "global" ? "" : SCOPE_VALUE_NOUN[level];
 }
 
 /** True when an ISO (YYYY-MM-DD) expiry date falls within the next 3 months. */
@@ -148,6 +152,13 @@ function ProgramDetailPageInner() {
   const [countries, setCountries] = useState<string[]>([]);
   const [regions, setRegions] = useState<string[]>([]);
   const [theatres, setTheatres] = useState<string[]>([]);
+  const [countrySets, setCountrySets] = useState<string[]>([]);
+  // The company the lists above were last loaded for. Country Sets are
+  // per-company tenant data, so `countrySets` describes ONE company and is
+  // stale between a header company switch and its refetch landing; this is
+  // what lets the page tell "this company has no such set" apart from "the new
+  // company's list has not arrived yet".
+  const [listsCompanyId, setListsCompanyId] = useState<number | null>(null);
 
   // Single page-level scope: a level plus (for non-global levels) a value. This
   // one selection drives BOTH the Tier Status block and the matching report,
@@ -162,6 +173,10 @@ function ProgramDetailPageInner() {
   const [studentList, setStudentList] = useState<StudentEntry[]>([]);
   const [studentLoading, setStudentLoading] = useState(false);
   const [studentTitle, setStudentTitle] = useState("");
+  // Which roster the modal shows: a requirement's holders, or the people
+  // trained towards its certification who do not hold it. Transient UI state —
+  // not mirrored to the URL, like the modal itself.
+  const [studentMode, setStudentMode] = useState<"holders" | "trainedNotCertified">("holders");
 
   // Group the roster by the specific training each person holds, so the modal
   // shows one table per training (primary + each alternative/variant) rather
@@ -184,34 +199,75 @@ function ProgramDetailPageInner() {
   // Export menu (single — one report is shown at a time)
   const [showExport, setShowExport] = useState(false);
 
-  const hasCountry = meta?.levels.includes("Country") ?? false;
-  const hasTheatre = meta?.levels.includes("Theatre") ?? false;
-  const hasGlobal = meta?.levels.includes("Global") ?? false;
+  // The views this program offers, in selector order (Global > Theatre > Region >
+  // Country Set > Country). Each is offered only when the program carries rows
+  // at its own level — "By Region" no longer rides on Country rows. "By Country
+  // Set" additionally needs the selected company to own at least one set: sets
+  // are per-company, so a company with none has nothing to pick from even when
+  // the program carries CountrySet rows.
+  const levelOffered = (l: ScopeLevel, levels: readonly string[]): boolean =>
+    scopeLevelOffered(l, levels) && (l !== "countrySet" || countrySets.length > 0);
+  const offeredLevels = SCOPE_LEVELS.filter((l) => levelOffered(l, meta?.levels ?? []));
+  const listsCurrent = companyId !== null && listsCompanyId === companyId;
   const gdStyleGlobal = meta?.hasMinimumPerTheatre ?? false;
   const isTiered = meta?.isTiered ?? false;
 
   const needsValue = scopeLevel !== "global";
-  const valuesForLevel = (l: ScopeLevel) => (l === "theatre" ? theatres : l === "region" ? regions : countries);
+  const valuesForLevel = (l: ScopeLevel): string[] =>
+    l === "theatre"
+      ? theatres
+      : l === "region"
+        ? regions
+        : l === "countrySet"
+          ? countrySets
+          : l === "country"
+            ? countries
+            : [];
   const scopeValues = valuesForLevel(scopeLevel);
   const scopeMissing = needsValue && !scopeValue;
 
   // Initial load — fetch metadata + available countries/regions/theatres.
+  // Re-runs on a header company switch: the theatre and Country Set lists are
+  // company-scoped. The `cancelled` guard drops a response for a company the
+  // header has since moved away from, so a slow reply can never pin the lists
+  // (and `listsCompanyId`) to the wrong company.
   useEffect(() => {
     if (companyId === null) return;
+    let cancelled = false;
     fetch(`${apiBase}?level=country${companyQS}`)
       .then((r) => r.json())
       .then((data) => {
+        if (cancelled) return;
         setCountries(data.countries || []);
         setRegions(data.regions || []);
         setTheatres(data.theatres || []);
+        setCountrySets(data.countrySets || []);
+        setListsCompanyId(companyId);
         setMeta(data.meta || { levels: [], hasMinimumPerTheatre: false });
       })
-      .catch(() => {});
+      .catch(() => {
+        // A failed load still settles the company-scoped lists, as loaded-empty
+        // for this company — the same fallback the roster modal uses. Leaving
+        // `listsCompanyId` unset would park a selected Country Set on
+        // "unverified" for ever (a permanent spinner); marking the lists loaded
+        // and empty lets the stale-set pass fall back to the default scope.
+        // `meta`, countries and regions are not company data and are left as
+        // they were.
+        if (cancelled) return;
+        setTheatres([]);
+        setCountrySets([]);
+        setListsCompanyId(companyId);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [companyId, companyQS, apiBase]);
 
   // Default the scope once we know which levels exist: pick the broadest
-  // configured level, and auto-select the first value for value-requiring
-  // levels. Done while rendering (the `scopeInitialised` latch makes it
+  // configured level (Global > Theatre > Region > Country Set > Country — the
+  // `SCOPE_LEVELS` order, so a program carrying only Region or Country Set rows
+  // still lands somewhere valid), and auto-select the first value for
+  // value-requiring levels. Done while rendering (the `scopeInitialised` latch makes it
   // one-shot) rather than in an effect, since the user owns the scope after.
   // A scope seeded from the URL (back-navigation, a shared link) wins over that
   // default — but only once it has been checked against this program, which is
@@ -224,26 +280,50 @@ function ProgramDetailPageInner() {
       levelOffered(urlScope.level, meta.levels) &&
       (urlScope.level === "global" || valuesForLevel(urlScope.level).includes(urlScope.value));
     if (!seedUsable) {
-      if (meta.levels.includes("Global")) {
-        setScopeLevel("global");
-        setScopeValue("");
-      } else if (meta.levels.includes("Theatre")) {
-        setScopeLevel("theatre");
-        setScopeValue(theatres[0] ?? "");
-      } else if (meta.levels.includes("Country")) {
-        setScopeLevel("country");
-        setScopeValue(countries[0] ?? "");
+      const fallback = SCOPE_LEVELS.find((l) => levelOffered(l, meta.levels));
+      if (fallback) {
+        setScopeLevel(fallback);
+        setScopeValue(fallback === "global" ? "" : valuesForLevel(fallback)[0] ?? "");
       }
     }
     setScopeInitialised(true);
   }
 
+  // A Country Set belongs to one company, so switching the header company can
+  // strand a selected set: the new company may own no set of that name. (A
+  // same-named set over different countries is fine — the report is simply
+  // that company's.) Once the new company's list has loaded, a selected set
+  // missing from it falls back to the default scope, exactly as a stale link
+  // does in the pass above. Adjusted while rendering, like that pass, rather
+  // than in an effect; it converges because the fallback never yields a
+  // countrySet value outside the list. An empty value is the user's own
+  // "Select a country set…" choice and is left alone — unless the company owns
+  // no sets at all, when "By Country Set" is no longer an option to sit on.
+  const countrySetStale =
+    scopeInitialised &&
+    scopeLevel === "countrySet" &&
+    listsCurrent &&
+    (scopeValue === "" ? countrySets.length === 0 : !countrySets.includes(scopeValue));
+  if (countrySetStale && meta) {
+    const fallback = SCOPE_LEVELS.find((l) => levelOffered(l, meta.levels));
+    if (fallback) {
+      setScopeLevel(fallback);
+      setScopeValue(fallback === "global" ? "" : valuesForLevel(fallback)[0] ?? "");
+    }
+  }
+  // Until the current company's list has landed, a selected set cannot be
+  // checked against it, so the report waits (it shows as loading) rather than
+  // asking for a name the new company may not own.
+  const countrySetUnverified =
+    scopeLevel === "countrySet" && scopeValue !== "" && (!listsCurrent || !countrySets.includes(scopeValue));
+  // The program has levels, but none this company can view — only possible when
+  // its rows are all CountrySet and the company owns no sets.
+  const noOfferedLevels =
+    !companyRequired && meta !== null && meta.levels.length > 0 && listsCurrent && offeredLevels.length === 0;
+
   const changeScopeLevel = (level: ScopeLevel) => {
     setScopeLevel(level);
-    if (level === "global") setScopeValue("");
-    else if (level === "theatre") setScopeValue(theatres[0] ?? "");
-    else if (level === "region") setScopeValue(regions[0] ?? "");
-    else setScopeValue(countries[0] ?? "");
+    setScopeValue(level === "global" ? "" : valuesForLevel(level)[0] ?? "");
   };
 
   // Mirror the view to the URL so Back from a student record restores it.
@@ -274,10 +354,11 @@ function ProgramDetailPageInner() {
   // is masked by `scopeMissing` below — the render checks loading first, and an
   // incomplete scope must show the "pick a value" state, not a spinner.
   const reportUrl = (() => {
-    if (companyId === null || !scopeInitialised || scopeMissing) return null;
+    if (companyId === null || !scopeInitialised || scopeMissing || countrySetUnverified) return null;
     const qs = new URLSearchParams({ level: scopeLevel });
     if (scopeLevel === "country") qs.set("country", scopeValue);
     else if (scopeLevel === "region") qs.set("region", scopeValue);
+    else if (scopeLevel === "countrySet") qs.set("countrySet", scopeValue);
     else if (scopeLevel === "theatre") qs.set("theatre", scopeValue);
     return `${apiBase}?${qs.toString()}${companyQS}${horizonQS}`;
   })();
@@ -296,13 +377,20 @@ function ProgramDetailPageInner() {
   );
   const tierBlock = scopeMissing ? null : reportData?.tiers ?? null;
 
-  const viewStudents = async (
+  const rosterRequestRef = useRef(0);
+  const openRoster = async (
+    mode: "holders" | "trainedNotCertified",
     trainingTitle: string,
     trainingFullTitle: string,
     level: string,
     filterValue: string,
     alternatives?: AlternativeEntry[]
   ) => {
+    // Two roster modes share one modal, so a slower response for the mode the
+    // user clicked first must not land under the title of the one they
+    // clicked second. Only the latest request may write the list.
+    const requestId = ++rosterRequestRef.current;
+    setStudentMode(mode);
     setStudentTitle(trainingFullTitle);
     setStudentLoading(true);
     setShowStudents(true);
@@ -314,23 +402,33 @@ function ProgramDetailPageInner() {
       trainingTitle: allTitles.join(","),
       level,
     });
+    if (mode === "trainedNotCertified") params.set("trainedNotCertified", "true");
     if (level === "country") params.set("country", filterValue);
     if (level === "region") params.set("region", filterValue);
+    if (level === "countrySet") params.set("countrySet", filterValue);
     if (level === "theatre") params.set("theatre", filterValue);
     if (companyId !== null) params.set("companyId", String(companyId));
 
     try {
       const res = await fetch(`${apiBase}?${params}`);
       const data = await res.json();
+      if (requestId !== rosterRequestRef.current) return;
       setStudentList(data.students || []);
     } catch {
+      if (requestId !== rosterRequestRef.current) return;
       setStudentList([]);
     } finally {
-      setStudentLoading(false);
+      if (requestId === rosterRequestRef.current) setStudentLoading(false);
     }
   };
+  const viewStudents: ViewStudentsFn = (...args) => openRoster("holders", ...args);
+  const viewTrainedNotCertified: ViewStudentsFn = (...args) => openRoster("trainedNotCertified", ...args);
 
-  // Flat export: Country / Region / Theatre, and the theatre-count Global shape.
+  // Region and Country Set views: a row may be pooled or per-country.
+  const multiCountryView = isMultiCountryScope(scopeLevel);
+
+  // Flat export: Country / Region / Country Set / Theatre, and the theatre-count
+  // Global shape.
   const buildExportData = (specList: Specialisation[], levelLabel: string, filterValue: string) => {
     const rows: Record<string, string | number>[] = [];
     for (const spec of specList) {
@@ -356,6 +454,21 @@ function ProgramDetailPageInner() {
         }
         row.level = levelLabel;
         row.filter = filterValue;
+        // Appended after the existing columns (never reordered), and only on a
+        // multi-country view, where a row can be counted either way. For an
+        // "each country" row `attained` above is the lowest country's count, so
+        // `compliant` already means "every country met it".
+        if (multiCountryView) {
+          const each = isEachCountry(req);
+          row.countMode = countModeLabel(req.aggregation);
+          row.countriesMet = each ? `${req.countriesMet ?? 0} / ${req.countriesTotal ?? 0}` : "";
+          row.totalHolders = each ? req.pooledAttained ?? 0 : req.attained;
+          if (horizonMonths > 0) {
+            row.projectedCountriesMet = each
+              ? `${req.projectedCountriesMet ?? req.countriesMet ?? 0} / ${req.countriesTotal ?? 0}`
+              : "";
+          }
+        }
         rows.push(row);
       };
       spec.requirements.forEach((req) => emit(req, "Qualification"));
@@ -381,6 +494,16 @@ function ProgramDetailPageInner() {
       : []),
     { key: "level", header: "Level" },
     { key: "filter", header: "Filter" },
+    ...(multiCountryView
+      ? [
+          { key: "countMode", header: "Count Mode" },
+          { key: "countriesMet", header: "Countries Met" },
+          { key: "totalHolders", header: "Total Holders" },
+          ...(horizonMonths > 0
+            ? [{ key: "projectedCountriesMet", header: `Projected Countries Met (+${horizonMonths}mo)` }]
+            : []),
+        ]
+      : []),
   ];
 
   // Global-level export with per-theatre minimums (global counts + breakdown rows).
@@ -471,6 +594,7 @@ function ProgramDetailPageInner() {
   const REPORT_META: Record<ScopeLevel, { label: string; icon: ReactNode; unit: "people" | "theatres" }> = {
     country: { label: "Country Report", icon: <MapPin size={20} className="text-blue-600" />, unit: "people" },
     region: { label: "Region Report", icon: <Map size={20} className="text-teal-600" />, unit: "people" },
+    countrySet: { label: "Country Set Report", icon: <Boxes size={20} className="text-cyan-600" />, unit: "people" },
     theatre: { label: "Theatre Report", icon: <Building2 size={20} className="text-purple-600" />, unit: "people" },
     global: { label: "Global Report", icon: <Globe size={20} className="text-green-600" />, unit: "theatres" },
   };
@@ -509,6 +633,8 @@ function ProgramDetailPageInner() {
     const baseColumns = [
       { key: "training", header: "Training", width: 5 },
       { key: "type", header: "Type", width: 2 },
+      // Region / Country Set only: whether the row is pooled or per country.
+      ...(multiCountryView ? [{ key: "mode", header: "Count Mode", width: 1.6 }] : []),
       { key: "attained", header: "Attained / Required", width: 2.2, align: "center" as const },
     ];
     const statusColumn = { key: "status", header: "Status", width: 1.8, align: "center" as const };
@@ -560,7 +686,48 @@ function ProgramDetailPageInner() {
       });
     };
 
+    /**
+     * The Attained cell of an "each country" row: the countries-met figure, with
+     * the lowest country (what the row is shaded by) underneath. Its per-country
+     * breakdown goes into the row's detail lines, as the theatre breakdown does.
+     */
+    const eachCountryCell = (
+      met: number,
+      projectedMet: number | null | undefined,
+      total: number,
+      lowest: number,
+      projectedLowest: number | undefined,
+      required: number
+    ): ReportRichCell => ({
+      text: countriesMetText(met, projectedMet, total),
+      sub: `Lowest country: ${attainedText(lowest, projectedLowest)} / ${required} per country`,
+      bold: true,
+      align: "center",
+    });
+
     const requirementRow = (req: Requirement): ReportTonedRow => {
+      if (!globalCards && isEachCountry(req)) {
+        const state = riskState(req.attained, req.projectedAttained, req.quantityRequired);
+        const cells: Record<string, ReportCellValue> = {
+          training: trainingCell(req.trainingFullTitle, req.alternatives),
+          type: trainingTypeLabel(req.trainingType),
+          attained: eachCountryCell(
+            req.countriesMet ?? 0,
+            req.projectedCountriesMet,
+            req.countriesTotal ?? 0,
+            req.attained,
+            req.projectedAttained,
+            req.quantityRequired
+          ),
+          status: { text: RISK_STATUS_LABEL[state], align: "center" },
+        };
+        if (multiCountryView) cells.mode = countModeLabel(req.aggregation);
+        return {
+          tone: RISK_TONE[state],
+          cells,
+          detail: countryBreakdownLines(req.countryBreakdown, req.projectedCountryBreakdown, req.quantityRequired),
+        };
+      }
       const attained = globalCards ? req.globalAttained ?? req.attained : req.attained;
       const projected = globalCards ? req.projectedGlobalAttained : req.projectedAttained;
       const countState = riskState(attained, projected, req.quantityRequired);
@@ -577,6 +744,7 @@ function ProgramDetailPageInner() {
         status: { text: RISK_STATUS_LABEL[statusState], align: "center" },
       };
       if (globalCards) cells.minPerTheatre = req.minimumPerTheatre ?? "—";
+      if (multiCountryView) cells.mode = countModeLabel(req.aggregation);
       return {
         tone: RISK_TONE[countState],
         cells,
@@ -592,21 +760,35 @@ function ProgramDetailPageInner() {
       const projected = req.projectedAttained ?? undefined;
       const countState = riskState(req.attained, projected, req.quantityRequired);
       const statusState = complianceRiskState(req.compliant, req.projectedCompliant);
+      const each = isEachCountry(req);
+      const cells: Record<string, ReportCellValue> = {
+        // In "perTierPerSpecialisation" mode each row belongs to one
+        // specialisation, which the page prefixes to the training name.
+        training: trainingCell(req.trainingFullTitle, req.alternatives, req.specialisationName),
+        type: trainingTypeLabel(req.trainingType),
+        attained: each
+          ? eachCountryCell(
+              req.countriesMet ?? 0,
+              req.projectedCountriesMet,
+              req.countriesTotal ?? 0,
+              req.attained,
+              projected,
+              req.quantityRequired
+            )
+          : attainedCell(req.attained, projected, req.quantityRequired),
+        status: { text: RISK_STATUS_LABEL[statusState], align: "center" },
+      };
+      if (multiCountryView) cells.mode = countModeLabel(req.aggregation);
       return {
         tone: RISK_TONE[countState],
-        cells: {
-          // In "perTierPerSpecialisation" mode each row belongs to one
-          // specialisation, which the page prefixes to the training name.
-          training: trainingCell(req.trainingFullTitle, req.alternatives, req.specialisationName),
-          type: trainingTypeLabel(req.trainingType),
-          attained: attainedCell(req.attained, projected, req.quantityRequired),
-          status: { text: RISK_STATUS_LABEL[statusState], align: "center" },
-        },
-        detail: theatreDetail(
-          req.theatreBreakdown,
-          req.projectedTheatreBreakdown,
-          req.minimumPerTheatre ?? 0
-        ),
+        cells,
+        detail: each
+          ? countryBreakdownLines(req.countryBreakdown, req.projectedCountryBreakdown, req.quantityRequired)
+          : theatreDetail(
+              req.theatreBreakdown,
+              req.projectedTheatreBreakdown,
+              req.minimumPerTheatre ?? 0
+            ),
       };
     };
 
@@ -780,7 +962,7 @@ function ProgramDetailPageInner() {
       */}
       {companyRequired && <CompanyRequired what="dashboard" />}
 
-      {!companyRequired && horizonMonths > 0 && meta && meta.levels.length > 0 && (
+      {!companyRequired && !noOfferedLevels && horizonMonths > 0 && meta && meta.levels.length > 0 && (
         <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800">
           <span className="font-medium">Projection:</span>
           <span>
@@ -799,7 +981,15 @@ function ProgramDetailPageInner() {
         </div>
       )}
 
-      {!companyRequired && meta && meta.levels.length > 0 && (
+      {noOfferedLevels && (
+        <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-500">
+          <strong>{programName}</strong> reports by Country Set, and the selected company has no Country
+          Sets defined. Add one in{" "}
+          <Link href="/admin/country-sets" className="text-blue-600 hover:underline">Admin &rsaquo; Country Sets</Link>.
+        </div>
+      )}
+
+      {!companyRequired && !noOfferedLevels && meta && meta.levels.length > 0 && (
         <>
           {/* Page-level scope selector — drives both the tier status and report. */}
           <FilterBar>
@@ -811,21 +1001,20 @@ function ProgramDetailPageInner() {
                 onChange={(e) => changeScopeLevel(e.target.value as ScopeLevel)}
                 className={SELECT_CLASS}
               >
-                {hasGlobal && <option value="global">Global</option>}
-                {hasTheatre && <option value="theatre">By Theatre</option>}
-                {hasCountry && <option value="region">By Region</option>}
-                {hasCountry && <option value="country">By Country</option>}
+                {offeredLevels.map((l) => (
+                  <option key={l} value={l}>{SCOPE_LEVEL_LABELS[l]}</option>
+                ))}
               </select>
               {needsValue && (
                 <>
-                  <label className="text-sm font-medium text-gray-700 capitalize" htmlFor="program-value">{scopeLevel}</label>
+                  <label className="text-sm font-medium text-gray-700 capitalize" htmlFor="program-value">{valueNoun(scopeLevel)}</label>
                   <select
                     id="program-value"
                     value={scopeValue}
                     onChange={(e) => setScopeValue(e.target.value)}
                     className={`${SELECT_CLASS} min-w-[200px]`}
                   >
-                    <option value="">Select a {scopeLevel}…</option>
+                    <option value="">Select a {valueNoun(scopeLevel)}…</option>
                     {scopeValues.map((v) => <option key={v} value={v}>{v}</option>)}
                   </select>
                 </>
@@ -844,11 +1033,11 @@ function ProgramDetailPageInner() {
                 {loading ? (
                   <LoadingSpinner />
                 ) : scopeMissing ? (
-                  <p className="text-sm text-gray-500">Select a {scopeLevel} to view tier status.</p>
+                  <p className="text-sm text-gray-500">Select a {valueNoun(scopeLevel)} to view tier status.</p>
                 ) : !tierBlock ? (
                   <p className="text-sm text-gray-500">No tier data for this program.</p>
                 ) : (
-                  <TierLadder block={tierBlock} />
+                  <TierLadder block={tierBlock} level={scopeLevel} />
                 )}
               </div>
             </section>
@@ -878,11 +1067,13 @@ function ProgramDetailPageInner() {
                 <div className="bg-white rounded-lg border border-gray-200 p-4"><LoadingSpinner /></div>
               ) : scopeMissing ? (
                 <div className="bg-white rounded-lg border border-gray-200 p-4">
-                  <p className="text-sm text-gray-500">Select a {scopeLevel} to view compliance data.</p>
+                  <p className="text-sm text-gray-500">Select a {valueNoun(scopeLevel)} to view compliance data.</p>
                 </div>
               ) : specs.length === 0 ? (
                 <div className="bg-white rounded-lg border border-gray-200 p-4">
-                  <p className="text-sm text-gray-500">No {scopeLevel}-level requirements found for this program.</p>
+                  <p className="text-sm text-gray-500">
+                    No {report.label.replace(" Report", "")}-level requirements found for this program.
+                  </p>
                 </div>
               ) : scopeLevel === "global" && gdStyleGlobal ? (
                 specs.map((spec) => <SpecialisationCard key={spec.name} spec={spec} />)
@@ -893,6 +1084,8 @@ function ProgramDetailPageInner() {
                     level={scopeLevel}
                     filterValue={needsValue ? scopeValue : ""}
                     onViewStudents={viewStudents}
+                    onViewTrainedNotCertified={viewTrainedNotCertified}
+                    horizonMonths={horizonMonths}
                     unitLabel={report.unit}
                   />
                 </div>
@@ -903,7 +1096,20 @@ function ProgramDetailPageInner() {
       )}
 
       {/* Student Modal */}
-      <Modal open={showStudents} onClose={() => setShowStudents(false)} title="Students" size="4xl">
+      <Modal
+        open={showStudents}
+        onClose={() => setShowStudents(false)}
+        title={studentMode === "trainedNotCertified" ? `Trained, not certified — ${studentTitle}` : "Students"}
+        size="4xl"
+      >
+        {studentMode === "trainedNotCertified" && (
+          <p className="text-sm text-gray-600 mb-4">
+            People in this view holding a current instructor-led or OLX training that leads to{" "}
+            <strong>{studentTitle}</strong> or one of its certification alternatives, who hold none of them
+            currently (a lapsed certification counts as not held). Grouped by the training they hold; the dates are that training&apos;s.
+            {horizonMonths > 0 && " Shown as of today, not at the projection horizon."}
+          </p>
+        )}
         {studentLoading ? (
           <LoadingSpinner />
         ) : studentList.length === 0 ? (

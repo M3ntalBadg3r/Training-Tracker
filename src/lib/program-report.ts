@@ -10,10 +10,27 @@ import {
   unionAttained,
   unionAttainedByTheatre,
   evaluateTierLadder,
+  buildCountryBucketContext,
+  requirementCompliant,
   type ComplianceScope,
+  type CountryBucketContext,
   type ProgramRequirement,
   type TierLadderInput,
 } from "@/lib/program-compliance";
+import { countriesInCountrySet, listCountrySetNames } from "@/lib/country-sets";
+import {
+  normaliseAggregation,
+  type Aggregation,
+  type CountryBreakdownRow,
+  type ReqLevel,
+} from "@/lib/program-levels";
+import {
+  buildTrainedNotCertifiedContext,
+  getTrainedNotCertifiedRoster,
+  isTncRequirement,
+  trainedNotCertifiedEmails,
+  type TrainedNotCertifiedContext,
+} from "@/lib/program-trained-not-certified";
 
 /**
  * Shared, presentation-agnostic builders for the data-driven program compliance
@@ -27,10 +44,15 @@ import {
 
 export interface BuildProgramReportOptions {
   programName: string;
-  /** "country" | "region" | "theatre" | "global" (anything else → empty spec list). */
+  /** "country" | "region" | "countrySet" | "theatre" | "global" (anything else → empty spec list). */
   level: string;
   country: string;
   region: string;
+  /**
+   * Country Set name, used when level is "countrySet". Resolved within the
+   * single company `companyIds` names — a set is per-company tenant data.
+   */
+  countrySet?: string;
   theatre: string;
   /** Already validated to one of 0 | 3 | 6 | 12. */
   horizonMonths: number;
@@ -40,10 +62,17 @@ export interface BuildProgramReportOptions {
 /**
  * Build the full compliance payload for one program at the requested level +
  * scope. Returns the same object shape the program dashboard consumes:
- * `{ specialisations, countries, regions, theatres, meta, horizonMonths, tiers? }`.
+ * `{ specialisations, countries, regions, theatres, countrySets, meta, horizonMonths, tiers? }`.
+ *
+ * Each view reads only its own level's rows (`program-levels.ts:SCOPE_TO_REQ_LEVEL`):
+ * country → Country rows over that country; region → Region rows over the
+ * region's countries; countrySet → CountrySet rows over the set's countries;
+ * theatre → Theatre rows; global → Global rows. "By Region" used to pool the
+ * Country rows across the region's countries — that derivation is gone.
  */
 export async function buildProgramReport(opts: BuildProgramReportOptions) {
   const { programName, level, country, region, theatre, horizonMonths, companyIds } = opts;
+  const countrySet = opts.countrySet ?? "";
 
   const [programData, program, tierRows] = await Promise.all([
     prisma.programData.findMany({
@@ -81,13 +110,14 @@ export async function buildProgramReport(opts: BuildProgramReportOptions) {
       countries: [],
       regions: [],
       theatres: [],
+      countrySets: [] as string[],
       meta,
       horizonMonths,
     };
   }
 
-  // Deliberately unscoped, and the asymmetry with the scoped `listTheatres`
-  // call two lines below is intentional rather than an oversight.
+  // Deliberately unscoped, and the asymmetry with the scoped `listTheatres` and
+  // `listCountrySetNames` calls below is intentional rather than an oversight.
   //
   // `RegionData` is a global, admin-curated reference table (country → region →
   // theatre) with no `companyId` — there is no tenant dimension to filter on.
@@ -103,6 +133,14 @@ export async function buildProgramReport(opts: BuildProgramReportOptions) {
   const countries = regionData.map((r: typeof regionData[number]) => r.country);
   const regionList = [...new Set(regionData.map((r: typeof regionData[number]) => r.region))].filter(Boolean).sort();
   const theatreList = await listTheatres(companyIds);
+  // Country Sets, unlike RegionData, ARE tenant data: each belongs to one
+  // company and names are unique only per company, so two partners can each own
+  // a "Set 1" over different countries. The list is therefore scoped — it holds
+  // the scoped company's own non-empty sets, and is `[]` unless `companyIds` is
+  // exactly one company (`listCountrySetNames` enforces that), so an ambiguous
+  // scope neither offers a picker nor discloses another company's set names.
+  const countrySetList = await listCountrySetNames(companyIds);
+  const lists = { countries, regions: regionList, theatres: theatreList, countrySets: countrySetList };
 
   // `specMap` holds the qualifying, specialisation-scoped rows (these define
   // whether a specialisation is *achieved*). `specDepMap` holds that
@@ -124,52 +162,97 @@ export async function buildProgramReport(opts: BuildProgramReportOptions) {
   const now = new Date();
   const horizonDate = horizonMonths > 0 ? addMonths(now, horizonMonths) : null;
 
+  // The specialisation-table rows authored at one level — the rows the
+  // "Trained not certified" figure is computed for (Tier Status is excluded).
+  const specTableRows = (reqLevel: ReqLevel) =>
+    [...specMap.values(), ...specDepMap.values()].flat().filter((r) => r.level === reqLevel);
+
   if (level === "country" && country) {
     const countryReqs = programData.filter((pd: ProgramDataRow) => pd.level === "Country");
     const titles = extractTitles(countryReqs);
     const scope: ComplianceScope = { country, companyIds };
-    const emailSets = await getEmailSetsByTitle(titles, now, scope);
-    const projectedEmailSets = horizonDate
-      ? await getEmailSetsByTitle(titles, horizonDate, scope)
-      : null;
-    const specialisations = buildSpecialisations(specMap, specDepMap, "Country", emailSets, projectedEmailSets);
+    const [emailSets, projectedEmailSets, tnc] = await Promise.all([
+      getEmailSetsByTitle(titles, now, scope),
+      horizonDate ? getEmailSetsByTitle(titles, horizonDate, scope) : null,
+      buildTrainedNotCertifiedContext(specTableRows("Country"), now, scope),
+    ]);
+    const specialisations = buildSpecialisations(specMap, specDepMap, "Country", emailSets, projectedEmailSets, null, tnc);
     const tiers = isTiered
-      ? await computeTierBlock({ levelName: "Country", scope, useTheatre: false, theatres: [], companyIds, rows: programData, tiers: tierRows, deploymentMode, now, horizonDate })
+      ? await computeTierBlock({ levelName: "Country", scope, useTheatre: false, theatres: [], companyIds, rows: programData, tiers: tierRows, deploymentMode, now, horizonDate, countryCtx: null })
       : undefined;
-    return { specialisations, countries, regions: regionList, theatres: theatreList, meta, horizonMonths, tiers };
+    return { specialisations, ...lists, meta, horizonMonths, tiers };
   }
 
-  if (level === "region" && region) {
-    const countryReqs = programData.filter((pd: ProgramDataRow) => pd.level === "Country");
-    const titles = extractTitles(countryReqs);
-    const regionCountries = await countriesInRegion(region);
-    const scope: ComplianceScope = { countries: regionCountries, companyIds };
-    const emailSets = regionCountries.length > 0
-      ? await getEmailSetsByTitle(titles, now, scope)
-      : new Map<string, Set<string>>();
-    const projectedEmailSets = horizonDate && regionCountries.length > 0
-      ? await getEmailSetsByTitle(titles, horizonDate, scope)
-      : null;
-    const specialisations = buildSpecialisations(specMap, specDepMap, "Country", emailSets, projectedEmailSets);
+  // Region and Country Set share one multi-country path: the area is a list of
+  // countries (the region's, or the set's), the rows are that level's own, and a
+  // row's `aggregation` decides whether it is pooled across the area ("total")
+  // or must be met in every one of its countries ("eachCountry").
+  //
+  // The set is resolved within the single scoped company. The routes refuse a
+  // `level=countrySet` request whose scope is not exactly one company (400,
+  // `COUNTRY_SET_SCOPE_ERROR`); should a caller skip that, `countriesInCountrySet`
+  // answers `[]` for an ambiguous scope, which reads as an empty, never-compliant
+  // area — never as two companies' same-named sets merged into one.
+  const multi =
+    level === "region" && region
+      ? { reqLevel: "Region" as const, countries: await countriesInRegion(region) }
+      : level === "countrySet" && countrySet
+        ? { reqLevel: "CountrySet" as const, countries: await countriesInCountrySet(countrySet, companyIds) }
+        : null;
+  if (multi) {
+    const levelRows = programData.filter((pd: ProgramDataRow) => pd.level === multi.reqLevel);
+    const titles = extractTitles(levelRows);
+    const areaCountries = multi.countries;
+    const scope: ComplianceScope = { countries: areaCountries, companyIds };
+    // An empty area (an unknown region, a set whose countries were all deleted)
+    // gives a clean non-compliant report rather than a query: `countries: []`
+    // would match nothing anyway, so skip the round-trip.
+    const hasArea = areaCountries.length > 0;
+    const [emailSets, projectedEmailSets, tnc] = await Promise.all([
+      hasArea ? getEmailSetsByTitle(titles, now, scope) : new Map<string, Set<string>>(),
+      horizonDate
+        ? hasArea
+          ? getEmailSetsByTitle(titles, horizonDate, scope)
+          : new Map<string, Set<string>>()
+        : null,
+      buildTrainedNotCertifiedContext(specTableRows(multi.reqLevel), now, scope, hasArea),
+    ]);
+    // The per-country buckets are only needed — and only fetched — when some
+    // in-scope row is "eachCountry": one bucketed query per as-of date over just
+    // those rows' titles, never a query per country.
+    const eachCountryTitles = extractTitles(
+      levelRows.filter((pd: ProgramDataRow) => normaliseAggregation(pd.level, pd.aggregation) === "eachCountry")
+    );
+    const countryCtx: CountryCtxPair | null =
+      eachCountryTitles.length > 0
+        ? {
+            now: await buildCountryBucketContext(eachCountryTitles, now, areaCountries, companyIds),
+            projected: horizonDate
+              ? await buildCountryBucketContext(eachCountryTitles, horizonDate, areaCountries, companyIds)
+              : null,
+          }
+        : null;
+    const specialisations = buildSpecialisations(specMap, specDepMap, multi.reqLevel, emailSets, projectedEmailSets, countryCtx, tnc);
     const tiers = isTiered
-      ? await computeTierBlock({ levelName: "Country", scope, useTheatre: false, theatres: [], companyIds, rows: programData, tiers: tierRows, deploymentMode, now, horizonDate })
+      ? await computeTierBlock({ levelName: multi.reqLevel, scope, useTheatre: false, theatres: [], companyIds, rows: programData, tiers: tierRows, deploymentMode, now, horizonDate, countryCtx })
       : undefined;
-    return { specialisations, countries, regions: regionList, theatres: theatreList, meta, horizonMonths, tiers };
+    return { specialisations, ...lists, meta, horizonMonths, tiers };
   }
 
   if (level === "theatre" && theatre) {
     const theatreReqs = programData.filter((pd: ProgramDataRow) => pd.level === "Theatre");
     const titles = extractTitles(theatreReqs);
     const scope: ComplianceScope = { theatre, companyIds };
-    const emailSets = await getEmailSetsByTitle(titles, now, scope);
-    const projectedEmailSets = horizonDate
-      ? await getEmailSetsByTitle(titles, horizonDate, scope)
-      : null;
-    const specialisations = buildSpecialisations(specMap, specDepMap, "Theatre", emailSets, projectedEmailSets);
+    const [emailSets, projectedEmailSets, tnc] = await Promise.all([
+      getEmailSetsByTitle(titles, now, scope),
+      horizonDate ? getEmailSetsByTitle(titles, horizonDate, scope) : null,
+      buildTrainedNotCertifiedContext(specTableRows("Theatre"), now, scope),
+    ]);
+    const specialisations = buildSpecialisations(specMap, specDepMap, "Theatre", emailSets, projectedEmailSets, null, tnc);
     const tiers = isTiered
-      ? await computeTierBlock({ levelName: "Theatre", scope, useTheatre: false, theatres: [], companyIds, rows: programData, tiers: tierRows, deploymentMode, now, horizonDate })
+      ? await computeTierBlock({ levelName: "Theatre", scope, useTheatre: false, theatres: [], companyIds, rows: programData, tiers: tierRows, deploymentMode, now, horizonDate, countryCtx: null })
       : undefined;
-    return { specialisations, countries, regions: regionList, theatres: theatreList, meta, horizonMonths, tiers };
+    return { specialisations, ...lists, meta, horizonMonths, tiers };
   }
 
   if (level === "global") {
@@ -292,6 +375,9 @@ export async function buildProgramReport(opts: BuildProgramReportOptions) {
           trainingTitle: req.trainingTitle ?? null,
           trainingFullTitle: req.trainingData?.fullTitle ?? "Theatre Compliance",
           quantityRequired: req.quantityRequired,
+          // A Global row is always pooled — "eachCountry" is only meaningful on
+          // a multi-country level, and normaliseAggregation forces it off here.
+          aggregation: "total" as Aggregation,
           attained,
           globalAttained,
           minimumPerTheatre,
@@ -352,26 +438,37 @@ export async function buildProgramReport(opts: BuildProgramReportOptions) {
           deploymentMode,
           now,
           horizonDate,
+          countryCtx: null,
         })
       : undefined;
 
     return {
       specialisations: globalSpecialisations,
-      countries,
-      regions: regionList,
-      theatres: theatreList,
+      ...lists,
       meta,
       horizonMonths,
       tiers,
     };
   }
 
-  const specialisations = buildSpecialisations(specMap, specDepMap, "Country", new Map(), null);
-  return { specialisations, countries, regions: regionList, theatres: theatreList, meta, horizonMonths };
+  const specialisations = buildSpecialisations(specMap, specDepMap, "Country", new Map(), null, null, null);
+  return { specialisations, ...lists, meta, horizonMonths };
+}
+
+/** The "now" and (when a horizon is set) projected per-country contexts. */
+interface CountryCtxPair {
+  now: CountryBucketContext;
+  projected: CountryBucketContext | null;
+}
+
+/** Distinct countries meeting the quantity, from a breakdown. */
+function countriesMetOf(breakdown: CountryBreakdownRow[]): number {
+  return breakdown.filter((c) => c.compliant).length;
 }
 
 type SpecReqRow = {
   level: string;
+  aggregation: string;
   trainingType: string | null;
   trainingTitle: string | null;
   trainingData: { fullTitle: string } | null;
@@ -383,29 +480,102 @@ type SpecReqRow = {
   }>;
 };
 
+/**
+ * The per-level specialisation report for every level except Global (which has
+ * its own card/theatre-count shapes above).
+ *
+ * Every requirement carries `aggregation`, `compliant` and — only when a horizon
+ * is set — `projectedCompliant`, and every specialisation carries
+ * `compliant`/`projectedCompliant` (all its qualifying requirements compliant).
+ *
+ * An `"eachCountry"` row additionally carries the per-country figures. Its
+ * `attained`/`projectedAttained` are the LOWEST per-country count, so the
+ * client's `riskState(attained, projected, required)` and every export that
+ * reads `attained >= quantityRequired` stay correct unchanged; the pooled
+ * distinct-holder count moves to `pooledAttained`.
+ *
+ * With a `tnc` context, every Certification requirement also carries
+ * `trainedNotCertified`: the people in the same population holding an active
+ * ILT/OLX that leads to it but not the certification itself (the rule is in
+ * `lib/program-trained-not-certified.ts`). It is always today's figure, even
+ * under a horizon, and absent on every other row. For an `"eachCountry"` row it
+ * is the area total, because `emailSets` is the pooled area map.
+ */
 function buildSpecialisations(
   specMap: Map<string, SpecReqRow[]>,
   specDepMap: Map<string, SpecReqRow[]>,
-  level: string,
+  level: ReqLevel,
   emailSets: Map<string, Set<string>>,
-  projectedEmailSets: Map<string, Set<string>> | null
+  projectedEmailSets: Map<string, Set<string>> | null,
+  countryCtx: CountryCtxPair | null,
+  tnc: TrainedNotCertifiedContext | null
 ) {
-  const mapReq = (req: SpecReqRow) => ({
-    trainingType: req.trainingType ?? null,
-    trainingTitle: req.trainingTitle ?? null,
-    trainingFullTitle: req.trainingData?.fullTitle ?? "—",
-    quantityRequired: req.quantityRequired,
-    attained: req.trainingTitle ? unionAttained(req, emailSets) : 0,
-    projectedAttained:
-      projectedEmailSets && req.trainingTitle
-        ? unionAttained(req, projectedEmailSets)
-        : undefined,
-    alternatives: req.alternatives.map((a) => ({
+  const mapReq = (req: SpecReqRow) => {
+    const aggregation = normaliseAggregation(req.level, req.aggregation);
+    const common = {
+      trainingType: req.trainingType ?? null,
+      trainingTitle: req.trainingTitle ?? null,
+      trainingFullTitle: req.trainingData?.fullTitle ?? "—",
+      quantityRequired: req.quantityRequired,
+      aggregation,
+      // Spread rather than assigned, so the key is genuinely absent (not
+      // `undefined`) on a row the figure does not apply to.
+      ...(tnc && isTncRequirement(req, tnc.certTitles)
+        ? { trainedNotCertified: trainedNotCertifiedEmails(req, tnc, emailSets).size }
+        : {}),
+    };
+    const alternatives = req.alternatives.map((a) => ({
       trainingType: a.trainingType,
       trainingTitle: a.trainingTitle,
       trainingFullTitle: a.trainingData?.fullTitle ?? "—",
-    })),
-  });
+    }));
+
+    if (aggregation === "eachCountry") {
+      const asReq: ProgramRequirement = {
+        trainingTitle: req.trainingTitle,
+        alternatives: req.alternatives.map((a) => ({ trainingTitle: a.trainingTitle })),
+        quantityRequired: req.quantityRequired,
+        aggregation,
+      };
+      // No context means the caller had no area to judge against — the engine
+      // fails closed on that, and so does the display (0 of 0 countries met).
+      const nowEval = requirementCompliant(asReq, emailSets, undefined, undefined, countryCtx?.now);
+      const countryBreakdown = nowEval.countryBreakdown ?? [];
+      const projEval = projectedEmailSets
+        ? requirementCompliant(asReq, projectedEmailSets, undefined, undefined, countryCtx?.projected ?? undefined)
+        : null;
+      const projectedCountryBreakdown = projEval ? projEval.countryBreakdown ?? [] : undefined;
+      return {
+        ...common,
+        attained: nowEval.attained,
+        projectedAttained: projEval ? projEval.attained : undefined,
+        compliant: nowEval.compliant,
+        projectedCompliant: projEval ? projEval.compliant : undefined,
+        pooledAttained: nowEval.pooledAttained ?? 0,
+        projectedPooledAttained: projEval ? projEval.pooledAttained ?? 0 : undefined,
+        countriesMet: countriesMetOf(countryBreakdown),
+        countriesTotal: countryBreakdown.length,
+        projectedCountriesMet: projectedCountryBreakdown ? countriesMetOf(projectedCountryBreakdown) : undefined,
+        countryBreakdown,
+        projectedCountryBreakdown,
+        alternatives,
+      };
+    }
+
+    const attained = req.trainingTitle ? unionAttained(req, emailSets) : 0;
+    const projectedAttained =
+      projectedEmailSets && req.trainingTitle ? unionAttained(req, projectedEmailSets) : undefined;
+    return {
+      ...common,
+      attained,
+      projectedAttained,
+      compliant: attained >= req.quantityRequired,
+      projectedCompliant: projectedEmailSets
+        ? (projectedAttained ?? attained) >= req.quantityRequired
+        : undefined,
+      alternatives,
+    };
+  };
 
   const result = [];
   for (const [name, reqs] of specMap) {
@@ -420,16 +590,21 @@ function buildSpecialisations(
     const deploymentRequirements = depLevelReqs.map(mapReq);
     const deploymentCompliant =
       deploymentRequirements.length > 0
-        ? deploymentRequirements.every((r) => r.attained >= r.quantityRequired)
+        ? deploymentRequirements.every((r) => r.compliant)
         : undefined;
     const projectedDeploymentCompliant =
       projectedEmailSets && deploymentRequirements.length > 0
-        ? deploymentRequirements.every((r) => (r.projectedAttained ?? r.attained) >= r.quantityRequired)
+        ? deploymentRequirements.every((r) => r.projectedCompliant ?? r.compliant)
         : undefined;
 
+    const requirements = levelReqs.map(mapReq);
     result.push({
       name,
-      requirements: levelReqs.map(mapReq),
+      compliant: requirements.every((r) => r.compliant),
+      projectedCompliant: projectedEmailSets
+        ? requirements.every((r) => r.projectedCompliant ?? r.compliant)
+        : undefined,
+      requirements,
       deploymentRequirements,
       deploymentCompliant,
       projectedDeploymentCompliant,
@@ -444,6 +619,7 @@ interface TierBlockRow {
   tierId: number | null;
   purpose: string;
   level: string;
+  aggregation: string;
   trainingType: string | null;
   trainingTitle: string | null;
   quantityRequired: number;
@@ -466,9 +642,14 @@ interface TierBlockTier {
  * and, when a horizon is set, a forward-looking one. Deployment requirements
  * are sourced by `deploymentMode` (flat = the tier's own rows;
  * perAchievedSpecialisation = each achieved specialisation's deployment rows).
+ *
+ * `countryCtx` carries the per-country buckets for a multi-country level's
+ * `"eachCountry"` rows (null elsewhere); those rows are judged country by
+ * country, so a specialisation needing "4 per country" is achieved — and feeds
+ * the tier gate — only when every country in the area has 4.
  */
 async function computeTierBlock(params: {
-  levelName: "Country" | "Theatre" | "Global";
+  levelName: ReqLevel;
   scope: ComplianceScope;
   useTheatre: boolean;
   theatres: string[];
@@ -478,8 +659,9 @@ async function computeTierBlock(params: {
   deploymentMode: string;
   now: Date;
   horizonDate: Date | null;
+  countryCtx: CountryCtxPair | null;
 }) {
-  const { levelName, scope, useTheatre, theatres, companyIds, rows, tiers, deploymentMode, now, horizonDate } = params;
+  const { levelName, scope, useTheatre, theatres, companyIds, rows, tiers, deploymentMode, now, horizonDate, countryCtx } = params;
 
   const levelRows = rows.filter((r) => r.level === levelName);
 
@@ -490,15 +672,18 @@ async function computeTierBlock(params: {
     trainingFullTitle: string;
     quantityRequired: number;
     minimumPerTheatre: number | null;
+    aggregation: Aggregation;
     alternatives: { trainingType: string; trainingTitle: string; trainingFullTitle: string }[];
   }
   const display = new Map<number, DepDisplay>();
   for (const r of levelRows) {
+    const aggregation = normaliseAggregation(r.level, r.aggregation);
     requirements.set(r.id, {
       trainingTitle: r.trainingTitle,
       alternatives: r.alternatives.map((a) => ({ trainingTitle: a.trainingTitle })),
       quantityRequired: r.quantityRequired,
       minimumPerTheatre: r.minimumPerTheatre,
+      aggregation,
     });
     display.set(r.id, {
       trainingType: r.trainingType,
@@ -506,6 +691,7 @@ async function computeTierBlock(params: {
       trainingFullTitle: r.trainingData?.fullTitle ?? "—",
       quantityRequired: r.quantityRequired,
       minimumPerTheatre: r.minimumPerTheatre ?? null,
+      aggregation,
       alternatives: r.alternatives.map((a) => ({
         trainingType: a.trainingType,
         trainingTitle: a.trainingTitle,
@@ -576,7 +762,7 @@ async function computeTierBlock(params: {
   const byTheatre = useTheatre
     ? await getEmailSetsByTitleAndTheatre(uniqueTitles, now, companyIds)
     : emptyByTheatre;
-  const snapNow = evaluateTierLadder(input, emailSets, byTheatre, theatres);
+  const snapNow = evaluateTierLadder(input, emailSets, byTheatre, theatres, countryCtx?.now);
 
   let snapProj: ReturnType<typeof evaluateTierLadder> | null = null;
   if (horizonDate) {
@@ -584,11 +770,16 @@ async function computeTierBlock(params: {
     const projByTheatre = useTheatre
       ? await getEmailSetsByTitleAndTheatre(uniqueTitles, horizonDate, companyIds)
       : emptyByTheatre;
-    snapProj = evaluateTierLadder(input, projEmail, projByTheatre, theatres);
+    snapProj = evaluateTierLadder(input, projEmail, projByTheatre, theatres, countryCtx?.projected ?? undefined);
   }
 
   const buildDepReq = (id: number, specialisationName: string | null) => {
     const d = display.get(id)!;
+    // The per-country fields are always present on a tier row and null unless
+    // the row is "eachCountry" (for which `attained` is the lowest country).
+    const isEach = d.aggregation === "eachCountry";
+    const countryBreakdown = isEach ? snapNow.reqCountryBreakdown.get(id) ?? [] : null;
+    const projectedCountryBreakdown = isEach && snapProj ? snapProj.reqCountryBreakdown.get(id) ?? [] : null;
     return {
       specialisationName,
       trainingType: d.trainingType,
@@ -602,6 +793,14 @@ async function computeTierBlock(params: {
       projectedAttained: snapProj ? snapProj.reqAttained.get(id) ?? 0 : null,
       projectedCompliant: snapProj ? snapProj.reqCompliant.get(id) ?? false : null,
       projectedTheatreBreakdown: snapProj ? snapProj.reqTheatreBreakdown.get(id) ?? null : null,
+      aggregation: d.aggregation,
+      pooledAttained: isEach ? snapNow.reqPooledAttained.get(id) ?? 0 : null,
+      projectedPooledAttained: isEach && snapProj ? snapProj.reqPooledAttained.get(id) ?? 0 : null,
+      countriesMet: countryBreakdown ? countriesMetOf(countryBreakdown) : null,
+      countriesTotal: countryBreakdown ? countryBreakdown.length : null,
+      projectedCountriesMet: projectedCountryBreakdown ? countriesMetOf(projectedCountryBreakdown) : null,
+      countryBreakdown,
+      projectedCountryBreakdown,
       alternatives: d.alternatives,
     };
   };
@@ -654,17 +853,56 @@ export interface GetProgramStudentsOptions {
   level: string;
   country: string;
   region: string;
+  /** Country Set name, used when level is "countrySet". */
+  countrySet?: string;
   theatre: string;
   companyIds: number[] | null;
+  /**
+   * Return the "Trained not certified" roster for these titles instead of the
+   * holder roster: people holding an active ILT/OLX that leads to one of the
+   * Certification titles, but none of the titles themselves.
+   */
+  trainedNotCertified?: boolean;
+}
+
+/**
+ * The `ComplianceScope` a roster is drawn from — the same one
+ * `buildProgramReport` counts the selected level over, so the trained-not-
+ * certified list matches its figure exactly. Returns `hasArea: false` for a
+ * Region / Country Set view whose area resolves to no countries.
+ */
+async function resolveRosterScope(
+  opts: GetProgramStudentsOptions
+): Promise<{ scope: ComplianceScope; hasArea: boolean }> {
+  const { level, country, region, theatre, companyIds } = opts;
+  const countrySet = opts.countrySet ?? "";
+  if (level === "country" && country) return { scope: { country, companyIds }, hasArea: true };
+  if (level === "region" && region) {
+    const countries = await countriesInRegion(region);
+    return { scope: { countries, companyIds }, hasArea: countries.length > 0 };
+  }
+  if (level === "countrySet" && countrySet) {
+    // Fails closed to `[]` on an ambiguous company scope, exactly as below.
+    const countries = await countriesInCountrySet(countrySet, companyIds);
+    return { scope: { countries, companyIds }, hasArea: countries.length > 0 };
+  }
+  if (level === "theatre" && theatre) return { scope: { theatre, companyIds }, hasArea: true };
+  return { scope: { companyIds }, hasArea: true };
 }
 
 /**
  * Roster drill-down: the distinct, currently-active holders of any of the given
  * training titles, scoped to the level selector + companies. Returns the plain
- * object the callers wrap in a JSON response.
+ * object the callers wrap in a JSON response. With `trainedNotCertified`, the
+ * roster behind the "Trained not certified" figure instead.
  */
 export async function getProgramStudents(opts: GetProgramStudentsOptions) {
+  if (opts.trainedNotCertified) {
+    const { scope, hasArea } = await resolveRosterScope(opts);
+    return getTrainedNotCertifiedRoster(opts.trainingTitles, scope, hasArea);
+  }
   const { trainingTitles, level, country, region, theatre, companyIds } = opts;
+  const countrySet = opts.countrySet ?? "";
   const now = new Date();
 
   const studentFilter: Record<string, unknown> = {};
@@ -673,6 +911,14 @@ export async function getProgramStudents(opts: GetProgramStudentsOptions) {
   } else if (level === "region" && region) {
     const regionCountries = await countriesInRegion(region);
     studentFilter.country = { in: regionCountries };
+  } else if (level === "countrySet" && countrySet) {
+    // An unknown or empty set resolves to `[]`, and `in: []` matches nobody —
+    // the honest roster for an area with no countries. The same holds for a
+    // scope that is not exactly one company: a set name only resolves within
+    // one company, so `countriesInCountrySet` answers `[]` and the roster fails
+    // closed rather than merging two companies' same-named sets. (The routes
+    // 400 such a request first; this keeps the helper safe on its own.)
+    studentFilter.country = { in: await countriesInCountrySet(countrySet, companyIds) };
   } else if (level === "theatre" && theatre) {
     studentFilter.theatre = theatre;
   }

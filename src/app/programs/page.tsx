@@ -5,6 +5,7 @@ import Link from "next/link";
 import PageHeader from "@/components/layout/PageHeader";
 import LoadingState from "@/components/ui/LoadingState";
 import { ShieldCheck, ChevronRight, Sparkles } from "lucide-react";
+import { LEVEL_LABELS, REQ_LEVELS } from "@/lib/program-levels";
 
 interface ProgramInfo {
   name: string;
@@ -17,10 +18,8 @@ function describe(p: ProgramInfo): string {
   if (p.isTiered) {
     return `View ${p.name} tier status by achieved specialisations`;
   }
-  const parts: string[] = [];
-  if (p.levels.includes("Country")) parts.push("country");
-  if (p.levels.includes("Theatre")) parts.push("theatre");
-  if (p.levels.includes("Global")) parts.push("global");
+  // Narrowest to broadest, in the stored-level vocabulary's own order.
+  const parts = REQ_LEVELS.filter((l) => p.levels.includes(l)).map((l) => LEVEL_LABELS[l].toLowerCase());
   const levelText = parts.length > 0 ? `by ${parts.join(", ")}` : "";
   const theatreText = p.hasMinimumPerTheatre ? " with per-theatre minimums" : "";
   return `View ${p.name} compliance requirements ${levelText}${theatreText}`.replace(/\s+/g, " ").trim();

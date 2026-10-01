@@ -5,7 +5,11 @@ import { requireAuth, handleAuthError } from "@/lib/auth";
 /**
  * Lists the distinct partner programs configured in ProgramData, plus the
  * shape each one needs so the UI can auto-adapt:
- *  - `levels`: which compliance levels (Country/Theatre/Global) are configured
+ *  - `levels`: which stored requirement levels (Country / Region / CountrySet /
+ *    Theatre / Global) the program's rows carry. These are the raw
+ *    `ProgramLevel` values and each maps one-to-one onto a dashboard view
+ *    (`program-levels.ts:scopeLevelOffered`) — "By Region" is offered only when
+ *    Region rows exist; it is no longer derived from the Country rows.
  *  - `hasMinimumPerTheatre`: whether any requirement enforces a per-theatre
  *    minimum (drives the per-theatre breakdown on the Global level)
  *

@@ -458,8 +458,8 @@ export default function ImportPage() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {visibleFields.map((field) => (
-                <div key={field.key} className="flex items-center gap-3">
-                  <label className="w-40 text-sm font-medium text-gray-700">
+                <div key={field.key} className="flex items-center gap-3 min-w-0">
+                  <label className="w-40 shrink-0 text-sm font-medium text-gray-700">
                     {field.label}
                     {field.required && (
                       <span className="text-red-500 ml-1">*</span>
@@ -473,7 +473,7 @@ export default function ImportPage() {
                         [field.key]: e.target.value,
                       }))
                     }
-                    className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                    className="flex-1 min-w-0 border border-gray-300 rounded-lg px-3 py-2 text-sm"
                   >
                     <option value="">-- Select column --</option>
                     {headers.map((h) => (

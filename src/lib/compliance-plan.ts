@@ -35,7 +35,9 @@
  * cert required by three specialisations at 2 each, with nobody in its pools, is
  * *two* people to certify, not six. `netNewTotal` therefore groups instances by
  * cert + population and takes the largest remaining gap per group rather than
- * summing. Only the totals dedup — `PlanRequirement.netNew` and
+ * summing (`groupCost`, which also knows that an "each country" requirement's
+ * per-country gaps add up across countries while still counting toward a pooled
+ * requirement on the same cert). Only the totals dedup — `PlanRequirement.netNew` and
  * `PlanSpecialisation.cost` stay per-instance/standalone, because each of those
  * figures is true of that requirement read on its own, and `sharedWith` names the
  * other specialisations so the page can say the total counts it once. The same
@@ -44,6 +46,14 @@
  * candidate adds to the set so far, so two specialisations sharing a cert rank as
  * the bargain they are. Greedy, not exact — picking the genuinely cheapest set is
  * set cover — but the approximation is now in the search, not in the cost.
+ *
+ * **Count modes.** A requirement authored at the Region or CountrySet level is
+ * either pooled ("total": one instance over the whole area, like every other
+ * level) or "each country": every country in the area must reach the quantity on
+ * its own, so it becomes one instance per country (`buildEachCountryInstances`,
+ * one bucketed query per row). Everything downstream — pools, the allocator,
+ * specialisation achievement, the tier ladder — then works per instance without
+ * knowing which mode produced it.
  */
 
 import prisma from "@/lib/prisma";
@@ -51,10 +61,18 @@ import { ELIGIBLE_TRAINING_DATA } from "@/lib/reportable-training";
 import { addMonths } from "@/lib/utils";
 import {
   getEmailSetsByTitle,
+  getEmailSetsByTitleAndGeo,
   resolveSiblingTitles,
   countriesInRegion,
   type ComplianceScope,
 } from "@/lib/program-compliance";
+import { countriesInCountrySet, singleCompanyId } from "@/lib/country-sets";
+import {
+  normaliseAggregation,
+  type Aggregation,
+  type ReqLevel,
+  type ScopeLevel,
+} from "@/lib/program-levels";
 
 // ─── Public types ────────────────────────────────────────────────────────────
 
@@ -72,10 +90,12 @@ export interface PlanTarget {
 
 export interface CompliancePlanInput {
   targets: PlanTarget[];
-  /** "global" | "theatre" | "region" | "country" — the selected plan scope. */
-  level: string;
+  /** The selected plan scope. Each scope plans against its own level's rows only. */
+  level: ScopeLevel;
   country: string;
   region: string;
+  /** Country Set name, used when `level` is "countrySet". */
+  countrySet: string;
   theatre: string;
   companyIds: number[] | null;
   /** 0 disables the renewal overlay; otherwise 1 | 3 | 6 | 12 months. */
@@ -92,11 +112,26 @@ export interface CompliancePlanInput {
 /** One geography-scoped instance of a program requirement (a distinct gap). */
 export interface PlanRequirement {
   instanceId: string;
+  /**
+   * `${program}::${programDataId}` — the authored requirement this instance came
+   * from. An "each country" requirement yields one instance per country, all
+   * sharing this key, which is what lets the page group them back under one row.
+   */
+  requirementKey: string;
   specialisation: string | null;
   tierName: string | null;
   purpose: string;
-  /** Country | Theatre | Global — the requirement's authored (native) level. */
-  nativeLevel: string;
+  /** Country | Region | CountrySet | Theatre | Global — the requirement's authored (native) level. */
+  nativeLevel: ReqLevel;
+  /** "total" (pooled across the scope) or "eachCountry" (one instance per country). */
+  aggregation: Aggregation;
+  /**
+   * The country this instance is counted over, for an "each country"
+   * requirement; null for a pooled (scope-wide) one — including the single
+   * placeholder an "each country" requirement yields when the scope has no
+   * countries at all.
+   */
+  country: string | null;
   /** The population label this instance is counted over, e.g. "UK" / "Global". */
   scopeLabel: string;
   cert: string;
@@ -125,9 +160,11 @@ export interface PlanRequirement {
    */
   netNew: number;
   /**
-   * The other specialisations in this target that need the same cert over the same
-   * population. Non-empty means this requirement's `netNew`/gap is shared: closing
-   * it closes theirs too, and the target's totals charge for it once.
+   * The other specialisations in this target that need the same cert over a
+   * shared population — the same population, or this one's country inside the
+   * other's area (or vice versa). Non-empty means this requirement's
+   * `netNew`/gap is shared: closing it closes theirs too, and the target's
+   * totals charge for it once.
    */
   sharedWith: string[];
   /** Active holders whose qualifying training expires within the renewal window. */
@@ -144,7 +181,8 @@ export interface PlanSpecialisation {
    * risk" state — compliant now, not compliant then.
    */
   projectedAchieved: boolean | null;
-  /** People-moves to close this specialisation (sum of its instances' shortfall). */
+  /** People-moves to close this specialisation (sum of its instances' shortfall —
+   *  an "each country" requirement contributes every country's gap). */
   cost: number;
   easyWins: number;
   requirements: PlanRequirement[];
@@ -208,6 +246,10 @@ export interface PlanRiskImpact {
   specialisation: string | null;
   tierName: string | null;
   cert: string;
+  /** See `PlanRequirement.aggregation`. */
+  aggregation: Aggregation;
+  /** See `PlanRequirement.country` — set for one country of an "each country" requirement. */
+  country: string | null;
   scopeLabel: string;
   required: number;
   attained: number;
@@ -309,11 +351,29 @@ interface PoolMember {
 /** A requirement instance with its resolved gap + candidate pools. */
 interface ReqInstance {
   id: string;
+  /** `${program}::${programDataId}` — shared by every per-country instance of one row. */
+  requirementKey: string;
   program: string;
   specialisation: string | null;
   tierName: string | null;
   purpose: string;
-  nativeLevel: string;
+  nativeLevel: ReqLevel;
+  aggregation: Aggregation;
+  /** Null = scope-wide (pooled); a name = one country of an "each country" row. */
+  country: string | null;
+  /**
+   * The population this instance is counted over: `global`, `theatre:X`,
+   * `country:X`, `region:X` or `countrySet:<companyId>:X` (a set is per-company).
+   * Used instead of `scopeLabel` in ids and group keys, because a country set
+   * may be named like a country and the two must not collide. A per-country instance carries `country:X`.
+   */
+  populationKey: string;
+  /**
+   * The plan's own population (`GeoPlan.populationKey`) — identical for every
+   * instance of a plan today, and part of `certGroupKey` so the dedup can never
+   * silently merge two different areas' gaps if a plan ever spans more than one.
+   */
+  areaKey: string;
   scopeLabel: string;
   /** Identity of the qualifying cert-set: two instances sharing it share moves. */
   certKey: string;
@@ -463,6 +523,63 @@ async function holdersEver(titles: string[], scope: ComplianceScope): Promise<Se
   return new Set(rows.map((r: { email: string }) => r.email));
 }
 
+/**
+ * `holdersEver`, bucketed by the holder's country — the lapsed pool for an
+ * "each country" requirement in ONE query over the whole area, rather than one
+ * per country. A student has exactly one country, so each email lands in one
+ * bucket.
+ */
+async function holdersEverByCountry(
+  titles: string[],
+  scope: ComplianceScope,
+): Promise<Map<string, Set<string>>> {
+  const out = new Map<string, Set<string>>();
+  if (titles.length === 0) return out;
+  if (Array.isArray(scope.companyIds) && scope.companyIds.length === 0) return out;
+  const { fetchTitles } = await resolveSiblingTitles(titles);
+  const studentWhere = studentWhereFromScope(scope);
+  const rows = await prisma.trainingTaken.findMany({
+    where: {
+      trainingTitle: { in: fetchTitles },
+      ...(studentWhere ? { student: studentWhere } : {}),
+    },
+    select: { email: true, student: { select: { country: true } } },
+  });
+  for (const r of rows) {
+    const c = r.student.country;
+    if (!out.has(c)) out.set(c, new Set());
+    out.get(c)!.add(r.email);
+  }
+  return out;
+}
+
+/** A bucketed (title → country → emails) result, unioned across titles per country. */
+function unionByCountry(byTitle: Map<string, Map<string, Set<string>>>): Map<string, Set<string>> {
+  const out = new Map<string, Set<string>>();
+  for (const byCountry of byTitle.values()) {
+    for (const [c, set] of byCountry) {
+      if (!out.has(c)) out.set(c, new Set());
+      const u = out.get(c)!;
+      for (const e of set) u.add(e);
+    }
+  }
+  return out;
+}
+
+/** Pivot title → country → emails into country → title → emails, keeping title order. */
+function pivotByCountry(
+  byTitle: Map<string, Map<string, Set<string>>>,
+): Map<string, Map<string, Set<string>>> {
+  const out = new Map<string, Map<string, Set<string>>>();
+  for (const [title, byCountry] of byTitle) {
+    for (const [c, set] of byCountry) {
+      if (!out.has(c)) out.set(c, new Map());
+      out.get(c)!.set(title, set);
+    }
+  }
+  return out;
+}
+
 /** Union all holder sets in a getEmailSetsByTitle result into one set. */
 function unionEmails(map: Map<string, Set<string>>): Set<string> {
   const u = new Set<string>();
@@ -479,34 +596,88 @@ function unionEmails(map: Map<string, Set<string>>): Set<string> {
  * shows only the requirements authored at its own level, counted over one
  * population. Planning a country shows Country requirements over that country —
  * NOT the theatre-wide requirement above it (select the theatre to see that).
- * A region rolls its countries into one Country-level population, exactly like
- * the dashboard's region view.
+ * A region plans against Region-level rows over the region's countries, and a
+ * country set against CountrySet-level rows over the set's countries — the set
+ * being the single scoped company's own (sets are per-company tenant data). (A region
+ * used to pool the Country-level rows across its countries; that derivation is
+ * gone — the dashboards dropped it too, and the two must agree.)
  */
 interface GeoPlan {
   /** Which requirement `level` this scope plans against. */
-  reqLevel: "Country" | "Theatre" | "Global";
+  reqLevel: ReqLevel;
   /** The single population these requirements are counted over. */
   scope: ComplianceScope;
   scopeLabel: string;
+  /**
+   * `global` | `theatre:X` | `country:X` | `region:X` | `countrySet:<companyId>:X`.
+   * A set's key carries its company because set names are unique only per company.
+   */
+  populationKey: string;
+  /**
+   * The countries an "each country" row splits over — the region's or the set's
+   * members, sorted. Null for the single-population scopes, whose levels cannot
+   * carry that count mode (`normaliseAggregation`).
+   */
+  countries: string[] | null;
 }
 
 async function resolveGeoPlan(
   input: CompliancePlanInput,
 ): Promise<GeoPlan> {
-  const { level, country, region, theatre, companyIds } = input;
+  const { level, country, region, countrySet, theatre, companyIds } = input;
 
   if (level === "country" && country) {
-    return { reqLevel: "Country", scope: { country, companyIds }, scopeLabel: country };
+    return {
+      reqLevel: "Country",
+      scope: { country, companyIds },
+      scopeLabel: country,
+      populationKey: `country:${country}`,
+      countries: null,
+    };
   }
   if (level === "region" && region) {
-    const countries = await countriesInRegion(region);
-    return { reqLevel: "Country", scope: { countries, companyIds }, scopeLabel: region };
+    const countries = [...(await countriesInRegion(region))].sort((a, b) => a.localeCompare(b));
+    return {
+      reqLevel: "Region",
+      // An empty list is `in: []`, i.e. nobody — a region with no countries
+      // configured has no population, not the whole world.
+      scope: { countries, companyIds },
+      scopeLabel: region,
+      populationKey: `region:${region}`,
+      countries,
+    };
+  }
+  if (level === "countrySet" && countrySet) {
+    // A Country Set is per-company tenant data: its name resolves only within
+    // ONE company, and two companies may each own a same-named set over
+    // different countries. The routes refuse a countrySet plan whose scope is
+    // not exactly one company (400); should a caller skip that,
+    // `countriesInCountrySet` answers `[]` for an ambiguous scope, so the plan
+    // runs over an empty, never-met area rather than merging two companies'
+    // sets. The company is in `populationKey` for the same reason the set name
+    // is: "Set 1" of company 3 and "Set 1" of company 7 are different
+    // populations and must never share a group or instance id.
+    const companyId = singleCompanyId(companyIds);
+    const countries = await countriesInCountrySet(countrySet, companyIds);
+    return {
+      reqLevel: "CountrySet",
+      scope: { countries, companyIds },
+      scopeLabel: countrySet,
+      populationKey: `countrySet:${companyId ?? "none"}:${countrySet}`,
+      countries,
+    };
   }
   if (level === "theatre" && theatre) {
-    return { reqLevel: "Theatre", scope: { theatre, companyIds }, scopeLabel: theatre };
+    return {
+      reqLevel: "Theatre",
+      scope: { theatre, companyIds },
+      scopeLabel: theatre,
+      populationKey: `theatre:${theatre}`,
+      countries: null,
+    };
   }
   // Global (default): Global-level requirements over the whole population.
-  return { reqLevel: "Global", scope: { companyIds }, scopeLabel: "Global" };
+  return { reqLevel: "Global", scope: { companyIds }, scopeLabel: "Global", populationKey: "global", countries: null };
 }
 
 // ─── Program-data loading ────────────────────────────────────────────────────
@@ -516,7 +687,9 @@ interface RequirementRow {
   specialisationName: string | null;
   tierId: number | null;
   purpose: string;
-  level: string;
+  level: ReqLevel;
+  /** Normalised: "eachCountry" only on a Region/CountrySet row. */
+  aggregation: Aggregation;
   quantityRequired: number;
   /** Qualifying cert trainingTitles: primary + alternatives. */
   titles: string[];
@@ -529,7 +702,8 @@ type ProgramDataWithRelations = {
   specialisationId: number | null;
   tierId: number | null;
   purpose: string;
-  level: string;
+  level: ReqLevel;
+  aggregation: string;
   quantityRequired: number;
   trainingTitle: string | null;
   specialisation: { name: string } | null;
@@ -550,6 +724,10 @@ function toRequirementRow(pd: ProgramDataWithRelations): RequirementRow | null {
     tierId: pd.tierId,
     purpose: pd.purpose,
     level: pd.level,
+    // Re-normalised on read: the DB CHECK pins "eachCountry" to the two
+    // multi-country levels, but a value that predates it must not split a
+    // single-country requirement into per-country instances.
+    aggregation: normaliseAggregation(pd.level, pd.aggregation),
     quantityRequired: pd.quantityRequired,
     titles,
     cert: [...new Set(fulls)].join(" or "),
@@ -558,10 +736,148 @@ function toRequirementRow(pd: ProgramDataWithRelations): RequirementRow | null {
 
 // ─── Instance building (gap + pools) ─────────────────────────────────────────
 
-/** Build the requirement's single scoped instance, resolving its gap and
+/**
+ * Identity of a row's qualifying cert-set, keyed on what is actually *counted*:
+ * the (fullTitle, trainingType) groups `resolveSiblingTitles` expands to, not
+ * the authored titles. A title with no catalogue row stays a singleton, which
+ * is `resolveSiblingTitles`' own fallback.
+ */
+function certKeyFor(row: RequirementRow, idx: CatalogueIndex): string {
+  return [...new Set(row.titles.map((t) => idx.pairKey.get(t) ?? t))].sort().join("|");
+}
+
+/** The trainings that are a path to any of a row's certs (ILT/OLX, or legacy). */
+function pathTitles(
+  row: RequirementRow,
+  idx: CatalogueIndex,
+  index: Map<string, { title: string; full: string }[]>,
+): { titles: string[]; fullFor: Map<string, string> } {
+  const titles: string[] = [];
+  const fullFor = new Map<string, string>();
+  for (const cert of row.titles) {
+    for (const p of index.get(idx.pairKey.get(cert) ?? cert) ?? []) {
+      titles.push(p.title);
+      if (!fullFor.has(p.title)) fullFor.set(p.title, p.full);
+    }
+  }
+  return { titles: [...new Set(titles)], fullFor };
+}
+
+/** The three gap figures for one population. */
+function sizeGap(
+  required: number,
+  attained: number,
+  projectedAttained: number | null,
+  planForWindow: boolean,
+): { shortfallNow: number; shortfallProjected: number | null; shortfall: number } {
+  const shortfallNow = Math.max(0, required - attained);
+  const shortfallProjected =
+    projectedAttained === null ? null : Math.max(0, required - projectedAttained);
+  // Planning *for* the window means closing the gap now AND still holding it at
+  // the horizon — hence the max, not just the projected figure (a completion
+  // landing inside the window must not discount a gap that is real today).
+  // Every downstream consumer of `shortfall` (pools, the allocator, spec cost,
+  // tier cheapest-path selection) then follows without further plumbing.
+  const shortfall =
+    planForWindow && shortfallProjected !== null
+      ? Math.max(shortfallNow, shortfallProjected)
+      : shortfallNow;
+  return { shortfallNow, shortfallProjected, shortfall };
+}
+
+/**
+ * One population's candidate pool, from holder sets already fetched. Shared by
+ * the pooled and the per-country builders so the two cannot rank a candidate
+ * differently. `addPool` keeps the cheapest tier per email, so the order below
+ * only breaks ties between two paths of the same tier.
+ */
+function assemblePool(p: {
+  active: Set<string>;
+  expiringEmails: string[];
+  planForWindow: boolean;
+  ilt: Map<string, Set<string>> | undefined;
+  iltFullFor: Map<string, string>;
+  ever: Set<string> | undefined;
+  legacy: Map<string, Set<string>> | undefined;
+  legacyFullFor: Map<string, string>;
+}): PoolMember[] {
+  const seen = new Map<string, PoolMember>();
+  // renewal: holders who lapse inside the window. They're excluded from every
+  // other pool below (all skip `active`), so there's nothing to double-count.
+  if (p.planForWindow) {
+    for (const email of p.expiringEmails) addPool(seen, { email, tier: "renewal", path: null });
+  }
+  // easy-win: holders of an ILT/OLX that leads to any qualifying cert.
+  for (const [title, set] of p.ilt ?? []) {
+    const path = p.iltFullFor.get(title) ?? null;
+    for (const email of set) {
+      if (p.active.has(email)) continue;
+      addPool(seen, { email, tier: "easy-win", path });
+    }
+  }
+  // lapsed: ever-held minus currently-active.
+  for (const email of p.ever ?? []) {
+    if (p.active.has(email)) continue;
+    addPool(seen, { email, tier: "lapsed", path: null });
+  }
+  // legacy: active holders of a legacy cert that upgrades into a qualifying cert.
+  for (const [title, set] of p.legacy ?? []) {
+    const path = p.legacyFullFor.get(title) ?? null;
+    for (const email of set) {
+      if (p.active.has(email)) continue;
+      addPool(seen, { email, tier: "legacy", path });
+    }
+  }
+  return [...seen.values()];
+}
+
+function makeInstance(
+  program: string,
+  row: RequirementRow,
+  certKey: string,
+  geo: GeoPlan,
+  population: { country: string | null; populationKey: string; scopeLabel: string },
+  figures: {
+    attained: number;
+    projectedAttained: number | null;
+    gap: { shortfallNow: number; shortfallProjected: number | null; shortfall: number };
+    pool: PoolMember[];
+    expiringEmails: string[];
+  },
+): ReqInstance {
+  return {
+    id: `${program}::${row.id}::${population.populationKey}`,
+    requirementKey: `${program}::${row.id}`,
+    program,
+    specialisation: row.specialisationName,
+    tierName: null,
+    purpose: row.purpose,
+    nativeLevel: row.level,
+    aggregation: row.aggregation,
+    country: population.country,
+    populationKey: population.populationKey,
+    areaKey: geo.populationKey,
+    scopeLabel: population.scopeLabel,
+    certKey,
+    cert: row.cert,
+    required: row.quantityRequired,
+    attained: figures.attained,
+    projectedAttained: figures.projectedAttained,
+    shortfallNow: figures.gap.shortfallNow,
+    shortfallProjected: figures.gap.shortfallProjected,
+    shortfall: figures.gap.shortfall,
+    pool: figures.pool,
+    poolEmails: new Set(figures.pool.map((m) => m.email)),
+    expiringEmails: figures.expiringEmails,
+  };
+}
+
+/** Build the requirement's scoped instance(s), resolving each gap and its
  *  candidate pools. Only requirements authored at the selected scope's level are
- *  in play (mirroring the program dashboards) — others return no instance.
- *  Pools are only computed when there's a gap. */
+ *  in play (mirroring the program dashboards) — others return no instance. A
+ *  pooled ("total") row gives one instance; an "each country" row gives one per
+ *  country (`buildEachCountryInstances`). Pools are only computed when there's a
+ *  gap. */
 async function buildInstances(
   program: string,
   row: RequirementRow,
@@ -573,134 +889,187 @@ async function buildInstances(
 ): Promise<ReqInstance[]> {
   // Only this scope's own-level requirements are planned against.
   if (row.level !== geo.reqLevel) return [];
-  // Identity of the qualifying cert-set, keyed on what is actually *counted*:
-  // the (fullTitle, trainingType) groups `resolveSiblingTitles` expands to, not
-  // the authored titles. A title with no catalogue row stays a singleton, which
-  // is `resolveSiblingTitles`' own fallback.
-  const certKey = [...new Set(row.titles.map((t) => idx.pairKey.get(t) ?? t))].sort().join("|");
+  const certKey = certKeyFor(row, idx);
+  if (row.aggregation === "eachCountry") {
+    return buildEachCountryInstances(program, row, geo, idx, certKey, now, horizon, planForWindow);
+  }
 
-  const targets: { scope: ComplianceScope; scopeLabel: string }[] = [
-    { scope: geo.scope, scopeLabel: geo.scopeLabel },
+  const scope = geo.scope;
+  const active = unionEmails(await getEmailSetsByTitle(row.titles, now, scope));
+  const attained = active.size;
+
+  // Renewal overlay: the same count taken at the horizon, plus the active
+  // holders who drop out before it. With no holders today there is nothing to
+  // lose, so we skip the query and call the projection 0 — an under-count only
+  // if someone's completion lands inside the window, which can never invent a
+  // false "at risk".
+  let expiringEmails: string[] = [];
+  let projectedAttained: number | null = null;
+  if (horizon) {
+    if (attained === 0) {
+      projectedAttained = 0;
+    } else {
+      const future = unionEmails(await getEmailSetsByTitle(row.titles, horizon, scope));
+      projectedAttained = future.size;
+      expiringEmails = [...active].filter((e) => !future.has(e));
+    }
+  }
+
+  const gap = sizeGap(row.quantityRequired, attained, projectedAttained, planForWindow);
+
+  let pool: PoolMember[] = [];
+  if (gap.shortfall > 0) {
+    const ilt = pathTitles(row, idx, idx.reverseCert);
+    const lg = pathTitles(row, idx, idx.legacyForCert);
+    const iltMap = ilt.titles.length > 0 ? await getEmailSetsByTitle(ilt.titles, now, scope) : undefined;
+    const ever = await holdersEver(row.titles, scope);
+    const lgMap = lg.titles.length > 0 ? await getEmailSetsByTitle(lg.titles, now, scope) : undefined;
+    pool = assemblePool({
+      active,
+      expiringEmails,
+      planForWindow,
+      ilt: iltMap,
+      iltFullFor: ilt.fullFor,
+      ever,
+      legacy: lgMap,
+      legacyFullFor: lg.fullFor,
+    });
+  }
+
+  return [
+    makeInstance(
+      program, row, certKey, geo,
+      { country: null, populationKey: geo.populationKey, scopeLabel: geo.scopeLabel },
+      { attained, projectedAttained, gap, pool, expiringEmails },
+    ),
   ];
+}
 
-  const instances: ReqInstance[] = [];
-  for (const t of targets) {
-    const activeMap = await getEmailSetsByTitle(row.titles, now, t.scope);
-    const active = unionEmails(activeMap);
+/**
+ * An "each country" row: every country in the area must reach the quantity on
+ * its own, so it becomes one instance per country — population = that country,
+ * `scopeLabel` = the country, `required` = the row's quantity.
+ *
+ * **One bucketed query per row, never one per country.** Every holder set below
+ * (active, at the horizon, the ILT/OLX easy-win paths, ever-held, legacy) is
+ * fetched once over the whole area grouped by the holder's country and then
+ * split, so the query count is flat in the number of countries. Looping
+ * `buildInstances` per country instead would be ~6 queries × every country ×
+ * every requirement — thousands on a worldwide set.
+ *
+ * An area with no countries at all (an unknown or emptied set, a region nobody
+ * has configured) yields ONE placeholder instance with nothing attained and the
+ * full quantity short. That is the dashboards' fail-closed rule — an empty
+ * area is not compliant — and it keeps the requirement visible on the roadmap
+ * rather than letting it vanish, which would read as "nothing to do".
+ */
+async function buildEachCountryInstances(
+  program: string,
+  row: RequirementRow,
+  geo: GeoPlan,
+  idx: CatalogueIndex,
+  certKey: string,
+  now: Date,
+  horizon: Date | null,
+  planForWindow: boolean,
+): Promise<ReqInstance[]> {
+  const countries = geo.countries ?? [];
+  if (countries.length === 0) {
+    const projectedAttained = horizon ? 0 : null;
+    // The gap is sized from at least 1, so the placeholder is never met — not
+    // even for a row whose quantity is 0 (a restored or SQL-written row the
+    // write paths would not produce). With `quantityRequired` itself, 0 short
+    // would read as achieved and count toward a tier, while the dashboard
+    // reports the same row not compliant; `isAchievedNow`/`isAchievedAtHorizon`
+    // read this shortfall too, so the badge and the tier gate agree with it.
+    const gapFloor = Math.max(1, row.quantityRequired);
+    return [
+      makeInstance(
+        program, row, certKey, geo,
+        { country: null, populationKey: geo.populationKey, scopeLabel: geo.scopeLabel },
+        {
+          attained: 0,
+          projectedAttained,
+          gap: sizeGap(gapFloor, 0, projectedAttained, planForWindow),
+          pool: [],
+          expiringEmails: [],
+        },
+      ),
+    ];
+  }
+
+  const scope = geo.scope;
+  const activeBy = unionByCountry(await getEmailSetsByTitleAndGeo(row.titles, now, "country", scope));
+  const anyActive = [...activeBy.values()].some((s) => s.size > 0);
+  // Same shortcut as the pooled path: with nobody holding it anywhere there is
+  // nothing to lose by the horizon.
+  const futureBy =
+    horizon && anyActive
+      ? unionByCountry(await getEmailSetsByTitleAndGeo(row.titles, horizon, "country", scope))
+      : null;
+
+  const perCountry = countries.map((country) => {
+    const active = activeBy.get(country) ?? new Set<string>();
     const attained = active.size;
-
-    // Renewal overlay: the same count taken at the horizon, plus the active
-    // holders who drop out before it. With no holders today there is nothing to
-    // lose, so we skip the query and call the projection 0 — an under-count only
-    // if someone's completion lands inside the window, which can never invent a
-    // false "at risk".
     let expiringEmails: string[] = [];
     let projectedAttained: number | null = null;
     if (horizon) {
       if (attained === 0) {
         projectedAttained = 0;
       } else {
-        const futureMap = await getEmailSetsByTitle(row.titles, horizon, t.scope);
-        const future = unionEmails(futureMap);
+        const future = futureBy?.get(country) ?? new Set<string>();
         projectedAttained = future.size;
         expiringEmails = [...active].filter((e) => !future.has(e));
       }
     }
+    const gap = sizeGap(row.quantityRequired, attained, projectedAttained, planForWindow);
+    return { country, active, attained, projectedAttained, expiringEmails, gap };
+  });
 
-    const shortfallNow = Math.max(0, row.quantityRequired - attained);
-    const shortfallProjected =
-      projectedAttained === null ? null : Math.max(0, row.quantityRequired - projectedAttained);
-
-    // Planning *for* the window means closing the gap now AND still holding it at
-    // the horizon — hence the max, not just the projected figure (a completion
-    // landing inside the window must not discount a gap that is real today).
-    // Every downstream consumer of `shortfall` (pools, the allocator, spec cost,
-    // tier cheapest-path selection) then follows without further plumbing.
-    const shortfall =
-      planForWindow && shortfallProjected !== null
-        ? Math.max(shortfallNow, shortfallProjected)
-        : shortfallNow;
-
-    const pool: PoolMember[] = [];
-    const seen = new Map<string, PoolMember>();
-    if (shortfall > 0) {
-      // renewal: holders who lapse inside the window. They're excluded from every
-      // other pool below (all skip `active`), so there's nothing to double-count.
-      if (planForWindow) {
-        for (const email of expiringEmails) addPool(seen, { email, tier: "renewal", path: null });
-      }
-
-      // easy-win: holders of an ILT/OLX that leads to any qualifying cert.
-      const iltTitles: string[] = [];
-      const iltFullFor = new Map<string, string>();
-      for (const cert of row.titles) {
-        for (const ilt of idx.reverseCert.get(idx.pairKey.get(cert) ?? cert) ?? []) {
-          iltTitles.push(ilt.title);
-          if (!iltFullFor.has(ilt.title)) iltFullFor.set(ilt.title, ilt.full);
-        }
-      }
-      if (iltTitles.length > 0) {
-        const iltMap = await getEmailSetsByTitle([...new Set(iltTitles)], now, t.scope);
-        for (const [title, set] of iltMap) {
-          const path = iltFullFor.get(title) ?? null;
-          for (const email of set) {
-            if (active.has(email)) continue;
-            addPool(seen, { email, tier: "easy-win", path });
-          }
-        }
-      }
-
-      // lapsed: ever-held minus currently-active.
-      const ever = await holdersEver(row.titles, t.scope);
-      for (const email of ever) {
-        if (active.has(email)) continue;
-        addPool(seen, { email, tier: "lapsed", path: null });
-      }
-
-      // legacy: active holders of a legacy cert that upgrades into a qualifying cert.
-      const legacyTitles: string[] = [];
-      const legacyFullFor = new Map<string, string>();
-      for (const cert of row.titles) {
-        for (const lg of idx.legacyForCert.get(idx.pairKey.get(cert) ?? cert) ?? []) {
-          legacyTitles.push(lg.title);
-          if (!legacyFullFor.has(lg.title)) legacyFullFor.set(lg.title, lg.full);
-        }
-      }
-      if (legacyTitles.length > 0) {
-        const lgMap = await getEmailSetsByTitle([...new Set(legacyTitles)], now, t.scope);
-        for (const [title, set] of lgMap) {
-          const path = legacyFullFor.get(title) ?? null;
-          for (const email of set) {
-            if (active.has(email)) continue;
-            addPool(seen, { email, tier: "legacy", path });
-          }
-        }
-      }
-      pool.push(...seen.values());
-    }
-
-    instances.push({
-      id: `${program}::${row.id}::${t.scopeLabel}`,
-      program,
-      specialisation: row.specialisationName,
-      tierName: null,
-      purpose: row.purpose,
-      nativeLevel: row.level,
-      scopeLabel: t.scopeLabel,
-      certKey,
-      cert: row.cert,
-      required: row.quantityRequired,
-      attained,
-      projectedAttained,
-      shortfallNow,
-      shortfallProjected,
-      shortfall,
-      pool,
-      poolEmails: new Set(pool.map((p) => p.email)),
-      expiringEmails,
-    });
+  // Pools, still one query each over the whole area, and only if some country
+  // actually has a gap to fill.
+  let iltBy: Map<string, Map<string, Set<string>>> | null = null;
+  let everBy: Map<string, Set<string>> | null = null;
+  let legacyBy: Map<string, Map<string, Set<string>>> | null = null;
+  const ilt = pathTitles(row, idx, idx.reverseCert);
+  const lg = pathTitles(row, idx, idx.legacyForCert);
+  if (perCountry.some((p) => p.gap.shortfall > 0)) {
+    iltBy =
+      ilt.titles.length > 0
+        ? pivotByCountry(await getEmailSetsByTitleAndGeo(ilt.titles, now, "country", scope))
+        : null;
+    everBy = await holdersEverByCountry(row.titles, scope);
+    legacyBy =
+      lg.titles.length > 0
+        ? pivotByCountry(await getEmailSetsByTitleAndGeo(lg.titles, now, "country", scope))
+        : null;
   }
-  return instances;
+
+  return perCountry.map((p) =>
+    makeInstance(
+      program, row, certKey, geo,
+      { country: p.country, populationKey: `country:${p.country}`, scopeLabel: p.country },
+      {
+        attained: p.attained,
+        projectedAttained: p.projectedAttained,
+        gap: p.gap,
+        pool:
+          p.gap.shortfall > 0
+            ? assemblePool({
+                active: p.active,
+                expiringEmails: p.expiringEmails,
+                planForWindow,
+                ilt: iltBy?.get(p.country),
+                iltFullFor: ilt.fullFor,
+                ever: everBy?.get(p.country),
+                legacy: legacyBy?.get(p.country),
+                legacyFullFor: lg.fullFor,
+              })
+            : [],
+        expiringEmails: p.expiringEmails,
+      },
+    ),
+  );
 }
 
 /** Keep the cheapest tier per email in a pool. */
@@ -839,16 +1208,74 @@ export function allocateCandidates(instances: ReqInstance[]): AllocationResult {
 }
 
 /**
- * The key two instances must share for one person's certification to count for
- * both: the same qualifying cert-set over the same population.
+ * The key two instances must share for one person's certification to be able to
+ * count for both: the same qualifying cert-set within the same plan area.
  *
- * `resolveGeoPlan` yields a single population per plan today, so `scopeLabel` is
- * currently constant — it is in the key anyway because the alternative fails
- * silently and expensively (collapsing two countries' gaps into one) if a future
- * change reintroduces multiple populations.
+ * Within a group, instances are either **scope-wide** (`country === null`,
+ * counted over the whole area) or **per-country** (one country of an "each
+ * country" requirement). Those are not interchangeable — see `groupCost` and
+ * `sharesPopulation`. `areaKey` rather than `scopeLabel` is in the key because a
+ * country set may be named like a country; and it is in the key at all because
+ * collapsing two areas' gaps into one would fail silently and expensively if a
+ * plan ever spanned more than one population (`resolveGeoPlan` yields one).
  */
 function certGroupKey(inst: ReqInstance): string {
-  return `${inst.certKey}::${inst.scopeLabel}`;
+  return `${inst.certKey}::${inst.areaKey}`;
+}
+
+/**
+ * Whether one person's certification can count toward both instances: the same
+ * cert over the same population, OR a scope-wide instance and a per-country one
+ * (the country is inside the area, so anyone certified there counts for the
+ * area-wide total too). Two different countries never share.
+ */
+function sharesPopulation(a: ReqInstance, b: ReqInstance): boolean {
+  if (certGroupKey(a) !== certGroupKey(b)) return false;
+  if (a.populationKey === b.populationKey) return true;
+  return (a.country === null) !== (b.country === null);
+}
+
+/**
+ * The one dedup rule behind every "how many people" figure — `netNewTotal`,
+ * `specSetCost` — applied to whatever per-instance value the caller supplies.
+ *
+ * Per `certGroupKey`, the cost is `max(P, Σ_c g_c)`:
+ *  - `P` is the largest value among the group's scope-wide instances. They share
+ *    one population and therefore one set of pools, so a single cohort of N new
+ *    holders satisfies every one whose gap is ≤ N — three specialisations each
+ *    needing 2 holders of the same cert cost 2 people, not 6.
+ *  - `g_c` is the largest value among the per-country instances for country c
+ *    (the same reasoning, one country at a time), and those are SUMMED: a person
+ *    certified in one country does nothing for another's gap.
+ *  - The max, not the sum, of the two sides because every per-country holder is
+ *    also inside the area: people certified to close the countries' gaps count
+ *    toward the area-wide total as well. "4 × Cert A in each country" beside
+ *    "2 × Cert A total" is never charged twice.
+ *
+ * With no per-country instances this is exactly the old max-per-group rule, so a
+ * plan built only from pooled requirements produces the same numbers it always
+ * did. Pure — nothing here touches the database.
+ */
+export function groupCost(instances: Iterable<ReqInstance>, valueOf: (inst: ReqInstance) => number): number {
+  const groups = new Map<string, { wide: number; byCountry: Map<string, number> }>();
+  for (const inst of instances) {
+    const key = certGroupKey(inst);
+    let g = groups.get(key);
+    if (!g) {
+      g = { wide: 0, byCountry: new Map() };
+      groups.set(key, g);
+    }
+    const v = valueOf(inst);
+    if (inst.country === null) g.wide = Math.max(g.wide, v);
+    else g.byCountry.set(inst.country, Math.max(g.byCountry.get(inst.country) ?? 0, v));
+  }
+  let total = 0;
+  for (const g of groups.values()) {
+    let perCountry = 0;
+    for (const v of g.byCountry.values()) perCountry += v;
+    total += Math.max(g.wide, perCountry);
+  }
+  return total;
 }
 
 /**
@@ -856,52 +1283,31 @@ function certGroupKey(inst: ReqInstance): string {
  * certification required by several of them over the same population ONCE.
  *
  * This is the net-new half of the dedup `allocateCandidates` already performs for
- * named people. Per group we take the **largest** remaining gap, not the sum:
- * instances in a group share a population and therefore share candidate pools, so
- * one cohort of N new holders satisfies every instance in the group whose gap is
- * ≤ N. Three specialisations each needing 2 holders of the same cert cost 2
- * people, not 6.
+ * named people, via `groupCost` over the post-allocation remainder per instance.
  *
  * Pure, like `allocateCandidates` — `alloc` supplies the post-allocation
  * remainder per instance and nothing here touches the database.
  */
 export function netNewTotal(instances: ReqInstance[], alloc: AllocationResult): number {
-  const byGroup = new Map<string, number>();
-  for (const inst of instances) {
-    const key = certGroupKey(inst);
-    const remaining = alloc.netNewByInstance.get(inst.id) ?? 0;
-    byGroup.set(key, Math.max(byGroup.get(key) ?? 0, remaining));
-  }
-  let total = 0;
-  for (const n of byGroup.values()) total += n;
-  return total;
+  return groupCost(instances, (inst) => alloc.netNewByInstance.get(inst.id) ?? 0);
 }
 
 /**
  * People-moves to close a SET of specialisations, counting a certification
  * required by several of them over the same population once.
  *
- * Same max-per-group rule as `netNewTotal`, and for the same reason: instances
- * sharing a `certGroupKey` share a population, so one cohort of N new holders
- * satisfies every instance in the group whose gap is ≤ N. Where this differs is
- * what it costs — the raw planning gap (`inst.shortfall`), because it ranks
- * specialisations *before* allocation has happened and so has no post-allocation
- * remainder to read.
+ * The same `groupCost` rule as `netNewTotal`. Where this differs is what it costs
+ * — the raw planning gap (`inst.shortfall`), because it ranks specialisations
+ * *before* allocation has happened and so has no post-allocation remainder to
+ * read.
  *
  * Pure and exported for the same reason `allocateCandidates` is: the tier
  * cheapest-path ranking it drives is the part worth exercising directly.
  */
 export function specSetCost(names: Iterable<string>, bySpec: Map<string, ReqInstance[]>): number {
-  const byGroup = new Map<string, number>();
-  for (const name of names) {
-    for (const inst of bySpec.get(name) ?? []) {
-      const key = certGroupKey(inst);
-      byGroup.set(key, Math.max(byGroup.get(key) ?? 0, inst.shortfall));
-    }
-  }
-  let total = 0;
-  for (const n of byGroup.values()) total += n;
-  return total;
+  const insts: ReqInstance[] = [];
+  for (const name of names) insts.push(...(bySpec.get(name) ?? []));
+  return groupCost(insts, (inst) => inst.shortfall);
 }
 
 // ─── Tier fastest-path ───────────────────────────────────────────────────────
@@ -970,6 +1376,7 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
           tierId: true,
           purpose: true,
           level: true,
+          aggregation: true,
           quantityRequired: true,
           trainingTitle: true,
           specialisation: { select: { name: true } },
@@ -1036,24 +1443,30 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
       bySpec.get(key)!.push(inst);
     }
 
-    // Which of this target's requirements are the *same* cert over the same
-    // population, so the page can say why the per-specialisation figures add up
-    // to more than the headline. Computed over every instance, counted or not —
-    // it is informational, and a non-counted specialisation's requirement is just
-    // as shared. `label` mirrors how the roadmap groups the rows.
+    // Which of this target's requirements are the *same* cert over a shared
+    // population (`sharesPopulation` — the same rule `groupCost` charges by), so
+    // the page can say why the per-specialisation figures add up to more than
+    // the headline. Computed over every instance, counted or not — it is
+    // informational, and a non-counted specialisation's requirement is just as
+    // shared. `label` mirrors how the roadmap groups the rows. Instances are
+    // bucketed by group first, so the pairwise test only runs within one cert.
     const specLabel = (inst: ReqInstance) => inst.specialisation ?? inst.tierName ?? "—";
-    const labelsByGroup = new Map<string, Set<string>>();
+    const instancesByGroup = new Map<string, ReqInstance[]>();
     for (const inst of rowInstances) {
       const key = certGroupKey(inst);
-      if (!labelsByGroup.has(key)) labelsByGroup.set(key, new Set());
-      labelsByGroup.get(key)!.add(specLabel(inst));
+      if (!instancesByGroup.has(key)) instancesByGroup.set(key, []);
+      instancesByGroup.get(key)!.push(inst);
     }
     const sharedByInstanceId = new Map<string, string[]>();
     for (const inst of rowInstances) {
-      const others = [...(labelsByGroup.get(certGroupKey(inst)) ?? [])]
-        .filter((n) => n !== specLabel(inst))
-        .sort((a, b) => a.localeCompare(b));
-      sharedByInstanceId.set(inst.id, others);
+      const own = specLabel(inst);
+      const others = new Set<string>();
+      for (const other of instancesByGroup.get(certGroupKey(inst)) ?? []) {
+        if (other === inst || !sharesPopulation(inst, other)) continue;
+        const label = specLabel(other);
+        if (label !== own) others.add(label);
+      }
+      sharedByInstanceId.set(inst.id, [...others].sort((a, b) => a.localeCompare(b)));
     }
 
     const targetResult: PlanTargetResult = {
@@ -1086,6 +1499,9 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
       // Achieved-ness reads the *planning* gap, so when planning for the renewal
       // window a specialisation that lapses inside it stops counting toward the
       // tier — `needed` rises and the cheapest path can legitimately change.
+      // Per-country instances need no special case: an "each country" row is
+      // met only when every one of its countries is, and each country is its
+      // own instance here (an empty area's placeholder is never met).
       const specAchieved = new Map<string, boolean>();
       for (const [name, insts] of bySpec) {
         specAchieved.set(name, insts.every((i) => i.shortfall === 0));
@@ -1094,7 +1510,11 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
       const needed = Math.max(0, chosenTier.specialisationsRequired - achievedCount);
       targetResult.tierPlan.alreadyAchieved = achievedCount;
       targetResult.tierPlan.needed = needed;
-      targetResult.tierPlan.deliveryCertShortfall = tierDeployInsts.reduce((s, i) => s + i.shortfall, 0);
+      // Deduped by the same rule as the totals, so the headline's "N more
+      // delivery-cert people" cannot claim more than peopleMoves charges for
+      // (two delivery rows on one cert, or a pooled row beside an each-country
+      // one, are one cohort, not two).
+      targetResult.tierPlan.deliveryCertShortfall = groupCost(tierDeployInsts, (i) => i.shortfall);
 
       // Reaching the tier needs only `needed` more specialisations, so pick that
       // many — greedily, by **marginal** cost (v2). A standalone per-specialisation
@@ -1413,6 +1833,8 @@ function buildRiskImpacts(all: ReqInstance[], countedInstanceIds: Set<string>): 
       specialisation: i.specialisation,
       tierName: i.tierName,
       cert: i.cert,
+      aggregation: i.aggregation,
+      country: i.country,
       scopeLabel: i.scopeLabel,
       required: i.required,
       attained: i.attained,
@@ -1440,11 +1862,15 @@ function buildRiskImpacts(all: ReqInstance[], countedInstanceIds: Set<string>): 
  * out of the panel with it.
  *
  * The counted instances are walked FIRST, because the dedupe key is
- * `email + cert + scopeLabel` and the first instance to claim a pair owns the
- * row: a single merged pass would make `onPath` depend on instance ordering and
- * could file an on-path renewal under "reference", under copy that says it is
- * not counted. The key itself is unchanged, so the on-path subset is exactly
- * what this used to return.
+ * `email + cert` and the first instance to claim a pair owns the row: a single
+ * merged pass would make `onPath` depend on instance ordering and could file an
+ * on-path renewal under "reference", under copy that says it is not counted.
+ *
+ * The key used to carry `scopeLabel` too, which was harmless while every
+ * instance of a plan shared one population. It no longer does: a person
+ * expiring in country C is in both the per-country instance of an "each
+ * country" row (labelled C) and a pooled row on the same cert (labelled with
+ * the area), and is still one renewal to book, not two.
  */
 function buildRenewalRows(
   all: ReqInstance[],
@@ -1456,7 +1882,7 @@ function buildRenewalRows(
   const collect = (instances: ReqInstance[], onPath: boolean) => {
     for (const inst of instances) {
       for (const email of inst.expiringEmails) {
-        const k = `${email} ${inst.cert} ${inst.scopeLabel}`;
+        const k = `${email} ${inst.cert}`;
         if (seen.has(k)) continue;
         seen.add(k);
         const s = studentById.get(email);
@@ -1492,15 +1918,22 @@ function tierOrder(t: CandidateTier): number {
   return t === "renewal" ? -1 : t === "easy-win" ? 0 : t === "lapsed" ? 1 : t === "legacy" ? 2 : 3;
 }
 
-/** Met today — the plain requirement check, independent of the planning basis. */
+/**
+ * Met today — the plain requirement check, independent of the planning basis.
+ * The shortfall test is redundant for an ordinary row (its shortfall is exactly
+ * `max(0, required - attained)`) and is what keeps an empty-area "each country"
+ * placeholder unmet even when its quantity is 0 (see `buildEachCountryInstances`).
+ */
 function isAchievedNow(reqs: PlanRequirement[]): boolean {
-  return reqs.every((r) => r.attained >= r.required);
+  return reqs.every((r) => r.attained >= r.required && r.shortfall === 0);
 }
 
 /** Still met at the end of the renewal window; null when no window is selected. */
 function isAchievedAtHorizon(reqs: PlanRequirement[]): boolean | null {
   if (reqs.some((r) => r.projectedAttained === null)) return null;
-  return reqs.every((r) => (r.projectedAttained ?? r.attained) >= r.required);
+  return reqs.every(
+    (r) => (r.projectedAttained ?? r.attained) >= r.required && (r.projectedShortfall ?? r.shortfall) === 0,
+  );
 }
 
 function toPlanRequirement(
@@ -1510,10 +1943,13 @@ function toPlanRequirement(
 ): PlanRequirement {
   return {
     instanceId: inst.id,
+    requirementKey: inst.requirementKey,
     specialisation: inst.specialisation,
     tierName: inst.tierName,
     purpose: inst.purpose,
     nativeLevel: inst.nativeLevel,
+    aggregation: inst.aggregation,
+    country: inst.country,
     scopeLabel: inst.scopeLabel,
     cert: inst.cert,
     required: inst.required,

@@ -876,9 +876,16 @@
                           "levels": {
                             "type": "array",
                             "items": {
-                              "type": "string"
+                              "type": "string",
+                              "enum": [
+                                "Country",
+                                "Region",
+                                "CountrySet",
+                                "Theatre",
+                                "Global"
+                              ]
                             },
-                            "description": "Configured compliance levels: Country, Theatre, Global."
+                            "description": "Configured requirement levels: Country, Region, CountrySet, Theatre, Global."
                           },
                           "hasMinimumPerTheatre": {
                             "type": "boolean"
@@ -993,12 +1000,13 @@
             "name": "level",
             "in": "query",
             "required": false,
-            "description": "Which level to report at.",
+            "description": "Which level to report at. Each level counts only the requirements authored at it: region means Region-level requirements over the region's countries, and countrySet means CountrySet-level requirements over the set's countries.",
             "schema": {
               "type": "string",
               "enum": [
                 "country",
                 "region",
+                "countrySet",
                 "theatre",
                 "global"
               ],
@@ -1009,7 +1017,7 @@
             "name": "country",
             "in": "query",
             "required": false,
-            "description": "Scope to one country. Narrowest selection wins: country over region over theatre.",
+            "description": "The country to report on when level=country. Counts Country-level requirements over that country.",
             "schema": {
               "type": "string"
             }
@@ -1018,7 +1026,16 @@
             "name": "region",
             "in": "query",
             "required": false,
-            "description": "Scope to one region. Ignored when country is supplied.",
+            "description": "The region to report on when level=region. Counts Region-level requirements over the region's countries — not the Country-level rows pooled across them, which is what a region view used to mean.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "countrySet",
+            "in": "query",
+            "required": false,
+            "description": "The Country Set to report on when level=countrySet — a named group of countries that belongs to one company (two companies may each own a same-named set over different countries). Counts CountrySet-level requirements over that company's set's countries. A level=countrySet request must therefore narrow to exactly one company — with ?companyId=, or by using a key granted exactly one company — or it is a 400. An unknown or empty set has no countries and so meets nothing.",
             "schema": {
               "type": "string"
             }
@@ -1027,7 +1044,7 @@
             "name": "theatre",
             "in": "query",
             "required": false,
-            "description": "Scope to one theatre. Ignored when country or region is supplied.",
+            "description": "The theatre to report on when level=theatre. Counts Theatre-level requirements over that theatre.",
             "schema": {
               "type": "string"
             }
@@ -1065,6 +1082,16 @@
               "type": "boolean",
               "default": false
             }
+          },
+          {
+            "name": "trainedNotCertified",
+            "in": "query",
+            "required": false,
+            "description": "With students=true and trainingTitle (the requirement's primary title then its alternatives), return the people behind its trainedNotCertified figure instead of its holders: each row's training and dates are the leads-to training they hold. The list is empty when the primary title is not a Certification.",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
           }
         ],
         "responses": {
@@ -1084,6 +1111,14 @@
                             "properties": {
                               "name": {
                                 "type": "string"
+                              },
+                              "compliant": {
+                                "type": "boolean",
+                                "description": "Every qualifying requirement met, at every level."
+                              },
+                              "projectedCompliant": {
+                                "type": "boolean",
+                                "description": "Still met at the horizon. Present only with horizonMonths."
                               },
                               "requirements": {
                                 "type": "array",
@@ -1110,7 +1145,8 @@
                                       "type": "integer"
                                     },
                                     "attained": {
-                                      "type": "integer"
+                                      "type": "integer",
+                                      "description": "Distinct holders; for an eachCountry requirement, the lowest country's count."
                                     },
                                     "projectedAttained": {
                                       "type": [
@@ -1150,15 +1186,98 @@
                                       "description": "Global level only."
                                     },
                                     "theatreBreakdown": {
-                                      "type": "object",
-                                      "description": "Global level only: holders per theatre.",
-                                      "additionalProperties": {
-                                        "type": "integer"
-                                      }
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "theatre": {
+                                            "type": "string"
+                                          },
+                                          "count": {
+                                            "type": "integer"
+                                          },
+                                          "compliant": {
+                                            "type": "boolean"
+                                          }
+                                        }
+                                      },
+                                      "description": "Global level only: holders per theatre, and whether each theatre meets minimumPerTheatre."
+                                    },
+                                    "aggregation": {
+                                      "type": "string",
+                                      "enum": [
+                                        "total",
+                                        "eachCountry"
+                                      ],
+                                      "description": "How a Region or CountrySet requirement is counted: \"total\" pools distinct holders across the whole area; \"eachCountry\" requires every country in the area to reach the quantity on its own. Always \"total\" at the other levels."
                                     },
                                     "compliant": {
                                       "type": "boolean",
-                                      "description": "Global level only."
+                                      "description": "Whether the requirement is met, at every level. For an eachCountry requirement: every country meets the quantity; an area with no countries is never met."
+                                    },
+                                    "projectedCompliant": {
+                                      "type": "boolean",
+                                      "description": "Whether it is still met at the horizon. Present only with horizonMonths."
+                                    },
+                                    "pooledAttained": {
+                                      "type": "integer",
+                                      "description": "Distinct holders across the whole area; for these rows attained is the LOWEST country's count. Present on eachCountry rows only."
+                                    },
+                                    "projectedPooledAttained": {
+                                      "type": "integer",
+                                      "description": "pooledAttained at the horizon. Present only with horizonMonths, and on eachCountry rows only."
+                                    },
+                                    "countriesMet": {
+                                      "type": "integer",
+                                      "description": "Countries meeting the quantity. Present on eachCountry rows only."
+                                    },
+                                    "countriesTotal": {
+                                      "type": "integer",
+                                      "description": "Countries in the area. Present on eachCountry rows only."
+                                    },
+                                    "projectedCountriesMet": {
+                                      "type": "integer",
+                                      "description": "countriesMet at the horizon. Present only with horizonMonths, and on eachCountry rows only."
+                                    },
+                                    "countryBreakdown": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "country": {
+                                            "type": "string"
+                                          },
+                                          "count": {
+                                            "type": "integer"
+                                          },
+                                          "compliant": {
+                                            "type": "boolean"
+                                          }
+                                        }
+                                      },
+                                      "description": "One entry per country in the area, zeros included. Present on eachCountry rows only."
+                                    },
+                                    "projectedCountryBreakdown": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "country": {
+                                            "type": "string"
+                                          },
+                                          "count": {
+                                            "type": "integer"
+                                          },
+                                          "compliant": {
+                                            "type": "boolean"
+                                          }
+                                        }
+                                      },
+                                      "description": "countryBreakdown at the horizon. Present only with horizonMonths, and on eachCountry rows only."
+                                    },
+                                    "trainedNotCertified": {
+                                      "type": "integer",
+                                      "description": "Country, region, countrySet and theatre levels, requirements whose primary training the catalogue holds as a Certification only (absent elsewhere): people in the same population as attained who hold a currently-valid instructor-led or OLX training that leads to this certification (or to a Certification alternative), but do not currently hold the certification or any alternative. A lapsed certification counts as not certified. Always today's figure, even with horizonMonths; for an eachCountry requirement, the area total."
                                     }
                                   }
                                 }
@@ -1188,7 +1307,8 @@
                                       "type": "integer"
                                     },
                                     "attained": {
-                                      "type": "integer"
+                                      "type": "integer",
+                                      "description": "Distinct holders; for an eachCountry requirement, the lowest country's count."
                                     },
                                     "projectedAttained": {
                                       "type": [
@@ -1228,15 +1348,98 @@
                                       "description": "Global level only."
                                     },
                                     "theatreBreakdown": {
-                                      "type": "object",
-                                      "description": "Global level only: holders per theatre.",
-                                      "additionalProperties": {
-                                        "type": "integer"
-                                      }
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "theatre": {
+                                            "type": "string"
+                                          },
+                                          "count": {
+                                            "type": "integer"
+                                          },
+                                          "compliant": {
+                                            "type": "boolean"
+                                          }
+                                        }
+                                      },
+                                      "description": "Global level only: holders per theatre, and whether each theatre meets minimumPerTheatre."
+                                    },
+                                    "aggregation": {
+                                      "type": "string",
+                                      "enum": [
+                                        "total",
+                                        "eachCountry"
+                                      ],
+                                      "description": "How a Region or CountrySet requirement is counted: \"total\" pools distinct holders across the whole area; \"eachCountry\" requires every country in the area to reach the quantity on its own. Always \"total\" at the other levels."
                                     },
                                     "compliant": {
                                       "type": "boolean",
-                                      "description": "Global level only."
+                                      "description": "Whether the requirement is met, at every level. For an eachCountry requirement: every country meets the quantity; an area with no countries is never met."
+                                    },
+                                    "projectedCompliant": {
+                                      "type": "boolean",
+                                      "description": "Whether it is still met at the horizon. Present only with horizonMonths."
+                                    },
+                                    "pooledAttained": {
+                                      "type": "integer",
+                                      "description": "Distinct holders across the whole area; for these rows attained is the LOWEST country's count. Present on eachCountry rows only."
+                                    },
+                                    "projectedPooledAttained": {
+                                      "type": "integer",
+                                      "description": "pooledAttained at the horizon. Present only with horizonMonths, and on eachCountry rows only."
+                                    },
+                                    "countriesMet": {
+                                      "type": "integer",
+                                      "description": "Countries meeting the quantity. Present on eachCountry rows only."
+                                    },
+                                    "countriesTotal": {
+                                      "type": "integer",
+                                      "description": "Countries in the area. Present on eachCountry rows only."
+                                    },
+                                    "projectedCountriesMet": {
+                                      "type": "integer",
+                                      "description": "countriesMet at the horizon. Present only with horizonMonths, and on eachCountry rows only."
+                                    },
+                                    "countryBreakdown": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "country": {
+                                            "type": "string"
+                                          },
+                                          "count": {
+                                            "type": "integer"
+                                          },
+                                          "compliant": {
+                                            "type": "boolean"
+                                          }
+                                        }
+                                      },
+                                      "description": "One entry per country in the area, zeros included. Present on eachCountry rows only."
+                                    },
+                                    "projectedCountryBreakdown": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "country": {
+                                            "type": "string"
+                                          },
+                                          "count": {
+                                            "type": "integer"
+                                          },
+                                          "compliant": {
+                                            "type": "boolean"
+                                          }
+                                        }
+                                      },
+                                      "description": "countryBreakdown at the horizon. Present only with horizonMonths, and on eachCountry rows only."
+                                    },
+                                    "trainedNotCertified": {
+                                      "type": "integer",
+                                      "description": "Country, region, countrySet and theatre levels, requirements whose primary training the catalogue holds as a Certification only (absent elsewhere): people in the same population as attained who hold a currently-valid instructor-led or OLX training that leads to this certification (or to a Certification alternative), but do not currently hold the certification or any alternative. A lapsed certification counts as not certified. Always today's figure, even with horizonMonths; for an eachCountry requirement, the area total."
                                     }
                                   }
                                 }
@@ -1262,6 +1465,13 @@
                             "type": "string"
                           }
                         },
+                        "countrySets": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "The scoped company's own Country Sets with at least one member — the values countrySet accepts. Empty unless the request is narrowed to exactly one company."
+                        },
                         "theatres": {
                           "type": "array",
                           "items": {
@@ -1274,8 +1484,16 @@
                             "levels": {
                               "type": "array",
                               "items": {
-                                "type": "string"
-                              }
+                                "type": "string",
+                                "enum": [
+                                  "Country",
+                                  "Region",
+                                  "CountrySet",
+                                  "Theatre",
+                                  "Global"
+                                ]
+                              },
+                              "description": "The requirement levels this program's rows use: Country, Region, CountrySet, Theatre, Global."
                             },
                             "hasMinimumPerTheatre": {
                               "type": "boolean"
@@ -1387,7 +1605,8 @@
                                           "type": "integer"
                                         },
                                         "attained": {
-                                          "type": "integer"
+                                          "type": "integer",
+                                          "description": "Distinct holders; for an eachCountry requirement, the lowest country's count."
                                         },
                                         "projectedAttained": {
                                           "type": [
@@ -1427,15 +1646,121 @@
                                           "description": "Global level only."
                                         },
                                         "theatreBreakdown": {
-                                          "type": "object",
-                                          "description": "Global level only: holders per theatre.",
-                                          "additionalProperties": {
-                                            "type": "integer"
-                                          }
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "theatre": {
+                                                "type": "string"
+                                              },
+                                              "count": {
+                                                "type": "integer"
+                                              },
+                                              "compliant": {
+                                                "type": "boolean"
+                                              }
+                                            }
+                                          },
+                                          "description": "Global level only: holders per theatre, and whether each theatre meets minimumPerTheatre."
+                                        },
+                                        "aggregation": {
+                                          "type": "string",
+                                          "enum": [
+                                            "total",
+                                            "eachCountry"
+                                          ],
+                                          "description": "How a Region or CountrySet requirement is counted: \"total\" pools distinct holders across the whole area; \"eachCountry\" requires every country in the area to reach the quantity on its own. Always \"total\" at the other levels."
                                         },
                                         "compliant": {
-                                          "type": "boolean",
-                                          "description": "Global level only."
+                                          "type": [
+                                            "boolean",
+                                            "null"
+                                          ],
+                                          "description": "Whether the requirement is met, at every level. For an eachCountry requirement: every country meets the quantity; an area with no countries is never met. Null when the tier block has no scope to count it over."
+                                        },
+                                        "projectedCompliant": {
+                                          "type": [
+                                            "boolean",
+                                            "null"
+                                          ],
+                                          "description": "Whether it is still met at the horizon. Null without horizonMonths."
+                                        },
+                                        "pooledAttained": {
+                                          "type": [
+                                            "integer",
+                                            "null"
+                                          ],
+                                          "description": "Distinct holders across the whole area; for these rows attained is the LOWEST country's count. eachCountry rows only; null on a total row."
+                                        },
+                                        "projectedPooledAttained": {
+                                          "type": [
+                                            "integer",
+                                            "null"
+                                          ],
+                                          "description": "pooledAttained at the horizon. Null without horizonMonths and on a total row."
+                                        },
+                                        "countriesMet": {
+                                          "type": [
+                                            "integer",
+                                            "null"
+                                          ],
+                                          "description": "Countries meeting the quantity. eachCountry rows only; null on a total row."
+                                        },
+                                        "countriesTotal": {
+                                          "type": [
+                                            "integer",
+                                            "null"
+                                          ],
+                                          "description": "Countries in the area. eachCountry rows only; null on a total row."
+                                        },
+                                        "projectedCountriesMet": {
+                                          "type": [
+                                            "integer",
+                                            "null"
+                                          ],
+                                          "description": "countriesMet at the horizon. Null without horizonMonths and on a total row."
+                                        },
+                                        "countryBreakdown": {
+                                          "type": [
+                                            "array",
+                                            "null"
+                                          ],
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "country": {
+                                                "type": "string"
+                                              },
+                                              "count": {
+                                                "type": "integer"
+                                              },
+                                              "compliant": {
+                                                "type": "boolean"
+                                              }
+                                            }
+                                          },
+                                          "description": "One entry per country in the area, zeros included. eachCountry rows only; null on a total row."
+                                        },
+                                        "projectedCountryBreakdown": {
+                                          "type": [
+                                            "array",
+                                            "null"
+                                          ],
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "country": {
+                                                "type": "string"
+                                              },
+                                              "count": {
+                                                "type": "integer"
+                                              },
+                                              "compliant": {
+                                                "type": "boolean"
+                                              }
+                                            }
+                                          },
+                                          "description": "countryBreakdown at the horizon. Null without horizonMonths and on a total row."
                                         }
                                       }
                                     }
@@ -1479,13 +1804,13 @@
                               },
                               "training": {
                                 "type": "string",
-                                "description": "The specific training this person holds, which may be an alternative or a catalogue variant."
+                                "description": "The specific training this person holds, which may be an alternative or a catalogue variant. With trainedNotCertified=true, the leads-to training they hold (their latest, if several), and the dates are that training's."
                               }
                             }
                           }
                         }
                       },
-                      "title": "Holder roster (students=true with trainingTitle)"
+                      "title": "Holder roster (students=true with trainingTitle; trainedNotCertified=true for the trained-not-certified roster)"
                     }
                   ]
                 }
@@ -1493,7 +1818,7 @@
             }
           },
           "400": {
-            "description": "Invalid program name (the path segment was not valid percent-encoding), or a ?companyId= this key was not granted.",
+            "description": "Invalid program name (the path segment was not valid percent-encoding), a ?companyId= this key was not granted, or level=countrySet on a request not narrowed to exactly one company.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1601,13 +1926,14 @@
             "name": "level",
             "in": "query",
             "required": false,
-            "description": "The scope to plan at. Each scope plans against its own level's requirements only.",
+            "description": "The scope to plan at. Each scope plans against its own level's requirements only: region plans Region-level requirements over the region's countries, countrySet plans CountrySet-level requirements over the set's countries. An \"eachCountry\" requirement becomes one gap per country. An unrecognised value plans globally.",
             "schema": {
               "type": "string",
               "enum": [
                 "global",
                 "theatre",
                 "region",
+                "countrySet",
                 "country"
               ],
               "default": "global"
@@ -1617,7 +1943,7 @@
             "name": "country",
             "in": "query",
             "required": false,
-            "description": "Scope to one country. Narrowest selection wins: country over region over theatre.",
+            "description": "The country to report on when level=country. Counts Country-level requirements over that country.",
             "schema": {
               "type": "string"
             }
@@ -1626,7 +1952,16 @@
             "name": "region",
             "in": "query",
             "required": false,
-            "description": "Scope to one region. Ignored when country is supplied.",
+            "description": "The region to report on when level=region. Counts Region-level requirements over the region's countries — not the Country-level rows pooled across them, which is what a region view used to mean.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "countrySet",
+            "in": "query",
+            "required": false,
+            "description": "The Country Set to report on when level=countrySet — a named group of countries that belongs to one company (two companies may each own a same-named set over different countries). Counts CountrySet-level requirements over that company's set's countries. A level=countrySet request must therefore narrow to exactly one company — with ?companyId=, or by using a key granted exactly one company — or it is a 400. An unknown or empty set has no countries and so meets nothing.",
             "schema": {
               "type": "string"
             }
@@ -1635,7 +1970,7 @@
             "name": "theatre",
             "in": "query",
             "required": false,
-            "description": "Scope to one theatre. Ignored when country or region is supplied.",
+            "description": "The theatre to report on when level=theatre. Counts Theatre-level requirements over that theatre.",
             "schema": {
               "type": "string"
             }
@@ -1763,6 +2098,10 @@
                                           "instanceId": {
                                             "type": "string"
                                           },
+                                          "requirementKey": {
+                                            "type": "string",
+                                            "description": "The authored requirement this instance came from. An \"eachCountry\" requirement yields one instance per country, all sharing this key."
+                                          },
                                           "specialisation": {
                                             "type": [
                                               "string",
@@ -1780,11 +2119,33 @@
                                           },
                                           "nativeLevel": {
                                             "type": "string",
-                                            "description": "The requirement's authored level: Country, Theatre or Global."
+                                            "enum": [
+                                              "Country",
+                                              "Region",
+                                              "CountrySet",
+                                              "Theatre",
+                                              "Global"
+                                            ],
+                                            "description": "The requirement's authored level: Country, Region, CountrySet, Theatre or Global."
+                                          },
+                                          "aggregation": {
+                                            "type": "string",
+                                            "enum": [
+                                              "total",
+                                              "eachCountry"
+                                            ],
+                                            "description": "How a Region or CountrySet requirement is counted: \"total\" pools distinct holders across the whole area; \"eachCountry\" requires every country in the area to reach the quantity on its own. Always \"total\" at the other levels."
+                                          },
+                                          "country": {
+                                            "type": [
+                                              "string",
+                                              "null"
+                                            ],
+                                            "description": "The one country this instance is counted over, for an \"eachCountry\" requirement. Null for a pooled requirement — and for the single placeholder an \"eachCountry\" requirement yields when the scope has no countries, which is never met."
                                           },
                                           "scopeLabel": {
                                             "type": "string",
-                                            "description": "The population this instance is counted over."
+                                            "description": "The population this instance is counted over (the country, for a per-country instance)."
                                           },
                                           "cert": {
                                             "type": "string"
@@ -1833,7 +2194,7 @@
                                             "items": {
                                               "type": "string"
                                             },
-                                            "description": "Other specialisations in this target needing the same certification over the same population."
+                                            "description": "Other specialisations in this target needing the same certification over a shared population — the same one, or this instance's country inside the other's area (or the reverse). Two different countries never share."
                                           },
                                           "expiringSoon": {
                                             "type": "integer"
@@ -1889,6 +2250,21 @@
                               },
                               "cert": {
                                 "type": "string"
+                              },
+                              "aggregation": {
+                                "type": "string",
+                                "enum": [
+                                  "total",
+                                  "eachCountry"
+                                ],
+                                "description": "How a Region or CountrySet requirement is counted: \"total\" pools distinct holders across the whole area; \"eachCountry\" requires every country in the area to reach the quantity on its own. Always \"total\" at the other levels."
+                              },
+                              "country": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "description": "Set for one country of an \"eachCountry\" requirement."
                               },
                               "scopeLabel": {
                                 "type": "string"
@@ -1960,8 +2336,16 @@
                               "levels": {
                                 "type": "array",
                                 "items": {
-                                  "type": "string"
-                                }
+                                  "type": "string",
+                                  "enum": [
+                                    "Country",
+                                    "Region",
+                                    "CountrySet",
+                                    "Theatre",
+                                    "Global"
+                                  ]
+                                },
+                                "description": "The requirement levels this program's rows use: Country, Region, CountrySet, Theatre, Global."
                               },
                               "tiers": {
                                 "type": "array",
@@ -1977,6 +2361,13 @@
                               }
                             }
                           }
+                        },
+                        "countrySets": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "The scoped company's own Country Sets with at least one member — the values countrySet accepts. Empty unless the request is narrowed to exactly one company."
                         }
                       },
                       "title": "Selector metadata (options=true)"
@@ -1987,7 +2378,7 @@
             }
           },
           "400": {
-            "description": "Invalid targets (the value was not parseable JSON), or a ?companyId= this key was not granted.",
+            "description": "Invalid targets (the value was not parseable JSON), a ?companyId= this key was not granted, or level=countrySet on a request not narrowed to exactly one company.",
             "content": {
               "application/json": {
                 "schema": {

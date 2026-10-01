@@ -3,6 +3,7 @@ import { authorizePublicRequest } from "@/lib/public-api";
 import { cachedReport, scopeKey } from "@/lib/report-cache";
 import { safeDecodeParam } from "@/lib/utils";
 import { buildProgramReport, getProgramStudents } from "@/lib/program-report";
+import { COUNTRY_SET_SCOPE_ERROR, singleCompanyId } from "@/lib/country-sets";
 
 /**
  * GET /api/public/v1/programs/{programName} — read-only per-program compliance,
@@ -12,10 +13,14 @@ import { buildProgramReport, getProgramStudents } from "@/lib/program-report";
  * `authorizePublicRequest`.
  *
  * Query params (same as the internal route):
- *  - `level`   country (default) | region | theatre | global
- *  - `country` / `region` / `theatre`  the selector for the chosen level
+ *  - `level`   country (default) | region | countrySet | theatre | global
+ *  - `country` / `region` / `countrySet` / `theatre`  the selector for the chosen level
+ *    (`level=countrySet` needs the request narrowed to exactly one company —
+ *    a Country Set belongs to one company — else 400)
  *  - `horizonMonths`  3 | 6 | 12 — forward-looking projection of upcoming expiries
  *  - `trainingTitle` + `students=true`  roster drill-down (comma-separated titles)
+ *  - `trainedNotCertified=true` (with the two above)  the roster behind a
+ *    Certification requirement's `trainedNotCertified` figure instead
  *  - `companyId`  narrow to one of the key's companies (consumed by the guard)
  *
  * Both modes are cached for the same 30s window as the internal twin. This is
@@ -41,8 +46,10 @@ export async function GET(
   const country = sp.get("country") || "";
   const theatre = sp.get("theatre") || "";
   const region = sp.get("region") || "";
+  const countrySet = sp.get("countrySet") || "";
   const trainingTitleParam = sp.get("trainingTitle") || "";
   const studentsMode = sp.get("students") === "true";
+  const trainedNotCertified = sp.get("trainedNotCertified") === "true";
 
   const rawHorizon = parseInt(sp.get("horizonMonths") || "0", 10);
   const horizonMonths = [3, 6, 12].includes(rawHorizon) ? rawHorizon : 0;
@@ -55,10 +62,22 @@ export async function GET(
       specialisations: [],
       countries: [],
       regions: [],
+      countrySets: [],
       theatres: [],
       meta: { levels: [], hasMinimumPerTheatre: false },
       horizonMonths: 0,
     });
+  }
+
+  // A Country Set belongs to one company and its name resolves only within it,
+  // so a countrySet report or roster needs the request narrowed to exactly one
+  // company — `?companyId=` (already intersected with the key's grant by the
+  // guard), or a key granted a single company. Otherwise two partners'
+  // same-named sets would be ambiguous; refuse with a 400 rather than answer
+  // with an empty area that reads as an honest zero. Naming the rule discloses
+  // nothing: it depends only on the key's own grant, never on the DB.
+  if (level === "countrySet" && singleCompanyId(ctx.companyIds) === null) {
+    return NextResponse.json({ error: COUNTRY_SET_SCOPE_ERROR }, { status: 400 });
   }
 
   // Every free-text fragment is percent-encoded so a literal "|" in a program
@@ -71,20 +90,31 @@ export async function GET(
   // surface later starts projecting its payload.
   const scope = scopeKey(ctx.companyIds);
   const progKey = encodeURIComponent(programName);
-  const geoKey = `${level}|${encodeURIComponent(country)}|${encodeURIComponent(region)}|${encodeURIComponent(theatre)}`;
+  const geoKey =
+    `${encodeURIComponent(level)}|${encodeURIComponent(country)}|${encodeURIComponent(region)}|` +
+    `${encodeURIComponent(countrySet)}|${encodeURIComponent(theatre)}`;
 
   if (studentsMode && trainingTitleParam) {
     const titles = trainingTitleParam.split(",").map((t) => t.trim()).filter(Boolean);
+    // The roster mode is part of the key: the holder roster and the trained-not-
+    // certified roster for the same titles and scope are different people.
+    const mode = trainedNotCertified ? "tnc" : "holders";
     const result = await cachedReport(
-      `public-program-students|${progKey}|${scope}|${geoKey}|${encodeURIComponent(trainingTitleParam)}`,
-      () => getProgramStudents({ trainingTitles: titles, level, country, region, theatre, companyIds: ctx.companyIds }),
+      `public-program-students|${progKey}|${scope}|${geoKey}|${mode}|${encodeURIComponent(trainingTitleParam)}`,
+      () =>
+        getProgramStudents({
+          trainingTitles: titles, level, country, region, countrySet, theatre, companyIds: ctx.companyIds, trainedNotCertified,
+        }),
     );
     return NextResponse.json(result, { headers: { "Cache-Control": "private, max-age=30" } });
   }
 
   const report = await cachedReport(
     `public-program|${progKey}|${scope}|${geoKey}|${horizonMonths}`,
-    () => buildProgramReport({ programName, level, country, region, theatre, horizonMonths, companyIds: ctx.companyIds }),
+    () =>
+      buildProgramReport({
+        programName, level, country, region, countrySet, theatre, horizonMonths, companyIds: ctx.companyIds,
+      }),
   );
   return NextResponse.json(report, { headers: { "Cache-Control": "private, max-age=30" } });
 }

@@ -126,6 +126,12 @@ function isAdminPath(pathname: string): boolean {
 // SuperAdmin-only routes — these handle system-wide management (users,
 // companies, training/region catalogs, backups, cleanup, updates) and are
 // not safe to expose to a per-company Admin.
+//
+// Company-scoped admin surfaces (offerings, scheduled exports, country sets)
+// are deliberately NOT listed: a company Admin manages their own companies'
+// rows there, and every handler enforces the company scope itself via
+// `lib/company-scope.ts`. Those paths still fall under `isAdminPath` below,
+// so a read-only `User` is refused them here exactly as before.
 const SUPER_ADMIN_PREFIXES = [
   "/admin/users",
   "/api/admin/users",

@@ -156,12 +156,29 @@ export interface ProgramDataRow {
   tierName: string | null;
   purpose: string;
   level: string;
+  /** "total" | "eachCountry" — see lib/program-levels.ts. Always "total"
+   *  unless level is Region or CountrySet. */
+  aggregation: string;
   trainingType: string | null;
   trainingTitle: string | null;
   trainingFullTitle: string | null;
   quantityRequired: number;
   minimumPerTheatre: number | null;
   alternatives: ProgramDataAlternativeRow[];
+}
+
+/** A Country Set as the admin API returns it (`/api/admin/country-sets`). Per company. */
+export interface CountrySetRow {
+  id: number;
+  /** The partner (Company) that owns the set — sets are tenant data. */
+  companyId: number;
+  companyName: string;
+  name: string;
+  description: string | null;
+  /** Member country names, sorted. */
+  countries: string[];
+  createdAt: string;
+  updatedAt: string;
 }
 
 
