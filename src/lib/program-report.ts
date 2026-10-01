@@ -24,6 +24,13 @@ import {
   type CountryBreakdownRow,
   type ReqLevel,
 } from "@/lib/program-levels";
+import {
+  buildTrainedNotCertifiedContext,
+  getTrainedNotCertifiedRoster,
+  isTncRequirement,
+  trainedNotCertifiedEmails,
+  type TrainedNotCertifiedContext,
+} from "@/lib/program-trained-not-certified";
 
 /**
  * Shared, presentation-agnostic builders for the data-driven program compliance
@@ -155,6 +162,11 @@ export async function buildProgramReport(opts: BuildProgramReportOptions) {
   const now = new Date();
   const horizonDate = horizonMonths > 0 ? addMonths(now, horizonMonths) : null;
 
+  // The specialisation-table rows authored at one level — the rows the
+  // "Trained not certified" figure is computed for (Tier Status is excluded).
+  const specTableRows = (reqLevel: ReqLevel) =>
+    [...specMap.values(), ...specDepMap.values()].flat().filter((r) => r.level === reqLevel);
+
   if (level === "country" && country) {
     const countryReqs = programData.filter((pd: ProgramDataRow) => pd.level === "Country");
     const titles = extractTitles(countryReqs);
@@ -163,7 +175,8 @@ export async function buildProgramReport(opts: BuildProgramReportOptions) {
     const projectedEmailSets = horizonDate
       ? await getEmailSetsByTitle(titles, horizonDate, scope)
       : null;
-    const specialisations = buildSpecialisations(specMap, specDepMap, "Country", emailSets, projectedEmailSets, null);
+    const tnc = await buildTrainedNotCertifiedContext(specTableRows("Country"), now, scope);
+    const specialisations = buildSpecialisations(specMap, specDepMap, "Country", emailSets, projectedEmailSets, null, tnc);
     const tiers = isTiered
       ? await computeTierBlock({ levelName: "Country", scope, useTheatre: false, theatres: [], companyIds, rows: programData, tiers: tierRows, deploymentMode, now, horizonDate, countryCtx: null })
       : undefined;
@@ -218,7 +231,8 @@ export async function buildProgramReport(opts: BuildProgramReportOptions) {
               : null,
           }
         : null;
-    const specialisations = buildSpecialisations(specMap, specDepMap, multi.reqLevel, emailSets, projectedEmailSets, countryCtx);
+    const tnc = await buildTrainedNotCertifiedContext(specTableRows(multi.reqLevel), now, scope, hasArea);
+    const specialisations = buildSpecialisations(specMap, specDepMap, multi.reqLevel, emailSets, projectedEmailSets, countryCtx, tnc);
     const tiers = isTiered
       ? await computeTierBlock({ levelName: multi.reqLevel, scope, useTheatre: false, theatres: [], companyIds, rows: programData, tiers: tierRows, deploymentMode, now, horizonDate, countryCtx })
       : undefined;
@@ -233,7 +247,8 @@ export async function buildProgramReport(opts: BuildProgramReportOptions) {
     const projectedEmailSets = horizonDate
       ? await getEmailSetsByTitle(titles, horizonDate, scope)
       : null;
-    const specialisations = buildSpecialisations(specMap, specDepMap, "Theatre", emailSets, projectedEmailSets, null);
+    const tnc = await buildTrainedNotCertifiedContext(specTableRows("Theatre"), now, scope);
+    const specialisations = buildSpecialisations(specMap, specDepMap, "Theatre", emailSets, projectedEmailSets, null, tnc);
     const tiers = isTiered
       ? await computeTierBlock({ levelName: "Theatre", scope, useTheatre: false, theatres: [], companyIds, rows: programData, tiers: tierRows, deploymentMode, now, horizonDate, countryCtx: null })
       : undefined;
@@ -436,7 +451,7 @@ export async function buildProgramReport(opts: BuildProgramReportOptions) {
     };
   }
 
-  const specialisations = buildSpecialisations(specMap, specDepMap, "Country", new Map(), null, null);
+  const specialisations = buildSpecialisations(specMap, specDepMap, "Country", new Map(), null, null, null);
   return { specialisations, ...lists, meta, horizonMonths };
 }
 
@@ -478,6 +493,13 @@ type SpecReqRow = {
  * client's `riskState(attained, projected, required)` and every export that
  * reads `attained >= quantityRequired` stay correct unchanged; the pooled
  * distinct-holder count moves to `pooledAttained`.
+ *
+ * With a `tnc` context, every Certification requirement also carries
+ * `trainedNotCertified`: the people in the same population holding an active
+ * ILT/OLX that leads to it but not the certification itself (the rule is in
+ * `lib/program-trained-not-certified.ts`). It is always today's figure, even
+ * under a horizon, and absent on every other row. For an `"eachCountry"` row it
+ * is the area total, because `emailSets` is the pooled area map.
  */
 function buildSpecialisations(
   specMap: Map<string, SpecReqRow[]>,
@@ -485,7 +507,8 @@ function buildSpecialisations(
   level: ReqLevel,
   emailSets: Map<string, Set<string>>,
   projectedEmailSets: Map<string, Set<string>> | null,
-  countryCtx: CountryCtxPair | null
+  countryCtx: CountryCtxPair | null,
+  tnc: TrainedNotCertifiedContext | null
 ) {
   const mapReq = (req: SpecReqRow) => {
     const aggregation = normaliseAggregation(req.level, req.aggregation);
@@ -495,6 +518,11 @@ function buildSpecialisations(
       trainingFullTitle: req.trainingData?.fullTitle ?? "—",
       quantityRequired: req.quantityRequired,
       aggregation,
+      // Spread rather than assigned, so the key is genuinely absent (not
+      // `undefined`) on a row the figure does not apply to.
+      ...(tnc && isTncRequirement(req)
+        ? { trainedNotCertified: trainedNotCertifiedEmails(req, tnc, emailSets).size }
+        : {}),
     };
     const alternatives = req.alternatives.map((a) => ({
       trainingType: a.trainingType,
@@ -829,14 +857,50 @@ export interface GetProgramStudentsOptions {
   countrySet?: string;
   theatre: string;
   companyIds: number[] | null;
+  /**
+   * Return the "Trained not certified" roster for these titles instead of the
+   * holder roster: people holding an active ILT/OLX that leads to one of the
+   * Certification titles, but none of the titles themselves.
+   */
+  trainedNotCertified?: boolean;
+}
+
+/**
+ * The `ComplianceScope` a roster is drawn from — the same one
+ * `buildProgramReport` counts the selected level over, so the trained-not-
+ * certified list matches its figure exactly. Returns `hasArea: false` for a
+ * Region / Country Set view whose area resolves to no countries.
+ */
+async function resolveRosterScope(
+  opts: GetProgramStudentsOptions
+): Promise<{ scope: ComplianceScope; hasArea: boolean }> {
+  const { level, country, region, theatre, companyIds } = opts;
+  const countrySet = opts.countrySet ?? "";
+  if (level === "country" && country) return { scope: { country, companyIds }, hasArea: true };
+  if (level === "region" && region) {
+    const countries = await countriesInRegion(region);
+    return { scope: { countries, companyIds }, hasArea: countries.length > 0 };
+  }
+  if (level === "countrySet" && countrySet) {
+    // Fails closed to `[]` on an ambiguous company scope, exactly as below.
+    const countries = await countriesInCountrySet(countrySet, companyIds);
+    return { scope: { countries, companyIds }, hasArea: countries.length > 0 };
+  }
+  if (level === "theatre" && theatre) return { scope: { theatre, companyIds }, hasArea: true };
+  return { scope: { companyIds }, hasArea: true };
 }
 
 /**
  * Roster drill-down: the distinct, currently-active holders of any of the given
  * training titles, scoped to the level selector + companies. Returns the plain
- * object the callers wrap in a JSON response.
+ * object the callers wrap in a JSON response. With `trainedNotCertified`, the
+ * roster behind the "Trained not certified" figure instead.
  */
 export async function getProgramStudents(opts: GetProgramStudentsOptions) {
+  if (opts.trainedNotCertified) {
+    const { scope, hasArea } = await resolveRosterScope(opts);
+    return getTrainedNotCertifiedRoster(opts.trainingTitles, scope, hasArea);
+  }
   const { trainingTitles, level, country, region, theatre, companyIds } = opts;
   const countrySet = opts.countrySet ?? "";
   const now = new Date();

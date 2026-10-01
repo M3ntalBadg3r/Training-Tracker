@@ -48,6 +48,7 @@ import {
   type StudentEntry,
   type TierBlock,
   type TierDeploymentRequirement,
+  type ViewStudentsFn,
 } from "@/components/programs/ProgramCompliance";
 import type {
   ReportCellValue,
@@ -172,6 +173,10 @@ function ProgramDetailPageInner() {
   const [studentList, setStudentList] = useState<StudentEntry[]>([]);
   const [studentLoading, setStudentLoading] = useState(false);
   const [studentTitle, setStudentTitle] = useState("");
+  // Which roster the modal shows: a requirement's holders, or the people
+  // trained towards its certification who do not hold it. Transient UI state —
+  // not mirrored to the URL, like the modal itself.
+  const [studentMode, setStudentMode] = useState<"holders" | "trainedNotCertified">("holders");
 
   // Group the roster by the specific training each person holds, so the modal
   // shows one table per training (primary + each alternative/variant) rather
@@ -372,13 +377,15 @@ function ProgramDetailPageInner() {
   );
   const tierBlock = scopeMissing ? null : reportData?.tiers ?? null;
 
-  const viewStudents = async (
+  const openRoster = async (
+    mode: "holders" | "trainedNotCertified",
     trainingTitle: string,
     trainingFullTitle: string,
     level: string,
     filterValue: string,
     alternatives?: AlternativeEntry[]
   ) => {
+    setStudentMode(mode);
     setStudentTitle(trainingFullTitle);
     setStudentLoading(true);
     setShowStudents(true);
@@ -390,6 +397,7 @@ function ProgramDetailPageInner() {
       trainingTitle: allTitles.join(","),
       level,
     });
+    if (mode === "trainedNotCertified") params.set("trainedNotCertified", "true");
     if (level === "country") params.set("country", filterValue);
     if (level === "region") params.set("region", filterValue);
     if (level === "countrySet") params.set("countrySet", filterValue);
@@ -406,6 +414,8 @@ function ProgramDetailPageInner() {
       setStudentLoading(false);
     }
   };
+  const viewStudents: ViewStudentsFn = (...args) => openRoster("holders", ...args);
+  const viewTrainedNotCertified: ViewStudentsFn = (...args) => openRoster("trainedNotCertified", ...args);
 
   // Region and Country Set views: a row may be pooled or per-country.
   const multiCountryView = isMultiCountryScope(scopeLevel);
@@ -1067,6 +1077,8 @@ function ProgramDetailPageInner() {
                     level={scopeLevel}
                     filterValue={needsValue ? scopeValue : ""}
                     onViewStudents={viewStudents}
+                    onViewTrainedNotCertified={viewTrainedNotCertified}
+                    horizonMonths={horizonMonths}
                     unitLabel={report.unit}
                   />
                 </div>
@@ -1077,7 +1089,20 @@ function ProgramDetailPageInner() {
       )}
 
       {/* Student Modal */}
-      <Modal open={showStudents} onClose={() => setShowStudents(false)} title="Students" size="4xl">
+      <Modal
+        open={showStudents}
+        onClose={() => setShowStudents(false)}
+        title={studentMode === "trainedNotCertified" ? `Trained, not certified — ${studentTitle}` : "Students"}
+        size="4xl"
+      >
+        {studentMode === "trainedNotCertified" && (
+          <p className="text-sm text-gray-600 mb-4">
+            People in this view holding a current instructor-led or OLX training that leads to{" "}
+            <strong>{studentTitle}</strong>, who do not currently hold it (a lapsed certification counts as not
+            held). Grouped by the training they hold; the dates are that training&apos;s.
+            {horizonMonths > 0 && " Shown as of today, not at the projection horizon."}
+          </p>
+        )}
         {studentLoading ? (
           <LoadingSpinner />
         ) : studentList.length === 0 ? (

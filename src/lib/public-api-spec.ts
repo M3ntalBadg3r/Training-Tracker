@@ -336,7 +336,15 @@ const PROGRAM_REQUIREMENT_BASE = {
   },
 };
 
-const PROGRAM_REQUIREMENT = obj({ ...PROGRAM_REQUIREMENT_BASE, ...countModeFields(false) });
+const PROGRAM_REQUIREMENT = obj({
+  ...PROGRAM_REQUIREMENT_BASE,
+  ...countModeFields(false),
+  trainedNotCertified: {
+    type: "integer",
+    description:
+      "Country, region, countrySet and theatre levels, Certification requirements only (absent elsewhere): people in the same population as attained who hold a currently-valid instructor-led or OLX training that leads to this certification (or to a Certification alternative), but are not counted in attained. A lapsed certification counts as not certified. Always today's figure, even with horizonMonths; for an eachCountry requirement, the area total.",
+  },
+});
 
 /** A tier's deployment requirement: the same shape, with the count-mode figures nullable. */
 const TIER_DEPLOYMENT_REQUIREMENT = obj({ ...PROGRAM_REQUIREMENT_BASE, ...countModeFields(true) });
@@ -564,6 +572,13 @@ export const PUBLIC_API_ENDPOINTS: readonly PublicApiEndpoint[] = [
         description: "Set to true, together with trainingTitle, to return the holder roster instead of the report.",
         schema: { type: "boolean", default: false },
       },
+      {
+        name: "trainedNotCertified",
+        in: "query",
+        description:
+          "With students=true and trainingTitle (the requirement's primary title then its alternatives), return the people behind its trainedNotCertified figure instead of its holders: each row's training and dates are the leads-to training they hold.",
+        schema: { type: "boolean", default: false },
+      },
     ],
     responseSchema: {
       oneOf: [
@@ -634,11 +649,15 @@ export const PUBLIC_API_ENDPOINTS: readonly PublicApiEndpoint[] = [
                 theatre: STR,
                 completedDate: { type: "string", format: "date" },
                 expiryDate: { type: "string", format: "date" },
-                training: { type: "string", description: "The specific training this person holds, which may be an alternative or a catalogue variant." },
+                training: {
+                  type: "string",
+                  description:
+                    "The specific training this person holds, which may be an alternative or a catalogue variant. With trainedNotCertified=true, the leads-to training they hold (their latest, if several), and the dates are that training's.",
+                },
               })
             ),
           }),
-          title: "Holder roster (students=true with trainingTitle)",
+          title: "Holder roster (students=true with trainingTitle; trainedNotCertified=true for the trained-not-certified roster)",
         },
       ],
     },

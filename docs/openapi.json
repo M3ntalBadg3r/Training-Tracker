@@ -1082,6 +1082,16 @@
               "type": "boolean",
               "default": false
             }
+          },
+          {
+            "name": "trainedNotCertified",
+            "in": "query",
+            "required": false,
+            "description": "With students=true and trainingTitle (the requirement's primary title then its alternatives), return the people behind its trainedNotCertified figure instead of its holders: each row's training and dates are the leads-to training they hold.",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
           }
         ],
         "responses": {
@@ -1264,6 +1274,10 @@
                                         }
                                       },
                                       "description": "countryBreakdown at the horizon. Present only with horizonMonths, and on eachCountry rows only."
+                                    },
+                                    "trainedNotCertified": {
+                                      "type": "integer",
+                                      "description": "Country, region, countrySet and theatre levels, Certification requirements only (absent elsewhere): people in the same population as attained who hold a currently-valid instructor-led or OLX training that leads to this certification (or to a Certification alternative), but are not counted in attained. A lapsed certification counts as not certified. Always today's figure, even with horizonMonths; for an eachCountry requirement, the area total."
                                     }
                                   }
                                 }
@@ -1422,6 +1436,10 @@
                                         }
                                       },
                                       "description": "countryBreakdown at the horizon. Present only with horizonMonths, and on eachCountry rows only."
+                                    },
+                                    "trainedNotCertified": {
+                                      "type": "integer",
+                                      "description": "Country, region, countrySet and theatre levels, Certification requirements only (absent elsewhere): people in the same population as attained who hold a currently-valid instructor-led or OLX training that leads to this certification (or to a Certification alternative), but are not counted in attained. A lapsed certification counts as not certified. Always today's figure, even with horizonMonths; for an eachCountry requirement, the area total."
                                     }
                                   }
                                 }
@@ -1786,13 +1804,13 @@
                               },
                               "training": {
                                 "type": "string",
-                                "description": "The specific training this person holds, which may be an alternative or a catalogue variant."
+                                "description": "The specific training this person holds, which may be an alternative or a catalogue variant. With trainedNotCertified=true, the leads-to training they hold (their latest, if several), and the dates are that training's."
                               }
                             }
                           }
                         }
                       },
-                      "title": "Holder roster (students=true with trainingTitle)"
+                      "title": "Holder roster (students=true with trainingTitle; trainedNotCertified=true for the trained-not-certified roster)"
                     }
                   ]
                 }
