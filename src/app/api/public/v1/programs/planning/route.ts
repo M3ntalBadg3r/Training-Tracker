@@ -9,7 +9,7 @@ import {
   emptyCompliancePlan,
 } from "@/lib/compliance-plan-request";
 import { buildPlanningOptions } from "@/lib/planning-options";
-import { listCountrySetNames } from "@/lib/country-sets";
+import { COUNTRY_SET_SCOPE_ERROR, listCountrySetNames, singleCompanyId } from "@/lib/country-sets";
 
 /**
  * GET /api/public/v1/programs/planning — read-only Compliance Planning, the
@@ -31,7 +31,9 @@ import { listCountrySetNames } from "@/lib/country-sets";
  * Two modes, mirroring the internal route:
  *  - `?options=true` → per-program selector metadata (name, isTiered, levels,
  *    tier names, specialisation names) so a caller can build a `targets` array,
- *    plus `countrySets` — the names `level=countrySet&countrySet=` accepts.
+ *    plus `countrySets` — the names `level=countrySet&countrySet=` accepts: the
+ *    scoped company's own sets, empty unless the request is narrowed to exactly
+ *    one company (a Country Set belongs to one company).
  *    `/api/public/v1/programs` deliberately carries no tier or specialisation
  *    *names*, so without this a partner cannot construct a valid target.
  *  - default (plan) → the aggregates-only plan for the selected targets + scope.
@@ -41,6 +43,7 @@ import { listCountrySetNames } from "@/lib/country-sets";
  *      [{ program, mode: "tier"|"specialisations"|"all", tier?, specialisations?[] }]
  *  - `level`    global (default) | theatre | region | countrySet | country
  *  - `country` / `region` / `countrySet` / `theatre`  the selector for the chosen level
+ *    (`level=countrySet` needs the request narrowed to exactly one company, else 400)
  *  - `renewalWindowMonths`  0 | 1 | 3 | 6 | 12 (default 3; 0 = no overlay)
  *  - `planForWindow`  true to size gaps from the projected end-of-window count
  *  - `companyId`  narrow to one of the key's companies (consumed by the guard)
@@ -58,17 +61,27 @@ export async function GET(request: NextRequest) {
   const p = request.nextUrl.searchParams;
   const scope = scopeKey(ctx.companyIds);
 
+  const optionsMode = p.get("options") === "true";
+
   // ── Selector-metadata mode ──
-  // Registry data, not tenant data: Program/ProgramData/ProgramTier/
-  // Specialisation carry no `companyId`, and nothing read here derives from a
-  // student, completion or count. Country Sets are global reference data in
-  // the same sense (a name and a list of countries, like RegionData). That is the same reasoning reviewed and
-  // written out at length in `src/app/api/public/v1/programs/route.ts`, and it
-  // carries the same trigger: if `Program` ever gains a `companyId`, this
-  // branch becomes tenant data and MUST be filtered by `ctx.companyIds`.
-  // The scope is in the cache key regardless, so that day brings a filter to
-  // add rather than a shared-key leak to discover.
-  if (p.get("options") === "true") {
+  // The empty-scope check comes first in this branch too, because half of the
+  // payload is tenant data. `programs` is registry data: Program/ProgramData/ProgramTier/
+  // Specialisation carry no `companyId`, and nothing read for it derives from a
+  // student, completion or count — the reasoning written out at length in
+  // `src/app/api/public/v1/programs/route.ts`, carrying the same trigger: if
+  // `Program` ever gains a `companyId`, it becomes tenant data and MUST be
+  // filtered by `ctx.companyIds`. So a key that may read no company still sees
+  // the registry. `countrySets` is NOT registry data: a Country Set belongs to
+  // one company, so this lists the scoped company's own non-empty sets and is
+  // `[]` unless the request is narrowed to exactly one company (`?companyId=`,
+  // or a key granted a single company) — a multi-company key never sees set
+  // names, its own companies' included, because a name alone would be
+  // ambiguous between them. The scope is in the cache key, which that makes
+  // load-bearing.
+  if (optionsMode) {
+    if (ctx.companyIds.length === 0) {
+      return NextResponse.json({ programs: await buildPlanningOptions(), countrySets: [] as string[] });
+    }
     const options = await cachedReport(
       // "-v2": the value became `{programs, countrySets}`; see the internal route.
       `public-compliance-planning-options-v2|${scope}`,
@@ -91,6 +104,13 @@ export async function GET(request: NextRequest) {
   // be present in one branch and missing in the other.
   if (ctx.companyIds.length === 0) {
     return NextResponse.json(toPublicCompliancePlan(emptyCompliancePlan(0)));
+  }
+  // A Country Set name resolves only within one company, so a countrySet plan
+  // needs the request narrowed to exactly one company; otherwise 400 rather than
+  // a plan over an empty area that reads as an honest zero. The rule depends
+  // only on the key's own grant, so naming it discloses nothing.
+  if (req.level === "countrySet" && singleCompanyId(ctx.companyIds) === null) {
+    return NextResponse.json({ error: COUNTRY_SET_SCOPE_ERROR }, { status: 400 });
   }
   if (req.targets.length === 0) {
     return NextResponse.json(toPublicCompliancePlan(emptyCompliancePlan(req.renewalWindowMonths)));
