@@ -14,6 +14,7 @@ import { useFetchJson } from "@/hooks/useFetchJson";
 import { useRegionData, type RegionDataRow } from "@/hooks/useRegionData";
 import { useTableSort, type SortAccessor } from "@/hooks/useTableSort";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
+import { displayRegion } from "@/lib/group-by";
 import type { CountrySetRow } from "@/types";
 import type { CountrySetListResponse } from "@/app/api/admin/country-sets/route";
 import ImportCountrySetsModal from "./ImportModal";
@@ -57,6 +58,9 @@ async function readError(res: Response, fallback: string): Promise<string> {
   }
 }
 
+/** Region-dropdown sentinel for countries whose region is not set yet. */
+const NO_REGION = "__no_region__";
+
 /**
  * Searchable country multiselect over the Region Data list, with bulk helpers
  * to add every country in a region or theatre.
@@ -77,10 +81,14 @@ function CountryMultiSelect({
 
   const selected = useMemo(() => new Set(value), [value]);
 
+  // Regions as displayed (a blank or placeholder region reads as none), plus a
+  // "(no region)" entry when any country has none — otherwise such a country
+  // could be ticked one at a time but never bulk-added by region.
   const regions = useMemo(
-    () => [...new Set(rows.map((r) => r.region).filter((r) => r && r.trim()))].sort((a, b) => a.localeCompare(b)),
+    () => [...new Set(rows.map((r) => displayRegion(r.region)).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
     [rows]
   );
+  const hasNoRegion = useMemo(() => rows.some((r) => !displayRegion(r.region)), [rows]);
   const theatres = useMemo(
     () =>
       [...new Set(rows.map((r) => r.theatre).filter((t): t is string => !!t && !!t.trim()))].sort((a, b) =>
@@ -122,12 +130,13 @@ function CountryMultiSelect({
           {regions.map((r) => (
             <option key={r} value={r}>{r}</option>
           ))}
+          {hasNoRegion && <option value={NO_REGION}>(no region)</option>}
         </select>
         <Button
           variant="secondary"
           size="sm"
           disabled={!region}
-          onClick={() => addWhere((r) => r.region === region)}
+          onClick={() => addWhere((r) => (region === NO_REGION ? !displayRegion(r.region) : displayRegion(r.region) === region))}
         >
           Select all in region
         </Button>
@@ -166,7 +175,7 @@ function CountryMultiSelect({
           <div className="px-3 py-4 text-sm text-gray-500">No countries match.</div>
         )}
         {visible.map((r) => {
-          const meta = [r.region, r.theatre].filter((v) => v && v.trim()).join(" · ");
+          const meta = [displayRegion(r.region), r.theatre].filter((v) => v && v.trim()).join(" · ");
           return (
             <label
               key={r.country}
