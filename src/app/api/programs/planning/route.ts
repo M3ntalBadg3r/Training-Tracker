@@ -68,7 +68,8 @@ export async function GET(request: NextRequest) {
     const options = await cachedReport(
       // "-v2": the value became `{programs, countrySets}` (it was the bare
       // programs array), so no entry of the old shape can ever be served.
-      `compliance-planning-options-v2|${scopeKey(companyFilter)}`,
+      // "-v3": the value now carries company-scoped set names.
+      `compliance-planning-options-v3|${scopeKey(companyFilter)}`,
       async () => {
         const [programs, countrySets] = await Promise.all([buildPlanningOptions(), listCountrySetNames(companyFilter)]);
         return { programs, countrySets };
