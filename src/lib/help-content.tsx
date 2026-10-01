@@ -3426,10 +3426,50 @@ const helpSections: Record<string, HelpSection> = {
           </li>
         </ul>
 
+        <h3>Import</h3>
+        <p>
+          <strong>Import Country Sets</strong>{" "}takes a CSV or Excel file with the
+          same columns as the export &mdash; <strong>Company</strong>,{" "}
+          <strong>Name</strong>, <strong>Description</strong>{" "}and{" "}
+          <strong>Countries</strong>{" "}(separated by semicolons or commas, or
+          one country per row). Use <strong>Download Template</strong>, or
+          export, edit and import the file back.
+        </p>
+        <ul>
+          <li>
+            Each set named in the file ends up with <strong>exactly</strong>{" "}the
+            countries the file lists for it; sets the file does not mention are
+            left alone.
+          </li>
+          <li>
+            The Company cell is matched by name against the companies you can
+            access. Rows with a blank Company use the company you pick in the
+            dialog.
+          </li>
+          <li>
+            A blank Description keeps the set&apos;s current description.
+          </li>
+          <li>
+            A set with no countries listed is an error. To empty a set on
+            purpose, put <strong>none</strong>{" "}in its Countries cell.
+          </li>
+          <li>
+            <strong>Preview</strong>{" "}shows which sets will be created, updated or
+            left unchanged, and any errors &mdash; nothing is written until you
+            click <strong>Import</strong>. A set with any invalid row (a country
+            not in Region Data, or a company you cannot access) is skipped as a
+            whole, so it is never saved with countries missing.
+          </li>
+        </ul>
+
         <h3>Export</h3>
         <p>
-          <strong>Export</strong>{" "}downloads the list &mdash; company, name,
-          description and countries &mdash; as CSV, Excel, or PDF.
+          <strong>Export Country Sets</strong>, next to{" "}
+          <strong>Add Country Set</strong>, downloads the list you are looking
+          at &mdash; company, name, description and countries &mdash; as CSV,
+          Excel, or PDF. It follows the header company selector and the search
+          box. Country Sets are also included in both the full and the config
+          system backups.
         </p>
       </>
     ),
