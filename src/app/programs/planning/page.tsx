@@ -189,7 +189,11 @@ interface PlanningOption {
 }
 interface PlanningOptionsResponse {
   programs: PlanningOption[];
-  /** Country Sets with at least one member — the "By Country Set" pick-list. */
+  /**
+   * The selected company's own Country Sets with at least one member — the
+   * "By Country Set" pick-list. Sets are per-company, so the request must name
+   * exactly one company; any other scope answers `[]`.
+   */
   countrySets: string[];
 }
 
@@ -219,9 +223,12 @@ function parseLevel(v: string | null): ScopeLevel {
  * always offered, as they always were. Region and Country Set plan against
  * their OWN requirement rows (a region no longer pools the Country rows), so
  * offering one no program has rows at would only ever produce an empty plan.
+ * Country Set additionally needs the selected company to own at least one set:
+ * sets are per-company, so a company with none has nothing to plan against.
  */
-function levelAvailable(level: ScopeLevel, options: PlanningOption[]): boolean {
+function levelAvailable(level: ScopeLevel, options: PlanningOption[], countrySets: string[]): boolean {
   if (level === "global" || level === "theatre" || level === "country") return true;
+  if (level === "countrySet" && countrySets.length === 0) return false;
   return options.some((o) => scopeLevelOffered(level, o.levels));
 }
 
@@ -1376,22 +1383,26 @@ function CompliancePlanningPageInner() {
     return companyScope.selected;
   }, [companyScope.loading, companyScope.selected]);
 
-  // Selector metadata. `optionsLoaded` gates the re-validation below: until the
-  // response lands, a URL-seeded Region / Country Set scope must not be judged
-  // against an empty list and thrown away.
-  const [options, setOptions] = useState<PlanningOption[]>([]);
-  const [countrySets, setCountrySets] = useState<string[]>([]);
-  const [optionsLoaded, setOptionsLoaded] = useState(false);
-  useEffect(() => {
-    fetch("/api/programs/planning?options=true")
-      .then((r) => r.json())
-      .then((d: Partial<PlanningOptionsResponse>) => {
-        setOptions(d.programs || []);
-        setCountrySets(d.countrySets || []);
-        setOptionsLoaded(true);
-      })
-      .catch(() => {});
-  }, []);
+  // Selector metadata, fetched for the page's single company and re-fetched when
+  // the header switches company: the program list is global, but the Country
+  // Set list is that company's own. `optionsLoaded` gates the re-validation
+  // below and means "loaded for THIS company" — useFetchJson keeps the previous
+  // company's payload in `data` while the new request is in flight, and judging
+  // a URL-seeded or carried-over Country Set against that stale list would keep
+  // a set the new company does not own. Until then the Country Set list reads
+  // empty and the seed passes through untouched.
+  const optionsUrl = companyId !== null ? `/api/programs/planning?options=true&companyId=${companyId}` : null;
+  const {
+    data: optionsData,
+    loading: optionsLoading,
+    error: optionsError,
+  } = useFetchJson<Partial<PlanningOptionsResponse>>(optionsUrl);
+  const optionsLoaded = optionsUrl !== null && !optionsLoading && !optionsError && optionsData !== null;
+  const options = useMemo(() => optionsData?.programs ?? [], [optionsData]);
+  const countrySets = useMemo(
+    () => (optionsLoaded ? optionsData?.countrySets ?? [] : []),
+    [optionsLoaded, optionsData],
+  );
 
   // Scope. Seeded from the URL so Back from a record restores the view.
   const [levelState, setLevel] = useState<ScopeLevel>(() => parseLevel(searchParams.get("level")));
@@ -1399,7 +1410,10 @@ function CompliancePlanningPageInner() {
   const theatres = useMemo(() => [...new Set(regionRows.map((r) => r.theatre).filter((t): t is string => !!t))].sort(), [regionRows]);
   const regions = useMemo(() => [...new Set(regionRows.map((r) => r.region).filter(Boolean))].sort(), [regionRows]);
   const countries = useMemo(() => [...new Set(regionRows.map((r) => r.country))].sort(), [regionRows]);
-  const offeredLevels = useMemo(() => SCOPE_LEVELS.filter((l) => levelAvailable(l, options)), [options]);
+  const offeredLevels = useMemo(
+    () => SCOPE_LEVELS.filter((l) => levelAvailable(l, options, countrySets)),
+    [options, countrySets],
+  );
 
   // The seeded level and value are re-validated against what exists, DERIVED
   // rather than reconciled in an effect (which would need a mount guard and trip
@@ -1472,7 +1486,10 @@ function CompliancePlanningPageInner() {
       .filter((t) => t.mode !== "specialisations" || (t.specialisations && t.specialisations.length > 0));
   }, [targets]);
 
-  const scopeReady = level === "global" || !!scopeValue;
+  // A Country Set value is only plannable once it has been checked against the
+  // current company's list; until then it would ask the API to plan a set the
+  // newly selected company may not own.
+  const scopeReady = level === "global" || (!!scopeValue && (level !== "countrySet" || optionsLoaded));
   const debouncedPayload = useDebounce(JSON.stringify(targetsPayload), 400);
   const debouncedTargets = useMemo<unknown[]>(() => {
     try {

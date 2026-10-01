@@ -67,7 +67,7 @@ const adminSubItems: { href: string; label: string; icon: typeof Users; superAdm
   { href: "/admin/product-types", label: "Product Types", icon: Tag, superAdminOnly: true },
   { href: "/admin/specialisations", label: "Specialisations", icon: Award, superAdminOnly: true },
   { href: "/admin/region-data", label: "Region Data", icon: Globe, superAdminOnly: true },
-  { href: "/admin/country-sets", label: "Country Sets", icon: MapPinned, superAdminOnly: true },
+  { href: "/admin/country-sets", label: "Country Sets", icon: MapPinned },
   { href: "/admin/system-settings", label: "System Settings", icon: SlidersHorizontal, superAdminOnly: true },
   { href: "/admin/api-keys", label: "API Keys", icon: KeyRound, superAdminOnly: true },
   { href: "/admin/cleanup", label: "Data Clean-Up", icon: Sparkles, superAdminOnly: true },

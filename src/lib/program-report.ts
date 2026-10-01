@@ -41,7 +41,10 @@ export interface BuildProgramReportOptions {
   level: string;
   country: string;
   region: string;
-  /** Country Set name, used when level is "countrySet". */
+  /**
+   * Country Set name, used when level is "countrySet". Resolved within the
+   * single company `companyIds` names — a set is per-company tenant data.
+   */
   countrySet?: string;
   theatre: string;
   /** Already validated to one of 0 | 3 | 6 | 12. */
@@ -106,8 +109,8 @@ export async function buildProgramReport(opts: BuildProgramReportOptions) {
     };
   }
 
-  // Deliberately unscoped, and the asymmetry with the scoped `listTheatres`
-  // call two lines below is intentional rather than an oversight.
+  // Deliberately unscoped, and the asymmetry with the scoped `listTheatres` and
+  // `listCountrySetNames` calls below is intentional rather than an oversight.
   //
   // `RegionData` is a global, admin-curated reference table (country → region →
   // theatre) with no `companyId` — there is no tenant dimension to filter on.
@@ -123,9 +126,13 @@ export async function buildProgramReport(opts: BuildProgramReportOptions) {
   const countries = regionData.map((r: typeof regionData[number]) => r.country);
   const regionList = [...new Set(regionData.map((r: typeof regionData[number]) => r.region))].filter(Boolean).sort();
   const theatreList = await listTheatres(companyIds);
-  // Country Sets are global reference data exactly like RegionData (country
-  // names only, no tenant values), so this list is unscoped for the same reason.
-  const countrySetList = await listCountrySetNames();
+  // Country Sets, unlike RegionData, ARE tenant data: each belongs to one
+  // company and names are unique only per company, so two partners can each own
+  // a "Set 1" over different countries. The list is therefore scoped — it holds
+  // the scoped company's own non-empty sets, and is `[]` unless `companyIds` is
+  // exactly one company (`listCountrySetNames` enforces that), so an ambiguous
+  // scope neither offers a picker nor discloses another company's set names.
+  const countrySetList = await listCountrySetNames(companyIds);
   const lists = { countries, regions: regionList, theatres: theatreList, countrySets: countrySetList };
 
   // `specMap` holds the qualifying, specialisation-scoped rows (these define
@@ -167,11 +174,17 @@ export async function buildProgramReport(opts: BuildProgramReportOptions) {
   // countries (the region's, or the set's), the rows are that level's own, and a
   // row's `aggregation` decides whether it is pooled across the area ("total")
   // or must be met in every one of its countries ("eachCountry").
+  //
+  // The set is resolved within the single scoped company. The routes refuse a
+  // `level=countrySet` request whose scope is not exactly one company (400,
+  // `COUNTRY_SET_SCOPE_ERROR`); should a caller skip that, `countriesInCountrySet`
+  // answers `[]` for an ambiguous scope, which reads as an empty, never-compliant
+  // area — never as two companies' same-named sets merged into one.
   const multi =
     level === "region" && region
       ? { reqLevel: "Region" as const, countries: await countriesInRegion(region) }
       : level === "countrySet" && countrySet
-        ? { reqLevel: "CountrySet" as const, countries: await countriesInCountrySet(countrySet) }
+        ? { reqLevel: "CountrySet" as const, countries: await countriesInCountrySet(countrySet, companyIds) }
         : null;
   if (multi) {
     const levelRows = programData.filter((pd: ProgramDataRow) => pd.level === multi.reqLevel);
@@ -836,8 +849,12 @@ export async function getProgramStudents(opts: GetProgramStudentsOptions) {
     studentFilter.country = { in: regionCountries };
   } else if (level === "countrySet" && countrySet) {
     // An unknown or empty set resolves to `[]`, and `in: []` matches nobody —
-    // the honest roster for an area with no countries.
-    studentFilter.country = { in: await countriesInCountrySet(countrySet) };
+    // the honest roster for an area with no countries. The same holds for a
+    // scope that is not exactly one company: a set name only resolves within
+    // one company, so `countriesInCountrySet` answers `[]` and the roster fails
+    // closed rather than merging two companies' same-named sets. (The routes
+    // 400 such a request first; this keeps the helper safe on its own.)
+    studentFilter.country = { in: await countriesInCountrySet(countrySet, companyIds) };
   } else if (level === "theatre" && theatre) {
     studentFilter.theatre = theatre;
   }

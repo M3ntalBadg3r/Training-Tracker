@@ -42,7 +42,7 @@ const ADMIN_CARDS: AdminCard[] = [
   { href: "/admin/product-types", title: "Product Types", description: "Manage the product type list", icon: Tag, superAdminOnly: true },
   { href: "/admin/specialisations", title: "Specialisations", description: "Manage partner program specialisations", icon: Award, superAdminOnly: true },
   { href: "/admin/region-data", title: "Region Data", description: "Manage countries and regions", icon: Globe, superAdminOnly: true },
-  { href: "/admin/country-sets", title: "Country Sets", description: "Group countries into custom sets for partner program reporting", icon: MapPinned, superAdminOnly: true },
+  { href: "/admin/country-sets", title: "Country Sets", description: "Group countries into custom sets for partner program reporting", icon: MapPinned },
   { href: "/admin/system-settings", title: "System Settings", description: "Configure the default date format and other instance-wide settings", icon: SlidersHorizontal, superAdminOnly: true },
   { href: "/admin/api-keys", title: "API Keys", description: "Issue read-only public API keys scoped to companies", icon: KeyRound, superAdminOnly: true },
   { href: "/admin/cleanup", title: "Data Clean-Up", description: "Scan and fix data quality issues", icon: Sparkles, superAdminOnly: true },

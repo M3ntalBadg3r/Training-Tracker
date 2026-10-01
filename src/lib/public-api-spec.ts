@@ -142,7 +142,7 @@ const PROGRAM_SCOPE_PARAMS: readonly PublicApiParam[] = [
     name: "countrySet",
     in: "query",
     description:
-      "The Country Set to report on when level=countrySet — a named group of countries configured by an administrator. Counts CountrySet-level requirements over the set's countries. An unknown or empty set has no countries and so meets nothing.",
+      "The Country Set to report on when level=countrySet — a named group of countries that belongs to one company (two companies may each own a same-named set over different countries). Counts CountrySet-level requirements over that company's set's countries. A level=countrySet request must therefore narrow to exactly one company — with ?companyId=, or by using a key granted exactly one company — or it is a 400. An unknown or empty set has no countries and so meets nothing.",
     schema: { type: "string" },
   },
   {
@@ -582,7 +582,11 @@ export const PUBLIC_API_ENDPOINTS: readonly PublicApiEndpoint[] = [
             ),
             countries: arr(STR),
             regions: arr(STR),
-            countrySets: { ...arr(STR), description: "Country Sets with at least one member — the values countrySet accepts." },
+            countrySets: {
+              ...arr(STR),
+              description:
+                "The scoped company's own Country Sets with at least one member — the values countrySet accepts. Empty unless the request is narrowed to exactly one company.",
+            },
             theatres: arr(STR),
             meta: obj({
               levels: {
@@ -640,7 +644,7 @@ export const PUBLIC_API_ENDPOINTS: readonly PublicApiEndpoint[] = [
     },
     errors: {
       "400":
-        "Invalid program name (the path segment was not valid percent-encoding), or a ?companyId= this key was not granted.",
+        "Invalid program name (the path segment was not valid percent-encoding), a ?companyId= this key was not granted, or level=countrySet on a request not narrowed to exactly one company.",
     },
   },
 
@@ -725,7 +729,11 @@ export const PUBLIC_API_ENDPOINTS: readonly PublicApiEndpoint[] = [
                 specialisations: arr(STR),
               })
             ),
-            countrySets: { ...arr(STR), description: "Country Sets with at least one member — the values countrySet accepts." },
+            countrySets: {
+              ...arr(STR),
+              description:
+                "The scoped company's own Country Sets with at least one member — the values countrySet accepts. Empty unless the request is narrowed to exactly one company.",
+            },
           }),
           title: "Selector metadata (options=true)",
         },
@@ -733,7 +741,7 @@ export const PUBLIC_API_ENDPOINTS: readonly PublicApiEndpoint[] = [
     },
     errors: {
       "400":
-        "Invalid targets (the value was not parseable JSON), or a ?companyId= this key was not granted.",
+        "Invalid targets (the value was not parseable JSON), a ?companyId= this key was not granted, or level=countrySet on a request not narrowed to exactly one company.",
     },
   },
 

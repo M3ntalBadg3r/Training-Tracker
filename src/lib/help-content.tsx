@@ -974,8 +974,9 @@ const helpSections: Record<string, HelpSection> = {
             countries and regions.
           </li>
           <li>
-            <strong>Country Sets</strong>{" "}&mdash; Group countries into custom
-            sets that partner programs can report against.
+            <strong>Country Sets</strong>{" "}&mdash; Group a company&apos;s
+            countries into custom sets that partner programs can report against.
+            Each company has its own sets, managed by its Admins.
           </li>
           <li>
             <strong>Training Data</strong>{" "}&mdash; Manage training program
@@ -2105,7 +2106,7 @@ const helpSections: Record<string, HelpSection> = {
             </tr>
             <tr>
               <td><code>country_sets.json</code>, <code>country_set_members.json</code></td>
-              <td>Country Sets and the countries in each</td>
+              <td>Each company&apos;s Country Sets and the countries in each</td>
             </tr>
             <tr>
               <td><code>users.json</code></td>
@@ -2173,7 +2174,9 @@ const helpSections: Record<string, HelpSection> = {
           settings — and
           excludes students and training records. Use this to clone the
           catalogue/program setup into a freshly installed instance without
-          carrying any learner data across.
+          carrying any learner data across. A config backup does not include
+          companies, so its Country Sets are restored only to companies with the
+          same name on the target system &mdash; create those companies first.
         </p>
         <p>
           Click <strong>Config Backup</strong> for the standard variant (tied
@@ -2273,7 +2276,16 @@ const helpSections: Record<string, HelpSection> = {
         </ul>
         <p>
           <strong>Country Sets</strong>{" "}are replaced from the archive when it
-          carries them. An archive taken before Country Sets existed carries
+          carries them. Each set belongs to a company, and is restored to the
+          same company: a full restore follows the companies it restores, and a
+          config restore matches the company by name and only replaces the sets
+          of the companies the archive names &mdash; every other company keeps
+          its own sets, and the result says how many sets were replaced. A set whose company does
+          not exist on this system is <strong>not restored</strong>{" "}rather than
+          being given to another company, and the result says how many were left
+          out. Sets from an archive taken before Country Sets became per-company
+          are copied into every company. An archive taken before Country Sets
+          existed carries
           none, and restoring it <strong>keeps the Country Sets already on this
           system</strong>{" "}(any member country the restore did not bring back is
           dropped from its set, and the result says how many). A config restore
@@ -2623,8 +2635,9 @@ const helpSections: Record<string, HelpSection> = {
           <strong>Region</strong> and <strong>Country Set</strong>{" "}requirements are
           written once and apply to <em>whichever</em>{" "}region or country set is being
           viewed on the dashboard — a Region requirement is not tied to one named region.
-          Country Sets are custom groups of countries managed under{" "}
-          <strong>Admin &rsaquo; Country Sets</strong>.
+          Country Sets are custom groups of countries that each company manages
+          for itself under <strong>Admin &rsaquo; Country Sets</strong>; a Country
+          Set requirement is counted over the viewed company&apos;s own set.
         </p>
         <p>
           Because both levels span several countries, each of their requirements has a{" "}
@@ -2750,7 +2763,10 @@ const helpSections: Record<string, HelpSection> = {
           Pick a <strong>Scope</strong> (Global / Theatre / Region / Country Set /
           Country) and one or more <strong>programs</strong>. Region and Country Set
           are offered only when at least one program has requirements at that
-          level, since there would be nothing to plan otherwise. For each program
+          level, since there would be nothing to plan otherwise. Country Set also
+          needs the selected company to have at least one Country Set: sets
+          belong to a company, so the list shows only that company&apos;s own,
+          and it changes when you switch company in the header. For each program
           you choose what to aim at:
         </p>
         <ul>
@@ -2838,7 +2854,10 @@ const helpSections: Record<string, HelpSection> = {
           requirements that upcoming expiry breaks, and the totals. It never
           receives the named people on this page: &ldquo;Who to certify&rdquo;,
           &ldquo;All eligible candidates&rdquo; and the named rows under
-          &ldquo;Renewals at risk&rdquo; stay inside the app.
+          &ldquo;Renewals at risk&rdquo; stay inside the app. A Country Set plan
+          needs the request narrowed to a single company &mdash; a key granted
+          several companies must pass <code>?companyId=</code>{" "}&mdash; because
+          each company has its own sets.
         </p>
 
         <h3>Scope &amp; renewals</h3>
@@ -2850,7 +2869,7 @@ const helpSections: Record<string, HelpSection> = {
           against theatre-level requirements. A <em>region</em>{" "}plans the
           Region-level requirements over that region&apos;s countries, and a{" "}
           <em>country set</em>{" "}plans the Country Set requirements over the
-          set&apos;s countries. (A region used to plan the Country requirements
+          countries in the selected company&apos;s set. (A region used to plan the Country requirements
           pooled across its countries; it no longer does, matching the
           dashboards.)
         </p>
@@ -3017,8 +3036,13 @@ const helpSections: Record<string, HelpSection> = {
           Each view reads <strong>only its own level&apos;s requirements</strong>:
           By Country shows Country requirements, By Region shows Region
           requirements over the region&apos;s countries, By Country Set shows
-          Country Set requirements over the set&apos;s countries, and so on. A
-          view is offered only when the program has requirements at that level.
+          Country Set requirements over the countries in the selected
+          company&apos;s set, and so on. A view is offered only when the program
+          has requirements at that level. <strong>By Country Set</strong>{" "}also
+          needs the selected company to have at least one Country Set, because
+          each company has its own sets. If you switch company while viewing a
+          set the new company does not have, the dashboard goes back to its
+          default view.
         </p>
         <p>
           The dashboard reports on <strong>one company at a time</strong>, and it
@@ -3312,18 +3336,34 @@ const helpSections: Record<string, HelpSection> = {
           Partner programs can set requirements at the{" "}
           <strong>Country Set</strong>{" "}level, and the program dashboards and
           Compliance Planning can then report <strong>By Country Set</strong>. A
-          country may belong to any number of sets.
+          country may belong to any number of a company&apos;s sets.
         </p>
         <p>
-          Country Sets are shared reference data for the whole system, not
-          per company, and only a SuperAdmin can manage them.
+          <strong>Each Country Set belongs to one company.</strong>{" "}Another
+          company can have a set with the same name holding different countries,
+          or no sets at all. A company&apos;s Admins manage that company&apos;s
+          sets, and a SuperAdmin can manage every company&apos;s. The list follows
+          the company switcher in the page header; under{" "}
+          <strong>All companies</strong>{" "}a <strong>Company</strong>{" "}column
+          shows which company owns each set.
+        </p>
+        <p>
+          Sets that existed before Country Sets became per-company were copied
+          into <strong>every</strong>{" "}company when the system was updated, so no
+          company lost a set it could report against. Each company can now edit
+          or delete its own copy without affecting the others.
         </p>
 
         <h3>Adding &amp; Editing</h3>
         <p>
-          Use <strong>Add Country Set</strong>{" "}to create one. Give it a unique{" "}
-          <strong>Name</strong>, an optional <strong>Description</strong>, and
-          pick its countries. The country picker lists every country in Region
+          Use <strong>Add Country Set</strong>{" "}to create one. Choose the{" "}
+          <strong>Company</strong>{" "}it belongs to (the company selected in the
+          header is picked for you), give it a <strong>Name</strong>{" "}that is
+          unique within that company, an optional{" "}
+          <strong>Description</strong>, and pick its countries. If the header is
+          showing a different company, it switches to the new set&apos;s company
+          so you can see it. A set cannot be moved to another company afterwards:
+          when you edit one, its company is shown but cannot be changed. The country picker lists every country in Region
           Data and has a search box, a <strong>Selected only</strong>{" "}toggle and
           a <strong>Clear</strong>{" "}button. To add a whole group at once, choose
           a region and click <strong>Select all in region</strong>, or a theatre
@@ -3334,18 +3374,26 @@ const helpSections: Record<string, HelpSection> = {
         <p>
           Country Set requirements are written once and apply to{" "}
           <em>whichever</em>{" "}set is being viewed, so there is nothing to link a
-          set to a program. When any program has Country Set requirements, the
-          page says how many, since every set here can then be reported
-          against. A set with no countries is allowed but is not offered in the
-          dashboards&apos; set picker, as it could only ever show an empty
-          report.
+          set to a program. The requirements are shared by every company; what
+          differs is which countries each company&apos;s set holds. When any
+          program has Country Set requirements, the page says how many, since
+          every set here can then be reported against. A set with no countries
+          is allowed but is not offered in the dashboards&apos; set picker, as it
+          could only ever show an empty report.
+        </p>
+        <p>
+          Because a set name only means something within one company, a program
+          dashboard or Compliance Planning reports <strong>By Country Set</strong>{" "}
+          for one company at a time, using that company&apos;s own sets. A
+          company with no sets is not offered the <strong>By Country Set</strong>{" "}
+          view at all.
         </p>
 
         <h3>Searching &amp; Sorting</h3>
         <p>
-          The search box matches a set&apos;s name, its description, or any of
-          its countries. Click a column header to sort by name, description or
-          number of countries. The search and sort are kept in the page
+          The search box matches a set&apos;s name, its company, its description,
+          or any of its countries. Click a column header to sort by name, company,
+          description or number of countries. The search and sort are kept in the page
           address, so <strong>Back</strong>{" "}returns you to the same view.
         </p>
 
@@ -3353,7 +3401,9 @@ const helpSections: Record<string, HelpSection> = {
         <p>
           <strong>Delete</strong>{" "}removes the set and its memberships after a
           confirmation. Programs with Country Set requirements can no longer be
-          reported against a deleted set.
+          reported against a deleted set for that company; other companies&apos;
+          sets of the same name are not affected. Deleting a company also deletes
+          all of its Country Sets.
         </p>
 
         <h3>Changes made elsewhere</h3>
@@ -3367,16 +3417,19 @@ const helpSections: Record<string, HelpSection> = {
             memberships &mdash; the sets follow the new name.
           </li>
           <li>
-            Backups (full and config) include Country Sets. Restoring an archive
-            taken before Country Sets existed leaves the sets on this system in
-            place.
+            Backups (full and config) include Country Sets, each recorded with its
+            company. A restore puts each set back with the same company, matched
+            by name on another system. A set whose company does not exist on the
+            system being restored is left out, and the result says how many;
+            it is never given to a different company. Restoring an archive taken
+            before Country Sets existed leaves the sets on this system in place.
           </li>
         </ul>
 
         <h3>Export</h3>
         <p>
-          <strong>Export</strong>{" "}downloads the list &mdash; name, description
-          and countries &mdash; as CSV, Excel, or PDF.
+          <strong>Export</strong>{" "}downloads the list &mdash; company, name,
+          description and countries &mdash; as CSV, Excel, or PDF.
         </p>
       </>
     ),
@@ -3442,6 +3495,15 @@ const helpSections: Record<string, HelpSection> = {
           granted is refused with a <code>400</code> that says so &mdash; it used to come
           back empty, which an integration could not tell apart from a company holding no
           data. The index endpoint lists the ids a key may use.
+        </p>
+        <p>
+          A program report or plan at <code>level=countrySet</code>{" "}must be
+          narrowed to <strong>exactly one company</strong>, because each company
+          has its own Country Sets and the same set name can mean different
+          countries for different companies. A key granted several companies
+          must pass <code>?companyId=</code>, or the request is refused with a{" "}
+          <code>400</code>. Likewise, the list of Country Set names those
+          endpoints return is empty unless the request names a single company.
         </p>
         <p>
           The last two are <strong>separate endpoints</strong>, not values for{" "}

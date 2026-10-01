@@ -167,9 +167,12 @@ export interface ProgramDataRow {
   alternatives: ProgramDataAlternativeRow[];
 }
 
-/** A Country Set as the admin API returns it (`/api/admin/country-sets`). */
+/** A Country Set as the admin API returns it (`/api/admin/country-sets`). Per company. */
 export interface CountrySetRow {
   id: number;
+  /** The partner (Company) that owns the set — sets are tenant data. */
+  companyId: number;
+  companyName: string;
   name: string;
   description: string | null;
   /** Member country names, sorted. */
