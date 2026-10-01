@@ -525,6 +525,11 @@ function RequirementRowGroup({
 }) {
   const reqsOf = (spec: Specialisation) =>
     deployment ? spec.deploymentRequirements ?? [] : spec.requirements;
+  // Decided per row group, not per table: a group whose columns are all
+  // Accreditations (or a deployment group with no Certification) would
+  // otherwise render a row of dashes.
+  const groupTnc =
+    tnc && specialisations.some((spec) => reqsOf(spec)[reqIdx]?.trainedNotCertified !== undefined) ? tnc : null;
   return (
     <>
       {/* Training name row */}
@@ -635,11 +640,11 @@ function RequirementRowGroup({
       </tr>
       {/* Trained-not-certified row: an opportunity, not a compliance state, so
           it is never shaded green/red. */}
-      {tnc && (
+      {groupTnc && (
         <tr>
           <td className="px-4 py-2 font-medium text-gray-600 border border-gray-200">
             Trained not certified
-            {tnc.horizonMonths > 0 && <div className="text-[11px] font-normal text-gray-400">as of today</div>}
+            {groupTnc.horizonMonths > 0 && <div className="text-[11px] font-normal text-gray-400">as of today</div>}
           </td>
           {specialisations.map((spec) => {
             const req = reqsOf(spec)[reqIdx];
@@ -651,7 +656,7 @@ function RequirementRowGroup({
                 </td>
               );
             }
-            const onView = tnc.onView;
+            const onView = groupTnc.onView;
             return (
               <td key={spec.name} className="px-4 py-2 text-center border border-gray-200">
                 <span className={count > 0 ? "font-semibold text-amber-700" : "text-gray-500"}>

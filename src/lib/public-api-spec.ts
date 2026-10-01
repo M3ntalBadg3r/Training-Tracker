@@ -342,7 +342,7 @@ const PROGRAM_REQUIREMENT = obj({
   trainedNotCertified: {
     type: "integer",
     description:
-      "Country, region, countrySet and theatre levels, Certification requirements only (absent elsewhere): people in the same population as attained who hold a currently-valid instructor-led or OLX training that leads to this certification (or to a Certification alternative), but are not counted in attained. A lapsed certification counts as not certified. Always today's figure, even with horizonMonths; for an eachCountry requirement, the area total.",
+      "Country, region, countrySet and theatre levels, requirements whose primary training the catalogue holds as a Certification only (absent elsewhere): people in the same population as attained who hold a currently-valid instructor-led or OLX training that leads to this certification (or to a Certification alternative), but do not currently hold the certification or any alternative. A lapsed certification counts as not certified. Always today's figure, even with horizonMonths; for an eachCountry requirement, the area total.",
   },
 });
 
@@ -576,7 +576,7 @@ export const PUBLIC_API_ENDPOINTS: readonly PublicApiEndpoint[] = [
         name: "trainedNotCertified",
         in: "query",
         description:
-          "With students=true and trainingTitle (the requirement's primary title then its alternatives), return the people behind its trainedNotCertified figure instead of its holders: each row's training and dates are the leads-to training they hold.",
+          "With students=true and trainingTitle (the requirement's primary title then its alternatives), return the people behind its trainedNotCertified figure instead of its holders: each row's training and dates are the leads-to training they hold. The list is empty when the primary title is not a Certification.",
         schema: { type: "boolean", default: false },
       },
     ],

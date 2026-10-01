@@ -23,7 +23,8 @@ import { getEmailSetsByTitle, type ComplianceScope } from "@/lib/program-complia
  *  - **Not certified** — not in the requirement's Attained set: no active
  *    completion of the primary training or any alternative (sibling-expanded).
  *    A lapsed certification therefore still counts as "not certified".
- *  - **Certification requirements only.** `certification[]` can only target a
+ *  - **Certification requirements only** — as the catalogue types the
+ *    requirement's primary training. `certification[]` can only target a
  *    Certification, so an Accreditation/ILT/OLX requirement has no trained pool
  *    to report and the field is left absent on it. A Certification requirement's
  *    alternatives that are themselves Certifications contribute their leads-to
@@ -40,22 +41,30 @@ import { getEmailSetsByTitle, type ComplianceScope } from "@/lib/program-complia
 
 /** The minimal requirement shape the rule needs. */
 export interface TncRequirement {
-  trainingType: string | null;
   trainingTitle: string | null;
-  alternatives: { trainingType: string; trainingTitle: string }[];
+  alternatives: { trainingTitle: string }[];
 }
 
 /** The report-wide data the per-requirement figure is computed from. */
 export interface TrainedNotCertifiedContext {
+  /**
+   * The requirement titles the **catalogue** holds as Certifications. The
+   * catalogue, not the type authored on the program row, is the one source of
+   * truth for "is this a Certification" — `ProgramData.trainingType` is never
+   * checked against the catalogue on write and does not follow a later type
+   * change there, so reading it here while the roster read the catalogue let
+   * the table show a figure whose View then listed nobody.
+   */
+  certTitles: Set<string>;
   /** Certification trainingTitle → the ILT/OLX titles that lead to it. */
   iltByCert: Map<string, Set<string>>;
   /** Active holders of each leads-to ILT/OLX title, over the view's population. */
   iltEmailSets: Map<string, Set<string>>;
 }
 
-/** Whether the requirement is one the figure applies to. */
-export function isTncRequirement(req: TncRequirement): boolean {
-  return req.trainingType === "Certification" && !!req.trainingTitle;
+/** Whether the requirement is one the figure applies to: its primary training is a Certification. */
+export function isTncRequirement(req: TncRequirement, certTitles: Set<string>): boolean {
+  return !!req.trainingTitle && certTitles.has(req.trainingTitle);
 }
 
 /**
@@ -63,13 +72,23 @@ export function isTncRequirement(req: TncRequirement): boolean {
  * trained pool: the primary (itself a Certification, see `isTncRequirement`)
  * plus every alternative that is a Certification.
  */
-export function certTitlesOf(req: TncRequirement): string[] {
-  if (!isTncRequirement(req)) return [];
+export function certTitlesOf(req: TncRequirement, certTitles: Set<string>): string[] {
+  if (!isTncRequirement(req, certTitles)) return [];
   const out = new Set<string>([req.trainingTitle!]);
   for (const a of req.alternatives) {
-    if (a.trainingType === "Certification") out.add(a.trainingTitle);
+    if (certTitles.has(a.trainingTitle)) out.add(a.trainingTitle);
   }
   return [...out];
+}
+
+/** The subset of `titles` the catalogue holds as Certifications. */
+async function catalogueCertTitles(titles: string[]): Promise<Set<string>> {
+  if (titles.length === 0) return new Set();
+  const rows = await prisma.trainingData.findMany({
+    where: { trainingTitle: { in: titles }, trainingType: "Certification" },
+    select: { trainingTitle: true },
+  });
+  return new Set(rows.map((r) => r.trainingTitle));
 }
 
 /**
@@ -100,13 +119,15 @@ function iltTitlesFor(certTitles: string[], index: Map<string, Set<string>>): st
 }
 
 /**
- * Build the report-wide context for one view: the leads-to graph, fetched once,
- * and the active holders of every relevant ILT/OLX in ONE query over the view's
- * scope. Returns null when no requirement in the view is a Certification, so a
- * view without one does no extra work and its rows carry no field.
+ * Build the report-wide context for one view: the requirements' catalogue
+ * types, the leads-to graph, and the active holders of every relevant ILT/OLX
+ * in ONE query over the view's scope. Returns null when no requirement in the
+ * view is a Certification, so a view without one does no further work and its
+ * rows carry no field.
  *
- * `hasArea: false` (an empty region or set) skips the holder query — `in: []`
- * would match nobody anyway.
+ * `hasArea: false` (an empty region or set) still decides which rows carry the
+ * field (they read 0), but skips the leads-to graph and the holder query —
+ * `in: []` would match nobody anyway.
  */
 export async function buildTrainedNotCertifiedContext(
   reqs: TncRequirement[],
@@ -114,15 +135,23 @@ export async function buildTrainedNotCertifiedContext(
   scope: ComplianceScope,
   hasArea = true
 ): Promise<TrainedNotCertifiedContext | null> {
-  const certTitles = [...new Set(reqs.flatMap(certTitlesOf))];
-  if (certTitles.length === 0) return null;
+  const allTitles = new Set<string>();
+  for (const r of reqs) {
+    if (!r.trainingTitle) continue;
+    allTitles.add(r.trainingTitle);
+    for (const a of r.alternatives) allTitles.add(a.trainingTitle);
+  }
+  const certTitles = await catalogueCertTitles([...allTitles]);
+  const wanted = [...new Set(reqs.flatMap((r) => certTitlesOf(r, certTitles)))];
+  if (wanted.length === 0) return null;
+  if (!hasArea) return { certTitles, iltByCert: new Map(), iltEmailSets: new Map() };
   const iltByCert = await buildLeadsToIndex();
-  const iltTitles = iltTitlesFor(certTitles, iltByCert);
+  const iltTitles = iltTitlesFor(wanted, iltByCert);
   const iltEmailSets =
-    hasArea && iltTitles.length > 0
+    iltTitles.length > 0
       ? await getEmailSetsByTitle(iltTitles, now, scope)
       : new Map<string, Set<string>>();
-  return { iltByCert, iltEmailSets };
+  return { certTitles, iltByCert, iltEmailSets };
 }
 
 /**
@@ -143,7 +172,7 @@ export function trainedNotCertifiedEmails(
     }
   }
   const out = new Set<string>();
-  for (const t of iltTitlesFor(certTitlesOf(req), ctx.iltByCert)) {
+  for (const t of iltTitlesFor(certTitlesOf(req, ctx.certTitles), ctx.iltByCert)) {
     for (const e of ctx.iltEmailSets.get(t) ?? []) {
       if (!certified.has(e)) out.add(e);
     }
@@ -164,8 +193,9 @@ export interface TrainedNotCertifiedRosterRow {
 
 /**
  * Roster drill-down for the figure. `trainingTitles` are the requirement's
- * titles as the holder roster receives them (primary, then alternatives): the
- * Certification-typed ones supply the leads-to trainings, and holding ANY of
+ * titles as the holder roster receives them (primary, then alternatives): when
+ * the primary is a Certification, it and its Certification alternatives supply
+ * the leads-to trainings, and holding ANY of
  * them (sibling-expanded) excludes a person — the same rule the count applies,
  * so the list a user opens matches the number they clicked.
  *
@@ -181,11 +211,13 @@ export async function getTrainedNotCertifiedRoster(
   if (Array.isArray(scope.companyIds) && scope.companyIds.length === 0) return { students: [] };
   const now = new Date();
 
-  const typed = await prisma.trainingData.findMany({
-    where: { trainingTitle: { in: trainingTitles } },
-    select: { trainingTitle: true, trainingType: true },
-  });
-  const certTitles = typed.filter((t) => t.trainingType === "Certification").map((t) => t.trainingTitle);
+  // Same catalogue-typed rule as the count: the primary (first title) must be
+  // a Certification, and its Certification alternatives join the pool.
+  const [primary, ...alternatives] = trainingTitles;
+  const certTitles = certTitlesOf(
+    { trainingTitle: primary, alternatives: alternatives.map((trainingTitle) => ({ trainingTitle })) },
+    await catalogueCertTitles(trainingTitles)
+  );
   if (certTitles.length === 0) return { students: [] };
 
   const iltTitles = iltTitlesFor(certTitles, await buildLeadsToIndex());

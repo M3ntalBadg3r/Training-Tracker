@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useFetchJson } from "@/hooks/useFetchJson";
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -377,6 +377,7 @@ function ProgramDetailPageInner() {
   );
   const tierBlock = scopeMissing ? null : reportData?.tiers ?? null;
 
+  const rosterRequestRef = useRef(0);
   const openRoster = async (
     mode: "holders" | "trainedNotCertified",
     trainingTitle: string,
@@ -385,6 +386,10 @@ function ProgramDetailPageInner() {
     filterValue: string,
     alternatives?: AlternativeEntry[]
   ) => {
+    // Two roster modes share one modal, so a slower response for the mode the
+    // user clicked first must not land under the title of the one they
+    // clicked second. Only the latest request may write the list.
+    const requestId = ++rosterRequestRef.current;
     setStudentMode(mode);
     setStudentTitle(trainingFullTitle);
     setStudentLoading(true);
@@ -407,11 +412,13 @@ function ProgramDetailPageInner() {
     try {
       const res = await fetch(`${apiBase}?${params}`);
       const data = await res.json();
+      if (requestId !== rosterRequestRef.current) return;
       setStudentList(data.students || []);
     } catch {
+      if (requestId !== rosterRequestRef.current) return;
       setStudentList([]);
     } finally {
-      setStudentLoading(false);
+      if (requestId === rosterRequestRef.current) setStudentLoading(false);
     }
   };
   const viewStudents: ViewStudentsFn = (...args) => openRoster("holders", ...args);
@@ -1098,8 +1105,8 @@ function ProgramDetailPageInner() {
         {studentMode === "trainedNotCertified" && (
           <p className="text-sm text-gray-600 mb-4">
             People in this view holding a current instructor-led or OLX training that leads to{" "}
-            <strong>{studentTitle}</strong>, who do not currently hold it (a lapsed certification counts as not
-            held). Grouped by the training they hold; the dates are that training&apos;s.
+            <strong>{studentTitle}</strong> or one of its certification alternatives, who hold none of them
+            currently (a lapsed certification counts as not held). Grouped by the training they hold; the dates are that training&apos;s.
             {horizonMonths > 0 && " Shown as of today, not at the projection horizon."}
           </p>
         )}

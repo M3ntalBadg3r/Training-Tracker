@@ -171,11 +171,11 @@ export async function buildProgramReport(opts: BuildProgramReportOptions) {
     const countryReqs = programData.filter((pd: ProgramDataRow) => pd.level === "Country");
     const titles = extractTitles(countryReqs);
     const scope: ComplianceScope = { country, companyIds };
-    const emailSets = await getEmailSetsByTitle(titles, now, scope);
-    const projectedEmailSets = horizonDate
-      ? await getEmailSetsByTitle(titles, horizonDate, scope)
-      : null;
-    const tnc = await buildTrainedNotCertifiedContext(specTableRows("Country"), now, scope);
+    const [emailSets, projectedEmailSets, tnc] = await Promise.all([
+      getEmailSetsByTitle(titles, now, scope),
+      horizonDate ? getEmailSetsByTitle(titles, horizonDate, scope) : null,
+      buildTrainedNotCertifiedContext(specTableRows("Country"), now, scope),
+    ]);
     const specialisations = buildSpecialisations(specMap, specDepMap, "Country", emailSets, projectedEmailSets, null, tnc);
     const tiers = isTiered
       ? await computeTierBlock({ levelName: "Country", scope, useTheatre: false, theatres: [], companyIds, rows: programData, tiers: tierRows, deploymentMode, now, horizonDate, countryCtx: null })
@@ -208,14 +208,15 @@ export async function buildProgramReport(opts: BuildProgramReportOptions) {
     // gives a clean non-compliant report rather than a query: `countries: []`
     // would match nothing anyway, so skip the round-trip.
     const hasArea = areaCountries.length > 0;
-    const emailSets = hasArea
-      ? await getEmailSetsByTitle(titles, now, scope)
-      : new Map<string, Set<string>>();
-    const projectedEmailSets = horizonDate
-      ? hasArea
-        ? await getEmailSetsByTitle(titles, horizonDate, scope)
-        : new Map<string, Set<string>>()
-      : null;
+    const [emailSets, projectedEmailSets, tnc] = await Promise.all([
+      hasArea ? getEmailSetsByTitle(titles, now, scope) : new Map<string, Set<string>>(),
+      horizonDate
+        ? hasArea
+          ? getEmailSetsByTitle(titles, horizonDate, scope)
+          : new Map<string, Set<string>>()
+        : null,
+      buildTrainedNotCertifiedContext(specTableRows(multi.reqLevel), now, scope, hasArea),
+    ]);
     // The per-country buckets are only needed — and only fetched — when some
     // in-scope row is "eachCountry": one bucketed query per as-of date over just
     // those rows' titles, never a query per country.
@@ -231,7 +232,6 @@ export async function buildProgramReport(opts: BuildProgramReportOptions) {
               : null,
           }
         : null;
-    const tnc = await buildTrainedNotCertifiedContext(specTableRows(multi.reqLevel), now, scope, hasArea);
     const specialisations = buildSpecialisations(specMap, specDepMap, multi.reqLevel, emailSets, projectedEmailSets, countryCtx, tnc);
     const tiers = isTiered
       ? await computeTierBlock({ levelName: multi.reqLevel, scope, useTheatre: false, theatres: [], companyIds, rows: programData, tiers: tierRows, deploymentMode, now, horizonDate, countryCtx })
@@ -243,11 +243,11 @@ export async function buildProgramReport(opts: BuildProgramReportOptions) {
     const theatreReqs = programData.filter((pd: ProgramDataRow) => pd.level === "Theatre");
     const titles = extractTitles(theatreReqs);
     const scope: ComplianceScope = { theatre, companyIds };
-    const emailSets = await getEmailSetsByTitle(titles, now, scope);
-    const projectedEmailSets = horizonDate
-      ? await getEmailSetsByTitle(titles, horizonDate, scope)
-      : null;
-    const tnc = await buildTrainedNotCertifiedContext(specTableRows("Theatre"), now, scope);
+    const [emailSets, projectedEmailSets, tnc] = await Promise.all([
+      getEmailSetsByTitle(titles, now, scope),
+      horizonDate ? getEmailSetsByTitle(titles, horizonDate, scope) : null,
+      buildTrainedNotCertifiedContext(specTableRows("Theatre"), now, scope),
+    ]);
     const specialisations = buildSpecialisations(specMap, specDepMap, "Theatre", emailSets, projectedEmailSets, null, tnc);
     const tiers = isTiered
       ? await computeTierBlock({ levelName: "Theatre", scope, useTheatre: false, theatres: [], companyIds, rows: programData, tiers: tierRows, deploymentMode, now, horizonDate, countryCtx: null })
@@ -520,7 +520,7 @@ function buildSpecialisations(
       aggregation,
       // Spread rather than assigned, so the key is genuinely absent (not
       // `undefined`) on a row the figure does not apply to.
-      ...(tnc && isTncRequirement(req)
+      ...(tnc && isTncRequirement(req, tnc.certTitles)
         ? { trainedNotCertified: trainedNotCertifiedEmails(req, tnc, emailSets).size }
         : {}),
     };
