@@ -68,6 +68,14 @@ export interface Requirement {
   /** Every country in the area, zeros included, sorted by country. */
   countryBreakdown?: CountryBreakdownRow[];
   projectedCountryBreakdown?: CountryBreakdownRow[];
+  /**
+   * Country / Region / Country Set / Theatre views, Certification rows only:
+   * people in the same population holding a current ILT/OLX that leads to this
+   * certification but not the certification itself. Today's figure even under a
+   * horizon; the area total on an "eachCountry" row. Absent everywhere else
+   * (including older cached payloads), which is what hides the table row.
+   */
+  trainedNotCertified?: number;
   alternatives: AlternativeEntry[];
 }
 
@@ -410,17 +418,30 @@ export function ComplianceTable({
   level,
   filterValue,
   onViewStudents,
+  onViewTrainedNotCertified,
+  horizonMonths = 0,
   unitLabel,
 }: {
   specialisations: Specialisation[];
   level: string;
   filterValue: string;
   onViewStudents: ViewStudentsFn;
+  /** Opens the "Trained not certified" roster for a requirement. */
+  onViewTrainedNotCertified?: ViewStudentsFn;
+  /** The selected projection horizon; > 0 labels the trained-not-certified row as today's. */
+  horizonMonths?: number;
   unitLabel: string;
 }) {
   const maxReqs = Math.max(...specialisations.map((s) => s.requirements.length), 0);
   const maxDepReqs = Math.max(...specialisations.map((s) => s.deploymentRequirements?.length ?? 0), 0);
   const colCount = specialisations.length + 1;
+  // The "Trained not certified" row appears only when the payload carries the
+  // figure somewhere in this table, so the Global view and an older cached
+  // payload render exactly as before.
+  const showTrainedNotCertified = specialisations.some((s) =>
+    [...s.requirements, ...(s.deploymentRequirements ?? [])].some((r) => r.trainedNotCertified !== undefined)
+  );
+  const tnc = showTrainedNotCertified ? { onView: onViewTrainedNotCertified, horizonMonths } : null;
 
   return (
     <div className="overflow-x-auto">
@@ -450,6 +471,7 @@ export function ComplianceTable({
               filterValue={filterValue}
               onViewStudents={onViewStudents}
               unitLabel={unitLabel}
+              tnc={tnc}
             />
           ))}
           {maxDepReqs > 0 && (
@@ -469,6 +491,7 @@ export function ComplianceTable({
                   filterValue={filterValue}
                   onViewStudents={onViewStudents}
                   unitLabel={unitLabel}
+                  tnc={tnc}
                   deployment
                 />
               ))}
@@ -487,6 +510,7 @@ function RequirementRowGroup({
   filterValue,
   onViewStudents,
   unitLabel,
+  tnc,
   deployment = false,
 }: {
   reqIdx: number;
@@ -495,10 +519,17 @@ function RequirementRowGroup({
   filterValue: string;
   onViewStudents: ViewStudentsFn;
   unitLabel: string;
+  /** Non-null when the table renders the "Trained not certified" row. */
+  tnc: { onView?: ViewStudentsFn; horizonMonths: number } | null;
   deployment?: boolean;
 }) {
   const reqsOf = (spec: Specialisation) =>
     deployment ? spec.deploymentRequirements ?? [] : spec.requirements;
+  // Decided per row group, not per table: a group whose columns are all
+  // Accreditations (or a deployment group with no Certification) would
+  // otherwise render a row of dashes.
+  const groupTnc =
+    tnc && specialisations.some((spec) => reqsOf(spec)[reqIdx]?.trainedNotCertified !== undefined) ? tnc : null;
   return (
     <>
       {/* Training name row */}
@@ -607,6 +638,44 @@ function RequirementRowGroup({
           );
         })}
       </tr>
+      {/* Trained-not-certified row: an opportunity, not a compliance state, so
+          it is never shaded green/red. */}
+      {groupTnc && (
+        <tr>
+          <td className="px-4 py-2 font-medium text-gray-600 border border-gray-200">
+            Trained not certified
+            {groupTnc.horizonMonths > 0 && <div className="text-[11px] font-normal text-gray-400">as of today</div>}
+          </td>
+          {specialisations.map((spec) => {
+            const req = reqsOf(spec)[reqIdx];
+            const count = req?.trainedNotCertified;
+            if (!req || count === undefined) {
+              return (
+                <td key={spec.name} className="px-4 py-2 text-center border border-gray-200">
+                  <span className="text-gray-300">—</span>
+                </td>
+              );
+            }
+            const onView = groupTnc.onView;
+            return (
+              <td key={spec.name} className="px-4 py-2 text-center border border-gray-200">
+                <span className={count > 0 ? "font-semibold text-amber-700" : "text-gray-500"}>
+                  {count} {count === 1 ? "person" : "people"}
+                </span>
+                {onView && count > 0 && req.trainingTitle && (
+                  <button
+                    onClick={() => onView(req.trainingTitle!, req.trainingFullTitle, level, filterValue, req.alternatives)}
+                    className="ml-2 inline-flex items-center gap-1 text-xs text-blue-600 hover:underline"
+                  >
+                    <Users size={12} /> View
+                  </button>
+                )}
+                {isEachCountry(req) && <div className="text-[11px] text-gray-400 mt-0.5">across the area</div>}
+              </td>
+            );
+          })}
+        </tr>
+      )}
       {/* Spacer row between requirement groups */}
       <tr>
         <td colSpan={specialisations.length + 1} className="h-1 bg-gray-100 border-0" />

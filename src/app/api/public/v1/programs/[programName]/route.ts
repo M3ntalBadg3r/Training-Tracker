@@ -19,6 +19,8 @@ import { COUNTRY_SET_SCOPE_ERROR, singleCompanyId } from "@/lib/country-sets";
  *    a Country Set belongs to one company — else 400)
  *  - `horizonMonths`  3 | 6 | 12 — forward-looking projection of upcoming expiries
  *  - `trainingTitle` + `students=true`  roster drill-down (comma-separated titles)
+ *  - `trainedNotCertified=true` (with the two above)  the roster behind a
+ *    Certification requirement's `trainedNotCertified` figure instead
  *  - `companyId`  narrow to one of the key's companies (consumed by the guard)
  *
  * Both modes are cached for the same 30s window as the internal twin. This is
@@ -47,6 +49,7 @@ export async function GET(
   const countrySet = sp.get("countrySet") || "";
   const trainingTitleParam = sp.get("trainingTitle") || "";
   const studentsMode = sp.get("students") === "true";
+  const trainedNotCertified = sp.get("trainedNotCertified") === "true";
 
   const rawHorizon = parseInt(sp.get("horizonMonths") || "0", 10);
   const horizonMonths = [3, 6, 12].includes(rawHorizon) ? rawHorizon : 0;
@@ -93,11 +96,14 @@ export async function GET(
 
   if (studentsMode && trainingTitleParam) {
     const titles = trainingTitleParam.split(",").map((t) => t.trim()).filter(Boolean);
+    // The roster mode is part of the key: the holder roster and the trained-not-
+    // certified roster for the same titles and scope are different people.
+    const mode = trainedNotCertified ? "tnc" : "holders";
     const result = await cachedReport(
-      `public-program-students|${progKey}|${scope}|${geoKey}|${encodeURIComponent(trainingTitleParam)}`,
+      `public-program-students|${progKey}|${scope}|${geoKey}|${mode}|${encodeURIComponent(trainingTitleParam)}`,
       () =>
         getProgramStudents({
-          trainingTitles: titles, level, country, region, countrySet, theatre, companyIds: ctx.companyIds,
+          trainingTitles: titles, level, country, region, countrySet, theatre, companyIds: ctx.companyIds, trainedNotCertified,
         }),
     );
     return NextResponse.json(result, { headers: { "Cache-Control": "private, max-age=30" } });

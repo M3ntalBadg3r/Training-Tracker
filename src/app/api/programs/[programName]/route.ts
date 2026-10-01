@@ -65,6 +65,9 @@ export async function GET(
   const countrySet = request.nextUrl.searchParams.get("countrySet") || "";
   const trainingTitleParam = request.nextUrl.searchParams.get("trainingTitle") || "";
   const studentsMode = request.nextUrl.searchParams.get("students") === "true";
+  // With students=true: the "Trained not certified" roster rather than the
+  // holder roster (see lib/program-trained-not-certified.ts).
+  const trainedNotCertified = request.nextUrl.searchParams.get("trainedNotCertified") === "true";
 
   // A Country Set is per-company tenant data: its name resolves only within one
   // company, and two companies may each own a same-named set over different
@@ -94,9 +97,15 @@ export async function GET(
 
   if (studentsMode && trainingTitleParam) {
     const titles = trainingTitleParam.split(",").map((t) => t.trim()).filter(Boolean);
+    // The roster mode is part of the key: the two rosters for the same titles
+    // and scope are different people.
+    const mode = trainedNotCertified ? "tnc" : "holders";
     const result = await cachedReport(
-      `program-students|${progKey}|${scope}|${level}|${country}|${region}|${setKey}|${theatre}|${encodeURIComponent(trainingTitleParam)}`,
-      () => getProgramStudents({ trainingTitles: titles, level, country, region, countrySet, theatre, companyIds: companyFilter }),
+      `program-students|${progKey}|${scope}|${level}|${country}|${region}|${setKey}|${theatre}|${mode}|${encodeURIComponent(trainingTitleParam)}`,
+      () =>
+        getProgramStudents({
+          trainingTitles: titles, level, country, region, countrySet, theatre, companyIds: companyFilter, trainedNotCertified,
+        }),
     );
     return NextResponse.json(result, { headers: { "Cache-Control": "private, max-age=30" } });
   }

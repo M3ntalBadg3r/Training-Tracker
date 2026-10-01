@@ -3131,6 +3131,31 @@ const helpSections: Record<string, HelpSection> = {
           compliance.
         </p>
 
+        <h3>Trained not certified</h3>
+        <p>
+          On the By Country, By Region, By Country Set and By Theatre views, each{" "}
+          <strong>Certification</strong>{" "}requirement has a{" "}
+          <strong>Trained not certified</strong>{" "}row under Attained. It counts
+          the people in the same population as Attained who hold a current
+          instructor-led or OLX training that <em>leads to</em>{" "}that
+          certification (set in Training Data), but do not currently hold the
+          certification or any of its alternatives. Someone whose certification
+          has lapsed counts as not certified; someone whose training has itself
+          expired does not count. Click <strong>View</strong>{" "}to list them,
+          grouped by the training they hold.
+        </p>
+        <p>
+          These are the people closest to certifying &mdash; the same people
+          Compliance Planning ranks first as &ldquo;easy wins&rdquo;. The figure
+          is an opportunity rather than a compliance state, so it is never
+          coloured red or green. It appears only on Certification requirements,
+          because a training can only lead to a certification; Accreditation,
+          ILT and OLX requirements show a dash. On an each-country requirement
+          it is the total across the area. Under a <strong>Compliance as
+          of</strong>{" "}projection it still shows today&apos;s figure. It is not
+          shown on the Global view, in Tier Status, or in exports.
+        </p>
+
         <h3>Global Report</h3>
         <p>
           Shown when the <strong>View</strong> level is Global (available when the
