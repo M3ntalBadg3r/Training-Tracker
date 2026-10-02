@@ -120,6 +120,9 @@ interface PlanCandidateClose {
   scopeLabel: string;
   tier: CandidateTier;
   path: string | null;
+  /** Every qualifying training/legacy cert held at this tier, `path` first.
+   *  Absent on an older cached payload, which falls back to `path`. */
+  paths?: string[];
 }
 interface PlanCandidate {
   email: string;
@@ -708,7 +711,18 @@ function candidateSpecialisations(c: PlanCandidate): string {
  * the ILT/OLX behind an easy win (or the legacy cert behind a legacy upgrade).
  */
 function candidateHelpfulTraining(c: PlanCandidate): string {
-  return [...new Set(c.closes.map((cl) => cl.path).filter((p): p is string => !!p))].join(", ");
+  return [...new Set(c.closes.flatMap(closePaths))].join(", ");
+}
+
+/** Every route a close names — all of them, not just the first the engine met. */
+function closePaths(cl: PlanCandidateClose): string[] {
+  if (cl.paths?.length) return cl.paths;
+  return cl.path ? [cl.path] : [];
+}
+
+/** "A", "A and B", "A, B and C" — for naming several held trainings in a sentence. */
+function joinAnd(items: string[]): string {
+  return items.length <= 1 ? (items[0] ?? "") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
 }
 
 // Single source of truth for the plain-language explanation of one gap a candidate
@@ -731,7 +745,7 @@ function closeSegments(cl: PlanCandidateClose): Segment[] {
       ];
     case "easy-win":
       return [
-        { text: "They have taken " }, { text: cl.path ?? "the required training", bold: true },
+        { text: "They have taken " }, { text: joinAnd(closePaths(cl)) || "the required training", bold: true },
         { text: ". Passing the " }, cert, { text: " certification exam will contribute to " },
         ...goal, { text: "." },
       ];
@@ -742,7 +756,8 @@ function closeSegments(cl: PlanCandidateClose): Segment[] {
       ];
     case "legacy":
       return [
-        { text: "They hold the legacy certification " }, { text: cl.path ?? "a superseded certification", bold: true },
+        { text: closePaths(cl).length > 1 ? "They hold the legacy certifications " : "They hold the legacy certification " },
+        { text: joinAnd(closePaths(cl)) || "a superseded certification", bold: true },
         { text: ". Upgrading to " }, cert, { text: " will contribute to " }, ...goal, { text: "." },
       ];
     default:
