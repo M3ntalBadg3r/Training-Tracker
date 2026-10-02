@@ -1,6 +1,7 @@
 import prisma from "@/lib/prisma";
 import { fetchLeadsToGroups } from "@/lib/leads-to";
 import { getEmailSetsByTitle, type ComplianceScope } from "@/lib/program-compliance";
+import { toRosterRows, type RosterRow } from "@/lib/program-roster";
 
 /**
  * "Trained not certified" for the program dashboard: the people in a view's
@@ -180,16 +181,11 @@ export function trainedNotCertifiedEmails(
   return out;
 }
 
-export interface TrainedNotCertifiedRosterRow {
-  fullName: string;
-  email: string;
-  country: string;
-  theatre: string;
-  /** The leads-to ILT/OLX this person holds (the latest, if several). */
-  completedDate: string;
-  expiryDate: string;
-  training: string;
-}
+/**
+ * A roster row: `training`/dates are the latest leads-to ILT/OLX this person
+ * holds, and `holdings` lists every one of them.
+ */
+export type TrainedNotCertifiedRosterRow = RosterRow;
 
 /**
  * Roster drill-down for the figure. `trainingTitles` are the requirement's
@@ -250,22 +246,7 @@ export async function getTrainedNotCertifiedRoster(
     },
   });
 
-  const latest = new Map<string, (typeof records)[number]>();
-  for (const r of records) {
-    const existing = latest.get(r.email);
-    if (!existing || r.completedDate > existing.completedDate) latest.set(r.email, r);
-  }
-
-  const students = [...latest.values()]
-    .map((r) => ({
-      fullName: r.student.fullName,
-      email: r.email,
-      country: r.student.country,
-      theatre: r.student.theatre,
-      completedDate: r.completedDate.toISOString().split("T")[0],
-      expiryDate: r.expiryDate.toISOString().split("T")[0],
-      training: r.trainingData?.fullTitle ?? r.trainingTitle,
-    }))
-    .sort((a, b) => a.fullName.localeCompare(b.fullName));
-  return { students };
+  // Every leads-to training a person holds, not just their latest: the modal
+  // lists people per training, so collapsing to one hid them from the others.
+  return { students: toRosterRows(records) };
 }

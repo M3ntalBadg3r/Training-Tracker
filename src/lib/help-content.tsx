@@ -3142,7 +3142,19 @@ const helpSections: Record<string, HelpSection> = {
           certification or any of its alternatives. Someone whose certification
           has lapsed counts as not certified; someone whose training has itself
           expired does not count. Click <strong>View</strong>{" "}to list them,
-          grouped by the training they hold.
+          grouped by the training they hold. Someone holding more than one of
+          those trainings is listed under each, so the groups can add up to more
+          than the figure, which counts each person once.
+        </p>
+        <p>
+          To compare it with the <strong>Trained But Not Certified</strong>{" "}
+          report, set that report&apos;s ILT filter to <strong>Active</strong>,
+          narrow it to the same geography and training, and read{" "}
+          <strong>Distinct Students</strong>{" "}rather than Gaps (Gaps counts one
+          row per person per training). One difference remains by design: the
+          report treats anyone who has <em>ever</em>{" "}held the certification as
+          certified, so someone whose certification has lapsed appears here but
+          not there.
         </p>
         <p>
           These are the people closest to certifying &mdash; the same people
