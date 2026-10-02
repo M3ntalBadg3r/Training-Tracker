@@ -181,12 +181,19 @@ function ProgramDetailPageInner() {
   // Group the roster by the specific training each person holds, so the modal
   // shows one table per training (primary + each alternative/variant) rather
   // than a single table implying everyone holds the requirement's primary.
+  // A person holding several of them is listed under EACH, with that
+  // training's dates — filing them under only their latest made the
+  // per-training counts disagree with the Trained But Not Certified report.
   const studentGroups = useMemo(() => {
     // NB: `Map` is shadowed by the lucide-react icon import, so use a plain object.
     const groups: Record<string, StudentEntry[]> = {};
     for (const s of studentList) {
-      const key = s.training ?? "—";
-      (groups[key] ??= []).push(s);
+      const holdings = s.holdings?.length
+        ? s.holdings
+        : [{ training: s.training ?? "—", completedDate: s.completedDate, expiryDate: s.expiryDate }];
+      for (const h of holdings) {
+        (groups[h.training] ??= []).push({ ...s, completedDate: h.completedDate, expiryDate: h.expiryDate });
+      }
     }
     // Put the requirement's primary training first, then the rest A–Z.
     return Object.entries(groups).sort((a, b) => {
@@ -1106,7 +1113,7 @@ function ProgramDetailPageInner() {
           <p className="text-sm text-gray-600 mb-4">
             People in this view holding a current instructor-led or OLX training that leads to{" "}
             <strong>{studentTitle}</strong> or one of its certification alternatives, who hold none of them
-            currently (a lapsed certification counts as not held). Grouped by the training they hold; the dates are that training&apos;s.
+            currently (a lapsed certification counts as not held). Listed under each training they hold, with that training&apos;s dates.
             {horizonMonths > 0 && " Shown as of today, not at the projection horizon."}
           </p>
         )}
@@ -1116,6 +1123,13 @@ function ProgramDetailPageInner() {
           <p className="text-sm text-gray-500">No students found.</p>
         ) : (
           <div className="max-h-[400px] overflow-y-auto space-y-6">
+            {studentGroups.length > 1 && (
+              <p className="text-sm text-gray-600">
+                {studentList.length} {studentList.length === 1 ? "person" : "people"}
+                {studentGroups.reduce((n, [, g]) => n + g.length, 0) > studentList.length &&
+                  " — someone holding more than one of these trainings is listed under each"}
+              </p>
+            )}
             {studentGroups.map(([training, students]) => (
               <div key={training}>
                 <h3 className="text-sm font-semibold text-gray-800 mb-2">

@@ -103,6 +103,10 @@ export interface StudentEntry {
   /** The specific training (fullTitle) this person holds — may be the primary
    *  requirement or one of its alternatives / a sibling variant. */
   training?: string;
+  /** Every matching training this person holds, each with its own dates —
+   *  the modal lists the person under each one. Absent on an older cached
+   *  payload, which falls back to `training`. */
+  holdings?: { training: string; completedDate: string; expiryDate: string }[];
 }
 
 // --- Tiered-program shapes (returned as `tiers` from the compliance API) ---
