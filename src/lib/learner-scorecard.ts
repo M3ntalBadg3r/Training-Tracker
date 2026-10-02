@@ -16,7 +16,7 @@
 
 import prisma from "@/lib/prisma";
 import { fetchDedupedTrainingRecords, type DedupedTrainingRecord } from "@/lib/training-records-query";
-import { fetchTrainedNotCertified } from "@/lib/report-queries";
+import { certGapEmails, fetchTrainedNotCertified } from "@/lib/report-queries";
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
 
@@ -100,7 +100,8 @@ export async function computeLearnerScorecard(input: LearnerScorecardInput): Pro
     country: s.country,
     region: s.regionData?.region ?? null,
   }));
-  const gapEmails = gaps.map((g) => g.email);
+  // One per (learner, certification): see `certGapEmails`.
+  const gapEmails = certGapEmails(gaps);
 
   return computeFromInputs(students, records, gapEmails, input);
 }

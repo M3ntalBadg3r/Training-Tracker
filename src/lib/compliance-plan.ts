@@ -228,6 +228,12 @@ export interface PlanCandidateClose {
   tier: CandidateTier;
   /** ILT/OLX (easy-win) or legacy cert (legacy) full title that gets them there. */
   path: string | null;
+  /**
+   * Every such title the person holds at this tier, `path` first. A person
+   * holding two trainings that lead to the cert used to be credited with
+   * whichever the pool met first, so "Relevant training held" named one.
+   */
+  paths: string[];
 }
 
 export interface PlanCandidate {
@@ -346,6 +352,8 @@ interface PoolMember {
   email: string;
   tier: Exclude<CandidateTier, "net-new">;
   path: string | null;
+  /** Every path held at `tier`, `path` first (see `PlanCandidateClose.paths`). */
+  paths: string[];
 }
 
 /** A requirement instance with its resolved gap + candidate pools. */
@@ -1073,9 +1081,15 @@ async function buildEachCountryInstances(
 }
 
 /** Keep the cheapest tier per email in a pool. */
-function addPool(seen: Map<string, PoolMember>, m: PoolMember): void {
+function addPool(seen: Map<string, PoolMember>, m: Omit<PoolMember, "paths">): void {
   const existing = seen.get(m.email);
-  if (!existing || TIER_RANK[m.tier] < TIER_RANK[existing.tier]) seen.set(m.email, m);
+  if (!existing || TIER_RANK[m.tier] < TIER_RANK[existing.tier]) {
+    seen.set(m.email, { ...m, paths: m.path ? [m.path] : [] });
+  } else if (existing.tier === m.tier && m.path && !existing.paths.includes(m.path)) {
+    // Same tier, another route there: keep it, so the person is shown with
+    // every qualifying training they hold rather than an arbitrary one.
+    existing.paths.push(m.path);
+  }
 }
 
 // ─── Pure greedy allocation ──────────────────────────────────────────────────
@@ -1152,6 +1166,7 @@ export function allocateCandidates(instances: ReqInstance[]): AllocationResult {
       scopeLabel: inst.scopeLabel,
       tier: member.tier,
       path: member.path,
+      paths: member.paths,
     });
   };
 
@@ -1736,6 +1751,7 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
         scopeLabel: inst.scopeLabel,
         tier: m.tier,
         path: m.path,
+        paths: m.paths,
       });
     }
   }

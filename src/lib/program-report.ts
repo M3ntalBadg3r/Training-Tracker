@@ -18,6 +18,7 @@ import {
   type TierLadderInput,
 } from "@/lib/program-compliance";
 import { countriesInCountrySet, listCountrySetNames } from "@/lib/country-sets";
+import { toRosterRows } from "@/lib/program-roster";
 import {
   normaliseAggregation,
   type Aggregation,
@@ -940,6 +941,10 @@ export async function getProgramStudents(opts: GetProgramStudentsOptions) {
   const records = await prisma.trainingTaken.findMany({
     where: {
       trainingTitle: { in: fetchTitles },
+      // The same point-in-time rule as the Attained count
+      // (`getEmailSetsByTitle`), so a future-dated completion cannot put
+      // someone on the list who is not in the number.
+      completedDate: { lte: now },
       expiryDate: { gt: now },
       ...(Object.keys(studentFilter).length > 0 ? { student: studentFilter } : {}),
     },
@@ -947,26 +952,9 @@ export async function getProgramStudents(opts: GetProgramStudentsOptions) {
       student: { select: { fullName: true, email: true, country: true, theatre: true } },
       trainingData: { select: { fullTitle: true } },
     },
-    orderBy: { student: { fullName: "asc" } },
   });
 
-  const emailMap = new Map<string, typeof records[0]>();
-  for (const r of records) {
-    const existing = emailMap.get(r.email);
-    if (!existing || r.completedDate > existing.completedDate) {
-      emailMap.set(r.email, r);
-    }
-  }
-
-  const students = Array.from(emailMap.values()).map((r) => ({
-    fullName: r.student.fullName,
-    email: r.email,
-    country: r.student.country,
-    theatre: r.student.theatre,
-    completedDate: r.completedDate.toISOString().split("T")[0],
-    expiryDate: r.expiryDate.toISOString().split("T")[0],
-    training: r.trainingData?.fullTitle ?? r.trainingTitle,
-  }));
-
-  return { students };
+  // Every qualifying training a person holds (primary, alternatives), not only
+  // their latest — the modal lists people per training.
+  return { students: toRosterRows(records) };
 }

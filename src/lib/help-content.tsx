@@ -774,7 +774,7 @@ const helpSections: Record<string, HelpSection> = {
           <li><strong>Total</strong> — sum of the four count columns; also drives the Top Achievers leaderboard.</li>
           <li><strong>Expiring Soon</strong> — active Certifications/Accreditations whose expiry falls within the selected window (1/3/6 months); always looks forward from today.</li>
           <li><strong>Expired</strong>{" "}— the learner&apos;s expired achievements.</li>
-          <li><strong>Gaps</strong> — trainings the learner completed without earning the mapped certification (same logic as Trained But Not Certified).</li>
+          <li><strong>Gaps</strong> — certifications the learner has trained for but not earned (same logic as Trained But Not Certified). Each certification counts once, even when the learner holds more than one training that leads to it.</li>
           <li><strong>Last Achievement</strong>{" "}— most recent completion date across all of the learner&apos;s records.</li>
           <li>The whole roster is included, so learners with no completions appear with all-zero counts. OLX sub-items are excluded (the parent OLX counts once it&apos;s complete).</li>
           <li>Filter by theatre/region/country and search by name or email; every column is sortable and the table exports to CSV/Excel/PDF.</li>
@@ -3142,7 +3142,19 @@ const helpSections: Record<string, HelpSection> = {
           certification or any of its alternatives. Someone whose certification
           has lapsed counts as not certified; someone whose training has itself
           expired does not count. Click <strong>View</strong>{" "}to list them,
-          grouped by the training they hold.
+          grouped by the training they hold. Someone holding more than one of
+          those trainings is listed under each, so the groups can add up to more
+          than the figure, which counts each person once.
+        </p>
+        <p>
+          To compare it with the <strong>Trained But Not Certified</strong>{" "}
+          report, set that report&apos;s ILT filter to <strong>Active</strong>,
+          narrow it to the same geography and training, and read{" "}
+          <strong>Distinct Students</strong>{" "}rather than Gaps (Gaps counts one
+          row per person per training). One difference remains by design: the
+          report treats anyone who has <em>ever</em>{" "}held the certification as
+          certified, so someone whose certification has lapsed appears here but
+          not there.
         </p>
         <p>
           These are the people closest to certifying &mdash; the same people

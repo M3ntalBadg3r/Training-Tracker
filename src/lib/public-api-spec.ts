@@ -652,8 +652,15 @@ export const PUBLIC_API_ENDPOINTS: readonly PublicApiEndpoint[] = [
                 training: {
                   type: "string",
                   description:
-                    "The specific training this person holds, which may be an alternative or a catalogue variant. With trainedNotCertified=true, the leads-to training they hold (their latest, if several), and the dates are that training's.",
+                    "The specific training this person holds, which may be an alternative or a catalogue variant. With trainedNotCertified=true, the leads-to training they hold. When they hold several, this is the latest, and completedDate/expiryDate are that training's; holdings lists them all.",
                 },
+                holdings: arr(
+                  obj({
+                    training: STR,
+                    completedDate: { type: "string", format: "date" },
+                    expiryDate: { type: "string", format: "date" },
+                  })
+                ),
               })
             ),
           }),
