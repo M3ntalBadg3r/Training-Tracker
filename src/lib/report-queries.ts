@@ -263,6 +263,26 @@ export async function fetchTrainingsWithStudents(opts: {
 
 // ─── Report queries ─────────────────────────────────────────────────────────────
 
+/**
+ * One email per (learner, missing certification), for counting a learner's
+ * certification gaps. Trained-not-certified rows are one per (learner,
+ * training), so a learner holding two trainings that lead to the same
+ * certification has two rows for one missing certification — counting rows
+ * reported that as two gaps. Keyed on `certificationFullTitle` (the group's
+ * target certifications, "A or B" when it leads to alternatives).
+ */
+export function certGapEmails(rows: Pick<TrainedNotCertifiedRow, "email" | "certificationFullTitle">[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const r of rows) {
+    const key = `${r.email}\u0000${r.certificationFullTitle}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(r.email);
+  }
+  return out;
+}
+
 export async function fetchTrainedNotCertified(companyId?: CompanyScope): Promise<TrainedNotCertifiedRow[]> {
   const ids = toCompanyIdList(companyId);
   // Shares `fetchLeadsToGroups` with the interactive report so the two cannot
@@ -474,10 +494,9 @@ export async function fetchLearnerScorecard(companyId?: CompanyScope): Promise<L
     if (r.completedDate && r.completedDate > row.lastAchievement) row.lastAchievement = r.completedDate;
   }
 
-  // Certification gaps — one trained-not-certified row per (training, learner).
-  const gaps = await fetchTrainedNotCertified(companyId);
-  for (const g of gaps) {
-    const row = map.get(g.email);
+  // Certification gaps — one per (learner, certification), not per training.
+  for (const email of certGapEmails(await fetchTrainedNotCertified(companyId))) {
+    const row = map.get(email);
     if (row) row.gaps += 1;
   }
 
