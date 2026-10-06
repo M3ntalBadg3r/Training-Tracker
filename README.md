@@ -1346,10 +1346,19 @@ curl -H "Authorization: Bearer tt_live_xxxxxxxx" \
 | `GET /api/public/v1/offerings` | Offering definitions (specialisations + supporting trainings) for the key's companies. Add `?country=` or `?region=` for Onshore/Nearshore/Offshore compliance figures; `?name=` for one offering |
 | `GET /api/public/v1/country-sets` | Country Set definitions for the key's companies — each set's `companyId`, name, description and member countries (the areas `level=countrySet` reports on). Two companies' same-named sets come back as two rows. `?name=` for one set; empty sets are listed with no countries |
 | `GET /api/public/v1/programs` | Partner program list (configured levels, per-theatre-minimum flag, tiered flag) |
-| `GET /api/public/v1/programs/{programName}` | Per-program compliance. `?level=country\|region\|countrySet\|theatre\|global` with `?country=`/`?region=`/`?countrySet=`/`?theatre=` — each level counts only the requirements authored at it (`region` reads Region requirements, no longer the pooled Country ones); `countrySet` names the company's own set, so a `level=countrySet` request must be narrowed to **one company** (see below); `?horizonMonths=3\|6\|12` for a forward-looking projection; `?trainingTitle=&students=true` for the holder roster |
-| `GET /api/public/v1/programs/planning` | **Compliance planning — aggregates only.** The roadmap, per-requirement gaps and costs, risk impacts and totals. `?options=true` lists the program / tier / specialisation names you need to build a target; `?targets=` takes a URL-encoded JSON array `[{program, mode:"tier"\|"specialisations"\|"all", tier?, specialisations?[]}]`, with `?level=` (including `countrySet`), `?country=`/`?region=`/`?countrySet=`/`?theatre=`, `?renewalWindowMonths=0\|1\|3\|6\|12` and `?planForWindow=true`. `?options=true` also lists the company's non-empty Country Sets (empty unless the request is narrowed to one company); `level=countrySet` must be narrowed to one company |
+| `GET /api/public/v1/programs/{programName}` | Per-program compliance. `?level=country\|region\|countrySet\|theatre\|global` with `?country=`/`?region=`/`?countrySet=`/`?theatre=` — each level counts only the requirements authored at it (`region` reads Region requirements, no longer the pooled Country ones); `countrySet` names the company's own set, so a `level=countrySet` request must be narrowed to **one company** (see below); `?horizonMonths=3\|6\|12` for a forward-looking projection. Region and Country Set requirements carry a count mode (`aggregation`: `total` or `eachCountry`); an `eachCountry` row adds `pooledAttained`, `countriesMet`/`countriesTotal` and a per-country `countryBreakdown`, and its `attained` is the **lowest** country's count. On the country/region/countrySet/theatre levels each Certification requirement also carries `trainedNotCertified`. `?trainingTitle=&students=true` returns the holder roster (each person with a `holdings` list of every matching training they hold); add `&trainedNotCertified=true` for the people behind the `trainedNotCertified` figure |
+| `GET /api/public/v1/programs/planning` | **Compliance planning — aggregates only.** The roadmap, per-requirement gaps and costs, risk impacts and totals. `?options=true` lists the program / tier / specialisation names you need to build a target; `?targets=` takes a URL-encoded JSON array `[{program, mode:"tier"\|"specialisations"\|"all", tier?, specialisations?[]}]`, with `?level=` (including `countrySet`), `?country=`/`?region=`/`?countrySet=`/`?theatre=`, `?renewalWindowMonths=0\|1\|3\|6\|12` and `?planForWindow=true`. `?options=true` also lists the company's non-empty Country Sets (empty unless the request is narrowed to one company); `level=countrySet` must be narrowed to one company. An `eachCountry` requirement is planned as one gap per country, sharing a `requirementKey` |
 | `GET /api/public/v1/reports/program-compliance-trend` | 12 months of compliance history plus a 12-month expiry-driven forecast, per program and specialisation. `?program=`, `?country=`/`?region=`/`?theatre=` |
 | `GET /api/public/v1/reports/renewal-forecast` | Projected renewals vs lapses over the next 12 months, plus an at-risk-by-training breakdown. `?country=`/`?region=`/`?theatre=` |
+
+`program-compliance-trend` and `renewal-forecast` are **separate endpoints, not
+values for `{reportType}`** — passing their names to `/reports/{reportType}`
+returns a 404.
+
+On the two per-program endpoints, `?level=` decides which geography parameter is
+read — `level=country` reads only `?country=`, `level=region` only `?region=`,
+and so on — and each level counts only the requirements written at it. Elsewhere,
+the narrowest of `?country=`/`?region=`/`?theatre=` wins.
 
 All endpoints accept an optional `?companyId=` to narrow to a single granted
 company; `training-records` also accepts `?theatre=`, `?region=`, `?country=`,
@@ -1373,9 +1382,6 @@ header** giving the seconds to wait. The separate limit on *invalid*-key
 attempts deliberately omits that header, so it tells an unauthenticated caller
 nothing about when to try again.
 
-The last two are **separate endpoints, not values for `{reportType}`** — they
-are not in that endpoint's list, so passing their names to
-`/reports/{reportType}` returns a 404.
 
 **Compliance planning is returned as aggregates only.** The in-app planner also
 shows *who* to certify — named candidates, the full eligible pool, and the
