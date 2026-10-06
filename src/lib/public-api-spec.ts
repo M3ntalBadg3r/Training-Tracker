@@ -142,7 +142,7 @@ const PROGRAM_SCOPE_PARAMS: readonly PublicApiParam[] = [
     name: "countrySet",
     in: "query",
     description:
-      "The Country Set to report on when level=countrySet — a named group of countries that belongs to one company (two companies may each own a same-named set over different countries). Counts CountrySet-level requirements over that company's set's countries. A level=countrySet request must therefore narrow to exactly one company — with ?companyId=, or by using a key granted exactly one company — or it is a 400. An unknown or empty set has no countries and so meets nothing.",
+      "The Country Set to report on when level=countrySet — a named group of countries that belongs to one company (two companies may each own a same-named set over different countries). Counts CountrySet-level requirements over that company's set's countries. A level=countrySet request must therefore narrow to exactly one company — with ?companyId=, or by using a key granted exactly one company — or it is a 400. An unknown or empty set has no countries and so meets nothing. GET /api/public/v1/country-sets lists each set's countries.",
     schema: { type: "string" },
   },
   {
@@ -509,6 +509,33 @@ export const PUBLIC_API_ENDPOINTS: readonly PublicApiEndpoint[] = [
   },
 
   {
+    path: "/api/public/v1/country-sets",
+    routeFile: "country-sets/route.ts",
+    summary: "Country Set definitions",
+    description:
+      "The Country Sets owned by the key's companies, each with its member countries — the areas level=countrySet reports on. Country Sets belong to one company and names are unique only per company, so two companies' same-named sets come back as two rows, told apart by companyId. A key granted several companies sees all of them here; to report on one, pass ?companyId= with that row's companyId (level=countrySet needs exactly one company). Empty sets are included with no countries; they meet no requirement.",
+    parameters: [
+      COMPANY_ID,
+      {
+        name: "name",
+        in: "query",
+        description: "Exact set name — an exact match, not a substring search. May match one set per company.",
+        schema: { type: "string" },
+      },
+    ],
+    responseSchema: obj({
+      countrySets: arr(
+        obj({
+          companyId: INT,
+          name: STR,
+          description: NULLABLE_STR,
+          countries: { ...arr(STR), description: "Member country names, sorted. Empty for an empty set." },
+        })
+      ),
+    }),
+  },
+
+  {
     path: "/api/public/v1/programs",
     routeFile: "programs/route.ts",
     summary: "Partner program list",
@@ -600,7 +627,7 @@ export const PUBLIC_API_ENDPOINTS: readonly PublicApiEndpoint[] = [
             countrySets: {
               ...arr(STR),
               description:
-                "The scoped company's own Country Sets with at least one member — the values countrySet accepts. Empty unless the request is narrowed to exactly one company.",
+                "The scoped company's own Country Sets with at least one member — the values countrySet accepts. Empty unless the request is narrowed to exactly one company. GET /api/public/v1/country-sets lists their countries.",
             },
             theatres: arr(STR),
             meta: obj({
@@ -758,7 +785,7 @@ export const PUBLIC_API_ENDPOINTS: readonly PublicApiEndpoint[] = [
             countrySets: {
               ...arr(STR),
               description:
-                "The scoped company's own Country Sets with at least one member — the values countrySet accepts. Empty unless the request is narrowed to exactly one company.",
+                "The scoped company's own Country Sets with at least one member — the values countrySet accepts. Empty unless the request is narrowed to exactly one company. GET /api/public/v1/country-sets lists their countries.",
             },
           }),
           title: "Selector metadata (options=true)",

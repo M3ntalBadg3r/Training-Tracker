@@ -3428,6 +3428,11 @@ const helpSections: Record<string, HelpSection> = {
           company with no sets is not offered the <strong>By Country Set</strong>{" "}
           view at all.
         </p>
+        <p>
+          The read-only public API lists each company&apos;s sets and their
+          countries at <code>GET /api/public/v1/country-sets</code>, for the
+          companies the API key may read. Sets are managed only here.
+        </p>
 
         <h3>Searching &amp; Sorting</h3>
         <p>
@@ -3562,13 +3567,29 @@ const helpSections: Record<string, HelpSection> = {
             <tr><td><code>GET /api/public/v1/students</code></td><td>Student roster for the key&rsquo;s companies.</td></tr>
             <tr><td><code>GET /api/public/v1/training-records</code></td><td>Per-completion training records (latest per learner &amp; training).</td></tr>
             <tr><td><code>GET /api/public/v1/reports/&#123;type&#125;</code></td><td>Report aggregates (e.g. <code>expiring-soon</code>, <code>legacy-gap</code>, <code>learner-scorecard</code>).</td></tr>
+            <tr><td><code>GET /api/public/v1/offerings</code></td><td>Offering definitions for the key&rsquo;s companies. Add <code>?country=</code> or <code>?region=</code> for Onshore/Nearshore/Offshore holder counts; <code>?name=</code> for one offering.</td></tr>
+            <tr><td><code>GET /api/public/v1/country-sets</code></td><td>The Country Sets owned by the key&rsquo;s companies, each with its countries. <code>?name=</code> for one set.</td></tr>
             <tr><td><code>GET /api/public/v1/programs</code></td><td>Partner program list (levels, per-theatre-minimum flag, tiered flag).</td></tr>
-            <tr><td><code>GET /api/public/v1/programs/&#123;name&#125;</code></td><td>Per-program compliance — <code>?level=</code>, <code>?horizonMonths=</code>, and <code>?trainingTitle=&amp;students=true</code> for the holder roster.</td></tr>
+            <tr><td><code>GET /api/public/v1/programs/&#123;name&#125;</code></td><td>Per-program compliance — <code>?level=</code> (country, region, countrySet, theatre or global) with the matching <code>?country=</code>/<code>?region=</code>/<code>?countrySet=</code>/<code>?theatre=</code>, and <code>?horizonMonths=</code>. Includes each requirement&rsquo;s count mode and, for Certification requirements, the Trained not certified figure. <code>?trainingTitle=&amp;students=true</code> returns the holder roster; add <code>&amp;trainedNotCertified=true</code> for the people behind that figure.</td></tr>
             <tr><td><code>GET /api/public/v1/programs/planning</code></td><td>Compliance planning, <strong>aggregates only</strong> — roadmap, gaps, risk impacts and totals. <code>?options=true</code> lists the program/tier/specialisation names; <code>?targets=</code> takes a URL-encoded JSON array.</td></tr>
             <tr><td><code>GET /api/public/v1/reports/program-compliance-trend</code></td><td>12 months of compliance history plus a 12-month forecast, per program and specialisation.</td></tr>
             <tr><td><code>GET /api/public/v1/reports/renewal-forecast</code></td><td>Projected renewals vs lapses over the next 12 months, with an at-risk-by-training breakdown.</td></tr>
           </tbody>
         </table>
+        <p>
+          The compliance-trend and renewal-forecast reports are{" "}
+          <strong>separate endpoints</strong>, not values for{" "}
+          <code>&#123;type&#125;</code> &mdash; passing their names to{" "}
+          <code>/reports/&#123;type&#125;</code> returns a 404.
+        </p>
+        <p>
+          On the two program endpoints, <code>?level=</code> decides which
+          geography is read: <code>level=country</code> reads only{" "}
+          <code>?country=</code>, <code>level=region</code> only{" "}
+          <code>?region=</code>, and so on, and each level counts only the
+          requirements written at it. Elsewhere, the narrowest of country, region
+          and theatre wins.
+        </p>
         <p>
           All endpoints accept an optional <code>?companyId=</code> to narrow to a single
           granted company. Asking for a company the key was <strong>not</strong>{" "}
@@ -3584,11 +3605,6 @@ const helpSections: Record<string, HelpSection> = {
           must pass <code>?companyId=</code>, or the request is refused with a{" "}
           <code>400</code>. Likewise, the list of Country Set names those
           endpoints return is empty unless the request names a single company.
-        </p>
-        <p>
-          The last two are <strong>separate endpoints</strong>, not values for{" "}
-          <code>&#123;type&#125;</code> &mdash; passing their names to{" "}
-          <code>/reports/&#123;type&#125;</code> returns a 404.
         </p>
         <p>
           <strong>Point an integration at the OpenAPI document</strong> rather than
@@ -3613,7 +3629,7 @@ const helpSections: Record<string, HelpSection> = {
           <li><strong>Disable</strong> temporarily suspends a key; <strong>Revoke</strong> permanently kills it (a revoked key can never be re-enabled).</li>
           <li><strong>Edit</strong> renames a key, changes its companies, or adjusts its expiry. <strong>Delete</strong> removes it entirely.</li>
           <li>The <strong>Last used</strong> column shows when the key last made a request, so unused keys are easy to spot and clean up. The <strong>Last IP</strong> column shows the source IP of that request (from the <code>X-Forwarded-For</code> header), so you can confirm traffic is coming from where you expect.</li>
-          <li>Each key is rate-limited (120 requests per minute); excess requests receive an HTTP 429. Requests made with an invalid or unknown key are separately throttled per IP (20 failures per 5 minutes), so the API can&rsquo;t be sprayed with key guesses.</li>
+          <li>Each key is rate-limited (120 requests per minute); excess requests receive an HTTP 429 with a <code>Retry-After</code> header saying how many seconds to wait. Requests made with an invalid or unknown key are separately throttled per IP (20 failures per 5 minutes), so the API can&rsquo;t be sprayed with key guesses.</li>
           <li>The <strong>Failed API attempts</strong>{" "}panel below the table shows recent rejected requests &mdash; a masked prefix of the key that was tried (plus its name if it matched a known disabled/revoked/expired key), the source IP, the reason, and the time. Use <strong>Unblock IP</strong> to lift the throttle on an address. The log is kept for 30 days.</li>
           <li>Treat keys like passwords: only stored as a hash, never logged, and best sent server-to-server rather than from a browser.</li>
         </ul>

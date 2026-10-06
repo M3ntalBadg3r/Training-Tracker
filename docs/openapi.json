@@ -841,6 +841,142 @@
         }
       }
     },
+    "/api/public/v1/country-sets": {
+      "get": {
+        "summary": "Country Set definitions",
+        "description": "The Country Sets owned by the key's companies, each with its member countries — the areas level=countrySet reports on. Country Sets belong to one company and names are unique only per company, so two companies' same-named sets come back as two rows, told apart by companyId. A key granted several companies sees all of them here; to report on one, pass ?companyId= with that row's companyId (level=countrySet needs exactly one company). Empty sets are included with no countries; they meet no requirement.",
+        "operationId": "getCountrySets",
+        "parameters": [
+          {
+            "name": "companyId",
+            "in": "query",
+            "required": false,
+            "description": "Narrow the response to one of the key's granted companies. Omitted or non-numeric, the response covers every company the key can read. A numeric id the key was NOT granted is refused with 400 — it used to return an empty result, which no caller could tell apart from a company holding no data. GET /api/public/v1 lists the ids this key may use.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "name",
+            "in": "query",
+            "required": false,
+            "description": "Exact set name — an exact match, not a substring search. May match one set per company.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "countrySets": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "companyId": {
+                            "type": "integer"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "countries": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "description": "Member country names, sorted. Empty for an empty set."
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "?companyId= named a company this key was not granted. GET /api/public/v1 lists the ids it may use.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, disabled, revoked or expired API key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited — 120 requests per minute per key, or 20 invalid-key attempts per 5 minutes per IP.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying. Present on the per-key rate limit; absent on the invalid-key limit.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The public API is switched off for this installation. Checked before the key is even looked up.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/public/v1/programs": {
       "get": {
         "summary": "Partner program list",
@@ -1035,7 +1171,7 @@
             "name": "countrySet",
             "in": "query",
             "required": false,
-            "description": "The Country Set to report on when level=countrySet — a named group of countries that belongs to one company (two companies may each own a same-named set over different countries). Counts CountrySet-level requirements over that company's set's countries. A level=countrySet request must therefore narrow to exactly one company — with ?companyId=, or by using a key granted exactly one company — or it is a 400. An unknown or empty set has no countries and so meets nothing.",
+            "description": "The Country Set to report on when level=countrySet — a named group of countries that belongs to one company (two companies may each own a same-named set over different countries). Counts CountrySet-level requirements over that company's set's countries. A level=countrySet request must therefore narrow to exactly one company — with ?companyId=, or by using a key granted exactly one company — or it is a 400. An unknown or empty set has no countries and so meets nothing. GET /api/public/v1/country-sets lists each set's countries.",
             "schema": {
               "type": "string"
             }
@@ -1470,7 +1606,7 @@
                           "items": {
                             "type": "string"
                           },
-                          "description": "The scoped company's own Country Sets with at least one member — the values countrySet accepts. Empty unless the request is narrowed to exactly one company."
+                          "description": "The scoped company's own Country Sets with at least one member — the values countrySet accepts. Empty unless the request is narrowed to exactly one company. GET /api/public/v1/country-sets lists their countries."
                         },
                         "theatres": {
                           "type": "array",
@@ -1980,7 +2116,7 @@
             "name": "countrySet",
             "in": "query",
             "required": false,
-            "description": "The Country Set to report on when level=countrySet — a named group of countries that belongs to one company (two companies may each own a same-named set over different countries). Counts CountrySet-level requirements over that company's set's countries. A level=countrySet request must therefore narrow to exactly one company — with ?companyId=, or by using a key granted exactly one company — or it is a 400. An unknown or empty set has no countries and so meets nothing.",
+            "description": "The Country Set to report on when level=countrySet — a named group of countries that belongs to one company (two companies may each own a same-named set over different countries). Counts CountrySet-level requirements over that company's set's countries. A level=countrySet request must therefore narrow to exactly one company — with ?companyId=, or by using a key granted exactly one company — or it is a 400. An unknown or empty set has no countries and so meets nothing. GET /api/public/v1/country-sets lists each set's countries.",
             "schema": {
               "type": "string"
             }
@@ -2386,7 +2522,7 @@
                           "items": {
                             "type": "string"
                           },
-                          "description": "The scoped company's own Country Sets with at least one member — the values countrySet accepts. Empty unless the request is narrowed to exactly one company."
+                          "description": "The scoped company's own Country Sets with at least one member — the values countrySet accepts. Empty unless the request is narrowed to exactly one company. GET /api/public/v1/country-sets lists their countries."
                         }
                       },
                       "title": "Selector metadata (options=true)"
