@@ -1,5 +1,5 @@
 // Shared definition of the student-import target fields. Both the import
-// wizard (src/app/admin/import/page.tsx) and the alias admin API
+// wizard (src/app/admin/student-data/page.tsx) and the alias admin API
 // (src/app/api/admin/import-aliases) import the same key + label list so
 // validation and UI stay aligned.
 
