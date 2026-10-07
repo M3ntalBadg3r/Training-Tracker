@@ -47,7 +47,7 @@ const ADMIN_CARDS: AdminCard[] = [
   { href: "/admin/api-keys", title: "API Keys", description: "Issue read-only public API keys scoped to companies", icon: KeyRound, superAdminOnly: true },
   { href: "/admin/cleanup", title: "Data Clean-Up", description: "Scan and fix data quality issues", icon: Sparkles, superAdminOnly: true },
   { href: "/admin/backup", title: "Backup & Restore", description: "Export or import system data", icon: HardDrive, superAdminOnly: true },
-  { href: "/admin/import", title: "Import", description: "Import student training data from CSV or Excel", icon: Upload },
+  { href: "/admin/student-data", title: "Student Data", description: "Import and export student training records (CSV or Excel)", icon: Upload },
   { href: "/admin/scheduled-exports", title: "Scheduled Exports", description: "Automate report delivery on a schedule", icon: CalendarClock },
   { href: "/admin/updates", title: "Updates", description: "Check for and apply application updates", icon: RefreshCw, superAdminOnly: true },
 ];

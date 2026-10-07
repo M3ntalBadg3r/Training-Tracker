@@ -338,11 +338,34 @@ const helpSections: Record<string, HelpSection> = {
   },
 
   import: {
-    title: "Import Data",
+    title: "Student Data",
     content: (
       <>
         <p>
-          Bulk-import student training records from CSV or Excel files.
+          Bulk-import student training records from CSV or Excel files, or export
+          them. This page used to be called <strong>Import</strong>.
+        </p>
+
+        <h3>Export</h3>
+        <p>
+          Click <strong>Export</strong>{" "}in the page header and choose CSV or Excel to
+          download every training record for the company selected in the header
+          (or every company you can see, under <strong>All companies</strong>). There
+          is one row per completion. The first seven columns &mdash; Full Name,
+          Email Address, Company, Country, Theatre, Cert/Training and Completed
+          Date &mdash; are the import&apos;s own field names, so the file maps itself
+          when you import it again, here or on another system. Full Title, Training
+          Type and Expiry Date follow for reference and are ignored by the import.
+          Dates are written as <code>yyyy-mm-dd</code>, which reads the same
+          whatever the date format setting.
+        </p>
+        <p>
+          Parent OLX completions that the system works out from their sub-items are
+          not exported &mdash; the sub-item rows are, and importing them rebuilds
+          the parent. Students with no training records are not exported either,
+          because the import needs a training and a date on every row. Importing an
+          export back into the same system changes nothing: every row is skipped as
+          a duplicate.
         </p>
         <p>
           A single import is limited to 32 MB of data (and to its existing row

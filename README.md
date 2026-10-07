@@ -32,7 +32,7 @@ kept current here and when full audits happen.
 - [Dashboard](#dashboard)
 - [Students](#students)
 - [Training Catalog](#training-catalog)
-- [Import Data](#import-data)
+- [Student Data (Import & Export)](#student-data-import--export)
 - [Reports](#reports)
 - [Admin](#admin)
   - [Region Data](#region-data)
@@ -641,9 +641,20 @@ Click **View Students** on any row to see which students have completed that tra
 
 ---
 
-## Import Data
+## Student Data (Import & Export)
 
-Navigate to **Import** in the sidebar to bulk-import student training records from CSV or Excel files.
+Navigate to **Admin → Student Data** in the sidebar to bulk-import student training records from CSV or Excel files, or to export them. (This page used to be called **Import**; the old `/admin/import` address still redirects here.)
+
+### Export
+
+Click **Export** in the page header and choose **CSV** or **Excel** to download every training record for the company selected in the header switcher (or every company you can see, under **All companies**). There is one row per completion, with the columns `Full Name`, `Email Address`, `Company`, `Country`, `Theatre`, `Cert/Training` and `Completed Date` — the import's own field names, so the file maps itself automatically when imported again here or on another system — followed by `Full Title`, `Training Type` and `Expiry Date` for reference (the import ignores those). Dates are written as `yyyy-mm-dd`, which every system reads the same way whatever its date format setting.
+
+Two things are deliberately not in the export:
+
+- **OLX completions that the system works out itself** — a parent OLX is completed automatically once all its sub-items are held, so only the sub-item rows are exported, and importing them rebuilds the parent. An OLX with no sub-items is an ordinary completion and is included.
+- **Students with no training records** — the import needs a training and a completed date on every row, so such a student could not be imported again.
+
+Re-importing an export into the system it came from changes nothing: every row is recognised as a duplicate and counted as skipped.
 
 ### Import Workflow
 
@@ -776,7 +787,7 @@ Every import endpoint accepts a JSON body of up to **32 MB** (override with `IMP
 
 #### Student import behaviour
 
-When importing student data (the **Admin → Import** page), each row's theatre is reconciled against Region Data:
+When importing student data (the **Admin → Student Data** page), each row's theatre is reconciled against Region Data:
 
 - If the country exists in Region Data with a theatre, that theatre is the source of truth — any disagreement on the import row is overridden and surfaced as a warning in the **Issues** list.
 - If the country exists in Region Data but has no theatre, the imported theatre is used as-is and a warning asks for the missing theatre to be set.
@@ -916,7 +927,7 @@ A disabled account is refused at login with the same generic "Invalid username o
 **Admin → System Settings** controls instance-wide defaults that apply to every user who hasn't set a personal override.
 
 - **Default Date Format** — `DD/MM/YYYY` or `MM/DD/YYYY`. Used for:
-  - Parsing dates during CSV / Excel imports (the import flow detects format mismatches and prompts before committing — see **Import Data → Date Format Detection**).
+  - Parsing dates during CSV / Excel imports (the import flow detects format mismatches and prompts before committing — see **Student Data → Date Format Detection**).
   - Displaying dates throughout the app for users who haven't picked a personal preference.
 - **Session Timeout** — How long a signed-in user can be **inactive** before being automatically signed out (default **30 minutes**, adjustable 5–1440 minutes). A warning dialog with a countdown appears shortly before the timeout so an active user can choose **Stay signed in**. Ongoing activity keeps the session alive; a change takes effect the next time a user signs in. A fixed **absolute cap** (8 hours, overridable with the `SESSION_ABSOLUTE_HOURS` environment variable) also applies — a session is ended once it reaches the cap regardless of activity. Separately from any timeout, a session is ended immediately when the account is disabled or deleted, or when its password is changed from somewhere else (see **Changing your password**).
 - **Import Aliases** — The per-field header alias list used by the student import's column auto-mapper.
