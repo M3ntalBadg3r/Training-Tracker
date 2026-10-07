@@ -12,9 +12,14 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { excelSerialToIso, swapMonthDayIso } from "@/lib/date-format";
 import {
   IMPORT_TARGET_FIELDS,
+  importTargetFieldLabel,
   type ImportTargetFieldKey,
 } from "@/lib/import-target-fields";
 import { checkImportFile } from "@/lib/import-file";
+import ExportMenu, { type ExportFormat } from "@/components/ui/ExportMenu";
+import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
+import { exportToCsv, exportToExcel } from "@/lib/export";
+import { trainingTypeLabel } from "@/lib/utils";
 
 interface DateFormatMismatch {
   assumedFormat: string;
@@ -40,9 +45,42 @@ interface CompanyOption { id: number; name: string }
 
 type Step = "upload" | "mapping" | "importing" | "summary";
 
-export default function ImportPage() {
+// One row of GET /api/admin/student-data/export.
+interface ExportRow {
+  fullName: string;
+  email: string;
+  company: string;
+  country: string;
+  theatre: string;
+  title: string;
+  completedDate: string;
+  fullTitle: string;
+  trainingType: string;
+  expiryDate: string;
+}
+
+// The first seven headers are the import's own field labels, which are seeded
+// import aliases, so an exported file maps itself on re-import. The trailing
+// three are for reading only — no import field maps to them.
+const EXPORT_COLUMNS: { key: keyof ExportRow; header: string }[] = [
+  { key: "fullName", header: importTargetFieldLabel("fullName") },
+  { key: "email", header: importTargetFieldLabel("email") },
+  { key: "company", header: importTargetFieldLabel("company") },
+  { key: "country", header: importTargetFieldLabel("country") },
+  { key: "theatre", header: importTargetFieldLabel("theatre") },
+  { key: "title", header: importTargetFieldLabel("title") },
+  { key: "completedDate", header: importTargetFieldLabel("completedDate") },
+  { key: "fullTitle", header: "Full Title" },
+  { key: "trainingType", header: "Training Type" },
+  { key: "expiryDate", header: "Expiry Date" },
+];
+
+export default function StudentDataPage() {
   const { user } = useAuth();
   const isSuperAdmin = user?.role === "SuperAdmin";
+  const companyScope = useCompanyScope();
+  const [exporting, setExporting] = useState(false);
+  const [exportNotice, setExportNotice] = useState<string | null>(null);
 
   const [step, setStep] = useState<Step>("upload");
   const [fileName, setFileName] = useState<string>("");
@@ -373,6 +411,37 @@ export default function ImportPage() {
     await runImport(null, unswap);
   };
 
+  const handleExport = async (fmt: ExportFormat) => {
+    setError(null);
+    setExportNotice(null);
+    setExporting(true);
+    try {
+      const res = await fetch(withCompany("/api/admin/student-data/export", companyScope.selected));
+      if (!res.ok) {
+        setError("Export failed. Please try again.");
+        return;
+      }
+      const data: { rows: ExportRow[] } = await res.json();
+      if (data.rows.length === 0) {
+        setExportNotice("There are no training records to export for the selected company.");
+        return;
+      }
+      const companyName =
+        companyScope.selected === "all"
+          ? "all-companies"
+          : companyScope.companies.find((c) => c.id === companyScope.selected)?.name ?? "company";
+      const slug = companyName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "company";
+      const filename = `student-data-${slug}-${todayIso()}`;
+      const out = data.rows.map((r) => ({ ...r, trainingType: trainingTypeLabel(r.trainingType) }));
+      if (fmt === "excel") exportToExcel(out, EXPORT_COLUMNS, filename);
+      else exportToCsv(out, EXPORT_COLUMNS, filename);
+    } catch {
+      setError("Export failed. Please try again.");
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const reset = () => {
     setStep("upload");
     setFileName("");
@@ -393,12 +462,32 @@ export default function ImportPage() {
 
   return (
     <div>
-      <PageHeader title="Import" helpSlug="import" />
+      <PageHeader
+        title="Student Data"
+        helpSlug="import"
+        rightContent={
+          step === "upload" ? (
+            <ExportMenu
+              formats={["csv", "excel"]}
+              onExport={(fmt) => handleExport(fmt)}
+              busy={exporting || companyScope.loading}
+            />
+          ) : undefined
+        }
+      />
 
       <p className="text-sm text-gray-500 mb-6">
         Upload a CSV or Excel file to bulk-import student training records. The wizard will guide you through
         mapping columns from your file to the required fields, then import the data into the system.
+        Use <strong>Export</strong>{" "}to download every training record for the selected company in the
+        same layout, ready to re-import here or on another system.
       </p>
+
+      {exportNotice && (
+        <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800">
+          {exportNotice}
+        </div>
+      )}
 
       {error && (
         <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">

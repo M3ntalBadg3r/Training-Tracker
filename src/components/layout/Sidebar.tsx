@@ -72,7 +72,7 @@ const adminSubItems: { href: string; label: string; icon: typeof Users; superAdm
   { href: "/admin/api-keys", label: "API Keys", icon: KeyRound, superAdminOnly: true },
   { href: "/admin/cleanup", label: "Data Clean-Up", icon: Sparkles, superAdminOnly: true },
   { href: "/admin/backup", label: "Backup", icon: HardDrive, superAdminOnly: true },
-  { href: "/admin/import", label: "Import", icon: Upload },
+  { href: "/admin/student-data", label: "Student Data", icon: Upload },
   { href: "/admin/scheduled-exports", label: "Scheduled Report Exports", icon: CalendarClock },
   { href: "/admin/updates", label: "Updates", icon: RefreshCw, superAdminOnly: true },
 ];

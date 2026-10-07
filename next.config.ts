@@ -87,6 +87,13 @@ const nextConfig: NextConfig = {
     APP_COMMIT: resolveBuildCommit(),
     UPDATE_CHANNEL: process.env.UPDATE_CHANNEL || "stable",
   },
+  async redirects() {
+    // The student import page was renamed "Student Data" when it gained an
+    // export, and moved with it. Keep the old address working for bookmarks.
+    return [
+      { source: "/admin/import", destination: "/admin/student-data", permanent: true },
+    ];
+  },
   async headers() {
     // Content-Security-Policy — for the few paths `src/proxy.ts` does NOT see.
     //

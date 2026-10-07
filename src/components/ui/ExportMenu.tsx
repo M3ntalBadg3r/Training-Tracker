@@ -43,6 +43,7 @@ export default function ExportMenu({
   align = "right",
   show: controlledShow,
   setShow: setControlledShow,
+  formats,
 }: {
   onExport?: (fmt: ExportFormat, opts: { includeCharts: boolean }) => void | Promise<void>;
   /** Labelled sections, each offering the three formats. Replaces `onExport`. */
@@ -57,6 +58,12 @@ export default function ExportMenu({
    */
   show?: boolean;
   setShow?: (v: boolean) => void;
+  /**
+   * Restrict the formats offered (default: all three). The Student Data page
+   * offers only CSV and Excel, because its export exists to be re-imported and
+   * a PDF of every completion is neither readable nor importable.
+   */
+  formats?: ExportFormat[];
 }) {
   const [internalShow, setInternalShow] = useState(false);
   const show = controlledShow ?? internalShow;
@@ -90,10 +97,12 @@ export default function ExportMenu({
   };
 
   const FORMATS: { fmt: ExportFormat; label: string }[] = [
-    { fmt: "csv", label: "Export as CSV" },
-    { fmt: "excel", label: "Export as Excel" },
-    { fmt: "pdf", label: "Export as PDF" },
-  ];
+    { fmt: "csv" as const, label: "Export as CSV" },
+    { fmt: "excel" as const, label: "Export as Excel" },
+    { fmt: "pdf" as const, label: "Export as PDF" },
+  ].filter((f) => !formats || formats.includes(f.fmt));
+  // The chart tickbox is a PDF option; without PDF on offer it has no meaning.
+  const showChartOption = offerCharts && FORMATS.some((f) => f.fmt === "pdf");
 
   return (
     <div className="relative" ref={wrapperRef}>
@@ -106,7 +115,7 @@ export default function ExportMenu({
       </button>
       {show && !busy && (
         <div
-          className={`absolute ${align === "right" ? "right-0" : "left-0"} mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 ${groups ? "min-w-[220px]" : offerCharts ? "min-w-[250px]" : "min-w-[140px]"}`}
+          className={`absolute ${align === "right" ? "right-0" : "left-0"} mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 ${groups ? "min-w-[220px]" : showChartOption ? "min-w-[250px]" : "min-w-[140px]"}`}
         >
           {groups ? (
             groups.map((group, gi) => (
@@ -128,7 +137,7 @@ export default function ExportMenu({
             ))
           ) : (
             <>
-              {offerCharts && (
+              {showChartOption && (
                 <label className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 border-b border-gray-200 cursor-pointer select-none rounded-t-lg hover:bg-gray-50">
                   <input
                     type="checkbox"
@@ -144,7 +153,7 @@ export default function ExportMenu({
                   key={f.fmt}
                   onClick={() => run(f.fmt)}
                   className={`block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 ${
-                    i === 0 && !offerCharts ? "rounded-t-lg" : ""
+                    i === 0 && !showChartOption ? "rounded-t-lg" : ""
                   } ${i === FORMATS.length - 1 ? "rounded-b-lg" : ""}`}
                 >
                   {f.label}
