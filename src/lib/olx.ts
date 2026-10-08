@@ -1,4 +1,5 @@
 import prisma, { type PrismaTransactionClient } from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 import { computeExpiryDate } from "@/lib/utils";
 
 type Client = typeof prisma | PrismaTransactionClient;
@@ -12,7 +13,7 @@ type MembershipRow = {
 /**
  * The parent's sub-items, one entry per DISTINCT sub-item, holding every
  * spelling of it. This is the single definition of what "every sub-item" counts
- * over, and it is shared by the engine (`recomputeParentsForStudent`) and the
+ * over, and it is shared by the engine (`loadParentDefs` → `planOne`) and the
  * read-only scan (`scanOlxParentState`) precisely so the two cannot disagree —
  * the scan is what the admin UI shows before running a backfill, so a drift
  * between them would make the preview lie about what the fix is going to do.
@@ -29,6 +30,364 @@ export function groupSubItemsByPair(memberships: MembershipRow[]): Map<string, s
     groups.set(key, [...(groups.get(key) ?? []), m.subItemTrainingTitle]);
   }
   return groups;
+}
+
+/**
+ * Size of every `in` list the engine sends. Postgres has no hard limit short of
+ * the 65,535 bind-parameter ceiling, but a few thousand values per list keeps
+ * each statement's plan and payload modest over a remote connection.
+ */
+const IN_CHUNK = 5_000;
+
+/**
+ * How many learners are evaluated and written per pass. Each pass is: one
+ * completion read, then at most a handful of bulk writes. A failure part-way
+ * through therefore leaves every earlier pass fully applied and every later one
+ * untouched — the same "a prefix of learners is done" shape the per-learner
+ * loop it replaced left behind.
+ */
+const LEARNER_CHUNK = 5_000;
+
+/** Rows per `UPDATE … FROM (VALUES …)` statement (3 bind parameters each). */
+const UPDATE_CHUNK = 1_000;
+
+function chunk<T>(items: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
+
+/** One OLX parent, with its sub-items resolved into the groups the rule counts. */
+type ParentDef = {
+  trainingTitle: string;
+  subItemTitles: string[];
+  groups: string[][];
+};
+
+/** The slice of a completion row the rule reads. */
+type TakenRow = { id: number; email: string; trainingTitle: string; completedDate: Date };
+
+/**
+ * Load the OLX parents among `titles`, in the order the database returns them.
+ *
+ * The nested select is what supplies the grouping key. Prisma batches it across
+ * the whole parent set, so it costs one extra query per chunk of parents — not
+ * one per parent, and (now that this runs once per CALL rather than once per
+ * learner) not one per learner either. Do NOT move it inside a per-parent or
+ * per-learner loop.
+ */
+async function loadParentDefs(titles: string[], client: Client): Promise<ParentDef[]> {
+  const defs: ParentDef[] = [];
+  for (const part of chunk(titles, IN_CHUNK)) {
+    const parents = await client.trainingData.findMany({
+      where: { trainingTitle: { in: part }, trainingType: "OLX" },
+      include: {
+        subItemMemberships: {
+          include: { subItem: { select: { fullTitle: true, trainingType: true } } },
+        },
+      },
+    });
+    for (const parent of parents) {
+      defs.push({
+        trainingTitle: parent.trainingTitle,
+        subItemTitles: parent.subItemMemberships.map((m) => m.subItemTrainingTitle),
+        // The single definition of "every sub-item" — shared with the scan.
+        groups: [...groupSubItemsByPair(parent.subItemMemberships).values()],
+      });
+    }
+  }
+  return defs;
+}
+
+/**
+ * The pending writes for one pass. `creates` keeps learner-then-parent order,
+ * which is the order the per-learner loop created rows in, so autoincrement ids
+ * are handed out in the same sequence.
+ */
+type Plan = {
+  creates: { email: string; trainingTitle: string; completedDate: Date; expiryDate: Date }[];
+  updates: { id: number; completedDate: Date; expiryDate: Date }[];
+  deletes: number[];
+};
+
+/**
+ * Apply the completion rule to one (learner, parent), reading only the
+ * in-memory snapshot of that learner's rows, and record the writes it implies.
+ *
+ * This is the body of the old per-learner loop with every query replaced by a
+ * lookup, and it must keep making exactly the same decisions:
+ *
+ *  - "done" means every `(fullTitle, trainingType)` GROUP has at least one held
+ *    spelling (see `recomputeParentsForStudent`);
+ *  - `latest` is the max completion date over EVERY held sub-item row, never one
+ *    representative per group, seeded at the epoch exactly as before;
+ *  - the canonical parent row is the one with the latest `completedDate`; it is
+ *    rewritten only when its date differs from `latest` — so an already-complete
+ *    parent is left byte-identical and unwritten — and every OTHER parent row
+ *    whose date differs from `latest` is swept (rows already AT `latest` survive,
+ *    exactly as the old `NOT: { completedDate: latest }` delete left them);
+ *  - when the rule does not hold, every parent row for the learner goes.
+ *
+ * On a tie for the latest parent row the old `findFirst` let Postgres choose;
+ * this picks the lowest id. The tied rows share a date, so the only observable
+ * difference is which of two otherwise-identical ids survives the sweep.
+ */
+function planOne(
+  email: string,
+  parent: ParentDef,
+  byTitle: Map<string, TakenRow[]> | undefined,
+  plan: Plan,
+): void {
+  const held = new Set<string>();
+  let latest = new Date(0);
+  for (const title of parent.subItemTitles) {
+    const rows = byTitle?.get(title);
+    if (!rows || rows.length === 0) continue;
+    held.add(title);
+    for (const r of rows) {
+      if (r.completedDate > latest) latest = r.completedDate;
+    }
+  }
+
+  const parentRows = byTitle?.get(parent.trainingTitle) ?? [];
+  const allDone = parent.groups.every((titles) => titles.some((t) => held.has(t)));
+
+  if (!allDone) {
+    for (const r of parentRows) plan.deletes.push(r.id);
+    return;
+  }
+
+  const expiry = computeExpiryDate(latest);
+  if (parentRows.length === 0) {
+    plan.creates.push({
+      email,
+      trainingTitle: parent.trainingTitle,
+      completedDate: latest,
+      expiryDate: expiry,
+    });
+    return;
+  }
+
+  let existing = parentRows[0];
+  for (const r of parentRows) {
+    const d = r.completedDate.getTime();
+    const e = existing.completedDate.getTime();
+    if (d > e || (d === e && r.id < existing.id)) existing = r;
+  }
+  if (existing.completedDate.getTime() !== latest.getTime()) {
+    plan.updates.push({ id: existing.id, completedDate: latest, expiryDate: expiry });
+  }
+  for (const r of parentRows) {
+    if (r !== existing && r.completedDate.getTime() !== latest.getTime()) {
+      plan.deletes.push(r.id);
+    }
+  }
+}
+
+async function applyPlan(plan: Plan, client: Client): Promise<void> {
+  for (const part of chunk(plan.creates, IN_CHUNK)) {
+    await client.trainingTaken.createMany({ data: part });
+  }
+  // Each update carries its own dates, so it is one VALUES list per chunk rather
+  // than one statement per row. Dates go in as ISO-8601 text cast to
+  // `timestamp(3)`: Prisma stores DateTime as UTC in a zone-less column, and a
+  // cast to `timestamp` ignores the trailing `Z`, which is exactly that mapping.
+  for (const part of chunk(plan.updates, UPDATE_CHUNK)) {
+    const values = Prisma.join(
+      part.map(
+        (u) =>
+          Prisma.sql`(${u.id}::int, ${u.completedDate.toISOString()}::timestamp(3), ${u.expiryDate.toISOString()}::timestamp(3))`,
+      ),
+    );
+    await client.$executeRaw(Prisma.sql`
+      UPDATE training_taken AS t
+         SET completed_date = v.completed_date,
+             expiry_date = v.expiry_date
+        FROM (VALUES ${values}) AS v(id, completed_date, expiry_date)
+       WHERE t.id = v.id
+    `);
+  }
+  for (const part of chunk(plan.deletes, IN_CHUNK)) {
+    await client.trainingTaken.deleteMany({ where: { id: { in: part } } });
+  }
+}
+
+/**
+ * The batched core every public entry point runs through.
+ *
+ * `work` is an ordered list of (learner, parent titles to recompute). Round
+ * trips scale with chunks, not learners: the parents are loaded once, then per
+ * {@link LEARNER_CHUNK} learners there is one completion read and at most a few
+ * bulk writes. The rule itself is evaluated in memory by {@link planOne}.
+ */
+async function recomputeBatch(
+  work: [email: string, parentTitles: Iterable<string>][],
+  client: Client,
+): Promise<void> {
+  if (work.length === 0) return;
+
+  const requested = new Set<string>();
+  for (const [, titles] of work) for (const t of titles) requested.add(t);
+  if (requested.size === 0) return;
+
+  const defs = await loadParentDefs([...requested], client);
+  // Single-item OLX (no sub-items defined) — nothing to materialise or remove.
+  const active = defs.filter((d) => d.subItemTitles.length > 0);
+  if (active.length === 0) return;
+
+  // Evaluating from one snapshot is only equivalent to the old sequential loop
+  // when no parent being written is also read as somebody's sub-item: then one
+  // parent's writes could change another parent's answer for the same learner,
+  // and the outcome would depend on processing order. The catalogue does not
+  // produce this (sub-items are OLXSubItem rows), but membership rows are not
+  // type-checked, so if it ever appears fall back to the original per-learner
+  // path rather than guess.
+  const written = new Set(active.map((d) => d.trainingTitle));
+  if (active.some((d) => d.subItemTitles.some((t) => written.has(t)))) {
+    for (const [email, titles] of work) {
+      await recomputeParentsForStudentSequential(email, [...titles], client);
+    }
+    return;
+  }
+
+  const order = new Map(active.map((d, i) => [d.trainingTitle, i]));
+  const titlesToLoad = new Set<string>();
+  for (const d of active) {
+    titlesToLoad.add(d.trainingTitle);
+    for (const t of d.subItemTitles) titlesToLoad.add(t);
+  }
+  const titleChunks = chunk([...titlesToLoad], IN_CHUNK);
+
+  // Merge repeated learners (keeping first-seen order) so each is evaluated once.
+  const byEmail = new Map<string, Set<string>>();
+  for (const [email, titles] of work) {
+    let set = byEmail.get(email);
+    if (!set) {
+      set = new Set<string>();
+      byEmail.set(email, set);
+    }
+    for (const t of titles) if (order.has(t)) set.add(t);
+  }
+  const learners = [...byEmail].filter(([, set]) => set.size > 0);
+
+  for (const learnerPart of chunk(learners, LEARNER_CHUNK)) {
+    const emails = learnerPart.map(([email]) => email);
+    const rowsByEmail = new Map<string, Map<string, TakenRow[]>>();
+    for (const emailPart of chunk(emails, IN_CHUNK)) {
+      for (const titlePart of titleChunks) {
+        const rows = await client.trainingTaken.findMany({
+          where: { email: { in: emailPart }, trainingTitle: { in: titlePart } },
+          select: { id: true, email: true, trainingTitle: true, completedDate: true },
+        });
+        for (const r of rows) {
+          let byTitle = rowsByEmail.get(r.email);
+          if (!byTitle) {
+            byTitle = new Map();
+            rowsByEmail.set(r.email, byTitle);
+          }
+          const list = byTitle.get(r.trainingTitle);
+          if (list) list.push(r);
+          else byTitle.set(r.trainingTitle, [r]);
+        }
+      }
+    }
+
+    const plan: Plan = { creates: [], updates: [], deletes: [] };
+    for (const [email, titles] of learnerPart) {
+      // Parents in the order the parent query returned them — the order the
+      // old per-learner loop walked them in.
+      const mine = [...titles].sort((a, b) => order.get(a)! - order.get(b)!);
+      for (const title of mine) {
+        planOne(email, active[order.get(title)!], rowsByEmail.get(email), plan);
+      }
+    }
+    await applyPlan(plan, client);
+  }
+}
+
+/**
+ * The original one-learner-at-a-time implementation, kept verbatim as the
+ * fallback for the nested-membership case {@link recomputeBatch} declines to
+ * evaluate from a snapshot. Not used on any ordinary catalogue.
+ */
+async function recomputeParentsForStudentSequential(
+  email: string,
+  parentTitles: string[],
+  client: Client,
+): Promise<void> {
+  if (parentTitles.length === 0) return;
+
+  const parents = await client.trainingData.findMany({
+    where: { trainingTitle: { in: parentTitles }, trainingType: "OLX" },
+    include: {
+      subItemMemberships: {
+        include: { subItem: { select: { fullTitle: true, trainingType: true } } },
+      },
+    },
+  });
+
+  for (const parent of parents) {
+    const subItemTitles = parent.subItemMemberships.map((m) => m.subItemTrainingTitle);
+    if (subItemTitles.length === 0) continue;
+
+    const groups = groupSubItemsByPair(parent.subItemMemberships);
+
+    const taken = await client.trainingTaken.findMany({
+      where: { email, trainingTitle: { in: subItemTitles } },
+      orderBy: { completedDate: "desc" },
+    });
+    const latestBySubItem = new Map<string, Date>();
+    for (const t of taken) {
+      if (!latestBySubItem.has(t.trainingTitle)) {
+        latestBySubItem.set(t.trainingTitle, t.completedDate);
+      }
+    }
+
+    const allDone = [...groups.values()].every((titles) =>
+      titles.some((t) => latestBySubItem.has(t)),
+    );
+
+    if (allDone) {
+      let latest = new Date(0);
+      for (const d of latestBySubItem.values()) {
+        if (d > latest) latest = d;
+      }
+      const expiry = computeExpiryDate(latest);
+
+      const existing = await client.trainingTaken.findFirst({
+        where: { email, trainingTitle: parent.trainingTitle },
+        orderBy: { completedDate: "desc" },
+      });
+
+      if (!existing) {
+        await client.trainingTaken.create({
+          data: {
+            email,
+            trainingTitle: parent.trainingTitle,
+            completedDate: latest,
+            expiryDate: expiry,
+          },
+        });
+      } else if (existing.completedDate.getTime() !== latest.getTime()) {
+        await client.trainingTaken.update({
+          where: { id: existing.id },
+          data: { completedDate: latest, expiryDate: expiry },
+        });
+      }
+
+      await client.trainingTaken.deleteMany({
+        where: {
+          email,
+          trainingTitle: parent.trainingTitle,
+          NOT: { completedDate: latest },
+        },
+      });
+    } else {
+      await client.trainingTaken.deleteMany({
+        where: { email, trainingTitle: parent.trainingTitle },
+      });
+    }
+  }
 }
 
 /**
@@ -58,6 +417,9 @@ export function groupSubItemsByPair(memberships: MembershipRow[]): Map<string, s
  * group is non-empty and their union is the full title list, so anything that
  * satisfied the old rule satisfies this one, and the branch that deletes a
  * materialised row is reachable only when the rule is NOT satisfied.
+ *
+ * Delegates to the batched core, so a single learner costs a fixed handful of
+ * queries however many parents are named, rather than ~4 per parent.
  */
 export async function recomputeParentsForStudent(
   email: string,
@@ -65,97 +427,7 @@ export async function recomputeParentsForStudent(
   client: Client = prisma,
 ): Promise<void> {
   if (parentTitles.length === 0) return;
-
-  const parents = await client.trainingData.findMany({
-    where: { trainingTitle: { in: parentTitles }, trainingType: "OLX" },
-    // The nested select is what supplies the grouping key. Prisma batches it
-    // across the whole parent set, so it costs one extra query for the call —
-    // not one per parent. Do NOT move this lookup inside the loop below: that
-    // loop is itself run once per student by `recomputeAllStudentsForParent`
-    // and `recomputeParentsForMany`.
-    include: {
-      subItemMemberships: {
-        include: { subItem: { select: { fullTitle: true, trainingType: true } } },
-      },
-    },
-  });
-
-  for (const parent of parents) {
-    const subItemTitles = parent.subItemMemberships.map((m) => m.subItemTrainingTitle);
-
-    // Single-item OLX (no sub-items defined) — nothing to materialise.
-    if (subItemTitles.length === 0) continue;
-
-    const groups = groupSubItemsByPair(parent.subItemMemberships);
-
-    // Latest completion of each sub-item by this student.
-    const taken = await client.trainingTaken.findMany({
-      where: { email, trainingTitle: { in: subItemTitles } },
-      orderBy: { completedDate: "desc" },
-    });
-    const latestBySubItem = new Map<string, Date>();
-    for (const t of taken) {
-      if (!latestBySubItem.has(t.trainingTitle)) {
-        latestBySubItem.set(t.trainingTitle, t.completedDate);
-      }
-    }
-
-    const allDone = [...groups.values()].every((titles) =>
-      titles.some((t) => latestBySubItem.has(t)),
-    );
-
-    if (allDone) {
-      // Parent completedDate = latest sub-item date, taken over EVERY held
-      // sub-item rather than over one representative per group. That is
-      // load-bearing: a per-group representative can be earlier than today's
-      // answer, which would move `completedDate` backwards on a parent that is
-      // already complete, shrink `expiryDate` with it, and let the sweep below
-      // delete the original row — an OLX could flip from active to expired
-      // purely from this refactor. Max-over-all equals max-over-group-maxima,
-      // so leaving it alone is also what keeps an already-complete parent
-      // byte-identical and unwritten.
-      let latest = new Date(0);
-      for (const d of latestBySubItem.values()) {
-        if (d > latest) latest = d;
-      }
-      const expiry = computeExpiryDate(latest);
-
-      const existing = await client.trainingTaken.findFirst({
-        where: { email, trainingTitle: parent.trainingTitle },
-        orderBy: { completedDate: "desc" },
-      });
-
-      if (!existing) {
-        await client.trainingTaken.create({
-          data: {
-            email,
-            trainingTitle: parent.trainingTitle,
-            completedDate: latest,
-            expiryDate: expiry,
-          },
-        });
-      } else if (existing.completedDate.getTime() !== latest.getTime()) {
-        await client.trainingTaken.update({
-          where: { id: existing.id },
-          data: { completedDate: latest, expiryDate: expiry },
-        });
-      }
-
-      // Remove any spurious duplicate parent rows beyond the canonical one.
-      await client.trainingTaken.deleteMany({
-        where: {
-          email,
-          trainingTitle: parent.trainingTitle,
-          NOT: { completedDate: latest },
-        },
-      });
-    } else {
-      // Student no longer has the full set — remove all materialised parent rows.
-      await client.trainingTaken.deleteMany({
-        where: { email, trainingTitle: parent.trainingTitle },
-      });
-    }
-  }
+  await recomputeBatch([[email, parentTitles]], client);
 }
 
 /**
@@ -177,7 +449,8 @@ export async function recomputeParentsForSubItem(
 
 /**
  * After bulk operations (e.g. import), recompute parents for many (email,
- * subItem) pairs in one pass.
+ * subItem) pairs in one pass. Round trips scale with chunks of learners, not
+ * with learners — see {@link recomputeBatch}.
  */
 export async function recomputeParentsForMany(
   pairs: { email: string; subItemTrainingTitle: string }[],
@@ -185,19 +458,21 @@ export async function recomputeParentsForMany(
 ): Promise<void> {
   if (pairs.length === 0) return;
 
-  // Group by email and gather the unique parents implicated for that student.
   const subItems = Array.from(new Set(pairs.map((p) => p.subItemTrainingTitle)));
-  const memberships = await client.olxSubItemRelation.findMany({
-    where: { subItemTrainingTitle: { in: subItems } },
-    select: { parentTrainingTitle: true, subItemTrainingTitle: true },
-  });
   const parentsBySubItem = new Map<string, string[]>();
-  for (const m of memberships) {
-    const arr = parentsBySubItem.get(m.subItemTrainingTitle) ?? [];
-    arr.push(m.parentTrainingTitle);
-    parentsBySubItem.set(m.subItemTrainingTitle, arr);
+  for (const part of chunk(subItems, IN_CHUNK)) {
+    const memberships = await client.olxSubItemRelation.findMany({
+      where: { subItemTrainingTitle: { in: part } },
+      select: { parentTrainingTitle: true, subItemTrainingTitle: true },
+    });
+    for (const m of memberships) {
+      const arr = parentsBySubItem.get(m.subItemTrainingTitle) ?? [];
+      arr.push(m.parentTrainingTitle);
+      parentsBySubItem.set(m.subItemTrainingTitle, arr);
+    }
   }
 
+  // Group by email (first-seen order) and gather the parents implicated.
   const parentsByEmail = new Map<string, Set<string>>();
   for (const { email, subItemTrainingTitle } of pairs) {
     const parents = parentsBySubItem.get(subItemTrainingTitle);
@@ -207,9 +482,7 @@ export async function recomputeParentsForMany(
     parentsByEmail.set(email, set);
   }
 
-  for (const [email, parents] of parentsByEmail) {
-    await recomputeParentsForStudent(email, Array.from(parents), client);
-  }
+  await recomputeBatch([...parentsByEmail], client);
 }
 
 /**
@@ -228,15 +501,16 @@ export async function recomputeAllStudentsForParent(
   if (!parent || parent.trainingType !== "OLX") return;
 
   const subTitles = parent.subItemMemberships.map((m) => m.subItemTrainingTitle);
+  // A parent with no sub-items is a single-item OLX: the rule neither writes
+  // nor removes a row for any learner, so there is nobody to visit.
+  if (subTitles.length === 0) return;
 
   // Collect every student with a sub-item row OR a stale parent row.
-  const subTakers = subTitles.length === 0
-    ? []
-    : await client.trainingTaken.findMany({
-        where: { trainingTitle: { in: subTitles } },
-        select: { email: true },
-        distinct: ["email"],
-      });
+  const subTakers = await client.trainingTaken.findMany({
+    where: { trainingTitle: { in: subTitles } },
+    select: { email: true },
+    distinct: ["email"],
+  });
   const parentTakers = await client.trainingTaken.findMany({
     where: { trainingTitle: parentTrainingTitle },
     select: { email: true },
@@ -248,9 +522,10 @@ export async function recomputeAllStudentsForParent(
     ...parentTakers.map((t) => t.email),
   ]);
 
-  for (const email of emails) {
-    await recomputeParentsForStudent(email, [parentTrainingTitle], client);
-  }
+  await recomputeBatch(
+    [...emails].map((email) => [email, [parentTrainingTitle]]),
+    client,
+  );
 }
 
 /**
@@ -269,8 +544,9 @@ export async function recomputeAllStudentsForParent(
  *
  * Returns the parent titles whose materialised completions are now stale.
  * Callers run `recomputeAllStudentsForParent` on each, OUTSIDE the transaction:
- * it is O(students x sub-items) sequential queries and is the only thing keeping
- * those parent `TrainingTaken` rows honest.
+ * it visits every learner holding the parent or any of its sub-items (batched,
+ * a few queries per few thousand learners) and is the only thing keeping those
+ * parent `TrainingTaken` rows honest.
  *
  * Lifted out of `api/training-data/[title]/route.ts` so the group-level PATCH
  * shares it rather than growing a second copy that could drift.
