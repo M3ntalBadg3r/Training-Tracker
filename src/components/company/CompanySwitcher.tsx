@@ -3,6 +3,7 @@
 import { Building2 } from "lucide-react";
 import { useCompanyScope } from "@/components/company/CompanyScopeProvider";
 import { useAuth } from "@/components/auth/AuthProvider";
+import CompanyPicker from "@/components/company/CompanyPicker";
 
 export default function CompanySwitcher() {
   const { user } = useAuth();
@@ -24,19 +25,18 @@ export default function CompanySwitcher() {
   return (
     <div className="flex items-center gap-2">
       <Building2 size={16} className="text-gray-500" />
-      <select
-        value={selected === "all" ? "all" : String(selected)}
-        onChange={(e) => setSelected(e.target.value === "all" ? "all" : Number(e.target.value))}
-        className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white"
+      <CompanyPicker
+        options={companies}
+        value={selected}
+        onChange={(next) => {
+          if (next !== null) setSelected(next);
+        }}
+        allOption={canViewAll}
+        aria-label="Filter data by company"
         title="Filter data by company"
-      >
-        {canViewAll && <option value="all">All companies</option>}
-        {companies.map((c) => (
-          <option key={c.id} value={c.id}>
-            {c.name}
-          </option>
-        ))}
-      </select>
+        placeholder="Search companies…"
+        className="w-44 sm:w-64"
+      />
     </div>
   );
 }

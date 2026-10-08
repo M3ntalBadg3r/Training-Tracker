@@ -18,6 +18,7 @@ import {
 import { checkImportFile } from "@/lib/import-file";
 import ExportMenu, { type ExportFormat } from "@/components/ui/ExportMenu";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
+import CompanyPicker from "@/components/company/CompanyPicker";
 import { exportToCsv, exportToExcel } from "@/lib/export";
 import { trainingTypeLabel } from "@/lib/utils";
 
@@ -583,20 +584,15 @@ export default function StudentDataPage() {
                   ? " As a SuperAdmin, any unknown company name in the file will be auto-created."
                   : " Rows referencing companies you do not have access to will be rejected."}
               </p>
-              <select
-                value={defaultCompanyId === "" ? "" : String(defaultCompanyId)}
-                onChange={(e) =>
-                  setDefaultCompanyId(e.target.value === "" ? "" : Number(e.target.value))
-                }
-                className="w-full md:w-1/2 border border-gray-300 rounded-lg px-3 py-2 text-sm"
-              >
-                <option value="">-- Select a default company --</option>
-                {companies.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
+              <CompanyPicker
+                options={companies}
+                value={defaultCompanyId === "" ? null : defaultCompanyId}
+                onChange={(next) => setDefaultCompanyId(typeof next === "number" ? next : "")}
+                clearable
+                placeholder="-- Select a default company --"
+                aria-label="Default company"
+                className="w-full md:w-1/2"
+              />
             </div>
 
             {/* Preview */}

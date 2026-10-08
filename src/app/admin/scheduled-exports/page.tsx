@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import PageHeader from "@/components/layout/PageHeader";
 import Modal from "@/components/ui/Modal";
 import CredentialHealthBanner from "@/components/admin/CredentialHealthBanner";
+import CompanyPicker from "@/components/company/CompanyPicker";
 import ProviderCredentialWizard, { type WizardProvider } from "@/components/admin/ProviderCredentialWizard";
 import {
   Plus,
@@ -966,18 +967,16 @@ export default function ScheduledExportsPage() {
           {/* Company */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Company</label>
-            <select
-              value={form.companyId === "" ? "" : String(form.companyId)}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, companyId: e.target.value === "" ? "" : Number(e.target.value) }))
+            <CompanyPicker
+              options={companies}
+              value={form.companyId === "" ? null : form.companyId}
+              onChange={(next) =>
+                setForm((f) => ({ ...f, companyId: typeof next === "number" ? next : "" }))
               }
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-            >
-              <option value="">-- Select a company --</option>
-              {companies.map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </select>
+              clearable
+              placeholder="-- Select a company --"
+              aria-label="Company"
+            />
             <p className="text-xs text-gray-400 mt-1">
               The export will only include data for the selected company.
             </p>
