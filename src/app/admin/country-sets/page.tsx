@@ -18,6 +18,7 @@ import { displayRegion } from "@/lib/group-by";
 import type { CountrySetRow } from "@/types";
 import type { CountrySetListResponse } from "@/app/api/admin/country-sets/route";
 import ImportCountrySetsModal from "./ImportModal";
+import CompanyPicker from "@/components/company/CompanyPicker";
 
 interface FormState {
   id: number | null;
@@ -548,21 +549,16 @@ function CountrySetsInner() {
               Company
             </label>
             {form.id === null ? (
-              <select
+              <CompanyPicker
                 id="country-set-company"
-                value={form.companyId === "" ? "" : String(form.companyId)}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, companyId: e.target.value === "" ? "" : Number(e.target.value) }))
+                options={companies}
+                value={form.companyId === "" ? null : form.companyId}
+                onChange={(next) =>
+                  setForm((f) => ({ ...f, companyId: typeof next === "number" ? next : "" }))
                 }
-                className={`${SELECT_CLASS} w-full`}
-              >
-                <option value="">-- Select a company --</option>
-                {companies.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
+                clearable
+                placeholder="-- Select a company --"
+              />
             ) : (
               <div id="country-set-company" className="text-sm text-gray-800">
                 {form.companyName}
