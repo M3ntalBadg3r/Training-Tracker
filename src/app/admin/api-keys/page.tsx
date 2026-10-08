@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import PageHeader from "@/components/layout/PageHeader";
 import Modal from "@/components/ui/Modal";
 import { Plus, Trash2, Pencil, Ban, Power, Copy, Check, ShieldCheck, ShieldOff } from "lucide-react";
@@ -8,6 +8,7 @@ import { useDateFormat } from "@/components/date-format/DateFormatProvider";
 import FailedAttemptsPanel from "@/components/admin/FailedAttemptsPanel";
 import { useFetchJson } from "@/hooks/useFetchJson";
 import CompanyMultiPicker from "@/components/company/CompanyMultiPicker";
+import { useCompanyScope } from "@/components/company/CompanyScopeProvider";
 
 interface CompanyOption {
   id: number;
@@ -45,11 +46,12 @@ export default function ApiKeysPage() {
   // the hook derives `loading` without a setState-in-effect.
   const { data: keysData, loading, reload: fetchKeys } = useFetchJson<ApiKeyRow[]>("/api/admin/api-keys");
   const keys = keysData ?? [];
-  const { data: companiesData } = useFetchJson<CompanyOption[]>("/api/admin/companies");
-  const companies = useMemo<CompanyOption[]>(
-    () => (companiesData ?? []).map((c) => ({ id: c.id, name: c.name })),
-    [companiesData]
-  );
+  // The company picker options come from the shared per-session list
+  // (`/api/companies` via CompanyScopeProvider), which returns every company
+  // for a SuperAdmin — and this page is SuperAdmin-only. `/api/admin/companies`
+  // is the paged admin table, not a picker source.
+  const companyScope = useCompanyScope();
+  const companies = companyScope.companies;
   // The global on/off switch for the whole public API, independent of any key.
   const {
     data: settings,
@@ -179,7 +181,7 @@ export default function ApiKeysPage() {
     }
   };
 
-  if (loading || settingsLoading) {
+  if (loading || settingsLoading || companyScope.loading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-gray-500">Loading API keys...</div>
