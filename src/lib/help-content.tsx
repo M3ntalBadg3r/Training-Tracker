@@ -163,12 +163,24 @@ const helpSections: Record<string, HelpSection> = {
       <>
         <p>
           View all students in a table with columns: Full Name, Email, Theatre,
-          Region, and Country.
+          Region, and Country (plus Company under <strong>All companies</strong>).
+        </p>
+        <p>
+          The list is searched, filtered, sorted and paged on the server, so
+          search and the column filters always run across{" "}
+          <strong>every</strong>{" "}student in scope, not just the page on
+          screen. Use the search box to find someone by Full Name or Email
+          &mdash; those two columns have no filter dropdown of their own. The
+          Theatre, Region, Country and Company dropdowns list the values present
+          among your students; the Company filter is not offered when more than
+          500 companies are in scope, so pick the company in the header switcher
+          instead. Changing the search, a filter or the sort returns you to
+          page 1.
         </p>
         <p>
           Click <strong>View</strong>{" "}on any row to open the student&apos;s
-          detailed record. Your search, column filters, and sort order are kept
-          in the page URL, so opening a student and pressing <strong>Back</strong>{" "}
+          detailed record. Your search, column filters, sort order and page are
+          kept in the page URL, so opening a student and pressing <strong>Back</strong>{" "}
           restores the list exactly as you left it.
         </p>
         <p>
@@ -184,7 +196,9 @@ const helpSections: Record<string, HelpSection> = {
           auto-derived from the country&apos;s entry in Region Data and shown
           read-only. The dropdown only lists countries that have a theatre
           assigned. To add a new country, ask a SuperAdmin to create it on the{" "}
-          <strong>Region Data</strong> page first.
+          <strong>Region Data</strong> page first. The Company field is
+          type-to-search: start typing part of the company&apos;s name and pick
+          it from the matches.
         </p>
       </>
     ),
@@ -1626,6 +1640,15 @@ const helpSections: Record<string, HelpSection> = {
           The default <strong>Unassigned</strong> company is created automatically
           on upgrade and holds students that existed before company support was
           added. Reassign students from there in <strong>Students &rarr; (row) &rarr; Edit</strong>.
+        </p>
+        <p>
+          Every company field &mdash; the header switcher, user and API-key
+          access lists, imports, scheduled exports, offerings, country sets and
+          the student forms &mdash; is type-to-search: type part of a
+          company&apos;s name and pick it from the matches. At most 50 matches
+          are listed at once, with a count of how many more there are, so keep
+          typing to narrow a long list. Fields that take several companies show
+          the chosen ones as removable chips above the search.
         </p>
       </>
     ),

@@ -9,6 +9,7 @@ import Pagination from "@/components/data-table/Pagination";
 import SearchInput, { SELECT_CLASS } from "@/components/ui/FormControls";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
+import CompanyPicker from "@/components/company/CompanyPicker";
 import { useRegionData } from "@/hooks/useRegionData";
 import { useFetchJson } from "@/hooks/useFetchJson";
 import { useDebounce } from "@/hooks/useDebounce";
@@ -28,8 +29,6 @@ import {
   type StudentSortKey,
 } from "@/lib/students-list-params";
 import { ChevronDown, ChevronUp, Plus } from "lucide-react";
-
-interface CompanyOption { id: number; name: string }
 
 interface ListColumn {
   key: StudentSortKey;
@@ -497,21 +496,17 @@ function StudentsPageInner() {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Company</label>
-            <select
-              value={addForm.companyId === "" ? "" : String(addForm.companyId)}
-              onChange={(e) =>
-                setAddForm((f) => ({ ...f, companyId: e.target.value === "" ? "" : Number(e.target.value) }))
+            <label htmlFor="add-student-company" className="block text-sm font-medium text-gray-700 mb-1">Company</label>
+            <CompanyPicker
+              id="add-student-company"
+              options={companyScope.companies}
+              value={addForm.companyId === "" ? null : addForm.companyId}
+              onChange={(next) =>
+                setAddForm((f) => ({ ...f, companyId: typeof next === "number" ? next : "" }))
               }
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-            >
-              <option value="">-- Select company --</option>
-              {companyScope.companies.map((c: CompanyOption) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
+              clearable
+              placeholder="-- Select company --"
+            />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Country</label>
