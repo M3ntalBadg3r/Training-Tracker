@@ -33,6 +33,10 @@ model Student {
   @@index([companyId])
   @@index([country])
   @@index([theatre])
+  // The server-paged student list (`lib/students-list.ts`) orders by
+  // full_name with an email tiebreak, unscoped or within one company.
+  @@index([fullName, email])
+  @@index([companyId, fullName, email])
   @@map("students")
 }
 
