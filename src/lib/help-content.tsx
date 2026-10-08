@@ -1641,6 +1641,18 @@ const helpSections: Record<string, HelpSection> = {
           on upgrade and holds students that existed before company support was
           added. Reassign students from there in <strong>Students &rarr; (row) &rarr; Edit</strong>.
         </p>
+        <h3>Finding a company</h3>
+        <p>
+          The list is searched, sorted and paged on the server, so it stays
+          quick with tens of thousands of companies. Type in the search box to
+          match any part of a company&apos;s name, click the{" "}
+          <strong>Name</strong> or <strong>Students</strong> column heading to
+          sort (click again to reverse it), and use the pager below the table to
+          move between pages or change how many are shown. Changing the search
+          or the sort returns you to page 1. The search, sort and page are kept
+          in the page address, so leaving the page and pressing{" "}
+          <strong>Back</strong> brings the list back exactly as you left it.
+        </p>
         <p>
           Every company field &mdash; the header switcher, user and API-key
           access lists, imports, scheduled exports, offerings, country sets and
