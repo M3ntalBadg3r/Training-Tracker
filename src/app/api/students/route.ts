@@ -3,7 +3,16 @@ import prisma from "@/lib/prisma";
 import { requireAuth, handleAuthError } from "@/lib/auth";
 import { canAccessCompany, getAuthorizedCompanyIds, resolveCompanyFilter } from "@/lib/company-scope";
 import { invalidateReportCache } from "@/lib/report-cache";
+import { listStudents, studentFilterOptions } from "@/lib/students-list";
+import { EMPTY_STUDENT_FILTER_OPTIONS, parseStudentListQuery } from "@/lib/students-list-params";
 
+/**
+ * The student list, one page at a time. Search, column filters, sort and
+ * paging all run in SQL (`lib/students-list.ts`); every parameter is parsed
+ * and clamped by `lib/students-list-params.ts`, the module the page uses to
+ * build the same query string. `?options=true` answers only the filter
+ * dropdown values (`{ filterOptions }`) for the caller's scope.
+ */
 export async function GET(request: NextRequest) {
   let auth;
   try {
@@ -12,30 +21,30 @@ export async function GET(request: NextRequest) {
     return handleAuthError(error);
   }
 
+  const searchParams = request.nextUrl.searchParams;
   const allowed = await getAuthorizedCompanyIds(auth.sub, auth.role);
-  const companyFilter = resolveCompanyFilter(allowed, request.nextUrl.searchParams.get("companyId"));
+  const companyFilter = resolveCompanyFilter(allowed, searchParams.get("companyId"));
+  const wantsOptions = searchParams.get("options") === "true";
+  const query = parseStudentListQuery(searchParams);
 
+  // Fail closed: an empty scope reads no companies. The helpers would match
+  // nothing anyway (`in: []`), this just skips the queries.
   if (companyFilter !== null && companyFilter.length === 0) {
-    return NextResponse.json([]);
+    return NextResponse.json(
+      wantsOptions
+        ? { filterOptions: EMPTY_STUDENT_FILTER_OPTIONS }
+        : { rows: [], total: 0, page: 1, pageSize: query.pageSize }
+    );
   }
 
-  const students = await prisma.student.findMany({
-    where: companyFilter ? { companyId: { in: companyFilter } } : {},
-    include: { regionData: true, company: { select: { id: true, name: true } } },
-    orderBy: { fullName: "asc" },
-  });
+  if (wantsOptions) {
+    return NextResponse.json({ filterOptions: await studentFilterOptions(companyFilter) });
+  }
 
-  const result = students.map((s) => ({
-    email: s.email,
-    fullName: s.fullName,
-    theatre: s.theatre,
-    country: s.country,
-    region: s.regionData?.region || null,
-    companyId: s.companyId,
-    companyName: s.company?.name ?? null,
-  }));
-
-  return NextResponse.json(result);
+  // The Company column (and so company-name search) is shown only under
+  // "All companies", which is exactly when the page sends no `?companyId=`.
+  const includeCompanyInSearch = !searchParams.get("companyId");
+  return NextResponse.json(await listStudents(query, companyFilter, { includeCompanyInSearch }));
 }
 
 export async function POST(request: NextRequest) {
