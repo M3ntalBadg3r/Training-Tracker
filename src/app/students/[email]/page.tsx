@@ -187,8 +187,15 @@ export default function StudentRecordPage({
 
   useEffect(() => {
     fetch(`/api/students/${encodeURIComponent(email)}`)
-      .then((res) => res.json())
+      // A 404 (unknown or out-of-scope email) answers `{error}`; storing that
+      // as the student crashed the render on `student.trainings`, so the page
+      // never reached its own not-found state below.
+      .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
+        if (!data) {
+          setLoading(false);
+          return;
+        }
         setStudent(data);
         setEditForm({
           fullName: data.fullName,
