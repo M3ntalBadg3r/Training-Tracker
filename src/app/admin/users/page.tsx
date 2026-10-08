@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import PageHeader from "@/components/layout/PageHeader";
 import Modal from "@/components/ui/Modal";
 import { Plus, Pencil, Trash2, KeyRound, ShieldOff, Unlock, Power, PowerOff } from "lucide-react";
@@ -9,6 +9,7 @@ import FailedAttemptsPanel from "@/components/admin/FailedAttemptsPanel";
 import { useFetchJson } from "@/hooks/useFetchJson";
 import { useAuth } from "@/components/auth/AuthProvider";
 import CompanyMultiPicker from "@/components/company/CompanyMultiPicker";
+import { useCompanyScope } from "@/components/company/CompanyScopeProvider";
 
 interface CompanyOption {
   id: number;
@@ -59,11 +60,12 @@ export default function UserManagementPage() {
   // the hook derives `loading` without a setState-in-effect.
   const { data: usersData, loading, reload: fetchUsers } = useFetchJson<UserRow[]>("/api/admin/users");
   const users = usersData ?? [];
-  const { data: companiesData } = useFetchJson<CompanyOption[]>("/api/admin/companies");
-  const companies = useMemo<CompanyOption[]>(
-    () => (companiesData ?? []).map((c) => ({ id: c.id, name: c.name })),
-    [companiesData]
-  );
+  // The company picker options come from the shared per-session list
+  // (`/api/companies` via CompanyScopeProvider), which returns every company
+  // for a SuperAdmin — and this page is SuperAdmin-only. `/api/admin/companies`
+  // is the paged admin table, not a picker source.
+  const companyScope = useCompanyScope();
+  const companies = companyScope.companies;
 
   const [showAdd, setShowAdd] = useState(false);
   const [addForm, setAddForm] = useState({
@@ -255,7 +257,7 @@ export default function UserManagementPage() {
     return `Disabled${who}${when}${why}`;
   };
 
-  if (loading) {
+  if (loading || companyScope.loading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-gray-500">Loading users...</div>
