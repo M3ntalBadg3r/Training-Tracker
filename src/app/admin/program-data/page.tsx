@@ -41,19 +41,12 @@ const levelLabel = (level: string) => (isReqLevel(level) ? LEVEL_LABELS[level] :
 const countModeExport = (r: ProgramDataRow) =>
   isMultiCountryLevel(r.level) ? AGGREGATION_SHORT_LABELS[normaliseAggregation(r.level, r.aggregation)] : "";
 
-/** The program list row plus the anchored-program settings the API returns. */
-type ProgramSummary = ProgramSummaryRow & {
-  anchorTheatre?: string | null;
-  defaultMinimumCountries?: number | null;
-  programWideCount?: number;
-};
-
 const EMPTY_ANCHOR: AnchorSettingsValue = { anchorTheatre: "", minimum: "" };
 
 export default function ProgramDataPage() {
   const router = useRouter();
 
-  const [programs, setPrograms] = useState<ProgramSummary[]>([]);
+  const [programs, setPrograms] = useState<ProgramSummaryRow[]>([]);
   const [allRows, setAllRows] = useState<ProgramDataRow[]>([]);
   const [allTiers, setAllTiers] = useState<ProgramTierRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -69,10 +62,10 @@ export default function ProgramDataPage() {
   const [newDeploymentMode, setNewDeploymentMode] = useState("flat");
   const [newAnchor, setNewAnchor] = useState<AnchorSettingsValue>(EMPTY_ANCHOR);
   const [newError, setNewError] = useState("");
-  const [renameTarget, setRenameTarget] = useState<ProgramSummary | null>(null);
+  const [renameTarget, setRenameTarget] = useState<ProgramSummaryRow | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [renameError, setRenameError] = useState("");
-  const [deleteTarget, setDeleteTarget] = useState<ProgramSummary | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ProgramSummaryRow | null>(null);
   const [deleteError, setDeleteError] = useState("");
 
   // Import
@@ -220,7 +213,7 @@ export default function ProgramDataPage() {
     fetchRows();
   };
 
-  const describe = (p: ProgramSummary) => {
+  const describe = (p: ProgramSummaryRow) => {
     const parts: string[] = [];
     parts.push(`${p.requirementCount} requirement${p.requirementCount === 1 ? "" : "s"}`);
     if (p.specialisations.length > 0) {
