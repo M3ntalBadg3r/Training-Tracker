@@ -2967,7 +2967,9 @@ const helpSections: Record<string, HelpSection> = {
           An <strong>anchored program</strong>{" "}is planned only under the{" "}
           <strong>Target countries</strong>{" "}scope, and every other program only
           under the other scopes, so the program list changes with the scope (a note
-          says how many anchored programs are planned elsewhere). The scope is offered
+          says how many anchored programs are planned elsewhere; if a plan still
+          names one on the wrong side, a <strong>Not planned</strong>{" "}note says which
+          and why). The scope is offered
           when some program is anchored and the selected company has at least one
           Country Set. Its set picker defaults to{" "}
           <strong>Partner&apos;s configured set</strong>{" "}&mdash; each program&apos;s

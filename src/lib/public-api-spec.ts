@@ -827,7 +827,7 @@ export const PUBLIC_API_ENDPOINTS: readonly PublicApiEndpoint[] = [
     paramSources: ["src/lib/compliance-plan-request.ts"],
     summary: "Compliance planning (aggregates only)",
     description:
-      "The action layer over program compliance: what it would take to close each gap. AGGREGATES ONLY — the named candidate, eligible-pool and renewal rosters the in-app planner shows are never returned over this API. Nothing analytical is lost: riskImpacts is the aggregate view of the same set the named renewal rows enumerate, and totals.renewalsAtRisk is its count. Use ?options=true first to discover the program, tier and specialisation names needed to build a targets array. Anchored programs (options programs[].anchored) are planned only at level=anchored, and every other program only at the other levels: a target on the wrong side is left out of targets entirely. A tiered program's program-wide requirements form a \"Required at every level\" block in every tier and \"all\" target.",
+      "The action layer over program compliance: what it would take to close each gap. AGGREGATES ONLY — the named candidate, eligible-pool and renewal rosters the in-app planner shows are never returned over this API. Nothing analytical is lost: riskImpacts is the aggregate view of the same set the named renewal rows enumerate, and totals.renewalsAtRisk is its count. Use ?options=true first to discover the program, tier and specialisation names needed to build a targets array. Anchored programs (options programs[].anchored) are planned only at level=anchored, and every other program only at the other levels: a target on the wrong side is left out of targets and named in skippedTargets with the reason. A tiered program's program-wide requirements form a \"Required at every level\" block in every tier and \"all\" target.",
     parameters: [
       COMPANY_ID,
       {
@@ -875,6 +875,16 @@ export const PUBLIC_API_ENDPOINTS: readonly PublicApiEndpoint[] = [
             planForWindow: BOOL,
             targets: arr(PLAN_TARGET),
             riskImpacts: arr(PLAN_RISK_IMPACT),
+            skippedTargets: {
+              ...arr(
+                obj({
+                  program: STR,
+                  reason: { type: "string", enum: ["anchoredOnly", "notAnchored"] },
+                }),
+              ),
+              description:
+                "Targets left out for being on the wrong side of level=anchored: anchoredOnly = an anchored program asked for at another level (it is planned only at level=anchored); notAnchored = an ordinary program asked for at level=anchored. Unknown program names are dropped without an entry.",
+            },
             totals: obj({
               peopleMoves: { type: "integer", description: 'The "people to certify" headline, deduped so one person\'s exam counts once.' },
               easyWins: INT,

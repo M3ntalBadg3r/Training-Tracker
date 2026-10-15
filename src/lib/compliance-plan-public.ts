@@ -3,6 +3,7 @@ import type {
   PlanBlocker,
   PlanRequirement,
   PlanRiskImpact,
+  PlanSkippedTarget,
   PlanSpecialisation,
   PlanTargetResult,
 } from "@/lib/compliance-plan";
@@ -65,6 +66,9 @@ import type { AnchoredMeta } from "@/lib/program-levels";
  * identifier. A target's `headline` may now lead with `blockerText`, which
  * interpolates only integers. The by-reference pass-through stands.
  *
+ * `skippedTargets` (`PlanSkippedTarget`: a program name and a reason enum)
+ * was added for the same feature and passes through by reference too.
+ *
  * Because those nested types pass through by reference, a field added to any
  * of them would reach partners unreviewed. The second block of assertions at
  * the bottom of this file classifies every field of every nested type, so such
@@ -76,6 +80,7 @@ export interface PublicCompliancePlan {
   planForWindow: boolean;
   targets: PlanTargetResult[];
   riskImpacts: PlanRiskImpact[];
+  skippedTargets: PlanSkippedTarget[];
   totals: {
     peopleMoves: number;
     easyWins: number;
@@ -96,6 +101,7 @@ export function toPublicCompliancePlan(plan: CompliancePlanResult): PublicCompli
     planForWindow: plan.planForWindow,
     targets: plan.targets,
     riskImpacts: plan.riskImpacts,
+    skippedTargets: plan.skippedTargets,
     totals: {
       peopleMoves: plan.totals.peopleMoves,
       easyWins: plan.totals.easyWins,
@@ -131,6 +137,7 @@ type PublicPlanField =
   | "planForWindow"
   | "targets"
   | "riskImpacts"
+  | "skippedTargets"
   | "totals";
 
 /** Classified as person-level and deliberately never sent to the public API. */
@@ -185,6 +192,7 @@ type AuditedRiskImpactField =
 type AuditedTierPlanField =
   | "specialisationsRequired" | "alreadyAchieved" | "needed" | "deliveryCertShortfall" | "gateShortfall";
 type AuditedBlockerField = "kind" | "required" | "counted" | "source";
+type AuditedSkippedTargetField = "program" | "reason";
 type AuditedAnchoredMetaField =
   | "anchorTheatre" | "countrySet" | "targetCountries" | "outOfTheatreCountries"
   | "minimumCountries" | "minimumCountriesSource" | "minimumMet";
@@ -200,6 +208,7 @@ const _nestedFieldsAreAudited: [
   KeysExactly<PlanRiskImpact, AuditedRiskImpactField>,
   KeysExactly<NonNullable<PlanTargetResult["tierPlan"]>, AuditedTierPlanField>,
   KeysExactly<PlanBlocker, AuditedBlockerField>,
+  KeysExactly<PlanSkippedTarget, AuditedSkippedTargetField>,
   KeysExactly<AnchoredMeta, AuditedAnchoredMetaField>,
-] = [true, true, true, true, true, true, true];
+] = [true, true, true, true, true, true, true, true];
 void _nestedFieldsAreAudited;

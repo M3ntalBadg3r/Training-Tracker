@@ -198,6 +198,9 @@ interface CompliancePlanResult {
   eligible: PlanCandidate[];
   renewals: PlanRenewalRow[];
   riskImpacts: PlanRiskImpact[];
+  /** Targets the API left out for being on the wrong side of the Target
+   *  countries scope (optional so an older cached payload still renders). */
+  skippedTargets?: { program: string; reason: "anchoredOnly" | "notAnchored" }[];
   totals: {
     peopleMoves: number;
     easyWins: number;
@@ -1934,6 +1937,27 @@ function CompliancePlanningPageInner() {
                 below target within <strong>{monthsLabel(plan.renewalWindowMonths)}</strong>{" "}
                 as training expires (shown as current → projected).{" "}
                 {plan.planForWindow ? PLAN_FOR_WINDOW_HINT.on : PLAN_FOR_WINDOW_HINT.off}
+              </span>
+            </div>
+          )}
+
+          {/* A target the API left out says so, rather than reading as a
+              program with nothing to do. The picker already hides the wrong
+              side, so this mostly catches a carried-over or hand-built URL. */}
+          {(plan.skippedTargets?.length ?? 0) > 0 && (
+            <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800">
+              <span className="font-medium">Not planned:</span>
+              <span>
+                {plan.skippedTargets!.map((t, i) => (
+                  <span key={t.program}>
+                    {i > 0 && "; "}
+                    <strong>{t.program}</strong>{" "}
+                    {t.reason === "anchoredOnly"
+                      ? "is anchored, so it is planned only under Target countries"
+                      : "is not anchored, so it cannot be planned under Target countries"}
+                  </span>
+                ))}
+                .
               </span>
             </div>
           )}

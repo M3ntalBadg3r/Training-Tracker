@@ -359,6 +359,19 @@ export interface PlanRenewalRow {
   onPath: boolean;
 }
 
+/**
+ * A requested target the plan left out because it is on the wrong side of the
+ * anchored scope: an anchored program asked for at a standard scope
+ * (`anchoredOnly` — it is planned only under Target countries), or a standard
+ * program asked for at `level=anchored` (`notAnchored`). Reported rather than
+ * dropped silently, so a plan that omits a program says why instead of reading
+ * as "nothing to do" for it. Program name and an enum only — no person data.
+ */
+export interface PlanSkippedTarget {
+  program: string;
+  reason: "anchoredOnly" | "notAnchored";
+}
+
 export interface CompliancePlanResult {
   scopeLabel: string;
   renewalWindowMonths: number;
@@ -387,6 +400,8 @@ export interface CompliancePlanResult {
    * same `onPath` marker, so the two always agree.
    */
   riskImpacts: PlanRiskImpact[];
+  /** Targets left out for being on the wrong side of the anchored scope. */
+  skippedTargets: PlanSkippedTarget[];
   totals: {
     peopleMoves: number;
     easyWins: number;
@@ -1589,6 +1604,7 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
   // window-dependent `shortfall`, so a specialisation dropping off the path
   // took its expiring holders out of the panel with it.
   const allInstances: ReqInstance[] = [];
+  const skippedTargets: PlanSkippedTarget[] = [];
 
   for (const target of input.targets) {
     const programRow = await prisma.program.findUnique({
@@ -1601,7 +1617,14 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
     // anchor to resolve. A target on the wrong side yields nothing at all — the
     // page offers each program only at the scopes it can be planned at.
     const anchoredProgram = isAnchoredProgram(programRow);
-    if (anchoredProgram !== anchoredLevel) continue;
+    if (anchoredProgram !== anchoredLevel) {
+      // An unknown program is filtered by the routes and never reported here;
+      // a real one on the wrong side is named so the plan can say why.
+      if (programRow) {
+        skippedTargets.push({ program: target.program, reason: anchoredProgram ? "anchoredOnly" : "notAnchored" });
+      }
+      continue;
+    }
     const area = anchoredLevel
       ? programRow ? await resolveAnchoredPlanArea(programRow, input) : null
       : sharedArea;
@@ -2104,6 +2127,7 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
     eligible,
     renewals,
     riskImpacts,
+    skippedTargets,
     totals: {
       peopleMoves: alloc.closesByEmail.size + netNew,
       easyWins,

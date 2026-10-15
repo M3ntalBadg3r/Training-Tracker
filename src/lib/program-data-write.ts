@@ -351,6 +351,16 @@ export async function parseAnchorSettings(
     defaultMinimumCountries = parsed.value;
   }
 
+  // Un-anchoring clears the default minimum too unless the request says
+  // otherwise: it only means anything on an anchored program, and the admin
+  // editor already clears both together, so an API caller sending just
+  // `anchorTheatre: null` must end in the same state rather than leave a stale
+  // number to resurface on re-anchoring. (Partner settings are kept either way —
+  // those are each partner's own terms.)
+  if (anchorTheatre === null && defaultMinimumCountries === undefined) {
+    defaultMinimumCountries = null;
+  }
+
   return { ok: true, value: { anchorTheatre, defaultMinimumCountries } };
 }
 

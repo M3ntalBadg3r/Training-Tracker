@@ -121,6 +121,7 @@ export function emptyCompliancePlan(renewalWindowMonths: number): CompliancePlan
     eligible: [],
     renewals: [],
     riskImpacts: [],
+    skippedTargets: [],
     totals: {
       peopleMoves: 0, easyWins: 0, lapsed: 0, legacy: 0, netNew: 0,
       renewalMoves: 0, renewalsAtRisk: 0, renewalsAtRiskOnPath: 0,
