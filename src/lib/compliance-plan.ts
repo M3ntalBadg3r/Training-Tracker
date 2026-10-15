@@ -2312,13 +2312,26 @@ function buildHeadlineBody(target: PlanTargetResult, scopeLabel: string, windowM
   if (target.peopleMoves === 0) {
     // Don't claim "nobody left to certify" when the window says otherwise: a
     // specialisation met today can still fall below target as training expires.
-    const atRisk = target.specialisations.filter((s) => s.achieved && s.projectedAchieved === false);
-    if (atRisk.length > 0) {
+    // The program-wide block is not a specialisation, so it is named on its
+    // own rather than counted as one ("1 specialisation falls below target"
+    // when no specialisation does).
+    const atRisk = target.specialisations.filter(
+      (s) => !s.kind && s.achieved && s.projectedAchieved === false,
+    );
+    const gatesAtRisk = target.specialisations.some(
+      (s) => s.kind === "programWide" && s.achieved && s.projectedAchieved === false,
+    );
+    if (atRisk.length > 0 || gatesAtRisk) {
       const n = atRisk.length;
+      const what = [
+        ...(gatesAtRisk ? ["the requirements every level needs"] : []),
+        ...(n > 0 ? [`${n} specialisation${n === 1 ? "" : "s"}`] : []),
+      ].join(" and ");
+      const plural = n > 1 || gatesAtRisk;
       return (
-        `${target.program} is compliant ${where} today, but ${n} specialisation${n === 1 ? "" : "s"} ` +
-        `fall${n === 1 ? "s" : ""} below target within ${windowMonths} month${windowMonths === 1 ? "" : "s"} ` +
-        `as training expires — renew to hold it.`
+        `${target.program} is compliant ${where} today, but ${what} ` +
+        `fall${plural ? "" : "s"} below target within ${windowMonths} month${windowMonths === 1 ? "" : "s"} ` +
+        `as training expires — renew to hold ${plural ? "them" : "it"}.`
       );
     }
     return `${target.program} is fully compliant ${where} — nobody left to certify.`;
