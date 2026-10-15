@@ -2286,12 +2286,13 @@ function toPlanRequirement(
  * The blocker sentence, in the page's voice: what to do and where, then why.
  * Shared by the headline; the page renders `blockers` itself too.
  */
-export function blockerText(b: PlanBlocker): string {
+export function blockerText(b: PlanBlocker, tiered: boolean): string {
   const more = Math.max(0, b.required - b.counted);
   const whose = b.source === "partner" ? "this partner's minimum" : "the program's default minimum";
   return (
     `Name ${more} more target countr${more === 1 ? "y" : "ies"} in Admin › Country Sets — ` +
-    `${b.counted} of ${b.required} counted (${whose}), and no tier is reached until then.`
+    // A program without tiers has no tier to withhold.
+    `${b.counted} of ${b.required} counted (${whose})${tiered ? ", and no tier is reached until then" : ""}.`
   );
 }
 
@@ -2300,7 +2301,7 @@ function buildHeadline(target: PlanTargetResult, scopeLabel: string, windowMonth
   // A blocker leads: certifying people cannot clear it, so a reader who acts on
   // the rest of the sentence alone would still not reach the target.
   const blockers = target.blockers ?? [];
-  return blockers.length > 0 ? `${blockers.map(blockerText).join(" ")} ${body}` : body;
+  return blockers.length > 0 ? `${blockers.map((b) => blockerText(b, target.isTiered)).join(" ")} ${body}` : body;
 }
 
 function buildHeadlineBody(target: PlanTargetResult, scopeLabel: string, windowMonths: number): string {
@@ -2312,13 +2313,26 @@ function buildHeadlineBody(target: PlanTargetResult, scopeLabel: string, windowM
   if (target.peopleMoves === 0) {
     // Don't claim "nobody left to certify" when the window says otherwise: a
     // specialisation met today can still fall below target as training expires.
-    const atRisk = target.specialisations.filter((s) => s.achieved && s.projectedAchieved === false);
-    if (atRisk.length > 0) {
+    // The program-wide block is not a specialisation, so it is named on its
+    // own rather than counted as one ("1 specialisation falls below target"
+    // when no specialisation does).
+    const atRisk = target.specialisations.filter(
+      (s) => !s.kind && s.achieved && s.projectedAchieved === false,
+    );
+    const gatesAtRisk = target.specialisations.some(
+      (s) => s.kind === "programWide" && s.achieved && s.projectedAchieved === false,
+    );
+    if (atRisk.length > 0 || gatesAtRisk) {
       const n = atRisk.length;
+      const what = [
+        ...(gatesAtRisk ? ["the requirements every level needs"] : []),
+        ...(n > 0 ? [`${n} specialisation${n === 1 ? "" : "s"}`] : []),
+      ].join(" and ");
+      const plural = n > 1 || gatesAtRisk;
       return (
-        `${target.program} is compliant ${where} today, but ${n} specialisation${n === 1 ? "" : "s"} ` +
-        `fall${n === 1 ? "s" : ""} below target within ${windowMonths} month${windowMonths === 1 ? "" : "s"} ` +
-        `as training expires — renew to hold it.`
+        `${target.program} is compliant ${where} today, but ${what} ` +
+        `fall${plural ? "" : "s"} below target within ${windowMonths} month${windowMonths === 1 ? "" : "s"} ` +
+        `as training expires — renew to hold ${plural ? "them" : "it"}.`
       );
     }
     return `${target.program} is fully compliant ${where} — nobody left to certify.`;

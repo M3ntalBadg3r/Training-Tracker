@@ -3,6 +3,7 @@ import prisma from "@/lib/prisma";
 import { handleAuthError, requireSuperAdmin } from "@/lib/auth";
 import { readJsonBody } from "@/lib/request-body";
 import { normaliseIsoCode } from "@/lib/iso-countries";
+import { invalidateReportCache } from "@/lib/report-cache";
 
 export async function POST(request: NextRequest) {
   try {
@@ -126,6 +127,12 @@ export async function POST(request: NextRequest) {
       skipped++;
     }
   }
+
+  // A changed theatre or region moves a country between theatre-, region- and
+  // anchored-program populations (an anchored program's target countries are
+  // the set members inside its anchor theatre), so cached reports are stale —
+  // the same rule as the single-row region-data writes. After the writes.
+  if (imported > 0 || updated > 0) invalidateReportCache();
 
   // Record last import timestamp for region data
   await prisma.importMetadata.upsert({

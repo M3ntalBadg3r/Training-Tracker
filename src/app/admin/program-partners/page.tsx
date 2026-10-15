@@ -58,7 +58,15 @@ function effectiveMinimum(r: ProgramCompanySettingRow): { value: number | null; 
   return { value: null, source: "none" };
 }
 
-function effectiveText(r: ProgramCompanySettingRow): string {
+/**
+ * What a row means now. A row survives its program being un-anchored (it
+ * comes back into force if the program is anchored again), but while the
+ * program is not anchored nothing reads it — so it must not claim a minimum.
+ */
+const NOT_IN_USE = "Not in use — program not anchored";
+
+function effectiveText(r: ProgramCompanySettingRow, anchoredIds: Set<number>): string {
+  if (!anchoredIds.has(r.programId)) return NOT_IN_USE;
   const e = effectiveMinimum(r);
   if (e.source === "partner") return String(e.value);
   if (e.source === "default") return `${e.value} (program default)`;
@@ -97,6 +105,8 @@ function ProgramPartnersInner() {
   );
   const rows = useMemo(() => (Array.isArray(data?.rows) ? data.rows : []), [data]);
   const programs = useMemo(() => (Array.isArray(data?.programs) ? data.programs : []), [data]);
+  // The GET lists only anchored programs; a row naming any other is dormant.
+  const anchoredIds = useMemo(() => new Set(programs.map((p) => p.id)), [programs]);
 
   // View state seeded from the URL (re-validated — it is user-editable text).
   const [search, setSearch] = useState(() => searchParams.get("q") ?? "");
@@ -264,7 +274,7 @@ function ProgramPartnersInner() {
       company: r.companyName,
       minimum: r.minimumCountries ?? "",
       target: r.targetCountrySet ?? "",
-      effective: effectiveText(r),
+      effective: effectiveText(r, anchoredIds),
     }));
     const columns: { key: keyof (typeof out)[number]; header: string }[] = [
       { key: "program", header: "Program" },
@@ -364,7 +374,9 @@ function ProgramPartnersInner() {
                 <td className="px-4 py-3 text-gray-700">
                   {r.targetCountrySet ?? <span className="text-gray-400">Not set</span>}
                 </td>
-                <td className="px-4 py-3 text-gray-700">{effectiveText(r)}</td>
+                <td className={`px-4 py-3 ${anchoredIds.has(r.programId) ? "text-gray-700" : "text-amber-700"}`}>
+                  {effectiveText(r, anchoredIds)}
+                </td>
                 <td className="px-4 py-3">
                   <div className="flex gap-1">
                     <button

@@ -314,12 +314,13 @@ const POPULATION_LABEL: Record<AnchoredPopulation, string> = {
  * importing it, because `lib/compliance-plan.ts` pulls in Prisma and cannot be
  * bundled for the browser; keep the two in step.
  */
-function blockerText(b: PlanBlocker): string {
+function blockerText(b: PlanBlocker, tiered: boolean): string {
   const more = Math.max(0, b.required - b.counted);
   const whose = b.source === "partner" ? "this partner's minimum" : "the program's default minimum";
   return (
     `Name ${more} more target countr${more === 1 ? "y" : "ies"} in Admin › Country Sets — ` +
-    `${b.counted} of ${b.required} counted (${whose}), and no tier is reached until then.`
+    // A program without tiers has no tier to withhold.
+    `${b.counted} of ${b.required} counted (${whose})${tiered ? ", and no tier is reached until then" : ""}.`
   );
 }
 
@@ -971,6 +972,11 @@ function buildRoadmapSection(
   planForWindow: boolean,
 ): ReportTableSection {
   const rows: Record<string, string | number>[] = [];
+  // Only an anchored plan carries a Population column, as on the dashboard, so
+  // a standard plan's spreadsheet is byte-identical to what it was before
+  // anchored programs existed. Every target of an anchored plan carries
+  // `anchored`; no target of a standard plan does.
+  const anchored = targets.some((t) => t.anchored);
   for (const t of targets) {
     const target = t.tierName ?? (t.mode === "all" ? "All requirements" : "Specialisations");
     const tiered = !!t.tierPlan;
@@ -1010,8 +1016,8 @@ function buildRoadmapSection(
           // is one row per country here, the rectangle a pivot wants.
           countMode: AGGREGATION_SHORT_LABELS[r.aggregation],
           country: r.country ?? "",
-          // Appended last for the same reason: blank outside anchored plans.
-          population: r.population ? POPULATION_LABEL[r.population] : "",
+          // Appended last for the same reason; anchored plans only.
+          ...(anchored ? { population: r.population ? POPULATION_LABEL[r.population] : "" } : {}),
         });
       }
     }
@@ -1046,7 +1052,7 @@ function buildRoadmapSection(
       { key: "shared", header: "Shared with" },
       { key: "countMode", header: "Count Mode" },
       { key: "country", header: "Country" },
-      { key: "population", header: "Population" },
+      ...(anchored ? [{ key: "population", header: "Population" }] : []),
     ],
     rows,
   };
@@ -1065,7 +1071,7 @@ function buildBlockerSection(targets: PlanTargetResult[]): ReportTableSection | 
       Required: b.required,
       Counted: b.counted,
       Source: b.source === "partner" ? "Partner setting" : "Program default",
-      Action: blockerText(b),
+      Action: blockerText(b, t.isTiered),
     })),
   );
   if (rows.length === 0) return null;
@@ -1085,6 +1091,9 @@ function buildBlockerSection(targets: PlanTargetResult[]): ReportTableSection | 
 }
 
 function buildRiskImpactSection(impacts: PlanRiskImpact[], windowMonths: number): ReportTableSection {
+  // Anchored plans only (every impact of one carries `population`; none of a
+  // standard plan's does), so a standard plan's export is unchanged.
+  const anchored = impacts.some((i) => i.population !== undefined);
   return {
     title: "Requirements at risk",
     subtitle: `Falling below target within ${windowMonths} month${windowMonths === 1 ? "" : "s"} as training expires`,
@@ -1100,7 +1109,7 @@ function buildRiskImpactSection(impacts: PlanRiskImpact[], windowMonths: number)
       { key: "OnPath", header: "On recommended path" },
       { key: "CountMode", header: "Count Mode" },
       { key: "Country", header: "Country" },
-      { key: "Population", header: "Population" },
+      ...(anchored ? [{ key: "Population", header: "Population" }] : []),
     ],
     rows: impacts.map((i) => ({
       Program: i.program,
@@ -1114,7 +1123,7 @@ function buildRiskImpactSection(impacts: PlanRiskImpact[], windowMonths: number)
       OnPath: i.onPath ? "Yes" : "No",
       CountMode: AGGREGATION_SHORT_LABELS[i.aggregation],
       Country: i.country ?? "",
-      Population: i.population ? POPULATION_LABEL[i.population] : "",
+      ...(anchored ? { Population: i.population ? POPULATION_LABEL[i.population] : "" } : {}),
     })),
   };
 }
@@ -2028,7 +2037,7 @@ function TargetCard({ target, windowMonths }: { target: PlanTargetResult; window
         >
           <AlertTriangle size={16} className="mt-0.5 shrink-0" />
           <span>
-            {blockerText(b)}{" "}
+            {blockerText(b, target.isTiered)}{" "}
             <Link href="/admin/country-sets" className="font-medium underline">Open Country Sets</Link>
           </span>
         </div>

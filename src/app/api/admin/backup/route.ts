@@ -2541,7 +2541,7 @@ export function programCompanySettingWarnings(
   if (!result) return out;
   if (result.droppedNoCompany > 0) {
     out.push(
-      `${result.droppedNoCompany} program partner setting(s) could not be matched to a company on this system and were not restored. Create the company and restore again, or re-enter the settings on the program's page.`
+      `${result.droppedNoCompany} program partner setting(s) could not be matched to a company on this system and were not restored. Create the company and restore again, or re-enter them in Admin › Program Partners.`
     );
   }
   if (result.droppedNoProgram > 0) {
@@ -2556,7 +2556,7 @@ export function programCompanySettingWarnings(
   }
   if (result.unlinkedSets > 0) {
     out.push(
-      `${result.unlinkedSets} program partner setting(s) named a target Country Set that does not exist for that company after the restore; they were kept without a target set. Choose the set again on the program's page.`
+      `${result.unlinkedSets} program partner setting(s) named a target Country Set that does not exist for that company after the restore; they were kept without a target set. Choose the set again in Admin › Program Partners.`
     );
   }
   if (result.invalidMinimums > 0) {
