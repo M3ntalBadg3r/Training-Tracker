@@ -16,7 +16,7 @@ import {
  *
  * Two modes:
  *  - `?options=true`  → per-program selector metadata (name, isTiered, levels,
- *    tier names, specialisation names) so the page can build the target selector
+ *    tier names, specialisation names, `anchored`) so the page can build the target selector
  *    without one detail fetch per program, plus `countrySets` — the names a
  *    "By Country Set" scope can pick from: the scoped company's own sets, empty
  *    unless the scope is exactly one company (sets are per-company tenant data).
@@ -69,7 +69,8 @@ export async function GET(request: NextRequest) {
       // "-v2": the value became `{programs, countrySets}` (it was the bare
       // programs array), so no entry of the old shape can ever be served.
       // "-v3": the value now carries company-scoped set names.
-      `compliance-planning-options-v3|${scopeKey(companyFilter)}`,
+      // "-v4": each program now carries `anchored` (anchored programs).
+      `compliance-planning-options-v4|${scopeKey(companyFilter)}`,
       async () => {
         const [programs, countrySets] = await Promise.all([buildPlanningOptions(), listCountrySetNames(companyFilter)]);
         return { programs, countrySets };
@@ -88,7 +89,9 @@ export async function GET(request: NextRequest) {
   // A Country Set name resolves only within one company (sets are per-company
   // tenant data), so a countrySet plan over any other scope is refused rather
   // than planned against an empty area. The page always sends one company.
-  if (req.level === "countrySet" && singleCompanyId(companyFilter) === null) {
+  // The anchored scope is the same rule twice over: its target countries are a
+  // Country Set, and the partner's minimum and configured set are per company.
+  if ((req.level === "countrySet" || req.level === "anchored") && singleCompanyId(companyFilter) === null) {
     return NextResponse.json({ error: COUNTRY_SET_SCOPE_ERROR }, { status: 400 });
   }
 

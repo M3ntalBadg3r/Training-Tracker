@@ -1,5 +1,6 @@
 import prisma from "@/lib/prisma";
 import { REQ_LEVELS } from "@/lib/program-levels";
+import { isAnchoredProgram } from "@/lib/program-anchor";
 
 /** Per-program metadata for the Compliance Planning target selector. */
 export interface PlanningOption {
@@ -15,6 +16,15 @@ export interface PlanningOption {
   levels: string[];
   tiers: string[];
   specialisations: string[];
+  /**
+   * Set when the program is anchored (`Program.anchorTheatre`): it is planned
+   * only at the anchored scope ("Target countries"), over its Theatre rows in
+   * this theatre and its CountrySet rows in the partner's target countries —
+   * and never at any other scope. `null` for every standard program.
+   * Registry data like the rest of this record: the theatre is a property of
+   * the program, not of any company.
+   */
+  anchored: { anchorTheatre: string } | null;
 }
 
 /**
@@ -32,7 +42,7 @@ export interface PlanningOption {
  */
 export async function buildPlanningOptions(): Promise<PlanningOption[]> {
   const [programs, programData, tiers] = await Promise.all([
-    prisma.program.findMany({ select: { name: true, isTiered: true } }),
+    prisma.program.findMany({ select: { name: true, isTiered: true, anchorTheatre: true } }),
     prisma.programData.findMany({
       select: { programName: true, level: true, specialisation: { select: { name: true } } },
     }),
@@ -40,6 +50,9 @@ export async function buildPlanningOptions(): Promise<PlanningOption[]> {
   ]);
 
   const isTieredByName = new Map(programs.map((p) => [p.name, p.isTiered]));
+  const anchorByName = new Map(
+    programs.filter((p) => isAnchoredProgram(p)).map((p) => [p.name, p.anchorTheatre!.trim()]),
+  );
   const names = new Set<string>([
     ...programs.filter((p) => p.isTiered).map((p) => p.name),
     ...programData.map((d) => d.programName),
@@ -60,6 +73,7 @@ export async function buildPlanningOptions(): Promise<PlanningOption[]> {
       levels,
       tiers: tierNames,
       specialisations,
+      anchored: anchorByName.has(name) ? { anchorTheatre: anchorByName.get(name)! } : null,
     });
   }
   return result;
