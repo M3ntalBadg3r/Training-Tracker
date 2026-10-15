@@ -3,7 +3,10 @@
  * (POST /api/admin/program-data and PUT /api/admin/program-data/[id]).
  *
  * A requirement belongs to a specialisation (specialisationId) and/or a tier
- * (tierId) — at least one must be set. Specialisation-only rows carry a
+ * (tierId). On a **tiered** program a row may carry neither: that is a
+ * **program-wide gate** (`isProgramWideRow`), required by every tier in every
+ * deployment mode, and always written with purpose "qualification". On a
+ * non-tiered program a row needs at least one of the two. Specialisation-only rows carry a
  * `purpose` ("qualification" earns the specialisation, "deployment" is used by
  * tiers in "perAchievedSpecialisation" mode). Tier rows are always deployment;
  * a tier row may ALSO carry a specialisationId (a "perTierPerSpecialisation"
@@ -16,6 +19,11 @@
  * a 400 rather than silently dropped, because the author asked for a rule the
  * level cannot express. `minimumPerTheatre` only means anything at Global level
  * and is nulled elsewhere (silently: the engine never reads it there).
+ *
+ * An **anchored** program (`Program.anchorTheatre` set) evaluates only Theatre
+ * rows (over the anchor theatre) and Country Set rows (over the partner's
+ * target countries), so a write at any other level is a 400 — the row would be
+ * stored and never counted.
  */
 import prisma from "@/lib/prisma";
 import type { ProgramDataRow } from "@/types";
@@ -26,9 +34,22 @@ import {
   isAggregation,
   isMultiCountryLevel,
   normaliseAggregation,
+  ANCHORED_REQ_LEVELS,
+  isAnchoredReqLevel,
   type Aggregation,
   type ReqLevel,
 } from "@/lib/program-levels";
+
+/** The 400 text for a write naming a level an anchored program does not use. */
+export function anchoredLevelError(level: string, anchorTheatre: string): string {
+  const label = isReqLevel(level) ? LEVEL_LABELS[level] : level;
+  const allowed = ANCHORED_REQ_LEVELS.map((l) => LEVEL_LABELS[l]).join(" or ");
+  return `This program is anchored to ${anchorTheatre}, so it only uses ${allowed} requirements, not ${label}`;
+}
+
+/** The 400 text for a row with neither a specialisation nor a tier on a non-tiered program. */
+export const PROGRAM_WIDE_NOT_TIERED_ERROR =
+  "A requirement needs a specialisation or a tier, unless the program is tiered (then it can apply at every level)";
 
 export { REQ_LEVELS };
 
@@ -66,15 +87,32 @@ export async function validateRequirementBody(body: Record<string, unknown>): Pr
 
   const specialisationId = body.specialisationId == null ? null : Number(body.specialisationId);
   const tierId = body.tierId == null ? null : Number(body.tierId);
-  const hasSpec = specialisationId != null && !Number.isNaN(specialisationId);
-  const hasTier = tierId != null && !Number.isNaN(tierId);
-  if (!hasSpec && !hasTier) {
-    return err("Requirement must belong to a specialisation or a tier");
+  if (specialisationId != null && !Number.isInteger(specialisationId)) return err("Invalid specialisation");
+  if (tierId != null && !Number.isInteger(tierId)) return err("Invalid tier");
+  const hasSpec = specialisationId != null;
+  const hasTier = tierId != null;
+
+  // The program's own settings decide two things below: whether a row with
+  // neither a specialisation nor a tier is allowed (tiered programs only), and
+  // which levels it may use (anchored programs: Theatre / Country Set only).
+  // A program that does not exist yet is created by the POST as a plain,
+  // non-tiered, non-anchored program, so it gets the ordinary rules.
+  const program = await prisma.program.findUnique({
+    where: { name: programName },
+    select: { isTiered: true, anchorTheatre: true },
+  });
+  const isProgramWide = !hasSpec && !hasTier;
+  if (isProgramWide && !program?.isTiered) {
+    return err(PROGRAM_WIDE_NOT_TIERED_ERROR);
   }
 
   const level = body.level;
   if (!isReqLevel(level)) {
     return err("Valid level is required");
+  }
+  const anchorTheatre = program?.anchorTheatre?.trim() ? program.anchorTheatre.trim() : null;
+  if (anchorTheatre && !isAnchoredReqLevel(level)) {
+    return err(anchoredLevelError(level, anchorTheatre));
   }
 
   // Count mode: absent/empty = "total". Anything else must be a known value,
@@ -118,11 +156,12 @@ export async function validateRequirementBody(body: Record<string, unknown>): Pr
   }
 
   // Purpose: tier rows are always deployment; specialisation rows default to
-  // qualification unless explicitly a deployment requirement.
+  // qualification unless explicitly a deployment requirement; a program-wide
+  // gate is always qualification (it gates every tier, whatever the mode).
   let purpose = "qualification";
   if (hasTier) {
     purpose = "deployment";
-  } else if (body.purpose === "deployment") {
+  } else if (hasSpec && body.purpose === "deployment") {
     purpose = "deployment";
   }
 
@@ -225,4 +264,113 @@ export function serializeProgramDataRow(record: ProgramDataRecord): ProgramDataR
       trainingFullTitle: a.trainingData?.fullTitle ?? "—",
     })),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Program-level anchor settings (shared by the program POST and PATCH routes).
+// ---------------------------------------------------------------------------
+
+/** Upper bound for a minimum number of target countries — far above any real program. */
+export const MAX_MINIMUM_COUNTRIES = 1000;
+
+/**
+ * Parse a minimum-countries value strictly: a whole number 1–1000 given as a
+ * JSON number or a digit-only string. `null` / `""` mean "no minimum". Anything
+ * else (fractions, negatives, "6 countries", `true`) is rejected rather than
+ * coerced — `Number("")` must never become a minimum of 0.
+ */
+export function parseMinimumCountries(raw: unknown): { ok: true; value: number | null } | { ok: false } {
+  if (raw === null || raw === undefined) return { ok: true, value: null };
+  if (typeof raw === "string" && raw.trim() === "") return { ok: true, value: null };
+  let n: number;
+  if (typeof raw === "number") n = raw;
+  else if (typeof raw === "string" && /^\d+$/.test(raw.trim())) n = Number(raw.trim());
+  else return { ok: false };
+  if (!Number.isSafeInteger(n) || n < 1 || n > MAX_MINIMUM_COUNTRIES) return { ok: false };
+  return { ok: true, value: n };
+}
+
+export const MINIMUM_COUNTRIES_ERROR = `Minimum target countries must be a whole number from 1 to ${MAX_MINIMUM_COUNTRIES}`;
+
+/** Every theatre configured in Region Data (non-blank), sorted. */
+export async function listConfiguredTheatres(): Promise<string[]> {
+  const rows = await prisma.regionData.findMany({
+    where: { theatre: { not: null } },
+    distinct: ["theatre"],
+    select: { theatre: true },
+  });
+  return rows
+    .map((r) => r.theatre?.trim() ?? "")
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b));
+}
+
+export interface AnchorSettingsInput {
+  /** `undefined` = key absent (leave alone); `null` = clear (not anchored). */
+  anchorTheatre: string | null | undefined;
+  /** `undefined` = key absent (leave alone); `null` = clear (no default). */
+  defaultMinimumCountries: number | null | undefined;
+}
+
+/**
+ * Read `anchorTheatre` / `defaultMinimumCountries` from a program POST/PATCH
+ * body. An absent key is `undefined` (leave the stored value alone); `null` or
+ * `""` clears it. The anchor theatre must name a theatre that exists in Region
+ * Data (matched exactly, then case-insensitively when unambiguous, and stored
+ * in Region Data's spelling) — a misspelt anchor would silently count nobody.
+ */
+export async function parseAnchorSettings(
+  body: Record<string, unknown>
+): Promise<{ ok: true; value: AnchorSettingsInput } | { ok: false; error: string }> {
+  const has = (k: string) => Object.prototype.hasOwnProperty.call(body, k);
+
+  let anchorTheatre: string | null | undefined;
+  if (has("anchorTheatre")) {
+    const raw = body.anchorTheatre;
+    if (raw === null || raw === undefined || (typeof raw === "string" && raw.trim() === "")) {
+      anchorTheatre = null;
+    } else if (typeof raw !== "string") {
+      return { ok: false, error: "Anchor theatre must be text" };
+    } else {
+      const wanted = raw.trim();
+      const theatres = await listConfiguredTheatres();
+      const exact = theatres.find((t) => t === wanted);
+      const loose = theatres.filter((t) => t.toLowerCase() === wanted.toLowerCase());
+      const match = exact ?? (loose.length === 1 ? loose[0] : undefined);
+      if (!match) {
+        return { ok: false, error: `Unknown theatre "${wanted.slice(0, 60)}" — choose a theatre from Region Data` };
+      }
+      anchorTheatre = match;
+    }
+  }
+
+  let defaultMinimumCountries: number | null | undefined;
+  if (has("defaultMinimumCountries")) {
+    const parsed = parseMinimumCountries(body.defaultMinimumCountries);
+    if (!parsed.ok) return { ok: false, error: MINIMUM_COUNTRIES_ERROR };
+    defaultMinimumCountries = parsed.value;
+  }
+
+  return { ok: true, value: { anchorTheatre, defaultMinimumCountries } };
+}
+
+/**
+ * The warnings an anchored program's editor should see: requirement levels the
+ * program has rows at that an anchored view never evaluates. Empty when the
+ * program is not anchored.
+ */
+export async function anchoredLevelWarnings(programName: string, anchorTheatre: string | null): Promise<string[]> {
+  if (!anchorTheatre) return [];
+  const rows = await prisma.programData.groupBy({
+    by: ["level"],
+    where: { programName, level: { notIn: [...ANCHORED_REQ_LEVELS] } },
+    _count: { _all: true },
+  });
+  return rows
+    .sort((a, b) => REQ_LEVELS.indexOf(a.level as ReqLevel) - REQ_LEVELS.indexOf(b.level as ReqLevel))
+    .map((r) => {
+      const label = isReqLevel(r.level) ? LEVEL_LABELS[r.level] : r.level;
+      const n = r._count._all;
+      return `${n} ${label} requirement${n === 1 ? " is" : "s are"} not used now the program is anchored to ${anchorTheatre} — only Theatre and Country Set requirements count`;
+    });
 }

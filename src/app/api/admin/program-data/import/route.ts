@@ -7,10 +7,36 @@ import {
   AGGREGATION_SHORT_LABELS,
   LEVEL_LABELS,
   REQ_LEVELS,
+  isAnchoredReqLevel,
   isMultiCountryLevel,
   type Aggregation,
   type ReqLevel,
 } from "@/lib/program-levels";
+import {
+  MINIMUM_COUNTRIES_ERROR,
+  PROGRAM_WIDE_NOT_TIERED_ERROR,
+  anchoredLevelError,
+  listConfiguredTheatres,
+  parseMinimumCountries,
+} from "@/lib/program-data-write";
+
+/*
+ * Program-data import — per-program overwrite (see the page). Two program-level
+ * columns ride on every row, like Deployment Handling:
+ *  - `Anchor Theatre` — anchors the program to a Region Data theatre. Rows of
+ *    an anchored program may only be Theatre or Country Set (others are a
+ *    per-row error).
+ *  - `Default Minimum Countries` — the program's default minimum number of
+ *    target countries (1–1000).
+ * For both, an unmapped column (key absent) and a blank cell write nothing: the
+ * stored value is kept, so a file that predates them imports unchanged.
+ * Clearing an anchor is done in the editor, not by import. The first non-blank
+ * value in the file wins; a different value on a later row is a warning.
+ *
+ * A row with a Level but blank Specialisation AND blank Tier is a
+ * **program-wide gate** (required at every tier) when the program is tiered —
+ * by a Tier row in the file or by its stored setting — and an error otherwise.
+ */
 
 interface RawRow {
   programName?: string;
@@ -29,6 +55,9 @@ interface RawRow {
   deploymentMode?: string;
   tierSortOrder?: string | number | null;
   tierSpecialisationsRequired?: string | number | null;
+  // Program-level anchor settings (round-tripped from export)
+  anchorTheatre?: string | null;
+  defaultMinimumCountries?: string | number | null;
 }
 
 // Keyed on the punctuation-stripped lowercase form (see `normalise`), so
@@ -124,7 +153,8 @@ function parseOptionalInt(val: string | number | null | undefined): number | nul
 }
 
 /** A validated, resolved row ready to write. `requirement` is null for a pure
- *  tier-definition row (registers a tier's structure without a ProgramData row). */
+ *  tier-definition row (registers a tier's structure without a ProgramData row)
+ *  and for a program-settings row (registers the program and its anchor). */
 interface ResolvedRow {
   programName: string;
   deploymentMode: string | null;
@@ -185,8 +215,73 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // --- Program-level pre-pass: tiered + anchor settings per program ---
+  // A row's validity depends on its program's settings (a program-wide gate
+  // needs a tiered program; an anchored program only takes Theatre / Country
+  // Set rows), and those settings come from the whole file plus the database,
+  // so they are resolved before any row is validated.
+  const theatres = await listConfiguredTheatres();
+  const resolveTheatre = (raw: string): string | null => {
+    const exact = theatres.find((t) => t === raw);
+    if (exact) return exact;
+    const loose = theatres.filter((t) => t.toLowerCase() === raw.toLowerCase());
+    return loose.length === 1 ? loose[0] : null;
+  };
+  const cellText = (v: unknown): string =>
+    v === null || v === undefined ? "" : typeof v === "number" ? String(v) : typeof v === "string" ? v.trim() : "";
+
+  type AnchorCell = { kind: "blank" } | { kind: "ok"; value: string } | { kind: "bad"; message: string };
+  type MinCell = { kind: "blank" } | { kind: "ok"; value: number } | { kind: "bad"; message: string };
+  const anchorCells: AnchorCell[] = [];
+  const minCells: MinCell[] = [];
+  const fileAnchor = new Map<string, string>();
+  const fileMinimum = new Map<string, number>();
+  const fileTiered = new Set<string>();
+  for (const raw of rows) {
+    const program = raw?.programName?.trim() ?? "";
+    const a = cellText(raw?.anchorTheatre);
+    let ac: AnchorCell = { kind: "blank" };
+    if (a && !isNullMarker(a)) {
+      const t = resolveTheatre(a);
+      ac = t ? { kind: "ok", value: t } : { kind: "bad", message: `Unknown Anchor Theatre "${a.slice(0, 60)}" — use a theatre from Region Data` };
+    }
+    anchorCells.push(ac);
+    if (program && ac.kind === "ok" && !fileAnchor.has(program)) fileAnchor.set(program, ac.value);
+
+    const m = cellText(raw?.defaultMinimumCountries);
+    let mc: MinCell = { kind: "blank" };
+    if (m && !isNullMarker(m)) {
+      const parsedMin = parseMinimumCountries(m);
+      mc = parsedMin.ok && parsedMin.value !== null
+        ? { kind: "ok", value: parsedMin.value }
+        : { kind: "bad", message: `Default Minimum Countries "${m.slice(0, 20)}": ${MINIMUM_COUNTRIES_ERROR}` };
+    }
+    minCells.push(mc);
+    if (program && mc.kind === "ok" && !fileMinimum.has(program)) fileMinimum.set(program, mc.value);
+
+    const tier = cellText(raw?.tierName);
+    if (program && tier && !isNullMarker(tier)) fileTiered.add(program);
+  }
+  const fileProgramNames = [...new Set(rows.map((r) => r?.programName?.trim() ?? "").filter(Boolean))];
+  const storedPrograms = fileProgramNames.length
+    ? await prisma.program.findMany({
+        where: { name: { in: fileProgramNames } },
+        select: { name: true, isTiered: true, anchorTheatre: true },
+      })
+    : [];
+  const storedByName = new Map(storedPrograms.map((p) => [p.name, p]));
+  /** The anchor this program will have after the import (file value wins over stored). */
+  const effectiveAnchor = (program: string): string | null => {
+    const fromFile = fileAnchor.get(program);
+    if (fromFile) return fromFile;
+    const stored = storedByName.get(program)?.anchorTheatre?.trim();
+    return stored ? stored : null;
+  };
+  const effectiveTiered = (program: string): boolean =>
+    fileTiered.has(program) || (storedByName.get(program)?.isTiered ?? false);
+
   /** Validate + resolve a single raw row (no DB writes). */
-  function validateRow(raw: RawRow): ValidateResult {
+  function validateRow(raw: RawRow, index: number): ValidateResult {
     const programName = raw.programName?.trim() ?? "";
     const specialisationName = isNullMarker(raw.specialisationName?.trim() ?? "") ? "" : (raw.specialisationName?.trim() ?? "");
     const tierName = isNullMarker(raw.tierName?.trim() ?? "") ? "" : (raw.tierName?.trim() ?? "");
@@ -201,13 +296,54 @@ export async function POST(request: NextRequest) {
 
     if (!programName) return { ok: false, message: "Program Name is required" };
 
+    const anchorCell = anchorCells[index];
+    if (anchorCell.kind === "bad") return { ok: false, message: anchorCell.message };
+    const minCell = minCells[index];
+    if (minCell.kind === "bad") return { ok: false, message: minCell.message };
+    const programWarnings: string[] = [];
+    if (anchorCell.kind === "ok" && anchorCell.value !== fileAnchor.get(programName)) {
+      programWarnings.push(
+        `Anchor Theatre "${anchorCell.value}" ignored — an earlier row set this program's anchor to "${fileAnchor.get(programName)}"`
+      );
+    }
+    if (minCell.kind === "ok" && minCell.value !== fileMinimum.get(programName)) {
+      programWarnings.push(
+        `Default Minimum Countries ${minCell.value} ignored — an earlier row set it to ${fileMinimum.get(programName)}`
+      );
+    }
+
     const hasSpec = specialisationName !== "";
     const hasTier = tierName !== "";
-    // A row must name a Specialisation and/or a Tier. Both together is a
-    // per-tier-per-specialisation deployment requirement.
-    if (!hasSpec && !hasTier) return { ok: false, message: "Provide a Specialisation and/or a Tier" };
-
     const hasTraining = rawTrainingFullTitle !== "";
+    // A row names a Specialisation and/or a Tier (both together is a
+    // per-tier-per-specialisation deployment requirement), or — on a tiered
+    // program — neither, which is a program-wide gate. A row with neither and
+    // nothing else in it is still an error rather than a silent no-op.
+    const isProgramWide = !hasSpec && !hasTier;
+    if (isProgramWide && !rawLevel && !hasTraining) {
+      // A program-settings row: names only the program and its anchor
+      // settings (the export writes one for an anchored program that has no
+      // requirements or tiers, so its anchor survives the round-trip). It
+      // registers the program and nothing else.
+      if (anchorCell.kind === "ok" || minCell.kind === "ok") {
+        return {
+          ok: true,
+          value: {
+            programName,
+            deploymentMode: resolveDeploymentMode(raw.deploymentMode?.trim() ?? ""),
+            tierName: null,
+            tierSortOrder: null,
+            tierSpecialisationsRequired: null,
+            requirement: null,
+          },
+          warnings: programWarnings,
+        };
+      }
+      return { ok: false, message: "Provide a Specialisation and/or a Tier" };
+    }
+    if (isProgramWide && !effectiveTiered(programName)) {
+      return { ok: false, message: PROGRAM_WIDE_NOT_TIERED_ERROR };
+    }
 
     // Program-/tier-structure columns (round-tripped from export).
     const deploymentMode = resolveDeploymentMode(raw.deploymentMode?.trim() ?? "");
@@ -227,13 +363,15 @@ export async function POST(request: NextRequest) {
           tierSpecialisationsRequired,
           requirement: null,
         },
-        warnings: [],
+        warnings: programWarnings,
       };
     }
 
     if (!rawLevel) return { ok: false, message: "Level is required" };
     const level = resolveLevel(rawLevel);
     if (!level) return { ok: false, message: `Unknown level "${rawLevel}". Use: ${LEVEL_LIST}` };
+    const anchor = effectiveAnchor(programName);
+    if (anchor && !isAnchoredReqLevel(level)) return { ok: false, message: anchoredLevelError(level, anchor) };
 
     const aggregation = resolveAggregation(rawAggregation);
     if (!aggregation) {
@@ -248,7 +386,7 @@ export async function POST(request: NextRequest) {
         message: `Count Mode "${AGGREGATION_SHORT_LABELS.eachCountry}" is only valid for Region or Country Set rows, not ${LEVEL_LABELS[level]}`,
       };
     }
-    const warnings: string[] = [];
+    const warnings: string[] = [...programWarnings];
 
     const quantityRequired = typeof rawQty === "number" ? rawQty : parseInt(String(rawQty ?? ""), 10);
     if (isNaN(quantityRequired) || quantityRequired < 1) {
@@ -314,7 +452,8 @@ export async function POST(request: NextRequest) {
         tierSpecialisationsRequired,
         requirement: {
           specialisationName: hasSpec ? specialisationName : null,
-          purpose: hasTier ? "deployment" : purpose,
+          // Tier rows are deployment; a program-wide gate is always qualification.
+          purpose: hasTier ? "deployment" : isProgramWide ? "qualification" : purpose,
           level,
           aggregation,
           trainingType: resolvedTrainingType,
@@ -335,7 +474,7 @@ export async function POST(request: NextRequest) {
   let skipped = 0;
 
   for (let i = 0; i < rows.length; i++) {
-    const result = validateRow(rows[i]);
+    const result = validateRow(rows[i], i);
     if (!result.ok) {
       errors.push({ row: i + 1, message: result.message });
       skipped++;
@@ -389,12 +528,20 @@ export async function POST(request: NextRequest) {
       for (const name of programNames) {
         const mode = programDeploymentMode.get(name);
         const isTiered = programIsTiered.has(name);
+        // Blank / unmapped anchor columns write nothing (see the header).
+        const anchorTheatre = fileAnchor.get(name);
+        const defaultMinimumCountries = fileMinimum.get(name);
+        const anchorData = {
+          ...(anchorTheatre ? { anchorTheatre } : {}),
+          ...(defaultMinimumCountries !== undefined ? { defaultMinimumCountries } : {}),
+        };
         await tx.program.upsert({
           where: { name },
-          create: { name, isTiered, ...(mode ? { deploymentMode: mode } : {}) },
+          create: { name, isTiered, ...(mode ? { deploymentMode: mode } : {}), ...anchorData },
           update: {
             ...(isTiered ? { isTiered: true } : {}),
             ...(mode ? { deploymentMode: mode } : {}),
+            ...anchorData,
           },
         });
       }

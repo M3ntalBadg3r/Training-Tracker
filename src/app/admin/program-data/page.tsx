@@ -24,6 +24,7 @@ import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import { checkImportFile } from "@/lib/import-file";
+import AnchorSettingsFields, { type AnchorSettingsValue } from "./AnchorSettingsFields";
 import {
   AGGREGATION_SHORT_LABELS,
   LEVEL_LABELS,
@@ -40,10 +41,19 @@ const levelLabel = (level: string) => (isReqLevel(level) ? LEVEL_LABELS[level] :
 const countModeExport = (r: ProgramDataRow) =>
   isMultiCountryLevel(r.level) ? AGGREGATION_SHORT_LABELS[normaliseAggregation(r.level, r.aggregation)] : "";
 
+/** The program list row plus the anchored-program settings the API returns. */
+type ProgramSummary = ProgramSummaryRow & {
+  anchorTheatre?: string | null;
+  defaultMinimumCountries?: number | null;
+  programWideCount?: number;
+};
+
+const EMPTY_ANCHOR: AnchorSettingsValue = { anchorTheatre: "", minimum: "" };
+
 export default function ProgramDataPage() {
   const router = useRouter();
 
-  const [programs, setPrograms] = useState<ProgramSummaryRow[]>([]);
+  const [programs, setPrograms] = useState<ProgramSummary[]>([]);
   const [allRows, setAllRows] = useState<ProgramDataRow[]>([]);
   const [allTiers, setAllTiers] = useState<ProgramTierRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -57,11 +67,12 @@ export default function ProgramDataPage() {
   const [newName, setNewName] = useState("");
   const [newIsTiered, setNewIsTiered] = useState(false);
   const [newDeploymentMode, setNewDeploymentMode] = useState("flat");
+  const [newAnchor, setNewAnchor] = useState<AnchorSettingsValue>(EMPTY_ANCHOR);
   const [newError, setNewError] = useState("");
-  const [renameTarget, setRenameTarget] = useState<ProgramSummaryRow | null>(null);
+  const [renameTarget, setRenameTarget] = useState<ProgramSummary | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [renameError, setRenameError] = useState("");
-  const [deleteTarget, setDeleteTarget] = useState<ProgramSummaryRow | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ProgramSummary | null>(null);
   const [deleteError, setDeleteError] = useState("");
 
   // Import
@@ -81,6 +92,8 @@ export default function ProgramDataPage() {
     deploymentMode?: string;
     tierSortOrder?: string | number | null;
     tierSpecialisationsRequired?: string | number | null;
+    anchorTheatre?: string | null;
+    defaultMinimumCountries?: string | number | null;
   }
   interface ImportResult {
     created: number;
@@ -149,7 +162,13 @@ export default function ProgramDataPage() {
     const res = await fetch("/api/admin/program-data/program", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: trimmed, isTiered: newIsTiered, deploymentMode: newDeploymentMode }),
+      body: JSON.stringify({
+        name: trimmed,
+        isTiered: newIsTiered,
+        deploymentMode: newDeploymentMode,
+        anchorTheatre: newAnchor.anchorTheatre || null,
+        defaultMinimumCountries: newAnchor.anchorTheatre ? newAnchor.minimum.trim() || null : null,
+      }),
     });
     if (!res.ok) {
       const result = await res.json().catch(() => ({}));
@@ -160,6 +179,7 @@ export default function ProgramDataPage() {
     setNewName("");
     setNewIsTiered(false);
     setNewDeploymentMode("flat");
+    setNewAnchor(EMPTY_ANCHOR);
     router.push(`/admin/program-data/${encodeURIComponent(trimmed)}`);
   };
 
@@ -200,7 +220,7 @@ export default function ProgramDataPage() {
     fetchRows();
   };
 
-  const describe = (p: ProgramSummaryRow) => {
+  const describe = (p: ProgramSummary) => {
     const parts: string[] = [];
     parts.push(`${p.requirementCount} requirement${p.requirementCount === 1 ? "" : "s"}`);
     if (p.specialisations.length > 0) {
@@ -212,6 +232,9 @@ export default function ProgramDataPage() {
     if (p.isTiered) {
       parts.push(`tiered · ${p.tierCount} tier${p.tierCount === 1 ? "" : "s"}`);
     }
+    if (p.anchorTheatre) {
+      parts.push(`anchored to ${p.anchorTheatre}`);
+    }
     return parts.join(" · ");
   };
 
@@ -221,6 +244,10 @@ export default function ProgramDataPage() {
   // row, and each tier carries its ladder Order + Specialisations Required. Tiers
   // that have no requirement rows (e.g. in "per achieved specialisation" mode) are
   // emitted as blank "tier-definition" rows so they survive the round-trip too.
+  // The anchored-program settings (Anchor Theatre, Default Minimum Countries)
+  // ride on every row the same way and are appended at the end, so existing
+  // column positions hold. A program-wide gate is a row with a blank
+  // Specialisation AND a blank Tier.
   const exportColumns = [
     { key: "programName" as const, header: "Program Name" },
     { key: "specialisationName" as const, header: "Specialisation" },
@@ -236,6 +263,8 @@ export default function ProgramDataPage() {
     { key: "deploymentMode" as const, header: "Deployment Handling" },
     { key: "tierOrder" as const, header: "Tier Order" },
     { key: "tierSpecialisationsRequired" as const, header: "Tier Specialisations Required" },
+    { key: "anchorTheatre" as const, header: "Anchor Theatre" },
+    { key: "defaultMinimumCountries" as const, header: "Default Minimum Countries" },
   ];
 
   interface ExportRow {
@@ -253,8 +282,18 @@ export default function ProgramDataPage() {
     deploymentMode: string;
     tierOrder: string | number;
     tierSpecialisationsRequired: string | number;
+    anchorTheatre: string;
+    defaultMinimumCountries: string | number;
   }
 
+  const programByName = new Map(programs.map((p) => [p.name, p]));
+  const anchorCells = (programName: string) => {
+    const p = programByName.get(programName);
+    return {
+      anchorTheatre: p?.anchorTheatre ?? "",
+      defaultMinimumCountries: p?.defaultMinimumCountries ?? "",
+    };
+  };
   const deploymentModeByProgram = new Map(programs.map((p) => [p.name, p.deploymentMode]));
   const tierById = new Map(allTiers.map((t) => [t.id, t]));
   const usedTierIds = new Set(allRows.map((r) => r.tierId).filter((id): id is number => id != null));
@@ -279,6 +318,7 @@ export default function ProgramDataPage() {
       deploymentMode: deploymentModeByProgram.get(r.programName) ?? "",
       tierOrder: tier ? tier.sortOrder : "",
       tierSpecialisationsRequired: tier ? tier.specialisationsRequired : "",
+      ...anchorCells(r.programName),
     };
   });
 
@@ -300,9 +340,37 @@ export default function ProgramDataPage() {
       deploymentMode: deploymentModeByProgram.get(t.programName) ?? "",
       tierOrder: t.sortOrder,
       tierSpecialisationsRequired: t.specialisationsRequired,
+      ...anchorCells(t.programName),
     }));
 
-  const exportData: ExportRow[] = [...requirementExportRows, ...emptyTierExportRows].sort(
+  // An anchored program with no requirement rows and no tiers would otherwise
+  // vanish from the file along with its anchor: give it one blank row naming
+  // only the program and its settings (the import registers it, nothing else).
+  const exportedPrograms = new Set([
+    ...requirementExportRows.map((r) => r.programName),
+    ...emptyTierExportRows.map((r) => r.programName),
+  ]);
+  const anchorOnlyExportRows: ExportRow[] = programs
+    .filter((p) => p.anchorTheatre && !exportedPrograms.has(p.name))
+    .map((p) => ({
+      programName: p.name,
+      specialisationName: "",
+      tierName: "",
+      purpose: "",
+      level: "",
+      aggregation: "",
+      trainingType: "",
+      trainingFullTitle: "",
+      quantityRequired: "",
+      minimumPerTheatre: "",
+      alternatives: "",
+      deploymentMode: p.deploymentMode ?? "",
+      tierOrder: "",
+      tierSpecialisationsRequired: "",
+      ...anchorCells(p.name),
+    }));
+
+  const exportData: ExportRow[] = [...requirementExportRows, ...emptyTierExportRows, ...anchorOnlyExportRows].sort(
     (a, b) =>
       a.programName.localeCompare(b.programName) ||
       a.specialisationName.localeCompare(b.specialisationName) ||
@@ -355,6 +423,11 @@ export default function ProgramDataPage() {
     tierspecialisationsrequired: "tierSpecialisationsRequired",
     specialisationsrequired: "tierSpecialisationsRequired",
     specsrequired: "tierSpecialisationsRequired",
+    anchortheatre: "anchorTheatre",
+    anchor: "anchorTheatre",
+    defaultminimumcountries: "defaultMinimumCountries",
+    defaultminimumtargetcountries: "defaultMinimumCountries",
+    minimumcountries: "defaultMinimumCountries",
   };
 
   const normaliseHeader = (h: string) => h.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -498,6 +571,8 @@ export default function ProgramDataPage() {
         "Deployment Handling": "",
         "Tier Order": "",
         "Tier Specialisations Required": "",
+        "Anchor Theatre": "",
+        "Default Minimum Countries": "",
       },
       {
         "Program Name": "Example Program",
@@ -514,6 +589,8 @@ export default function ProgramDataPage() {
         "Deployment Handling": "",
         "Tier Order": "",
         "Tier Specialisations Required": "",
+        "Anchor Theatre": "",
+        "Default Minimum Countries": "",
       },
       {
         // Country Set, each country: every country in the set being viewed
@@ -532,6 +609,8 @@ export default function ProgramDataPage() {
         "Deployment Handling": "",
         "Tier Order": "",
         "Tier Specialisations Required": "",
+        "Anchor Theatre": "",
+        "Default Minimum Countries": "",
       },
       {
         // Region, total: 2 holders pooled across the whole region being viewed.
@@ -549,6 +628,8 @@ export default function ProgramDataPage() {
         "Deployment Handling": "",
         "Tier Order": "",
         "Tier Specialisations Required": "",
+        "Anchor Theatre": "",
+        "Default Minimum Countries": "",
       },
       {
         "Program Name": "Example Tiered Program",
@@ -565,6 +646,48 @@ export default function ProgramDataPage() {
         "Deployment Handling": "flat",
         "Tier Order": 1,
         "Tier Specialisations Required": 1,
+        "Anchor Theatre": "",
+        "Default Minimum Countries": "",
+      },
+      {
+        // Blank Specialisation AND blank Tier on a tiered program: required at
+        // every level (a program-wide gate every tier needs).
+        "Program Name": "Example Tiered Program",
+        "Specialisation": "",
+        "Tier": "",
+        "Purpose": "qualification",
+        "Level": "Theatre",
+        "Count Mode": "",
+        "Training Type": "Certification",
+        "Training": "Cert A",
+        "Quantity Required": 15,
+        "Minimum per Theatre": "",
+        "Alternatives": "Cert B",
+        "Deployment Handling": "flat",
+        "Tier Order": "",
+        "Tier Specialisations Required": "",
+        "Anchor Theatre": "",
+        "Default Minimum Countries": "",
+      },
+      {
+        // An anchored program: Theatre rows count across the anchor theatre,
+        // Country Set rows over each partner's own target countries in it.
+        "Program Name": "Example Anchored Program",
+        "Specialisation": "Example Specialisation",
+        "Tier": "",
+        "Purpose": "qualification",
+        "Level": "Country Set",
+        "Count Mode": "Each country",
+        "Training Type": "Certification",
+        "Training": "Cert A",
+        "Quantity Required": 4,
+        "Minimum per Theatre": "",
+        "Alternatives": "",
+        "Deployment Handling": "",
+        "Tier Order": "",
+        "Tier Specialisations Required": "",
+        "Anchor Theatre": "EMEA",
+        "Default Minimum Countries": 6,
       },
     ];
     const templateCols = [
@@ -582,6 +705,8 @@ export default function ProgramDataPage() {
       { key: "Deployment Handling", header: "Deployment Handling" },
       { key: "Tier Order", header: "Tier Order" },
       { key: "Tier Specialisations Required", header: "Tier Specialisations Required" },
+      { key: "Anchor Theatre", header: "Anchor Theatre" },
+      { key: "Default Minimum Countries", header: "Default Minimum Countries" },
     ];
     exportToCsv(templateData as never[], templateCols as never[], "program-data-import-template");
   };
@@ -664,7 +789,7 @@ export default function ProgramDataPage() {
             )}
           </div>
           <button
-            onClick={() => { setShowNew(true); setNewName(""); setNewError(""); }}
+            onClick={() => { setShowNew(true); setNewName(""); setNewError(""); setNewAnchor(EMPTY_ANCHOR); }}
             className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
           >
             <Plus size={16} /> New Program
@@ -759,6 +884,7 @@ export default function ProgramDataPage() {
               <p className="mt-1 text-xs text-gray-500">You can change this later on the program&apos;s page.</p>
             </div>
           )}
+          <AnchorSettingsFields value={newAnchor} onChange={setNewAnchor} idPrefix="new-program" />
           <div className="flex justify-end gap-2 pt-2">
             <button onClick={() => setShowNew(false)} className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
             <button onClick={handleNewProgram} className="flex items-center gap-1 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">
@@ -874,9 +1000,11 @@ export default function ProgramDataPage() {
               </div>
             )}
             <div className="pt-1 text-xs text-gray-500 space-y-1">
-              <p><strong>Expected columns:</strong> Program Name, Specialisation, Tier, Purpose, Level, Count Mode, Training Type, Training, Quantity Required, Minimum per Theatre, Alternatives, Deployment Handling, Tier Order, Tier Specialisations Required</p>
+              <p><strong>Expected columns:</strong> Program Name, Specialisation, Tier, Purpose, Level, Count Mode, Training Type, Training, Quantity Required, Minimum per Theatre, Alternatives, Deployment Handling, Tier Order, Tier Specialisations Required, Anchor Theatre, Default Minimum Countries</p>
               <p>Level is Country, Region, Country Set, Theatre or Global. For Region and Country Set rows, Count Mode is &ldquo;Total&rdquo; (holders pooled across the area) or &ldquo;Each country&rdquo; (every country must meet the quantity); blank means Total. Other levels leave it blank.</p>
               <p>Training Type and Training are optional for Global-level rows with no specific training (these count compliant theatres). Minimum per Theatre applies to Global rows only.</p>
+              <p>On a tiered program, a row with a Level but no Specialisation and no Tier is required at every level (every tier needs it).</p>
+              <p>Anchor Theatre anchors a program to a theatre; its rows may then only be Theatre or Country Set. Default Minimum Countries is the number of target countries a partner must name (1–1000). A blank cell in either keeps the program&apos;s current setting.</p>
               <p>Programs, tiers, and specialisations are auto-created if they don&apos;t already exist.</p>
               <p><strong>Importing replaces</strong> the existing requirements of every program named in the file — it does not merge or add to them.</p>
             </div>

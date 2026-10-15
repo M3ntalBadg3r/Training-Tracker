@@ -2,19 +2,23 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
+import Link from "next/link";
 import PageHeader from "@/components/layout/PageHeader";
 import Modal from "@/components/ui/Modal";
 import RequirementModal, { RequirementScope } from "../RequirementModal";
 import TierModal from "../TierModal";
+import AnchorSettingsFields, { type AnchorSettingsValue } from "../AnchorSettingsFields";
 import { ProgramDataRow, ProgramTierRow, SpecialisationRow } from "@/types";
 import { trainingTypeLabel } from "@/lib/utils";
-import { Plus, Trash2, Pencil, ChevronUp, ChevronDown, Layers } from "lucide-react";
+import { Plus, Trash2, Pencil, ChevronUp, ChevronDown, Layers, Anchor, AlertTriangle, Users, Save } from "lucide-react";
 import {
   AGGREGATIONS,
   AGGREGATION_SHORT_LABELS,
   LEVEL_LABELS,
   REQ_LEVELS,
+  isAnchoredReqLevel,
   isMultiCountryLevel,
+  isProgramWideRow,
   isReqLevel,
   normaliseAggregation,
 } from "@/lib/program-levels";
@@ -59,6 +63,13 @@ export default function ProgramRequirementsPage() {
   const [isTiered, setIsTiered] = useState(false);
   const [deploymentMode, setDeploymentMode] = useState("flat");
   const [loading, setLoading] = useState(true);
+
+  // Anchored-program settings: the stored values, and the editable form.
+  const [anchorTheatre, setAnchorTheatre] = useState<string | null>(null);
+  const [anchorForm, setAnchorForm] = useState<AnchorSettingsValue>({ anchorTheatre: "", minimum: "" });
+  const [anchorSaving, setAnchorSaving] = useState(false);
+  const [anchorError, setAnchorError] = useState("");
+  const [anchorSaved, setAnchorSaved] = useState(false);
 
   // Filters
   const [filterSpec, setFilterSpec] = useState("");
@@ -107,7 +118,15 @@ export default function ProgramRequirementsPage() {
     fetch("/api/admin/program-data/program")
       .then((res) =>
         res.ok
-          ? (res.json() as Promise<{ name: string; isTiered: boolean; deploymentMode: string }[]>)
+          ? (res.json() as Promise<
+              {
+                name: string;
+                isTiered: boolean;
+                deploymentMode: string;
+                anchorTheatre?: string | null;
+                defaultMinimumCountries?: number | null;
+              }[]
+            >)
           : null
       )
       .then((list) => {
@@ -115,6 +134,11 @@ export default function ProgramRequirementsPage() {
         if (me) {
           setIsTiered(me.isTiered);
           setDeploymentMode(me.deploymentMode || "flat");
+          setAnchorTheatre(me.anchorTheatre ?? null);
+          setAnchorForm({
+            anchorTheatre: me.anchorTheatre ?? "",
+            minimum: me.defaultMinimumCountries != null ? String(me.defaultMinimumCountries) : "",
+          });
         }
       })
       .catch(() => { /* ignore */ });
@@ -144,6 +168,35 @@ export default function ProgramRequirementsPage() {
     });
   };
 
+  const saveAnchorSettings = async () => {
+    setAnchorError("");
+    setAnchorSaved(false);
+    setAnchorSaving(true);
+    try {
+      const res = await fetch(`/api/admin/program-data/program/${encodeURIComponent(programName)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          anchorTheatre: anchorForm.anchorTheatre || null,
+          // Un-anchoring clears the default minimum too: it only means
+          // anything on an anchored program.
+          defaultMinimumCountries: anchorForm.anchorTheatre ? anchorForm.minimum.trim() || null : null,
+        }),
+      });
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setAnchorError(typeof result.error === "string" ? result.error : "Could not save the settings");
+        return;
+      }
+      setAnchorSaved(true);
+      fetchProgram();
+    } catch {
+      setAnchorError("Could not save the settings");
+    } finally {
+      setAnchorSaving(false);
+    }
+  };
+
   const toggleSort = (col: string) => {
     if (sortCol === col) {
       setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -162,6 +215,17 @@ export default function ProgramRequirementsPage() {
   // tier-scoped rows — including per-tier-per-specialisation deployment rows
   // that carry both a tier and a specialisation — are shown under their tier.
   const specRows = useMemo(() => rows.filter((r) => r.specialisationId != null && r.tierId == null), [rows]);
+  // Program-wide gates: neither a specialisation nor a tier (tiered programs only).
+  const gateRows = useMemo(() => rows.filter((r) => isProgramWideRow(r)), [rows]);
+  // Rows an anchored view never evaluates: anything but Theatre / Country Set.
+  const unusedLevelCounts = useMemo(() => {
+    if (!anchorTheatre) return [] as { level: string; count: number }[];
+    const counts = new Map<string, number>();
+    for (const r of rows) if (!isAnchoredReqLevel(r.level)) counts.set(r.level, (counts.get(r.level) ?? 0) + 1);
+    return [...counts.entries()]
+      .sort((a, b) => levelRank(a[0]) - levelRank(b[0]))
+      .map(([level, count]) => ({ level, count }));
+  }, [rows, anchorTheatre]);
   const tierReqsByTier = useMemo(() => {
     const map = new Map<number, ProgramDataRow[]>();
     for (const r of rows) {
@@ -210,6 +274,7 @@ export default function ProgramRequirementsPage() {
   }, [filteredRows, sortCol, sortDir]);
 
   const openAddSpec = () => { setEditTarget(null); setReqScope({ kind: "specialisation" }); setShowRequirement(true); };
+  const openAddGate = () => { setEditTarget(null); setReqScope({ kind: "programWide" }); setShowRequirement(true); };
   const openAddTierReq = (tier: ProgramTierRow) => {
     setEditTarget(null);
     setReqScope({ kind: "tier", tierId: tier.id, tierName: tier.name });
@@ -219,6 +284,8 @@ export default function ProgramRequirementsPage() {
     setEditTarget(row);
     if (row.tierId != null) {
       setReqScope({ kind: "tier", tierId: row.tierId, tierName: row.tierName ?? "Tier" });
+    } else if (isProgramWideRow(row)) {
+      setReqScope({ kind: "programWide" });
     } else {
       setReqScope({ kind: "specialisation" });
     }
@@ -259,9 +326,113 @@ export default function ProgramRequirementsPage() {
     );
   }
 
+  const describeRow = (r: ProgramDataRow) => (
+    <>
+      <span className="text-gray-500">
+        {anchorTheatre && r.level === "Theatre"
+          ? `Across ${anchorTheatre}`
+          : anchorTheatre && r.level === "CountrySet"
+            ? "Target countries"
+            : levelLabel(r.level)}
+        {isMultiCountryLevel(r.level) && ` (${countModeLabel(r).toLowerCase()})`}
+        {" · "}
+      </span>
+      {r.quantityRequired}× {r.trainingFullTitle || "—"}
+      {r.alternatives.length > 0 && (
+        <span className="text-xs text-gray-500"> or {r.alternatives.map((a) => a.trainingFullTitle).join(", ")}</span>
+      )}
+    </>
+  );
+
   return (
     <div>
       <PageHeader title={programName} showBack helpSlug="admin-program-data" />
+
+      <section className="mb-6 bg-white rounded-lg border border-gray-200 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+          <h2 className="flex items-center gap-2 text-base font-semibold text-gray-800">
+            <Anchor size={18} /> Anchoring
+          </h2>
+          {anchorTheatre && (
+            <Link
+              href={`/admin/program-partners?q=${encodeURIComponent(programName)}`}
+              className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800"
+            >
+              <Users size={15} /> Partner settings
+            </Link>
+          )}
+        </div>
+        <div className="max-w-md">
+          <AnchorSettingsFields value={anchorForm} onChange={(v) => { setAnchorForm(v); setAnchorSaved(false); }} idPrefix="program-settings" />
+        </div>
+        {anchorError && <div className="mt-3 p-2 bg-red-50 text-red-700 rounded text-sm">{anchorError}</div>}
+        <div className="mt-3 flex items-center gap-3">
+          <button
+            onClick={saveAnchorSettings}
+            disabled={anchorSaving}
+            className="flex items-center gap-1 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+          >
+            <Save size={15} /> {anchorSaving ? "Saving…" : "Save anchoring"}
+          </button>
+          {anchorSaved && <span className="text-sm text-green-700">Saved.</span>}
+        </div>
+        {anchorTheatre && (
+          <p className="mt-3 text-xs text-gray-500">
+            Each partner&apos;s own minimum and target Country Set are set on the Program Partners page.
+          </p>
+        )}
+      </section>
+
+      {unusedLevelCounts.length > 0 && (
+        <div className="mb-6 flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 text-amber-800 rounded-lg text-sm">
+          <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+          <div>
+            This program is anchored to {anchorTheatre}, so only Theatre and Country Set requirements are counted. Not
+            used:{" "}
+            {unusedLevelCounts
+              .map(({ level, count }) => `${count} ${levelLabel(level)} requirement${count === 1 ? "" : "s"}`)
+              .join(", ")}
+            . Edit them to Theatre or Country Set, or delete them.
+          </div>
+        </div>
+      )}
+
+      {isTiered && (
+        <section className="mb-6 bg-white rounded-lg border border-gray-200 p-4">
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-base font-semibold text-gray-800">Required at every level</h2>
+            <button
+              onClick={openAddGate}
+              className="flex items-center gap-2 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              <Plus size={16} /> Add
+            </button>
+          </div>
+          <p className="mb-3 text-xs text-gray-500">
+            Every tier needs these, whichever specialisations are achieved.
+          </p>
+          {gateRows.length === 0 ? (
+            <p className="text-sm text-gray-500">None.</p>
+          ) : (
+            <ul className="space-y-1">
+              {gateRows.map((r) => (
+                <li key={r.id} className="flex items-center justify-between text-sm">
+                  <span>
+                    {describeRow(r)}
+                    {anchorTheatre && !isAnchoredReqLevel(r.level) && (
+                      <span className="ml-2 text-xs text-amber-700">(not counted — level not used)</span>
+                    )}
+                  </span>
+                  <span className="flex gap-2">
+                    <button onClick={() => openEdit(r)} className="px-2 py-0.5 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200">Edit</button>
+                    <button onClick={() => { setDeleteTarget(r); setDeleteError(""); }} className="px-2 py-0.5 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200"><Trash2 size={12} /></button>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
 
       {isTiered && (
         <section className="mb-6 bg-white rounded-lg border border-gray-200 p-4">
@@ -342,15 +513,7 @@ export default function ProgramRequirementsPage() {
                                   {r.specialisationName && (
                                     <span className="font-medium text-gray-700">{r.specialisationName}: </span>
                                   )}
-                                  <span className="text-gray-500">
-                                    {levelLabel(r.level)}
-                                    {isMultiCountryLevel(r.level) && ` (${countModeLabel(r).toLowerCase()})`}
-                                    {" · "}
-                                  </span>
-                                  {r.quantityRequired}× {r.trainingFullTitle || "—"}
-                                  {r.alternatives.length > 0 && (
-                                    <span className="text-xs text-gray-500"> or {r.alternatives.map((a) => a.trainingFullTitle).join(", ")}</span>
-                                  )}
+                                  {describeRow(r)}
                                 </span>
                                 <span className="flex gap-2">
                                   <button onClick={() => openEdit(r)} className="px-2 py-0.5 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200">Edit</button>
@@ -540,6 +703,8 @@ export default function ProgramRequirementsPage() {
         scope={reqScope}
         allowPurpose={allowPurpose}
         tierRequiresSpecialisation={tierRequiresSpecialisation}
+        isTiered={isTiered}
+        anchorTheatre={anchorTheatre}
       />
       )}
 
@@ -563,7 +728,11 @@ export default function ProgramRequirementsPage() {
             <p className="text-sm mb-4">
               Are you sure you want to delete the requirement for{" "}
               <strong>{deleteTarget.trainingFullTitle || "this global requirement"}</strong> under{" "}
-              <strong>{deleteTarget.specialisationName ?? deleteTarget.tierName ?? "this program"}</strong>?
+              <strong>
+                {deleteTarget.specialisationName ??
+                  deleteTarget.tierName ??
+                  (isProgramWideRow(deleteTarget) ? "every level of this program" : "this program")}
+              </strong>?
             </p>
             <div className="flex justify-end gap-2">
               <button onClick={() => setDeleteTarget(null)} className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
