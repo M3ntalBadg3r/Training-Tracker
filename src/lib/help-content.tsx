@@ -2992,9 +2992,9 @@ const helpSections: Record<string, HelpSection> = {
           that is done, and no amount of certifying people fixes it, so it is never
           counted in <strong>People to certify</strong>{" "}&mdash; the requirements over
           the countries the partner does have are still costed. The whole-page export
-          adds a <strong>Blockers</strong>{" "}section when there is one, and the CSV
-          and Excel roadmap and requirements-at-risk sections end with a{" "}
-          <strong>Population</strong>{" "}column (blank on other scopes).
+          adds a <strong>Blockers</strong>{" "}section when there is one, and on a
+          Target countries plan the CSV and Excel roadmap and requirements-at-risk
+          sections end with a <strong>Population</strong>{" "}column.
         </p>
         <p>
           Your selection — scope, programs, targets and the renewal window — is
