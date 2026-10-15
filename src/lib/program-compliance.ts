@@ -608,6 +608,22 @@ export interface TierLadderInput {
   /** All referenced requirements, keyed by id. */
   requirements: Map<number, ProgramRequirement>;
   deploymentMode: string;
+  /**
+   * **Program-wide gates** (`program-levels.ts:isProgramWideRow` — a row with
+   * neither a specialisation nor a tier): required by EVERY tier, in every
+   * deployment mode, ANDed into each tier's compliance. Optional so a caller
+   * that has none (and every caller written before gates existed) is unchanged:
+   * an absent or empty list never blocks a tier.
+   */
+  gateReqIds?: number[];
+  /**
+   * A fail-closed precondition that lies outside the requirement rows — the
+   * anchored-program minimum-countries gate (a partner naming fewer target
+   * countries than its minimum). When true no tier is reached, whatever the
+   * counts say. Specialisation achievement is deliberately NOT affected: the
+   * minimum is about the partner's footprint, not about who holds what.
+   */
+  blocked?: boolean;
 }
 
 /** A point-in-time snapshot of tier-ladder compliance. */
@@ -636,6 +652,8 @@ export interface TierLadderSnapshot {
   tierSatisfiedSpecCount: Map<number, number>;
   /** id of the highest (by sortOrder) compliant tier, or null. */
   highestAchievedTierId: number | null;
+  /** Whether every program-wide gate is met (true when there are none). */
+  gatesMet: boolean;
 }
 
 /**
@@ -647,8 +665,9 @@ export interface TierLadderSnapshot {
  *
  * A specialisation is achieved when all its qualifying requirements are met. A
  * tier is compliant when the achieved-specialisation count meets its
- * `specialisationsRequired` AND its deployment requirements are met — sourced by
- * `deploymentMode`:
+ * `specialisationsRequired` AND every program-wide gate (`gateReqIds`) is met
+ * AND the ladder is not `blocked` AND its deployment requirements are met —
+ * sourced by `deploymentMode`:
  *  - "flat": the tier's own deployment requirements.
  *  - "perAchievedSpecialisation": every achieved specialisation's deployment
  *    requirements. (If no specialisation is achieved there is nothing extra to
@@ -668,6 +687,7 @@ export function evaluateTierLadder(
   countryCtx?: CountryBucketContext
 ): TierLadderSnapshot {
   const { tiers, specs, requirements, deploymentMode } = input;
+  const gateReqIds = input.gateReqIds ?? [];
 
   const reqAttained = new Map<number, number>();
   const reqCompliant = new Map<number, boolean>();
@@ -684,6 +704,7 @@ export function evaluateTierLadder(
     t.deploymentReqIds.forEach((i) => referenced.add(i));
     t.deploymentReqIdsBySpec?.forEach((ids) => ids.forEach((i) => referenced.add(i)));
   }
+  for (const i of gateReqIds) referenced.add(i);
 
   for (const id of referenced) {
     const req = requirements.get(id);
@@ -711,6 +732,10 @@ export function evaluateTierLadder(
     }
   }
   const achievedSpecCount = achievedSpecs.size;
+  // Program-wide gates are the same at every tier, so they are decided once and
+  // ANDed into each tier below. Every gate id is in `referenced`, so a gate whose
+  // row has gone missing reads `false` and fails closed rather than vanishing.
+  const gatesMet = gateReqIds.every((id) => reqCompliant.get(id) === true);
 
   const tierCompliant = new Map<number, boolean>();
   const tierSatisfiedSpecCount = new Map<number, number>();
@@ -736,7 +761,7 @@ export function evaluateTierLadder(
     } else {
       deploymentMet = t.deploymentReqIds.every((id) => reqCompliant.get(id) === true);
     }
-    const compliant = specsMet && deploymentMet;
+    const compliant = specsMet && deploymentMet && gatesMet && input.blocked !== true;
     tierCompliant.set(t.id, compliant);
     if (compliant) highestAchievedTierId = t.id;
   }
@@ -752,6 +777,7 @@ export function evaluateTierLadder(
     achievedSpecCount,
     tierSatisfiedSpecCount,
     highestAchievedTierId,
+    gatesMet,
   };
 }
 

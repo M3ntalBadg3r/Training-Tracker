@@ -20,11 +20,25 @@ import {
 import { countriesInCountrySet, listCountrySetNames } from "@/lib/country-sets";
 import { toRosterRows } from "@/lib/program-roster";
 import {
+  ANCHORED_SCOPE,
+  ANCHORED_SCOPE_LABEL,
+  anchoredPopulationOf,
+  isAnchoredReqLevel,
+  isProgramWideRow,
   normaliseAggregation,
   type Aggregation,
+  type AnchoredMeta,
+  type AnchoredPopulation,
   type CountryBreakdownRow,
+  type MinimumCountriesSource,
   type ReqLevel,
 } from "@/lib/program-levels";
+import {
+  getProgramAnchor,
+  isAnchoredProgram,
+  resolveAnchoredArea,
+  type AnchoredArea,
+} from "@/lib/program-anchor";
 import {
   buildTrainedNotCertifiedContext,
   getTrainedNotCertifiedRoster,
@@ -45,13 +59,21 @@ import {
 
 export interface BuildProgramReportOptions {
   programName: string;
-  /** "country" | "region" | "countrySet" | "theatre" | "global" (anything else → empty spec list). */
+  /**
+   * "country" | "region" | "countrySet" | "theatre" | "global", or "anchored"
+   * for an anchored program (anything else → empty spec list). An anchored
+   * program offers ONLY the anchored view and a non-anchored one never offers
+   * it; the routes refuse the mismatch with a 400 before calling here, and this
+   * builder fails closed to an empty report should a caller skip that.
+   */
   level: string;
   country: string;
   region: string;
   /**
-   * Country Set name, used when level is "countrySet". Resolved within the
-   * single company `companyIds` names — a set is per-company tenant data.
+   * Country Set name, used when level is "countrySet" — and, when level is
+   * "anchored", the set holding the partner's target countries (blank = the
+   * partner's configured target set). Resolved within the single company
+   * `companyIds` names — a set is per-company tenant data.
    */
   countrySet?: string;
   theatre: string;
@@ -167,6 +189,35 @@ export async function buildProgramReport(opts: BuildProgramReportOptions) {
   // "Trained not certified" figure is computed for (Tier Status is excluded).
   const specTableRows = (reqLevel: ReqLevel) =>
     [...specMap.values(), ...specDepMap.values()].flat().filter((r) => r.level === reqLevel);
+
+  // An anchored program is judged over two populations at once and offers ONLY
+  // the anchored view; a non-anchored program never offers it. The routes 400
+  // either mismatch before calling here, so these two branches are the
+  // fail-closed fallback for a caller that skipped the check: an empty report,
+  // never a single-level reading of an anchored program (which would count its
+  // Theatre rows as if the CountrySet rows did not exist).
+  if (isAnchoredProgram(program)) {
+    return buildAnchoredReport({
+      program: program!,
+      level,
+      programData,
+      tierRows,
+      specMap,
+      specDepMap,
+      lists,
+      meta,
+      horizonMonths,
+      isTiered,
+      deploymentMode,
+      companyIds,
+      countrySet,
+      now,
+      horizonDate,
+    });
+  }
+  if (level === ANCHORED_SCOPE) {
+    return { specialisations: [], ...lists, meta, horizonMonths };
+  }
 
   if (level === "country" && country) {
     const countryReqs = programData.filter((pd: ProgramDataRow) => pd.level === "Country");
@@ -456,6 +507,198 @@ export async function buildProgramReport(opts: BuildProgramReportOptions) {
   return { specialisations, ...lists, meta, horizonMonths };
 }
 
+/**
+ * The key prefixes the anchored view's two populations are merged under, so one
+ * holder-set map can serve `evaluateTierLadder` while a title used at both
+ * levels stays two separate counts.
+ */
+const POPULATION_KEY: Record<AnchoredPopulation, string> = {
+  theatre: "theatre",
+  targetCountries: "targets",
+};
+
+function prefixKeys<T>(prefix: string, map: Map<string, T>, into: Map<string, T>): Map<string, T> {
+  for (const [k, v] of map) into.set(`${prefix}::${k}`, v);
+  return into;
+}
+
+/** Prefix a target-countries bucket context's title keys for the merged tier evaluation. */
+function prefixCountryCtx(ctx: CountryBucketContext | null): CountryBucketContext | undefined {
+  if (!ctx) return undefined;
+  return {
+    countries: ctx.countries,
+    byTitleAndCountry: prefixKeys(POPULATION_KEY.targetCountries, ctx.byTitleAndCountry, new Map()),
+  };
+}
+
+/**
+ * The **anchored view** of an anchored program (`Program.anchorTheatre` set):
+ * one report over two populations, resolved by `program-anchor.ts`.
+ *
+ *  - **Theatre** rows are counted over the anchor theatre (`area.theatreScope`).
+ *  - **CountrySet** rows are counted over the partner's **target countries** —
+ *    the chosen set's members inside the anchor theatre (`area.targetScope`);
+ *    an `"eachCountry"` row is judged in every one of them, with ONE bucketed
+ *    query per as-of date (`buildCountryBucketContext`).
+ *  - Rows at any other level are not evaluated; their levels are named in
+ *    `meta.ignoredLevels` so the page can say so rather than drop them quietly.
+ *
+ * The specialisation tables give each row its own population's sets; the tier
+ * block merges the two populations' sets under `theatre::` / `targets::` key
+ * prefixes and rewrites each requirement's titles to match (see
+ * `evaluateTierBlock`), so `evaluateTierLadder`, `isSpecialisationAchieved` and
+ * `requirementCompliant` are reused unchanged and a title used at both levels
+ * is counted separately over each population. Every requirement row carries
+ * `population` + `populationLabel`.
+ *
+ * **Minimum countries**: when the partner names fewer target countries than its
+ * minimum (`meta.anchored.minimumMet === false`), every tier is unreached, now
+ * and at the horizon — fail closed. Specialisation achievement is not affected.
+ *
+ * Single-company only: `resolveAnchoredArea` answers `{error: "scope"}`
+ * otherwise, which the routes turn into a 400 first; here it fails closed to an
+ * empty report.
+ */
+async function buildAnchoredReport<Row extends SpecReqRow & TierBlockRow, Meta extends object, Lists extends object>(p: {
+  program: { id: number; name: string; anchorTheatre: string | null; defaultMinimumCountries: number | null };
+  level: string;
+  programData: Row[];
+  tierRows: TierBlockTier[];
+  specMap: Map<string, SpecReqRow[]>;
+  specDepMap: Map<string, SpecReqRow[]>;
+  lists: Lists;
+  meta: Meta;
+  horizonMonths: number;
+  isTiered: boolean;
+  deploymentMode: string;
+  companyIds: number[] | null;
+  countrySet: string;
+  now: Date;
+  horizonDate: Date | null;
+}) {
+  const { program, programData, specMap, specDepMap, lists, horizonMonths, now, horizonDate } = p;
+  const anchorTheatre = (program.anchorTheatre ?? "").trim();
+  const ignoredLevels = [
+    ...new Set(programData.filter((r) => !isAnchoredReqLevel(r.level)).map((r) => r.level)),
+  ].sort();
+  const baseMeta = { ...p.meta, isAnchored: true, anchorTheatre, ignoredLevels };
+
+  // Defence in depth: an anchored program has no single-level views.
+  if (p.level !== ANCHORED_SCOPE) {
+    return { specialisations: [], ...lists, meta: { ...baseMeta, anchored: null as AnchoredMeta | null }, horizonMonths };
+  }
+
+  const area = await resolveAnchoredArea({ program, countrySet: p.countrySet, companyIds: p.companyIds });
+  if ("error" in area) {
+    return { specialisations: [], ...lists, meta: { ...baseMeta, anchored: null as AnchoredMeta | null }, horizonMonths };
+  }
+
+  const labelOf = (pop: AnchoredPopulation): PopulationLabel => ({
+    population: pop,
+    populationLabel: pop === "theatre" ? anchorTheatre : area.meta.countrySet ?? ANCHORED_SCOPE_LABEL,
+  });
+
+  const evaluated = programData.filter((r) => isAnchoredReqLevel(r.level));
+  const theatreRows = evaluated.filter((r) => anchoredPopulationOf(r.level) === "theatre");
+  const targetRows = evaluated.filter((r) => anchoredPopulationOf(r.level) === "targetCountries");
+  const hasTargets = area.meta.targetCountries.length > 0;
+  const theatreTitles = extractTitles(theatreRows);
+  const targetTitles = extractTitles(targetRows);
+  const eachCountryTitles = extractTitles(
+    targetRows.filter((r) => normaliseAggregation(r.level, r.aggregation) === "eachCountry")
+  );
+  const specTableRows = (reqLevel: ReqLevel) =>
+    [...specMap.values(), ...specDepMap.values()].flat().filter((r) => r.level === reqLevel);
+  const none = () => new Map<string, Set<string>>();
+  const companyScope = [area.companyId];
+
+  // An empty target list (no set, or none of its countries inside the anchor
+  // theatre) skips the round-trips: `countries: []` would match nobody anyway.
+  const [theatreNow, theatreProj, targetNow, targetProj, theatreTnc, targetTnc, ctxNow, ctxProj] = await Promise.all([
+    getEmailSetsByTitle(theatreTitles, now, area.theatreScope),
+    horizonDate ? getEmailSetsByTitle(theatreTitles, horizonDate, area.theatreScope) : null,
+    hasTargets ? getEmailSetsByTitle(targetTitles, now, area.targetScope) : none(),
+    horizonDate ? (hasTargets ? getEmailSetsByTitle(targetTitles, horizonDate, area.targetScope) : none()) : null,
+    buildTrainedNotCertifiedContext(specTableRows("Theatre"), now, area.theatreScope),
+    buildTrainedNotCertifiedContext(specTableRows("CountrySet"), now, area.targetScope, hasTargets),
+    // Over an empty target list this yields `countries: []`, on which every
+    // "eachCountry" row fails closed — never "met in all zero countries".
+    eachCountryTitles.length > 0
+      ? buildCountryBucketContext(eachCountryTitles, now, area.meta.targetCountries, companyScope)
+      : null,
+    eachCountryTitles.length > 0 && horizonDate
+      ? buildCountryBucketContext(eachCountryTitles, horizonDate, area.meta.targetCountries, companyScope)
+      : null,
+  ]);
+
+  const theatreCtx: RowEvalContext = {
+    emailSets: theatreNow,
+    projectedEmailSets: theatreProj,
+    countryCtx: null,
+    tnc: theatreTnc,
+    population: labelOf("theatre"),
+  };
+  const targetCtx: RowEvalContext = {
+    emailSets: targetNow,
+    projectedEmailSets: targetProj,
+    countryCtx: ctxNow ? { now: ctxNow, projected: ctxProj } : null,
+    tnc: targetTnc,
+    population: labelOf("targetCountries"),
+  };
+
+  const specialisations = buildSpecialisationsWith(
+    specMap,
+    specDepMap,
+    (r) => isAnchoredReqLevel(r.level),
+    (r) => (anchoredPopulationOf(r.level) === "theatre" ? theatreCtx : targetCtx),
+    horizonDate !== null
+  );
+
+  const minimumCountriesGate: MinimumCountriesGate = {
+    required: area.meta.minimumCountries,
+    counted: area.meta.targetCountries.length,
+    met: area.meta.minimumMet,
+    source: area.meta.minimumCountriesSource,
+  };
+
+  const merged = (theatre: Map<string, Set<string>>, targets: Map<string, Set<string>>) =>
+    prefixKeys(POPULATION_KEY.targetCountries, targets, prefixKeys(POPULATION_KEY.theatre, theatre, new Map()));
+  const noTheatreBuckets = new Map<string, Map<string, Set<string>>>();
+
+  const tiers = p.isTiered
+    ? evaluateTierBlock({
+        rows: evaluated,
+        tiers: p.tierRows,
+        deploymentMode: p.deploymentMode,
+        theatres: [],
+        now: { emailSets: merged(theatreNow, targetNow), byTheatre: noTheatreBuckets, countryCtx: prefixCountryCtx(ctxNow) },
+        projected:
+          theatreProj && targetProj
+            ? {
+                emailSets: merged(theatreProj, targetProj),
+                byTheatre: noTheatreBuckets,
+                countryCtx: prefixCountryCtx(ctxProj),
+              }
+            : null,
+        titleKey: (row, title) => `${POPULATION_KEY[anchoredPopulationOf(row.level) ?? "theatre"]}::${title}`,
+        populationOf: (row) => {
+          const pop = anchoredPopulationOf(row.level);
+          return pop ? labelOf(pop) : null;
+        },
+        blocked: !area.meta.minimumMet,
+        minimumCountriesGate,
+      })
+    : undefined;
+
+  return {
+    specialisations,
+    ...lists,
+    meta: { ...baseMeta, anchored: area.meta as AnchoredMeta | null },
+    horizonMonths,
+    tiers,
+  };
+}
+
 /** The "now" and (when a horizon is set) projected per-country contexts. */
 interface CountryCtxPair {
   now: CountryBucketContext;
@@ -511,7 +754,50 @@ function buildSpecialisations(
   countryCtx: CountryCtxPair | null,
   tnc: TrainedNotCertifiedContext | null
 ) {
+  const ctx: RowEvalContext = { emailSets, projectedEmailSets, countryCtx, tnc };
+  return buildSpecialisationsWith(specMap, specDepMap, (r) => r.level === level, () => ctx, projectedEmailSets !== null);
+}
+
+/**
+ * Everything one requirement row is counted against: the holder sets of its
+ * population (now and, under a horizon, projected), the per-country buckets for
+ * an `"eachCountry"` row, and the trained-not-certified context. A single-level
+ * view has one of these for every row; the anchored view has one per
+ * population, so a title used at both levels is counted over each row's own
+ * population and never pooled across the two.
+ */
+interface RowEvalContext {
+  emailSets: Map<string, Set<string>>;
+  projectedEmailSets: Map<string, Set<string>> | null;
+  countryCtx: CountryCtxPair | null;
+  tnc: TrainedNotCertifiedContext | null;
+  /** Anchored view only: which population the row is counted over, for display. */
+  population?: PopulationLabel;
+}
+
+/** The population an anchored-view row was counted over, as the payload carries it. */
+interface PopulationLabel {
+  population: AnchoredPopulation;
+  /** The anchor theatre's name, or the target Country Set's name. */
+  populationLabel: string;
+}
+
+/**
+ * The general form of `buildSpecialisations`: `includeRow` picks the rows the
+ * view reports (one level, or the anchored view's two), and `ctxOf` gives each
+ * row the population it is counted over. `hasHorizon` says whether projected
+ * figures exist at all, so a specialisation's `projectedCompliant` is present
+ * exactly when it always was.
+ */
+function buildSpecialisationsWith(
+  specMap: Map<string, SpecReqRow[]>,
+  specDepMap: Map<string, SpecReqRow[]>,
+  includeRow: (r: SpecReqRow) => boolean,
+  ctxOf: (r: SpecReqRow) => RowEvalContext,
+  hasHorizon: boolean
+) {
   const mapReq = (req: SpecReqRow) => {
+    const { emailSets, projectedEmailSets, countryCtx, tnc, population } = ctxOf(req);
     const aggregation = normaliseAggregation(req.level, req.aggregation);
     const common = {
       trainingType: req.trainingType ?? null,
@@ -530,6 +816,8 @@ function buildSpecialisations(
       trainingTitle: a.trainingTitle,
       trainingFullTitle: a.trainingData?.fullTitle ?? "—",
     }));
+    // Spread for the same reason: absent outside the anchored view.
+    const populationFields = population ?? {};
 
     if (aggregation === "eachCountry") {
       const asReq: ProgramRequirement = {
@@ -560,6 +848,7 @@ function buildSpecialisations(
         countryBreakdown,
         projectedCountryBreakdown,
         alternatives,
+        ...populationFields,
       };
     }
 
@@ -575,26 +864,27 @@ function buildSpecialisations(
         ? (projectedAttained ?? attained) >= req.quantityRequired
         : undefined,
       alternatives,
+      ...populationFields,
     };
   };
 
   const result = [];
   for (const [name, reqs] of specMap) {
-    const levelReqs = reqs.filter((r) => r.level === level);
+    const levelReqs = reqs.filter(includeRow);
     if (levelReqs.length === 0) continue;
 
     // Deployment-purpose requirements for the same specialisation at this level.
     // They don't change whether the specialisation is achieved (that stays on
     // the qualifying requirements), but a tier that uses the specialisation
     // requires them too, so they're surfaced with their own met/not-met state.
-    const depLevelReqs = (specDepMap.get(name) ?? []).filter((r) => r.level === level);
+    const depLevelReqs = (specDepMap.get(name) ?? []).filter(includeRow);
     const deploymentRequirements = depLevelReqs.map(mapReq);
     const deploymentCompliant =
       deploymentRequirements.length > 0
         ? deploymentRequirements.every((r) => r.compliant)
         : undefined;
     const projectedDeploymentCompliant =
-      projectedEmailSets && deploymentRequirements.length > 0
+      hasHorizon && deploymentRequirements.length > 0
         ? deploymentRequirements.every((r) => r.projectedCompliant ?? r.compliant)
         : undefined;
 
@@ -602,7 +892,7 @@ function buildSpecialisations(
     result.push({
       name,
       compliant: requirements.every((r) => r.compliant),
-      projectedCompliant: projectedEmailSets
+      projectedCompliant: hasHorizon
         ? requirements.every((r) => r.projectedCompliant ?? r.compliant)
         : undefined,
       requirements,
@@ -648,6 +938,9 @@ interface TierBlockTier {
  * `"eachCountry"` rows (null elsewhere); those rows are judged country by
  * country, so a specialisation needing "4 per country" is achieved — and feeds
  * the tier gate — only when every country in the area has 4.
+ *
+ * Program-wide gates (rows with neither a specialisation nor a tier) at this
+ * level are required by every tier; see `evaluateTierBlock`.
  */
 async function computeTierBlock(params: {
   levelName: ReqLevel;
@@ -665,6 +958,91 @@ async function computeTierBlock(params: {
   const { levelName, scope, useTheatre, theatres, companyIds, rows, tiers, deploymentMode, now, horizonDate, countryCtx } = params;
 
   const levelRows = rows.filter((r) => r.level === levelName);
+  const uniqueTitles = extractTitles(levelRows);
+
+  const emptyByTheatre = new Map<string, Map<string, Set<string>>>();
+  const emailSets = await getEmailSetsByTitle(uniqueTitles, now, scope);
+  const byTheatre = useTheatre
+    ? await getEmailSetsByTitleAndTheatre(uniqueTitles, now, companyIds)
+    : emptyByTheatre;
+
+  let projected: TierSnapshotSets | null = null;
+  if (horizonDate) {
+    projected = {
+      emailSets: await getEmailSetsByTitle(uniqueTitles, horizonDate, scope),
+      byTheatre: useTheatre
+        ? await getEmailSetsByTitleAndTheatre(uniqueTitles, horizonDate, companyIds)
+        : emptyByTheatre,
+      countryCtx: countryCtx?.projected ?? undefined,
+    };
+  }
+
+  return evaluateTierBlock({
+    rows: levelRows,
+    tiers,
+    deploymentMode,
+    theatres,
+    now: { emailSets, byTheatre, countryCtx: countryCtx?.now },
+    projected,
+    titleKey: (_row, title) => title,
+    populationOf: () => null,
+    blocked: false,
+    minimumCountriesGate: null,
+  });
+}
+
+/** The holder sets one tier-ladder snapshot is evaluated against. */
+interface TierSnapshotSets {
+  emailSets: Map<string, Set<string>>;
+  byTheatre: Map<string, Map<string, Set<string>>>;
+  countryCtx: CountryBucketContext | undefined;
+}
+
+/** The anchored minimum-countries gate, as the tiers block carries it. */
+export interface MinimumCountriesGate {
+  /** The effective minimum (null = no minimum applies, and the gate is met). */
+  required: number | null;
+  /** Target countries inside the anchor theatre. */
+  counted: number;
+  met: boolean;
+  /** Whose rule the minimum came from: the partner's own, the program default, or none. */
+  source: MinimumCountriesSource;
+}
+
+/**
+ * The pure half of the tier block: build `TierLadderInput` from already-filtered
+ * rows, evaluate it now (and at the horizon) against the supplied sets, and
+ * shape the payload.
+ *
+ * `titleKey(row, title)` is the key a row's titles are looked up under in the
+ * supplied sets. A single-level view passes the identity. The anchored view
+ * passes a per-population prefix (`theatre::…` / `targets::…`) over sets merged
+ * the same way, which is what lets `evaluateTierLadder` — which takes ONE set
+ * map — count a Theatre row over the anchor theatre and a CountrySet row over
+ * the target countries, and count a title used at both levels separately per
+ * population, with no change to the engine. The display keeps the real titles.
+ *
+ * **Program-wide gates** — rows where `isProgramWideRow` (no specialisation, no
+ * tier) — are passed to the engine as `gateReqIds`, so every tier requires them
+ * in every deployment mode, and returned ONCE as `gateRequirements` rather than
+ * repeated under each tier. They never appear in the specialisation tables.
+ *
+ * `blocked` fails every tier closed, now and projected (the anchored
+ * minimum-countries gate); `minimumCountriesGate` is echoed as the reason.
+ */
+function evaluateTierBlock(params: {
+  rows: TierBlockRow[];
+  tiers: TierBlockTier[];
+  deploymentMode: string;
+  theatres: string[];
+  now: TierSnapshotSets;
+  projected: TierSnapshotSets | null;
+  titleKey: (row: TierBlockRow, title: string) => string;
+  populationOf: (row: TierBlockRow) => PopulationLabel | null;
+  blocked: boolean;
+  minimumCountriesGate: MinimumCountriesGate | null;
+}) {
+  const { rows: levelRows, tiers, deploymentMode, theatres, titleKey, populationOf, blocked, minimumCountriesGate } = params;
 
   const requirements = new Map<number, ProgramRequirement>();
   interface DepDisplay {
@@ -675,13 +1053,14 @@ async function computeTierBlock(params: {
     minimumPerTheatre: number | null;
     aggregation: Aggregation;
     alternatives: { trainingType: string; trainingTitle: string; trainingFullTitle: string }[];
+    population: PopulationLabel | null;
   }
   const display = new Map<number, DepDisplay>();
   for (const r of levelRows) {
     const aggregation = normaliseAggregation(r.level, r.aggregation);
     requirements.set(r.id, {
-      trainingTitle: r.trainingTitle,
-      alternatives: r.alternatives.map((a) => ({ trainingTitle: a.trainingTitle })),
+      trainingTitle: r.trainingTitle === null ? null : titleKey(r, r.trainingTitle),
+      alternatives: r.alternatives.map((a) => ({ trainingTitle: titleKey(r, a.trainingTitle) })),
       quantityRequired: r.quantityRequired,
       minimumPerTheatre: r.minimumPerTheatre,
       aggregation,
@@ -698,6 +1077,7 @@ async function computeTierBlock(params: {
         trainingTitle: a.trainingTitle,
         trainingFullTitle: a.trainingData?.fullTitle ?? "—",
       })),
+      population: populationOf(r),
     });
   }
 
@@ -738,6 +1118,9 @@ async function computeTierBlock(params: {
     }
   }
 
+  // Program-wide gates: neither a specialisation nor a tier.
+  const gateReqIds = levelRows.filter(isProgramWideRow).map((r) => r.id);
+
   const tiersInput = tiers.map((t) => ({
     id: t.id,
     name: t.name,
@@ -747,32 +1130,18 @@ async function computeTierBlock(params: {
     deploymentReqIdsBySpec: tierSpecDepIds.get(t.id) ?? new Map<string, number[]>(),
   }));
 
-  const input: TierLadderInput = { tiers: tiersInput, specs, requirements, deploymentMode };
+  const input: TierLadderInput = { tiers: tiersInput, specs, requirements, deploymentMode, gateReqIds, blocked };
 
-  const uniqueTitles = [
-    ...new Set(
-      [...requirements.values()].flatMap((r) => [
-        ...(r.trainingTitle ? [r.trainingTitle] : []),
-        ...r.alternatives.map((a) => a.trainingTitle),
-      ])
-    ),
-  ];
-
-  const emptyByTheatre = new Map<string, Map<string, Set<string>>>();
-  const emailSets = await getEmailSetsByTitle(uniqueTitles, now, scope);
-  const byTheatre = useTheatre
-    ? await getEmailSetsByTitleAndTheatre(uniqueTitles, now, companyIds)
-    : emptyByTheatre;
-  const snapNow = evaluateTierLadder(input, emailSets, byTheatre, theatres, countryCtx?.now);
-
-  let snapProj: ReturnType<typeof evaluateTierLadder> | null = null;
-  if (horizonDate) {
-    const projEmail = await getEmailSetsByTitle(uniqueTitles, horizonDate, scope);
-    const projByTheatre = useTheatre
-      ? await getEmailSetsByTitleAndTheatre(uniqueTitles, horizonDate, companyIds)
-      : emptyByTheatre;
-    snapProj = evaluateTierLadder(input, projEmail, projByTheatre, theatres, countryCtx?.projected ?? undefined);
-  }
+  const snapNow = evaluateTierLadder(input, params.now.emailSets, params.now.byTheatre, theatres, params.now.countryCtx);
+  const snapProj = params.projected
+    ? evaluateTierLadder(
+        input,
+        params.projected.emailSets,
+        params.projected.byTheatre,
+        theatres,
+        params.projected.countryCtx
+      )
+    : null;
 
   const buildDepReq = (id: number, specialisationName: string | null) => {
     const d = display.get(id)!;
@@ -803,6 +1172,8 @@ async function computeTierBlock(params: {
       countryBreakdown,
       projectedCountryBreakdown,
       alternatives: d.alternatives,
+      // Anchored view only — absent (not null) elsewhere, like the spec tables.
+      ...(d.population ?? {}),
     };
   };
 
@@ -846,15 +1217,32 @@ async function computeTierBlock(params: {
     achievedSpecialisationCount: snapNow.achievedSpecCount,
     projectedAchievedSpecialisationCount: snapProj ? snapProj.achievedSpecCount : null,
     tiers: outTiers,
+    // Required by every tier, so shown once ("Required at every level") rather
+    // than repeated under each. Empty for a program that has none.
+    gateRequirements: gateReqIds.map((id) => buildDepReq(id, null)),
+    // Anchored programs only: the partner's minimum number of target countries.
+    // When `met` is false every tier above is unreached, now and projected.
+    minimumCountriesGate,
   };
 }
 
 export interface GetProgramStudentsOptions {
   trainingTitles: string[];
+  /** As `BuildProgramReportOptions.level`, "anchored" included. */
   level: string;
+  /** The program, needed to resolve an anchored view's two populations. */
+  programName?: string;
+  /**
+   * Anchored view only: which population the requirement is counted over —
+   * `"theatre"` (a Theatre row, over the anchor theatre) or `"targetCountries"`
+   * (a CountrySet row, over the partner's target countries) — so the roster
+   * matches the row's own figure. Missing or unknown on an anchored request
+   * fails closed to an empty roster (the routes 400 it first).
+   */
+  population?: AnchoredPopulation | null;
   country: string;
   region: string;
-  /** Country Set name, used when level is "countrySet". */
+  /** Country Set name, used when level is "countrySet" (and "anchored": the target set). */
   countrySet?: string;
   theatre: string;
   companyIds: number[] | null;
@@ -877,6 +1265,7 @@ async function resolveRosterScope(
 ): Promise<{ scope: ComplianceScope; hasArea: boolean }> {
   const { level, country, region, theatre, companyIds } = opts;
   const countrySet = opts.countrySet ?? "";
+  if (level === ANCHORED_SCOPE) return resolveAnchoredRosterScope(opts);
   if (level === "country" && country) return { scope: { country, companyIds }, hasArea: true };
   if (level === "region" && region) {
     const countries = await countriesInRegion(region);
@@ -889,6 +1278,30 @@ async function resolveRosterScope(
   }
   if (level === "theatre" && theatre) return { scope: { theatre, companyIds }, hasArea: true };
   return { scope: { companyIds }, hasArea: true };
+}
+
+/**
+ * The roster scope of an anchored view: the requirement's own population — the
+ * anchor theatre for a Theatre row, the target countries for a CountrySet row —
+ * resolved through the same `resolveAnchoredArea` the report counts over, so
+ * the list matches the figure. Anything unresolvable (no such program, not
+ * anchored, not exactly one company, no population named) is an empty area.
+ */
+async function resolveAnchoredRosterScope(
+  opts: GetProgramStudentsOptions
+): Promise<{ scope: ComplianceScope; hasArea: boolean }> {
+  const closed = { scope: { countries: [] as string[], companyIds: opts.companyIds }, hasArea: false };
+  if (!opts.programName || !opts.population) return closed;
+  const program = await getProgramAnchor(opts.programName);
+  if (!program || !isAnchoredProgram(program)) return closed;
+  const area: AnchoredArea | { error: string } = await resolveAnchoredArea({
+    program,
+    countrySet: opts.countrySet,
+    companyIds: opts.companyIds,
+  });
+  if ("error" in area) return closed;
+  if (opts.population === "theatre") return { scope: area.theatreScope, hasArea: true };
+  return { scope: area.targetScope, hasArea: area.meta.targetCountries.length > 0 };
 }
 
 /**
@@ -907,7 +1320,14 @@ export async function getProgramStudents(opts: GetProgramStudentsOptions) {
   const now = new Date();
 
   const studentFilter: Record<string, unknown> = {};
-  if (level === "country" && country) {
+  if (level === ANCHORED_SCOPE) {
+    // The row's own population (see `resolveAnchoredRosterScope`); an empty
+    // target list matches nobody rather than everybody.
+    const { scope, hasArea } = await resolveAnchoredRosterScope(opts);
+    if (!hasArea) return { students: [] };
+    if (scope.theatre) studentFilter.theatre = scope.theatre;
+    if (scope.countries) studentFilter.country = { in: scope.countries };
+  } else if (level === "country" && country) {
     studentFilter.country = country;
   } else if (level === "region" && region) {
     const regionCountries = await countriesInRegion(region);
