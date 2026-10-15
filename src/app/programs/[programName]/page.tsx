@@ -1310,7 +1310,8 @@ function ProgramDetailPageInner() {
                         met: false,
                         source: anchoredMeta.minimumCountriesSource,
                       },
-                      anchoredMeta.anchorTheatre
+                      anchoredMeta.anchorTheatre,
+                      isTiered
                     )}
                   </div>
                 </div>

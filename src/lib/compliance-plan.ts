@@ -2286,12 +2286,13 @@ function toPlanRequirement(
  * The blocker sentence, in the page's voice: what to do and where, then why.
  * Shared by the headline; the page renders `blockers` itself too.
  */
-export function blockerText(b: PlanBlocker): string {
+export function blockerText(b: PlanBlocker, tiered: boolean): string {
   const more = Math.max(0, b.required - b.counted);
   const whose = b.source === "partner" ? "this partner's minimum" : "the program's default minimum";
   return (
     `Name ${more} more target countr${more === 1 ? "y" : "ies"} in Admin › Country Sets — ` +
-    `${b.counted} of ${b.required} counted (${whose}), and no tier is reached until then.`
+    // A program without tiers has no tier to withhold.
+    `${b.counted} of ${b.required} counted (${whose})${tiered ? ", and no tier is reached until then" : ""}.`
   );
 }
 
@@ -2300,7 +2301,7 @@ function buildHeadline(target: PlanTargetResult, scopeLabel: string, windowMonth
   // A blocker leads: certifying people cannot clear it, so a reader who acts on
   // the rest of the sentence alone would still not reach the target.
   const blockers = target.blockers ?? [];
-  return blockers.length > 0 ? `${blockers.map(blockerText).join(" ")} ${body}` : body;
+  return blockers.length > 0 ? `${blockers.map((b) => blockerText(b, target.isTiered)).join(" ")} ${body}` : body;
 }
 
 function buildHeadlineBody(target: PlanTargetResult, scopeLabel: string, windowMonths: number): string {

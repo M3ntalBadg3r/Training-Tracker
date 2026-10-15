@@ -314,12 +314,13 @@ const POPULATION_LABEL: Record<AnchoredPopulation, string> = {
  * importing it, because `lib/compliance-plan.ts` pulls in Prisma and cannot be
  * bundled for the browser; keep the two in step.
  */
-function blockerText(b: PlanBlocker): string {
+function blockerText(b: PlanBlocker, tiered: boolean): string {
   const more = Math.max(0, b.required - b.counted);
   const whose = b.source === "partner" ? "this partner's minimum" : "the program's default minimum";
   return (
     `Name ${more} more target countr${more === 1 ? "y" : "ies"} in Admin › Country Sets — ` +
-    `${b.counted} of ${b.required} counted (${whose}), and no tier is reached until then.`
+    // A program without tiers has no tier to withhold.
+    `${b.counted} of ${b.required} counted (${whose})${tiered ? ", and no tier is reached until then" : ""}.`
   );
 }
 
@@ -1070,7 +1071,7 @@ function buildBlockerSection(targets: PlanTargetResult[]): ReportTableSection | 
       Required: b.required,
       Counted: b.counted,
       Source: b.source === "partner" ? "Partner setting" : "Program default",
-      Action: blockerText(b),
+      Action: blockerText(b, t.isTiered),
     })),
   );
   if (rows.length === 0) return null;
@@ -2036,7 +2037,7 @@ function TargetCard({ target, windowMonths }: { target: PlanTargetResult; window
         >
           <AlertTriangle size={16} className="mt-0.5 shrink-0" />
           <span>
-            {blockerText(b)}{" "}
+            {blockerText(b, target.isTiered)}{" "}
             <Link href="/admin/country-sets" className="font-medium underline">Open Country Sets</Link>
           </span>
         </div>

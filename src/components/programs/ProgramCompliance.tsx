@@ -402,11 +402,19 @@ export const MINIMUM_SOURCE_LABELS: Record<MinimumCountriesSource, string> = {
  * "Why no tier is reached" for an unmet minimum-countries gate, shared by the
  * page's gate card, the tier ladder and the PDF.
  */
-export function minimumGateText(gate: MinimumCountriesGate, anchorTheatre?: string | null): string {
+export function minimumGateText(
+  gate: MinimumCountriesGate,
+  anchorTheatre?: string | null,
+  /** A program without tiers has no tier to withhold, so the sentence says so. */
+  tiered = true
+): string {
   const where = anchorTheatre ? ` inside ${anchorTheatre}` : "";
+  const required = gate.required ?? 0;
   return (
-    `Target countries: ${gate.counted} of ${gate.required ?? 0} minimum (${MINIMUM_SOURCE_LABELS[gate.source]}). ` +
-    `No tier can be reached until the partner names at least ${gate.required ?? 0} target countries${where}.`
+    `Target countries: ${gate.counted} of ${required} minimum (${MINIMUM_SOURCE_LABELS[gate.source]}). ` +
+    (tiered
+      ? `No tier can be reached until the partner names at least ${required} target countries${where}.`
+      : `The partner must name at least ${required} target countries${where}.`)
   );
 }
 
