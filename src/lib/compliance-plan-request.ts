@@ -1,5 +1,5 @@
 import type { CompliancePlanResult, PlanTarget } from "@/lib/compliance-plan";
-import { parseScopeLevel, type ScopeLevel } from "@/lib/program-levels";
+import { parseProgramViewLevel, type ProgramViewLevel } from "@/lib/program-levels";
 
 /**
  * Request parsing shared by the two Compliance Planning routes — the internal
@@ -20,11 +20,14 @@ export interface ParsedPlanRequest {
   targets: PlanTarget[];
   /** The raw `targets` string, for the cache key. Empty when absent. */
   rawTargets: string;
-  /** Validated; anything unrecognised is "global". */
-  level: ScopeLevel;
+  /** Validated; anything unrecognised is "global". `"anchored"` is accepted. */
+  level: ProgramViewLevel;
   country: string;
   region: string;
-  /** Country Set name, read when `level` is "countrySet". */
+  /**
+   * Country Set name, read when `level` is "countrySet" — and when it is
+   * "anchored", where blank means each program's configured target set.
+   */
   countrySet: string;
   theatre: string;
   renewalWindowMonths: number;
@@ -70,7 +73,9 @@ export function parsePlanRequest(p: URLSearchParams): ParsedPlanRequest | null {
     // Validated rather than passed through as a raw string: an unknown level
     // used to reach the engine (which fell back to global) and the cache key
     // (which did not), so every misspelling was its own cache entry.
-    level: parseScopeLevel(p.get("level")) ?? "global",
+    // `parseProgramViewLevel` is `parseScopeLevel` plus "anchored", so the
+    // anchored scope reaches the cache key through the same field.
+    level: parseProgramViewLevel(p.get("level")) ?? "global",
     country: p.get("country") || "",
     region: p.get("region") || "",
     countrySet: p.get("countrySet") || "",
@@ -87,7 +92,11 @@ export function parsePlanRequest(p: URLSearchParams): ParsedPlanRequest | null {
 export function planCacheKeyParts(req: ParsedPlanRequest): string {
   // Every free-text fragment is percent-encoded so a literal "|" in a country,
   // region, set or theatre name cannot shift the key's fields and cross two
-  // views onto one entry.
+  // views onto one entry. An anchored plan is keyed by `level` and `countrySet`
+  // like a countrySet one; a BLANK countrySet there means "each program's
+  // configured target set", which reads `ProgramCompanySetting` — per-company
+  // (the company scope is in every caller's key) and flushed by the cache-wide
+  // invalidation its writes perform — so blank needs no fragment of its own.
   return [
     encodeURIComponent(req.rawTargets),
     req.level,

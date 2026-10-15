@@ -44,14 +44,19 @@ import { useDebounce } from "@/hooks/useDebounce";
 import { useFetchJson } from "@/hooks/useFetchJson";
 import {
   AGGREGATION_SHORT_LABELS,
+  ANCHORED_SCOPE,
+  ANCHORED_SCOPE_LABEL,
   SCOPE_LEVELS,
   SCOPE_LEVEL_LABELS,
   SCOPE_VALUE_NOUN,
-  parseScopeLevel,
+  parseProgramViewLevel,
   scopeLevelOffered,
   type Aggregation,
+  type AnchoredMeta,
+  type AnchoredPopulation,
+  type MinimumCountriesSource,
+  type ProgramViewLevel,
   type ReqLevel,
-  type ScopeLevel,
 } from "@/lib/program-levels";
 
 // ── API shapes (mirror lib/compliance-plan.ts) ──
@@ -69,6 +74,8 @@ interface PlanRequirement {
   /** Set on one country of an "each country" requirement; null when pooled. */
   country: string | null;
   scopeLabel: string;
+  /** Anchored plans only: which of the program's two populations the row counts over. */
+  population?: AnchoredPopulation;
   cert: string;
   required: number;
   attained: number;
@@ -99,6 +106,15 @@ interface PlanSpecialisation {
   alternative?: boolean;
   /** What it adds on top of the other chosen specialisations; `cost` is standalone. */
   marginalCost?: number;
+  /** "programWide": the synthetic block of a tiered program's program-wide requirements. */
+  kind?: "programWide";
+}
+/** Something certifying people cannot fix — reported beside the plan, never costed. */
+interface PlanBlocker {
+  kind: "minimumCountries";
+  required: number;
+  counted: number;
+  source: MinimumCountriesSource;
 }
 interface PlanTargetResult {
   program: string;
@@ -106,11 +122,22 @@ interface PlanTargetResult {
   isTiered: boolean;
   tierName: string | null;
   headline: string;
-  tierPlan?: { specialisationsRequired: number; alreadyAchieved: number; needed: number; deliveryCertShortfall: number };
+  tierPlan?: {
+    specialisationsRequired: number;
+    alreadyAchieved: number;
+    needed: number;
+    deliveryCertShortfall: number;
+    /** Present only when the program has program-wide requirements in scope. */
+    gateShortfall?: number;
+  };
   specialisations: PlanSpecialisation[];
   peopleMoves: number;
   easyWins: number;
   netNew: number;
+  /** Anchored plans only: the two populations and the partner's minimum. */
+  anchored?: AnchoredMeta;
+  /** Anchored plans only, and only when non-empty. */
+  blockers?: PlanBlocker[];
 }
 interface PlanCandidateClose {
   program: string;
@@ -141,6 +168,7 @@ interface PlanRiskImpact {
   aggregation: Aggregation;
   country: string | null;
   scopeLabel: string;
+  population?: AnchoredPopulation;
   required: number;
   attained: number;
   projectedAttained: number;
@@ -189,6 +217,11 @@ interface PlanningOption {
   levels: string[];
   tiers: string[];
   specialisations: string[];
+  /**
+   * Set for an anchored program, which is planned only at the "Target
+   * countries" scope (and nowhere else). Absent on an older cached payload.
+   */
+  anchored?: { anchorTheatre: string } | null;
 }
 interface PlanningOptionsResponse {
   programs: PlanningOption[];
@@ -217,22 +250,95 @@ interface TargetSelection {
 const WINDOW_OPTIONS = [0, 1, 3, 6, 12];
 const DEFAULT_WINDOW_MONTHS = 3;
 
-function parseLevel(v: string | null): ScopeLevel {
-  return parseScopeLevel(v) ?? "global";
+function parseLevel(v: string | null): ProgramViewLevel {
+  return parseProgramViewLevel(v) ?? "global";
+}
+
+/** Whether a program is planned at this scope: anchored programs at the
+ *  anchored scope only, every other program everywhere else (the engine skips
+ *  a target on the wrong side, so the picker does not offer one). */
+function plannableAt(level: ProgramViewLevel, o: PlanningOption): boolean {
+  return (level === ANCHORED_SCOPE) === !!o.anchored;
 }
 
 /**
  * Whether the scope selector offers a level. Global, Theatre and Country are
  * always offered, as they always were. Region and Country Set plan against
  * their OWN requirement rows (a region no longer pools the Country rows), so
- * offering one no program has rows at would only ever produce an empty plan.
- * Country Set additionally needs the selected company to own at least one set:
- * sets are per-company, so a company with none has nothing to plan against.
+ * offering one no program has rows at would only ever produce an empty plan —
+ * and only a STANDARD program's rows count there, since an anchored program is
+ * never planned at a single-population scope. Country Set additionally needs
+ * the selected company to own at least one set: sets are per-company, so a
+ * company with none has nothing to plan against. "Target countries" is offered
+ * when some program is anchored, under the same set rule (the dashboard's).
  */
-function levelAvailable(level: ScopeLevel, options: PlanningOption[], countrySets: string[]): boolean {
+function levelAvailable(level: ProgramViewLevel, options: PlanningOption[], countrySets: string[]): boolean {
+  if (level === ANCHORED_SCOPE) return countrySets.length > 0 && options.some((o) => !!o.anchored);
   if (level === "global" || level === "theatre" || level === "country") return true;
   if (level === "countrySet" && countrySets.length === 0) return false;
-  return options.some((o) => scopeLevelOffered(level, o.levels));
+  return options.some((o) => !o.anchored && scopeLevelOffered(level, o.levels));
+}
+
+const VIEW_LEVELS: readonly ProgramViewLevel[] = [...SCOPE_LEVELS, ANCHORED_SCOPE];
+
+function levelLabel(level: ProgramViewLevel): string {
+  return level === ANCHORED_SCOPE ? ANCHORED_SCOPE_LABEL : SCOPE_LEVEL_LABELS[level];
+}
+
+function valueNoun(level: Exclude<ProgramViewLevel, "global">): string {
+  return level === ANCHORED_SCOPE ? "country set" : SCOPE_VALUE_NOUN[level];
+}
+
+/**
+ * The blank option of the "Target countries" set picker. Blank is a real choice
+ * there — each program's configured target set for this partner — so it names
+ * the set the plan actually used once a plan for it has loaded (and every
+ * target resolved the same one).
+ */
+function configuredSetLabel(plan: CompliancePlanResult | null, scopeValue: string): string {
+  const base = "Partner's configured set";
+  if (!plan || scopeValue !== "") return base;
+  const sets = [...new Set(plan.targets.map((t) => t.anchored?.countrySet ?? null))];
+  if (sets.length !== 1) return base;
+  return sets[0] ? `${base} (${sets[0]})` : `${base} (none configured)`;
+}
+
+/** Which population an anchored row is counted over, in words. */
+const POPULATION_LABEL: Record<AnchoredPopulation, string> = {
+  theatre: "anchor theatre",
+  targetCountries: "target countries",
+};
+
+/**
+ * The blocker sentence. Restates the server's `blockerText` rather than
+ * importing it, because `lib/compliance-plan.ts` pulls in Prisma and cannot be
+ * bundled for the browser; keep the two in step.
+ */
+function blockerText(b: PlanBlocker): string {
+  const more = Math.max(0, b.required - b.counted);
+  const whose = b.source === "partner" ? "this partner's minimum" : "the program's default minimum";
+  return (
+    `Name ${more} more target countr${more === 1 ? "y" : "ies"} in Admin › Country Sets — ` +
+    `${b.counted} of ${b.required} counted (${whose}), and no tier is reached until then.`
+  );
+}
+
+/** The anchored header line under a target's headline: what it was planned over. */
+function anchoredLine(a: AnchoredMeta): string {
+  const countries = a.targetCountries.length > 0 ? a.targetCountries.join(", ") : "none";
+  const set = a.countrySet ? `${a.countrySet}: ` : "No target set: ";
+  const minimum =
+    a.minimumCountries === null
+      ? ""
+      : ` · minimum ${a.minimumCountries} (${a.minimumCountriesSource === "partner" ? "partner setting" : "program default"})`;
+  return `Target countries — ${set}${countries}, within ${a.anchorTheatre}${minimum}`;
+}
+
+/** Members of the set that lie outside the anchor theatre and so count for nothing. */
+function outOfTheatreText(a: AnchoredMeta): string | null {
+  const n = a.outOfTheatreCountries.length;
+  if (n === 0) return null;
+  return `${a.outOfTheatreCountries.join(", ")} ${n === 1 ? "is" : "are"} in ${a.countrySet ?? "the set"} but outside ${a.anchorTheatre}, so ${n === 1 ? "it does" : "they do"} not count.`;
 }
 
 function parseWindowMonths(v: string | null): number {
@@ -457,7 +563,9 @@ function specDimmed(spec: PlanSpecialisation, tiered: boolean, state: RiskState)
  * A tier target's two roles, in one place so the badge and the export column
  * can't disagree about which specialisations the plan is actually pursuing.
  */
-function specRole(spec: PlanSpecialisation, tiered: boolean): "Recommended" | "Alternative" | "" {
+function specRole(spec: PlanSpecialisation, tiered: boolean): "Recommended" | "Alternative" | "Required" | "" {
+  // The program-wide block is never a choice: every tier needs it.
+  if (spec.kind === "programWide") return tiered ? "Required" : "";
   if (!tiered) return "";
   // `chosen` is tested BEFORE `achieved`. The two read different gaps when
   // planning for the window — the cheapest-K selection costs against the
@@ -483,7 +591,9 @@ function specBadges(
     badges.push({ text: `At risk in ${windowMonths}mo`, className: RISK_BADGE.atRisk, tone: "amber" });
   }
   const role = specRole(spec, tiered);
-  if (role === "Recommended") {
+  if (role === "Required") {
+    badges.push({ text: "Every tier", className: "bg-blue-100 text-blue-800", tone: "neutral" });
+  } else if (role === "Recommended") {
     badges.push({ text: "Recommended", className: "bg-blue-100 text-blue-800", tone: "neutral" });
   } else if (role === "Alternative") {
     // Muted, because it is an aside: the plan is not costed against it.
@@ -683,6 +793,9 @@ function tierPlanLine(tierPlan: NonNullable<PlanTargetResult["tierPlan"]>): stri
   return (
     `Specialisations: ${tierPlan.alreadyAchieved}/${tierPlan.specialisationsRequired} achieved` +
     (tierPlan.needed > 0 ? ` — need ${tierPlan.needed} more` : "") +
+    (tierPlan.gateShortfall && tierPlan.gateShortfall > 0
+      ? ` · ${tierPlan.gateShortfall} short on the requirements every level needs`
+      : "") +
     (tierPlan.deliveryCertShortfall > 0
       ? ` · ${tierPlan.deliveryCertShortfall} delivery-cert people short`
       : "")
@@ -897,6 +1010,8 @@ function buildRoadmapSection(
           // is one row per country here, the rectangle a pivot wants.
           countMode: AGGREGATION_SHORT_LABELS[r.aggregation],
           country: r.country ?? "",
+          // Appended last for the same reason: blank outside anchored plans.
+          population: r.population ? POPULATION_LABEL[r.population] : "",
         });
       }
     }
@@ -931,6 +1046,39 @@ function buildRoadmapSection(
       { key: "shared", header: "Shared with" },
       { key: "countMode", header: "Count Mode" },
       { key: "country", header: "Country" },
+      { key: "population", header: "Population" },
+    ],
+    rows,
+  };
+}
+
+/**
+ * What certifying people cannot fix, as its own section rather than a column:
+ * a blocker belongs to a target, not to a requirement row. Only added when a
+ * target carries one, so every other export is unchanged.
+ */
+function buildBlockerSection(targets: PlanTargetResult[]): ReportTableSection | null {
+  const rows = targets.flatMap((t) =>
+    (t.blockers ?? []).map((b) => ({
+      Program: t.program,
+      Target: t.tierName ?? "",
+      Required: b.required,
+      Counted: b.counted,
+      Source: b.source === "partner" ? "Partner setting" : "Program default",
+      Action: blockerText(b),
+    })),
+  );
+  if (rows.length === 0) return null;
+  return {
+    title: "Blockers",
+    subtitle: "Not costed in People to certify — certifying people cannot clear these",
+    columns: [
+      { key: "Program", header: "Program" },
+      { key: "Target", header: "Target" },
+      { key: "Required", header: "Minimum countries" },
+      { key: "Counted", header: "Target countries counted" },
+      { key: "Source", header: "Minimum from" },
+      { key: "Action", header: "Action" },
     ],
     rows,
   };
@@ -952,6 +1100,7 @@ function buildRiskImpactSection(impacts: PlanRiskImpact[], windowMonths: number)
       { key: "OnPath", header: "On recommended path" },
       { key: "CountMode", header: "Count Mode" },
       { key: "Country", header: "Country" },
+      { key: "Population", header: "Population" },
     ],
     rows: impacts.map((i) => ({
       Program: i.program,
@@ -965,6 +1114,7 @@ function buildRiskImpactSection(impacts: PlanRiskImpact[], windowMonths: number)
       OnPath: i.onPath ? "Yes" : "No",
       CountMode: AGGREGATION_SHORT_LABELS[i.aggregation],
       Country: i.country ?? "",
+      Population: i.population ? POPULATION_LABEL[i.population] : "",
     })),
   };
 }
@@ -1088,7 +1238,7 @@ function buildSpecGroup(
   const costLabel = specCostLabel(spec);
   const toRow = (
     r: PlanRequirement,
-    labels: { cert: string; scope: string; haveNeed: ReturnType<typeof haveNeedCell> },
+    labels: { cert: string; scope: string | { text: string; sub?: string }; haveNeed: ReturnType<typeof haveNeedCell> },
     detail?: string[],
   ): ReportTonedRow => {
     const rowState = requirementState(r);
@@ -1112,7 +1262,14 @@ function buildSpecGroup(
   };
   const rows: ReportTonedRow[] = roadmapRows(spec.requirements).map((row) => {
     if (row.kind === "single") {
-      return toRow(row.r, { cert: requirementLabel(row.r), scope: row.r.scopeLabel, haveNeed: haveNeedCell(row.r) });
+      return toRow(row.r, {
+        cert: requirementLabel(row.r),
+        // The page's grey second line naming an anchored row's population.
+        scope: row.r.population
+          ? { text: row.r.scopeLabel, sub: POPULATION_LABEL[row.r.population] }
+          : row.r.scopeLabel,
+        haveNeed: haveNeedCell(row.r),
+      });
     }
     // One printed row per requirement, as on the page, with the countries that
     // need attention as indented lines beneath it and the met ones on one line.
@@ -1165,6 +1322,11 @@ function buildRoadmapPdfSections(
     // what is left of the page's header: the headline, the easy/net-new counts
     // and (for a tier target) the specialisation ladder.
     const lines = [t.headline, targetSummaryChips(t).slice(1).map((c) => c.text).join(" · ")];
+    if (t.anchored) {
+      lines.push(anchoredLine(t.anchored));
+      const out = outOfTheatreText(t.anchored);
+      if (out) lines.push(out);
+    }
     if (t.tierPlan) lines.push(tierPlanLine(t.tierPlan));
     return {
       title: targetTitle(t),
@@ -1336,10 +1498,12 @@ function buildSectionDocument(opts: {
 }
 
 /** Assemble the whole Compliance Planning page into one exportable report. */
-function buildPlanDocument(plan: CompliancePlanResult, level: ScopeLevel): ReportDocument {
+function buildPlanDocument(plan: CompliancePlanResult, levelName: string): ReportDocument {
+  const blockers = buildBlockerSection(plan.targets);
   const sections: ReportSection[] = [
     buildSummarySection(plan),
     buildRoadmapSection(plan.targets, plan.renewalWindowMonths, plan.planForWindow),
+    ...(blockers ? [blockers] : []),
     buildCandidateSection(plan.candidates),
   ];
   if (plan.eligible.length > 0) {
@@ -1362,7 +1526,7 @@ function buildPlanDocument(plan: CompliancePlanResult, level: ScopeLevel): Repor
     orientation: "portrait",
     meta: [
       { label: "Scope", value: plan.scopeLabel },
-      { label: "Level", value: SCOPE_LEVEL_LABELS[level] },
+      { label: "Level", value: levelName },
       {
         label: "Renewal window",
         value: plan.renewalWindowMonths === 0 ? "Off" : `${plan.renewalWindowMonths} month${plan.renewalWindowMonths === 1 ? "" : "s"}`,
@@ -1420,13 +1584,13 @@ function CompliancePlanningPageInner() {
   );
 
   // Scope. Seeded from the URL so Back from a record restores the view.
-  const [levelState, setLevel] = useState<ScopeLevel>(() => parseLevel(searchParams.get("level")));
+  const [levelState, setLevel] = useState<ProgramViewLevel>(() => parseLevel(searchParams.get("level")));
   const [scopeValueState, setScopeValue] = useState(() => searchParams.get("scope") ?? "");
   const theatres = useMemo(() => [...new Set(regionRows.map((r) => r.theatre).filter((t): t is string => !!t))].sort(), [regionRows]);
   const regions = useMemo(() => [...new Set(regionRows.map((r) => r.region).filter(Boolean))].sort(), [regionRows]);
   const countries = useMemo(() => [...new Set(regionRows.map((r) => r.country))].sort(), [regionRows]);
   const offeredLevels = useMemo(
-    () => SCOPE_LEVELS.filter((l) => levelAvailable(l, options, countrySets)),
+    () => VIEW_LEVELS.filter((l) => levelAvailable(l, options, countrySets)),
     [options, countrySets],
   );
 
@@ -1438,16 +1602,29 @@ function CompliancePlanningPageInner() {
   // lets the mirror below run on mount without erasing it — and the mirror
   // writes these effective values, so a stale link is corrected in the address
   // bar rather than persisting.
-  const level: ScopeLevel = optionsLoaded && !offeredLevels.includes(levelState) ? "global" : levelState;
+  //
+  // "Target countries" (anchored) takes a Country Set too, but there the blank
+  // value is a real choice — "each program's configured target set for this
+  // partner" — rather than "not chosen yet", so a plan runs without one.
+  const level: ProgramViewLevel = optionsLoaded && !offeredLevels.includes(levelState) ? "global" : levelState;
   const scopeOptions =
     level === "theatre" ? theatres
       : level === "region" ? regions
-        : level === "countrySet" ? countrySets
+        : level === "countrySet" || level === ANCHORED_SCOPE ? countrySets
           : level === "country" ? countries
             : [];
-  const listLoaded = level === "countrySet" ? optionsLoaded : regionRows.length > 0;
+  const listLoaded = level === "countrySet" || level === ANCHORED_SCOPE ? optionsLoaded : regionRows.length > 0;
   const scopeValue =
     level === "global" || (listLoaded && !scopeOptions.includes(scopeValueState)) ? "" : scopeValueState;
+  // The programs the target picker offers at this scope (see `plannableAt`).
+  const plannable = useMemo(() => options.filter((o) => plannableAt(level, o)), [options, level]);
+  const hiddenAnchored = level === ANCHORED_SCOPE ? 0 : options.filter((o) => !!o.anchored).length;
+  // The anchor theatre(s) the "Target countries" scope is drawn within, for the
+  // "within EMEA" label beside the set picker.
+  const anchorTheatres = useMemo(
+    () => [...new Set(options.map((o) => o.anchored?.anchorTheatre).filter((t): t is string => !!t))].sort(),
+    [options],
+  );
 
   // Targets: program name → selection (only selected programs are keys).
   const [targets, setTargets] = useState<Record<string, TargetSelection>>(() => parseTargets(searchParams.get("targets")));
@@ -1489,9 +1666,15 @@ function CompliancePlanningPageInner() {
   const updateTarget = (name: string, patch: Partial<TargetSelection>) =>
     setTargets((prev) => ({ ...prev, [name]: { ...prev[name], ...patch } }));
 
-  // Build the targets payload for the API.
+  // Build the targets payload for the API. A selection for a program not
+  // plannable at this scope stays in state (and in the URL), so switching back
+  // restores it, but is not sent — the engine would answer it with nothing.
+  // Until the options have loaded nothing is known about which programs are
+  // anchored, so nothing is filtered yet.
   const targetsPayload = useMemo(() => {
+    const plannableNames = new Set(plannable.map((o) => o.name));
     return Object.entries(targets)
+      .filter(([program]) => !optionsLoaded || plannableNames.has(program))
       .map(([program, sel]) => {
         if (sel.mode === "tier") return { program, mode: "tier", tier: sel.tier };
         if (sel.mode === "specialisations") return { program, mode: "specialisations", specialisations: sel.specialisations };
@@ -1499,12 +1682,16 @@ function CompliancePlanningPageInner() {
       })
       .filter((t) => t.mode !== "tier" || !!t.tier)
       .filter((t) => t.mode !== "specialisations" || (t.specialisations && t.specialisations.length > 0));
-  }, [targets]);
+  }, [targets, plannable, optionsLoaded]);
 
   // A Country Set value is only plannable once it has been checked against the
   // current company's list; until then it would ask the API to plan a set the
   // newly selected company may not own.
-  const scopeReady = level === "global" || (!!scopeValue && (level !== "countrySet" || optionsLoaded));
+  // The anchored scope accepts a blank set (the configured default) but, like a
+  // Country Set, only once the company's own list has been checked.
+  const scopeReady =
+    level === "global" ||
+    (level === ANCHORED_SCOPE ? optionsLoaded : !!scopeValue && (level !== "countrySet" || optionsLoaded));
   const debouncedPayload = useDebounce(JSON.stringify(targetsPayload), 400);
   const debouncedTargets = useMemo<unknown[]>(() => {
     try {
@@ -1527,6 +1714,7 @@ function CompliancePlanningPageInner() {
     if (level === "theatre") params.set("theatre", scopeValue);
     if (level === "region") params.set("region", scopeValue);
     if (level === "countrySet") params.set("countrySet", scopeValue);
+    if (level === ANCHORED_SCOPE && scopeValue) params.set("countrySet", scopeValue);
     if (level === "country") params.set("country", scopeValue);
     params.set("companyId", String(companyId));
     params.set("renewalWindowMonths", String(renewalWindowMonths));
@@ -1598,7 +1786,7 @@ function CompliancePlanningPageInner() {
               <ReportExportMenu
                 show={showReportExport}
                 setShow={setShowReportExport}
-                document={() => buildPlanDocument(plan, level)}
+                document={() => buildPlanDocument(plan, levelLabel(level))}
                 filename={`compliance-plan-${plan.scopeLabel}${
                   plan.renewalWindowMonths > 0 ? `-plus${plan.renewalWindowMonths}mo` : ""
                 }${plan.planForWindow ? "-planned" : ""}`}
@@ -1624,7 +1812,7 @@ function CompliancePlanningPageInner() {
             className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm bg-white"
           >
             {offeredLevels.map((l) => (
-              <option key={l} value={l}>{SCOPE_LEVEL_LABELS[l]}</option>
+              <option key={l} value={l}>{levelLabel(l)}</option>
             ))}
           </select>
           {level !== "global" && (
@@ -1633,22 +1821,33 @@ function CompliancePlanningPageInner() {
               onChange={(e) => setScopeValue(e.target.value)}
               className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm bg-white"
             >
-              <option value="">Select {SCOPE_VALUE_NOUN[level]}…</option>
+              <option value="">
+                {level === ANCHORED_SCOPE ? configuredSetLabel(plan, scopeValue) : `Select ${valueNoun(level)}…`}
+              </option>
               {scopeOptions.map((o) => <option key={o} value={o}>{o}</option>)}
             </select>
           )}
+          {level === ANCHORED_SCOPE && anchorTheatres.length > 0 && (
+            <span className="text-sm text-gray-600">within {anchorTheatres.join(" / ")}</span>
+          )}
         </div>
+        {hiddenAnchored > 0 && (
+          <p className="text-xs text-gray-500 -mt-2">
+            {hiddenAnchored} anchored program{hiddenAnchored === 1 ? " is" : "s are"} planned under the{" "}
+            <span className="font-medium">{ANCHORED_SCOPE_LABEL}</span> scope only.
+          </p>
+        )}
 
         <div>
           <div className="text-sm font-medium text-gray-700 mb-2">Programs &amp; targets</div>
-          {options.length === 0 ? (
+          {plannable.length === 0 ? (
             <div className="text-sm text-gray-500">
-              No programs configured. Add requirements in{" "}
+              No programs configured{options.length > 0 ? " for this scope" : ""}. Add requirements in{" "}
               <Link href="/admin/program-data" className="text-blue-600 hover:underline">Admin › Program Data</Link>.
             </div>
           ) : (
             <div className="grid gap-2 sm:grid-cols-2">
-              {options.map((opt) => {
+              {plannable.map((opt) => {
                 const sel = targets[opt.name];
                 return (
                   <div key={opt.name} className={`rounded-lg border p-3 ${sel ? "border-blue-300 bg-blue-50/40" : "border-gray-200"}`}>
@@ -1783,7 +1982,7 @@ function CompliancePlanningPageInner() {
           <Sparkles className="mx-auto mb-2 text-blue-400" size={28} />
           {debouncedTargets.length === 0
             ? "Select one or more programs and a target above to generate a gap-closing plan."
-            : `Choose a ${level === "global" ? "scope" : SCOPE_VALUE_NOUN[level]} to plan against.`}
+            : `Choose a ${level === "global" ? "scope" : valueNoun(level)} to plan against.`}
         </div>
       ))}
     </div>
@@ -1809,6 +2008,9 @@ function TargetCard({ target, windowMonths }: { target: PlanTargetResult; window
             {target.tierName && <span className="ml-2 text-sm font-normal text-indigo-600">→ {target.tierName}</span>}
           </h2>
           <p className="text-sm text-gray-600 mt-1">{target.headline}</p>
+          {target.anchored && (
+            <p className="text-xs text-gray-500 mt-1">{anchoredLine(target.anchored)}</p>
+          )}
         </div>
         <div className="flex items-center gap-3 text-sm">
           {targetSummaryChips(target).map((chip) => (
@@ -1816,6 +2018,27 @@ function TargetCard({ target, windowMonths }: { target: PlanTargetResult; window
           ))}
         </div>
       </div>
+
+      {/* A blocker cannot be closed by certifying anyone, so it is stated above
+          the plan in red rather than folded into its numbers. */}
+      {(target.blockers ?? []).map((b) => (
+        <div
+          key={b.kind}
+          className="mt-3 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
+        >
+          <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+          <span>
+            {blockerText(b)}{" "}
+            <Link href="/admin/country-sets" className="font-medium underline">Open Country Sets</Link>
+          </span>
+        </div>
+      ))}
+      {target.anchored && outOfTheatreText(target.anchored) && (
+        <div className="mt-2 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+          <span>{outOfTheatreText(target.anchored)}</span>
+        </div>
+      )}
 
       {target.tierPlan && (
         <div className="mt-3 text-xs text-gray-500">{tierPlanLine(target.tierPlan)}</div>
@@ -1931,7 +2154,9 @@ function EachCountryRows({
         label={
           <span className="flex flex-wrap items-center gap-1.5">
             <span className="font-medium">{row.summary.required} × {row.summary.cert}</span>
-            <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700">each country</span>
+            <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700">
+              {row.summary.population === "targetCountries" ? "each target country" : "each country"}
+            </span>
           </span>
         }
         scope={
@@ -2005,7 +2230,16 @@ function ReqRow({
   return (
     <tr className={`border-b border-gray-50 ${ROW_BG[state]}`}>
       <td className="py-1.5 pr-3">{label ?? requirementLabel(r)}</td>
-      <td className="py-1.5 pr-3">{scope ?? r.scopeLabel}</td>
+      <td className="py-1.5 pr-3">
+        {scope ?? (
+          <>
+            {r.scopeLabel}
+            {r.population && (
+              <div className="text-[11px] text-gray-400">{POPULATION_LABEL[r.population]}</div>
+            )}
+          </>
+        )}
+      </td>
       {/* The expiry marker lives here, under the numbers it changes — not beside
           the scope label, where it read as a property of the geography. */}
       <td className={`py-1.5 pr-3 ${RISK_TEXT[state]}`}>
