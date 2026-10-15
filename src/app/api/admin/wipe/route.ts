@@ -40,6 +40,11 @@ export async function POST(request: NextRequest) {
     // is ON DELETE RESTRICT, so product types must be cleared after training).
     await tx.trainingTaken.deleteMany({});
     await tx.olxSubItemRelation.deleteMany({});
+    // Per-partner program terms first: they hang off programs, companies and
+    // Country Sets (cascade, cascade, SET NULL), so they would mostly go with
+    // those — but deleting them explicitly keeps the outcome independent of
+    // the FK actions, the same reasoning as the Country Set deletes below.
+    await tx.programCompanySetting.deleteMany({});
     await tx.programDataAlternative.deleteMany({});
     await tx.programData.deleteMany({});
     await tx.programTier.deleteMany({});
