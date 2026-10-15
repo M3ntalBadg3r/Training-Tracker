@@ -3,7 +3,7 @@ import { authorizePublicRequest } from "@/lib/public-api";
 import { cachedReport, scopeKey } from "@/lib/report-cache";
 import { safeDecodeParam } from "@/lib/utils";
 import { buildProgramReport, getProgramStudents } from "@/lib/program-report";
-import { COUNTRY_SET_SCOPE_ERROR, singleCompanyId } from "@/lib/country-sets";
+import { checkProgramViewRequest } from "@/lib/program-view-guard";
 
 /**
  * GET /api/public/v1/programs/{programName} — read-only per-program compliance,
@@ -13,10 +13,16 @@ import { COUNTRY_SET_SCOPE_ERROR, singleCompanyId } from "@/lib/country-sets";
  * `authorizePublicRequest`.
  *
  * Query params (same as the internal route):
- *  - `level`   country (default) | region | countrySet | theatre | global
+ *  - `level`   country (default) | region | countrySet | theatre | global, or
+ *    `anchored` — the ONLY level an anchored program offers (and only an
+ *    anchored program offers it; the mismatch is a 400 either way)
  *  - `country` / `region` / `countrySet` / `theatre`  the selector for the chosen level
- *    (`level=countrySet` needs the request narrowed to exactly one company —
- *    a Country Set belongs to one company — else 400)
+ *    (`level=countrySet` and `level=anchored` need the request narrowed to
+ *    exactly one company — a Country Set belongs to one company — else 400;
+ *    for `anchored`, `countrySet` is the partner's target set, defaulting to
+ *    the one configured in the partner's program settings)
+ *  - `population`  theatre | targetCountries — with `level=anchored` and
+ *    `students=true`, which population the roster is drawn from (required)
  *  - `horizonMonths`  3 | 6 | 12 — forward-looking projection of upcoming expiries
  *  - `trainingTitle` + `students=true`  roster drill-down (comma-separated titles)
  *  - `trainedNotCertified=true` (with the two above)  the roster behind a
@@ -70,15 +76,25 @@ export async function GET(
   }
 
   // A Country Set belongs to one company and its name resolves only within it,
-  // so a countrySet report or roster needs the request narrowed to exactly one
-  // company — `?companyId=` (already intersected with the key's grant by the
-  // guard), or a key granted a single company. Otherwise two partners'
-  // same-named sets would be ambiguous; refuse with a 400 rather than answer
-  // with an empty area that reads as an honest zero. Naming the rule discloses
-  // nothing: it depends only on the key's own grant, never on the DB.
-  if (level === "countrySet" && singleCompanyId(ctx.companyIds) === null) {
-    return NextResponse.json({ error: COUNTRY_SET_SCOPE_ERROR }, { status: 400 });
+  // so a countrySet (or anchored) report or roster needs the request narrowed to
+  // exactly one company — `?companyId=` (already intersected with the key's
+  // grant by the guard), or a key granted a single company. Otherwise two
+  // partners' same-named sets would be ambiguous; refuse with a 400 rather than
+  // answer with an empty area that reads as an honest zero. Naming the rule
+  // discloses nothing: it depends only on the key's own grant. The anchored
+  // rules (anchored programs offer only level=anchored; an anchored roster
+  // names its population) come from the same shared guard as the internal route.
+  const checked = await checkProgramViewRequest({
+    programName,
+    level,
+    companyIds: ctx.companyIds,
+    studentsMode: studentsMode && trainingTitleParam !== "",
+    population: sp.get("population"),
+  });
+  if ("error" in checked) {
+    return NextResponse.json({ error: checked.error }, { status: 400 });
   }
+  const population = checked.population;
 
   // Every free-text fragment is percent-encoded so a literal "|" in a program
   // name, training title or country can't collide with the key delimiter and
@@ -100,10 +116,11 @@ export async function GET(
     // certified roster for the same titles and scope are different people.
     const mode = trainedNotCertified ? "tnc" : "holders";
     const result = await cachedReport(
-      `public-program-students|${progKey}|${scope}|${geoKey}|${mode}|${encodeURIComponent(trainingTitleParam)}`,
+      `public-program-students|${progKey}|${scope}|${geoKey}|${population ?? ""}|${mode}|${encodeURIComponent(trainingTitleParam)}`,
       () =>
         getProgramStudents({
-          trainingTitles: titles, level, country, region, countrySet, theatre, companyIds: ctx.companyIds, trainedNotCertified,
+          trainingTitles: titles, level, programName, population, country, region, countrySet, theatre,
+          companyIds: ctx.companyIds, trainedNotCertified,
         }),
     );
     return NextResponse.json(result, { headers: { "Cache-Control": "private, max-age=30" } });

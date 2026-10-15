@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { requireSuperAdmin, handleAuthError } from "@/lib/auth";
 import { invalidateReportCache } from "@/lib/report-cache";
-import { REQ_LEVELS } from "@/lib/program-levels";
+import { readJsonBody } from "@/lib/request-body";
+import { REQ_LEVELS, isProgramWideRow } from "@/lib/program-levels";
+import { parseAnchorSettings } from "@/lib/program-data-write";
 
 const levelRank = (l: string) => (REQ_LEVELS as readonly string[]).indexOf(l);
 
@@ -26,6 +28,8 @@ export async function GET(request: NextRequest) {
         programName: true,
         level: true,
         minimumPerTheatre: true,
+        specialisationId: true,
+        tierId: true,
         specialisation: { select: { name: true } },
       },
     }),
@@ -40,6 +44,12 @@ export async function GET(request: NextRequest) {
     isTiered: boolean;
     deploymentMode: string;
     tierCount: number;
+    /** Registry id — null only for legacy rows with no Program row. */
+    id: number | null;
+    anchorTheatre: string | null;
+    defaultMinimumCountries: number | null;
+    /** Rows with neither a specialisation nor a tier (tiered programs only). */
+    programWideCount: number;
   }
   const agg = new Map<string, Agg>();
   const ensure = (name: string): Agg => {
@@ -53,6 +63,10 @@ export async function GET(request: NextRequest) {
         isTiered: false,
         deploymentMode: "flat",
         tierCount: 0,
+        id: null,
+        anchorTheatre: null,
+        defaultMinimumCountries: null,
+        programWideCount: 0,
       };
       agg.set(name, a);
     }
@@ -64,6 +78,9 @@ export async function GET(request: NextRequest) {
     const a = ensure(p.name);
     a.isTiered = p.isTiered;
     a.deploymentMode = p.deploymentMode;
+    a.id = p.id;
+    a.anchorTheatre = p.anchorTheatre?.trim() ? p.anchorTheatre.trim() : null;
+    a.defaultMinimumCountries = p.defaultMinimumCountries;
   }
 
   for (const r of rows) {
@@ -72,6 +89,7 @@ export async function GET(request: NextRequest) {
     if (r.specialisation?.name) a.specialisations.add(r.specialisation.name);
     if (r.level) a.levels.add(r.level);
     if (r.minimumPerTheatre != null) a.hasMinimumPerTheatre = true;
+    if (isProgramWideRow(r)) a.programWideCount += 1;
   }
 
   for (const t of tiers) ensure(t.programName).tierCount += 1;
@@ -88,6 +106,10 @@ export async function GET(request: NextRequest) {
       isTiered: a.isTiered,
       deploymentMode: a.deploymentMode,
       tierCount: a.tierCount,
+      id: a.id,
+      anchorTheatre: a.anchorTheatre,
+      defaultMinimumCountries: a.defaultMinimumCountries,
+      programWideCount: a.programWideCount,
     }))
     .sort((x, y) => x.name.localeCompare(y.name));
 
@@ -96,7 +118,10 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST /api/admin/program-data/program
- * Creates an empty program (registry row). Body: { name }.
+ * Creates an empty program (registry row). Body: { name, isTiered?,
+ * deploymentMode?, anchorTheatre?, defaultMinimumCountries? }. An anchor
+ * theatre must exist in Region Data (400 otherwise); the default minimum is a
+ * whole number 1–1000 or null.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -105,24 +130,48 @@ export async function POST(request: NextRequest) {
     return handleAuthError(error);
   }
 
-  const body = await request.json();
-  const name = typeof body?.name === "string" ? body.name.trim() : "";
+  const parsed = await readJsonBody(request, 64 * 1024);
+  if (!parsed.ok) return parsed.response;
+  if (!parsed.body || typeof parsed.body !== "object" || Array.isArray(parsed.body)) {
+    return NextResponse.json({ error: "Expected a JSON object" }, { status: 400 });
+  }
+  const body = parsed.body as Record<string, unknown>;
+  const name = typeof body.name === "string" ? body.name.trim() : "";
   if (!name) {
     return NextResponse.json({ error: "Program name is required" }, { status: 400 });
   }
-  const isTiered = body?.isTiered === true;
+  const isTiered = body.isTiered === true;
   const DEPLOYMENT_MODES = ["flat", "perAchievedSpecialisation", "perTierPerSpecialisation"];
-  const deploymentMode = DEPLOYMENT_MODES.includes(body?.deploymentMode) ? body.deploymentMode : "flat";
+  const deploymentMode =
+    typeof body.deploymentMode === "string" && DEPLOYMENT_MODES.includes(body.deploymentMode)
+      ? body.deploymentMode
+      : "flat";
+  const anchor = await parseAnchorSettings(body);
+  if (!anchor.ok) {
+    return NextResponse.json({ error: anchor.error }, { status: 400 });
+  }
+  const anchorTheatre = anchor.value.anchorTheatre ?? null;
+  const defaultMinimumCountries = anchor.value.defaultMinimumCountries ?? null;
 
   const existing = await prisma.program.findUnique({ where: { name } });
   if (existing) {
     return NextResponse.json({ error: "A program with this name already exists" }, { status: 409 });
   }
 
-  const program = await prisma.program.create({ data: { name, isTiered, deploymentMode } });
+  const program = await prisma.program.create({
+    data: { name, isTiered, deploymentMode, anchorTheatre, defaultMinimumCountries },
+  });
   invalidateReportCache();
   return NextResponse.json(
-    { id: program.id, name: program.name, isTiered: program.isTiered, deploymentMode: program.deploymentMode },
+    {
+      id: program.id,
+      name: program.name,
+      isTiered: program.isTiered,
+      deploymentMode: program.deploymentMode,
+      anchorTheatre: program.anchorTheatre,
+      defaultMinimumCountries: program.defaultMinimumCountries,
+      warnings: [] as string[],
+    },
     { status: 201 }
   );
 }

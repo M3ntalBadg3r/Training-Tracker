@@ -45,6 +45,12 @@ interface TrendResponse {
   programs: string[];
   specialisations: string[];
   scopeLabel: string;
+  /**
+   * Anchored programs this report does not cover: it pools every row over one
+   * geography, which would misreport a program judged over two populations.
+   * Optional so an older cached payload still renders.
+   */
+  unsupportedPrograms?: string[];
 }
 
 
@@ -247,6 +253,13 @@ function ProgramComplianceTrendPageInner() {
           />
         </FilterBar.Row>
       </FilterBar>
+
+      {(data.unsupportedPrograms?.length ?? 0) > 0 && (
+        <p className="mb-4 rounded-lg border border-gray-200 bg-gray-50 px-4 py-2 text-sm text-gray-600">
+          Not shown: {data.unsupportedPrograms!.join(", ")} — anchored programs are reported over their target
+          countries on their own dashboard, which this trend cannot reproduce.
+        </p>
+      )}
 
       <KpiStrip
         cards={[

@@ -67,11 +67,17 @@ import {
   type ComplianceScope,
 } from "@/lib/program-compliance";
 import { countriesInCountrySet, singleCompanyId } from "@/lib/country-sets";
+import { isAnchoredProgram, resolveAnchoredArea } from "@/lib/program-anchor";
 import {
+  ANCHORED_SCOPE,
+  isProgramWideRow,
   normaliseAggregation,
   type Aggregation,
+  type AnchoredMeta,
+  type AnchoredPopulation,
+  type MinimumCountriesSource,
+  type ProgramViewLevel,
   type ReqLevel,
-  type ScopeLevel,
 } from "@/lib/program-levels";
 
 // ─── Public types ────────────────────────────────────────────────────────────
@@ -90,11 +96,21 @@ export interface PlanTarget {
 
 export interface CompliancePlanInput {
   targets: PlanTarget[];
-  /** The selected plan scope. Each scope plans against its own level's rows only. */
-  level: ScopeLevel;
+  /**
+   * The selected plan scope. Each standard scope plans against its own level's
+   * rows only. `"anchored"` plans each ANCHORED program over its two
+   * populations at once (Theatre rows over its anchor theatre, CountrySet rows
+   * over the partner's target countries) and is the only scope an anchored
+   * program is planned at — see `resolvePlanArea`.
+   */
+  level: ProgramViewLevel;
   country: string;
   region: string;
-  /** Country Set name, used when `level` is "countrySet". */
+  /**
+   * Country Set name, used when `level` is "countrySet" — and when it is
+   * "anchored", where a blank value means "each program's configured target
+   * set for this partner" (`ProgramCompanySetting.targetCountrySetId`).
+   */
   countrySet: string;
   theatre: string;
   companyIds: number[] | null;
@@ -134,6 +150,13 @@ export interface PlanRequirement {
   country: string | null;
   /** The population label this instance is counted over, e.g. "UK" / "Global". */
   scopeLabel: string;
+  /**
+   * Anchored plans only (absent otherwise, so a standard plan's payload is
+   * unchanged): which of the program's two populations this row is counted
+   * over — `"theatre"` (the anchor theatre) or `"targetCountries"` (the
+   * partner's target countries, or one of them for an "each country" row).
+   */
+  population?: AnchoredPopulation;
   cert: string;
   required: number;
   attained: number;
@@ -195,10 +218,38 @@ export interface PlanSpecialisation {
    *  hidden by the arbitrary pick between two equal paths. */
   alternative?: boolean;
   /** For a tier target: what this specialisation adds *on top of the other chosen
-   *  ones* — equal to `cost` unless it shares a certification with them, in which
-   *  case the shared cert is already paid for. Set for chosen and alternative
+   *  ones* (and of the program-wide requirements, which every tier pays for) —
+   *  equal to `cost` unless it shares a certification with them, in which case
+   *  the shared cert is already paid for. Set for chosen and alternative
    *  specialisations only. */
   marginalCost?: number;
+  /**
+   * `"programWide"` marks the synthetic block holding a tiered program's
+   * program-wide requirements (rows with neither a specialisation nor a tier):
+   * required at every tier, always counted, never ranked. Absent on every real
+   * specialisation and on the tier's "delivery certs" block.
+   */
+  kind?: "programWide";
+}
+
+/** The synthetic block name for a tiered program's program-wide requirements. */
+export const PROGRAM_WIDE_BLOCK_NAME = "Required at every level";
+
+/**
+ * Something that blocks a target and that certifying people cannot fix. Never
+ * costed into "People to certify" — it is reported beside the plan instead.
+ *
+ * `minimumCountries`: an anchored program's partner names fewer target
+ * countries (inside the anchor theatre) than its minimum, so no tier can be
+ * reached until more are added to the Country Set. `required` is the minimum,
+ * `counted` the target countries that count toward it, and `source` whose rule
+ * the minimum is (`partner` setting or program `default`).
+ */
+export interface PlanBlocker {
+  kind: "minimumCountries";
+  required: number;
+  counted: number;
+  source: MinimumCountriesSource;
 }
 
 export interface PlanTargetResult {
@@ -212,11 +263,26 @@ export interface PlanTargetResult {
     alreadyAchieved: number;
     needed: number;
     deliveryCertShortfall: number;
+    /**
+     * People needed for the program-wide requirements (deduped like the
+     * totals). Present only when the program has such rows in scope, so a
+     * program without them keeps its payload unchanged.
+     */
+    gateShortfall?: number;
   };
   specialisations: PlanSpecialisation[];
   peopleMoves: number;
   easyWins: number;
   netNew: number;
+  /**
+   * Anchored plans only: the two populations this target was planned over
+   * (anchor theatre, the target Country Set and its in-theatre countries, the
+   * members left out because they lie outside the theatre) and the partner's
+   * minimum. Aggregates and geography names — no person identifier.
+   */
+  anchored?: AnchoredMeta;
+  /** Anchored plans only, and only when non-empty. See `PlanBlocker`. */
+  blockers?: PlanBlocker[];
 }
 
 export interface PlanCandidateClose {
@@ -257,6 +323,8 @@ export interface PlanRiskImpact {
   /** See `PlanRequirement.country` — set for one country of an "each country" requirement. */
   country: string | null;
   scopeLabel: string;
+  /** See `PlanRequirement.population` — anchored plans only. */
+  population?: AnchoredPopulation;
   required: number;
   attained: number;
   projectedAttained: number;
@@ -291,6 +359,19 @@ export interface PlanRenewalRow {
   onPath: boolean;
 }
 
+/**
+ * A requested target the plan left out because it is on the wrong side of the
+ * anchored scope: an anchored program asked for at a standard scope
+ * (`anchoredOnly` — it is planned only under Target countries), or a standard
+ * program asked for at `level=anchored` (`notAnchored`). Reported rather than
+ * dropped silently, so a plan that omits a program says why instead of reading
+ * as "nothing to do" for it. Program name and an enum only — no person data.
+ */
+export interface PlanSkippedTarget {
+  program: string;
+  reason: "anchoredOnly" | "notAnchored";
+}
+
 export interface CompliancePlanResult {
   scopeLabel: string;
   renewalWindowMonths: number;
@@ -319,6 +400,8 @@ export interface CompliancePlanResult {
    * same `onPath` marker, so the two always agree.
    */
   riskImpacts: PlanRiskImpact[];
+  /** Targets left out for being on the wrong side of the anchored scope. */
+  skippedTargets: PlanSkippedTarget[];
   totals: {
     peopleMoves: number;
     easyWins: number;
@@ -371,18 +454,30 @@ interface ReqInstance {
   country: string | null;
   /**
    * The population this instance is counted over: `global`, `theatre:X`,
-   * `country:X`, `region:X` or `countrySet:<companyId>:X` (a set is per-company).
+   * `country:X`, `region:X`, `countrySet:<companyId>:X` (a set is per-company)
+   * or, for an anchored program's target countries,
+   * `anchoredTargets:<companyId>:<set>`.
    * Used instead of `scopeLabel` in ids and group keys, because a country set
    * may be named like a country and the two must not collide. A per-country instance carries `country:X`.
    */
   populationKey: string;
   /**
-   * The plan's own population (`GeoPlan.populationKey`) — identical for every
-   * instance of a plan today, and part of `certGroupKey` so the dedup can never
-   * silently merge two different areas' gaps if a plan ever spans more than one.
+   * The plan AREA this instance belongs to (`PlanArea.areaKey`), part of
+   * `certGroupKey`. Every population inside one area is NESTED: a standard
+   * scope has exactly one population (plus the per-country slices of it), and
+   * an anchored program's area is the anchor theatre ⊇ its target countries ⊇
+   * each single target country. `groupCost` and `sharesPopulation` rely on
+   * that nesting — see `certGroupKey`. Two areas whose populations are not
+   * nested in each other (two programs anchored to different theatres, or to
+   * different target sets) carry different keys and are never deduped against
+   * each other, which can over-count but never under-count.
    */
   areaKey: string;
   scopeLabel: string;
+  /** Anchored plans only — see `PlanRequirement.population`. */
+  population?: AnchoredPopulation;
+  /** A tiered program's program-wide requirement (neither specialisation nor tier). */
+  isGate: boolean;
   /** Identity of the qualifying cert-set: two instances sharing it share moves. */
   certKey: string;
   cert: string;
@@ -611,7 +706,7 @@ function unionEmails(map: Map<string, Set<string>>): Set<string> {
  * gone — the dashboards dropped it too, and the two must agree.)
  */
 interface GeoPlan {
-  /** Which requirement `level` this scope plans against. */
+  /** Which requirement `level` this population plans. */
   reqLevel: ReqLevel;
   /** The single population these requirements are counted over. */
   scope: ComplianceScope;
@@ -627,10 +722,88 @@ interface GeoPlan {
    * carry that count mode (`normaliseAggregation`).
    */
   countries: string[] | null;
+  /** Anchored areas only: which of the program's two populations this is. */
+  population?: AnchoredPopulation;
+}
+
+/**
+ * Everything a target is planned over: one population per requirement level in
+ * play, the key that scopes the cost dedup, and — for an anchored program — the
+ * anchored header the page and the blocker read.
+ *
+ * A standard scope is ONE population (`resolveGeoPlan`), shared by every
+ * target. An anchored scope is resolved PER PROGRAM, because each program may
+ * be anchored to its own theatre and the partner may have configured a
+ * different target set for each.
+ */
+interface PlanArea {
+  /** See `ReqInstance.areaKey`. */
+  areaKey: string;
+  scopeLabel: string;
+  populations: GeoPlan[];
+  anchored: AnchoredMeta | null;
+}
+
+function standardArea(geo: GeoPlan): PlanArea {
+  return { areaKey: geo.populationKey, scopeLabel: geo.scopeLabel, populations: [geo], anchored: null };
+}
+
+/**
+ * The anchored area for one program and one company: Theatre rows over the
+ * anchor theatre, CountrySet rows over the partner's target countries (the
+ * set's members inside the theatre, resolved by `resolveAnchoredArea`, which is
+ * the one resolver the dashboard and the public API use as well).
+ *
+ * `null` when the program is not anchored or the scope is not exactly one
+ * company — the routes 400 the latter before ever reaching here, so for a
+ * caller that skips that check the target simply plans nothing rather than
+ * resolving a set name across tenants.
+ *
+ * The area key names BOTH populations. Inside it they are nested (the target
+ * countries lie inside the theatre by construction — members outside it are
+ * dropped into `outOfTheatreCountries`), which is exactly the property
+ * `groupCost` needs to charge a pooled Theatre row and the target countries'
+ * per-country gaps on one cert as `max(P, Σ g_c)`: everyone certified to close
+ * a target country's gap is also inside the theatre. Keying on the theatre
+ * alone would be wrong as soon as two programs (or two requests) used
+ * different target sets over the same theatre: two DISJOINT target-wide
+ * populations would share a group and be charged `max` instead of a sum.
+ */
+async function resolveAnchoredPlanArea(
+  program: { id: number; name: string; anchorTheatre: string | null; defaultMinimumCountries: number | null },
+  input: CompliancePlanInput,
+): Promise<PlanArea | null> {
+  const area = await resolveAnchoredArea({ program, countrySet: input.countrySet, companyIds: input.companyIds });
+  if ("error" in area) return null;
+  const { meta } = area;
+  const targetLabel = meta.countrySet ?? "Target countries";
+  return {
+    areaKey: `anchored:${area.theatrePopulationKey}|${area.targetPopulationKey}`,
+    scopeLabel: meta.countrySet ? `${meta.countrySet} within ${meta.anchorTheatre}` : `${meta.anchorTheatre} (no target countries)`,
+    populations: [
+      {
+        reqLevel: "Theatre",
+        scope: area.theatreScope,
+        scopeLabel: meta.anchorTheatre,
+        populationKey: area.theatrePopulationKey,
+        countries: null,
+        population: "theatre",
+      },
+      {
+        reqLevel: "CountrySet",
+        scope: area.targetScope,
+        scopeLabel: targetLabel,
+        populationKey: area.targetPopulationKey,
+        countries: meta.targetCountries,
+        population: "targetCountries",
+      },
+    ],
+    anchored: meta,
+  };
 }
 
 async function resolveGeoPlan(
-  input: CompliancePlanInput,
+  input: CompliancePlanInput & { level: Exclude<ProgramViewLevel, typeof ANCHORED_SCOPE> },
 ): Promise<GeoPlan> {
   const { level, country, region, countrySet, theatre, companyIds } = input;
 
@@ -692,6 +865,7 @@ async function resolveGeoPlan(
 
 interface RequirementRow {
   id: number;
+  specialisationId: number | null;
   specialisationName: string | null;
   tierId: number | null;
   purpose: string;
@@ -728,6 +902,7 @@ function toRequirementRow(pd: ProgramDataWithRelations): RequirementRow | null {
   ];
   return {
     id: pd.id,
+    specialisationId: pd.specialisationId,
     specialisationName: pd.specialisation?.name ?? null,
     tierId: pd.tierId,
     purpose: pd.purpose,
@@ -844,6 +1019,7 @@ function makeInstance(
   row: RequirementRow,
   certKey: string,
   geo: GeoPlan,
+  area: PlanArea,
   population: { country: string | null; populationKey: string; scopeLabel: string },
   figures: {
     attained: number;
@@ -864,8 +1040,10 @@ function makeInstance(
     aggregation: row.aggregation,
     country: population.country,
     populationKey: population.populationKey,
-    areaKey: geo.populationKey,
+    areaKey: area.areaKey,
     scopeLabel: population.scopeLabel,
+    ...(geo.population ? { population: geo.population } : {}),
+    isGate: false,
     certKey,
     cert: row.cert,
     required: row.quantityRequired,
@@ -881,25 +1059,28 @@ function makeInstance(
 }
 
 /** Build the requirement's scoped instance(s), resolving each gap and its
- *  candidate pools. Only requirements authored at the selected scope's level are
- *  in play (mirroring the program dashboards) — others return no instance. A
- *  pooled ("total") row gives one instance; an "each country" row gives one per
- *  country (`buildEachCountryInstances`). Pools are only computed when there's a
- *  gap. */
+ *  candidate pools. Only requirements authored at a level the area has a
+ *  population for are in play (mirroring the program dashboards) — others
+ *  return no instance. A standard area has one population, so that is "the
+ *  selected scope's own level"; an anchored area has two, so each row is
+ *  counted over its OWN population (Theatre rows over the anchor theatre,
+ *  CountrySet rows over the target countries). A pooled ("total") row gives one
+ *  instance; an "each country" row gives one per country
+ *  (`buildEachCountryInstances`). Pools are only computed when there's a gap. */
 async function buildInstances(
   program: string,
   row: RequirementRow,
-  geo: GeoPlan,
+  area: PlanArea,
   idx: CatalogueIndex,
   now: Date,
   horizon: Date | null,
   planForWindow: boolean,
 ): Promise<ReqInstance[]> {
-  // Only this scope's own-level requirements are planned against.
-  if (row.level !== geo.reqLevel) return [];
+  const geo = area.populations.find((g) => g.reqLevel === row.level);
+  if (!geo) return [];
   const certKey = certKeyFor(row, idx);
   if (row.aggregation === "eachCountry") {
-    return buildEachCountryInstances(program, row, geo, idx, certKey, now, horizon, planForWindow);
+    return buildEachCountryInstances(program, row, geo, area, idx, certKey, now, horizon, planForWindow);
   }
 
   const scope = geo.scope;
@@ -946,7 +1127,7 @@ async function buildInstances(
 
   return [
     makeInstance(
-      program, row, certKey, geo,
+      program, row, certKey, geo, area,
       { country: null, populationKey: geo.populationKey, scopeLabel: geo.scopeLabel },
       { attained, projectedAttained, gap, pool, expiringEmails },
     ),
@@ -975,6 +1156,7 @@ async function buildEachCountryInstances(
   program: string,
   row: RequirementRow,
   geo: GeoPlan,
+  area: PlanArea,
   idx: CatalogueIndex,
   certKey: string,
   now: Date,
@@ -993,7 +1175,7 @@ async function buildEachCountryInstances(
     const gapFloor = Math.max(1, row.quantityRequired);
     return [
       makeInstance(
-        program, row, certKey, geo,
+        program, row, certKey, geo, area,
         { country: null, populationKey: geo.populationKey, scopeLabel: geo.scopeLabel },
         {
           attained: 0,
@@ -1055,7 +1237,7 @@ async function buildEachCountryInstances(
 
   return perCountry.map((p) =>
     makeInstance(
-      program, row, certKey, geo,
+      program, row, certKey, geo, area,
       { country: p.country, populationKey: `country:${p.country}`, scopeLabel: p.country },
       {
         attained: p.attained,
@@ -1227,12 +1409,26 @@ export function allocateCandidates(instances: ReqInstance[]): AllocationResult {
  * count for both: the same qualifying cert-set within the same plan area.
  *
  * Within a group, instances are either **scope-wide** (`country === null`,
- * counted over the whole area) or **per-country** (one country of an "each
- * country" requirement). Those are not interchangeable — see `groupCost` and
- * `sharesPopulation`. `areaKey` rather than `scopeLabel` is in the key because a
- * country set may be named like a country; and it is in the key at all because
- * collapsing two areas' gaps into one would fail silently and expensively if a
- * plan ever spanned more than one population (`resolveGeoPlan` yields one).
+ * counted over a whole population of the area) or **per-country** (one country
+ * of an "each country" requirement). Those are not interchangeable — see
+ * `groupCost` and `sharesPopulation`. `areaKey` rather than `scopeLabel` is in
+ * the key because a country set may be named like a country; and it is in the
+ * key at all because collapsing two areas' gaps into one would fail silently
+ * and expensively.
+ *
+ * **The invariant everything below rests on: the populations inside one area
+ * are nested.** A standard scope has one population, so every scope-wide
+ * instance of a group shares it. An anchored area has a CHAIN — anchor theatre
+ * ⊇ target countries ⊇ each target country — so its scope-wide instances can
+ * sit over two different populations (a Theatre "total" row and a CountrySet
+ * "total" row on one cert), but one is always inside the other, and every
+ * per-country instance is inside both. That is what makes the `max` in
+ * `groupCost` a sound charge for the scope-wide side: one cohort of N new
+ * holders placed in the INNERMOST population counts toward every scope-wide
+ * instance of the group, so the largest gap is enough. If an area ever held
+ * two populations that are NOT nested (two disjoint target sets), `max` would
+ * under-count; `resolveAnchoredPlanArea` keys the area on both populations so
+ * that can only happen by changing it.
  */
 function certGroupKey(inst: ReqInstance): string {
   return `${inst.certKey}::${inst.areaKey}`;
@@ -1240,14 +1436,23 @@ function certGroupKey(inst: ReqInstance): string {
 
 /**
  * Whether one person's certification can count toward both instances: the same
- * cert over the same population, OR a scope-wide instance and a per-country one
- * (the country is inside the area, so anyone certified there counts for the
- * area-wide total too). Two different countries never share.
+ * cert within one area, unless they are two DIFFERENT countries' slices of an
+ * "each country" requirement — someone certified in one country does nothing
+ * for another's gap.
+ *
+ * Everything else in an area shares by the nesting invariant on `certGroupKey`:
+ * the same population trivially; a scope-wide instance and a per-country one
+ * because the country is inside every scope-wide population of the area; and
+ * (anchored areas only) two scope-wide instances over different populations,
+ * because a person certified in a target country is inside the anchor theatre
+ * too. For a standard scope that last case never arises — every scope-wide
+ * instance has the one population — so this reads exactly as it did before
+ * anchored areas existed.
  */
 function sharesPopulation(a: ReqInstance, b: ReqInstance): boolean {
   if (certGroupKey(a) !== certGroupKey(b)) return false;
-  if (a.populationKey === b.populationKey) return true;
-  return (a.country === null) !== (b.country === null);
+  if (a.country !== null && b.country !== null) return a.country === b.country;
+  return true;
 }
 
 /**
@@ -1256,16 +1461,19 @@ function sharesPopulation(a: ReqInstance, b: ReqInstance): boolean {
  *
  * Per `certGroupKey`, the cost is `max(P, Σ_c g_c)`:
  *  - `P` is the largest value among the group's scope-wide instances. They share
- *    one population and therefore one set of pools, so a single cohort of N new
- *    holders satisfies every one whose gap is ≤ N — three specialisations each
- *    needing 2 holders of the same cert cost 2 people, not 6.
+ *    one population (or, in an anchored area, nested ones — see `certGroupKey`),
+ *    so a single cohort of N new holders placed in the innermost satisfies every
+ *    one whose gap is ≤ N — three specialisations each needing 2 holders of the
+ *    same cert cost 2 people, not 6.
  *  - `g_c` is the largest value among the per-country instances for country c
  *    (the same reasoning, one country at a time), and those are SUMMED: a person
  *    certified in one country does nothing for another's gap.
  *  - The max, not the sum, of the two sides because every per-country holder is
  *    also inside the area: people certified to close the countries' gaps count
  *    toward the area-wide total as well. "4 × Cert A in each country" beside
- *    "2 × Cert A total" is never charged twice.
+ *    "2 × Cert A total" is never charged twice — and in an anchored area "4 in
+ *    each target country" beside "15 across the anchor theatre" is
+ *    `max(15 − have, Σ country gaps)`, never their sum.
  *
  * With no per-country instances this is exactly the old max-per-group rule, so a
  * plan built only from pooled requirements produces the same numbers it always
@@ -1319,8 +1527,18 @@ export function netNewTotal(instances: ReqInstance[], alloc: AllocationResult): 
  * Pure and exported for the same reason `allocateCandidates` is: the tier
  * cheapest-path ranking it drives is the part worth exercising directly.
  */
-export function specSetCost(names: Iterable<string>, bySpec: Map<string, ReqInstance[]>): number {
-  const insts: ReqInstance[] = [];
+export function specSetCost(
+  names: Iterable<string>,
+  bySpec: Map<string, ReqInstance[]>,
+  /**
+   * Instances paid for whatever is chosen — a tiered program's program-wide
+   * requirements. Costed into every set, so a specialisation sharing a cert
+   * with them ranks by what it adds on top. Empty for a program without them,
+   * which leaves every pre-existing ranking unchanged.
+   */
+  alwaysCounted: ReqInstance[] = [],
+): number {
+  const insts: ReqInstance[] = [...alwaysCounted];
   for (const name of names) insts.push(...(bySpec.get(name) ?? []));
   return groupCost(insts, (inst) => inst.shortfall);
 }
@@ -1343,7 +1561,11 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
   const planForWindow = horizon !== null && input.planForWindow;
 
   const idx = await buildCatalogueIndex();
-  const geo = await resolveGeoPlan(input);
+  // A standard scope is one population shared by every target; an anchored
+  // scope is resolved per program inside the loop (`resolveAnchoredPlanArea`).
+  const anchoredLevel = input.level === ANCHORED_SCOPE;
+  const sharedArea = input.level === ANCHORED_SCOPE ? null : standardArea(await resolveGeoPlan({ ...input, level: input.level }));
+  const areaLabels: string[] = [];
 
   const targets: PlanTargetResult[] = [];
 
@@ -1353,8 +1575,11 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
   // which merely swap in for one of them at no extra cost.
   interface TargetPrep {
     target: PlanTargetResult;
+    area: PlanArea;
     bySpec: Map<string, ReqInstance[]>;
     tierDeployInsts: ReqInstance[];
+    /** A tiered program's program-wide requirements — always counted, never ranked. */
+    gateInsts: ReqInstance[];
     /** The instances that count toward this target's people-to-certify total. */
     counted: ReqInstance[];
     /** instanceId → the OTHER specialisations needing the same cert (see `sharedWith`). */
@@ -1379,10 +1604,34 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
   // window-dependent `shortfall`, so a specialisation dropping off the path
   // took its expiring holders out of the panel with it.
   const allInstances: ReqInstance[] = [];
+  const skippedTargets: PlanSkippedTarget[] = [];
 
   for (const target of input.targets) {
-    const [programRow, programData, tierRows] = await Promise.all([
-      prisma.program.findUnique({ where: { name: target.program }, select: { isTiered: true } }),
+    const programRow = await prisma.program.findUnique({
+      where: { name: target.program },
+      select: { id: true, name: true, isTiered: true, anchorTheatre: true, defaultMinimumCountries: true },
+    });
+    // The anchored scope plans only anchored programs and every other scope
+    // only the rest: an anchored program is judged over two populations at once
+    // and has no single-population view, while a standard program has no
+    // anchor to resolve. A target on the wrong side yields nothing at all — the
+    // page offers each program only at the scopes it can be planned at.
+    const anchoredProgram = isAnchoredProgram(programRow);
+    if (anchoredProgram !== anchoredLevel) {
+      // An unknown program is filtered by the routes and never reported here;
+      // a real one on the wrong side is named so the plan can say why.
+      if (programRow) {
+        skippedTargets.push({ program: target.program, reason: anchoredProgram ? "anchoredOnly" : "notAnchored" });
+      }
+      continue;
+    }
+    const area = anchoredLevel
+      ? programRow ? await resolveAnchoredPlanArea(programRow, input) : null
+      : sharedArea;
+    if (!area) continue;
+    if (!areaLabels.includes(area.scopeLabel)) areaLabels.push(area.scopeLabel);
+
+    const [programData, tierRows] = await Promise.all([
       prisma.programData.findMany({
         where: { programName: target.program },
         select: {
@@ -1410,6 +1659,12 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
     const rows = programData
       .map(toRequirementRow)
       .filter((r): r is RequirementRow => r !== null);
+    // A program-wide requirement: a row with neither a specialisation nor a
+    // tier, on a tiered program (the write path refuses one anywhere else).
+    // Every tier requires it, so it is costed into every tier target exactly as
+    // the tier's own delivery certs are — at every scope, not only anchored.
+    const isGate = (r: RequirementRow) =>
+      isTiered && isProgramWideRow({ specialisationId: r.specialisationId, tierId: r.tierId });
 
     // Which requirement rows are in play for this target's mode.
     const chosenTier: TierInfo | null =
@@ -1417,6 +1672,13 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
         ? tierRows.find((t) => t.name === target.tier) ?? null
         : null;
 
+    // Program-wide requirements per mode — a decision, so written down:
+    //  - "tier": included and always counted. Reaching any tier requires them.
+    //  - "all": included; the mode is every requirement of the program.
+    //  - "specialisations": EXCLUDED. The caller named the specialisations they
+    //    want planned, and a program-wide requirement belongs to none of them —
+    //    pulling it in would cost something they did not ask about. (A tier
+    //    target is how to plan "what does reaching a level take".)
     let activeRows: RequirementRow[];
     let restrictSpecs: Set<string> | null = null;
     if (target.mode === "specialisations" && target.specialisations && target.specialisations.length > 0) {
@@ -1424,11 +1686,12 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
       activeRows = rows.filter((r) => r.specialisationName && restrictSpecs!.has(r.specialisationName));
     } else if (target.mode === "tier") {
       // Tier target: all specialisation qualifying rows (to rank the cheapest K)
-      // plus this tier's deployment rows.
+      // plus this tier's deployment rows plus the program-wide requirements.
       activeRows = rows.filter(
         (r) =>
           (r.specialisationName && r.purpose === "qualification") ||
-          (chosenTier && r.tierId === chosenTier.id),
+          (chosenTier && r.tierId === chosenTier.id) ||
+          isGate(r),
       );
     } else {
       activeRows = rows; // "all"
@@ -1437,18 +1700,25 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
     // Build instances for every active row (one scoped instance per in-scope row).
     const rowInstances: ReqInstance[] = [];
     for (const row of activeRows) {
-      const built = await buildInstances(target.program, row, geo, idx, now, horizon, planForWindow);
+      const built = await buildInstances(target.program, row, area, idx, now, horizon, planForWindow);
       // Tag tier-deployment instances with the tier name for display.
       if (chosenTier && row.tierId === chosenTier.id) {
         for (const b of built) b.tierName = chosenTier.name;
       }
+      if (isGate(row)) for (const b of built) b.isGate = true;
       rowInstances.push(...built);
     }
 
-    // Group instances into specialisation blocks + the tier's delivery certs.
+    // Group instances into specialisation blocks + the tier's delivery certs +
+    // the program-wide requirements.
     const bySpec = new Map<string, ReqInstance[]>();
     const tierDeployInsts: ReqInstance[] = [];
+    const gateInsts: ReqInstance[] = [];
     for (const inst of rowInstances) {
+      if (inst.isGate) {
+        gateInsts.push(inst);
+        continue;
+      }
       if (inst.tierName && !inst.specialisation) {
         tierDeployInsts.push(inst);
         continue;
@@ -1465,7 +1735,8 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
     // informational, and a non-counted specialisation's requirement is just as
     // shared. `label` mirrors how the roadmap groups the rows. Instances are
     // bucketed by group first, so the pairwise test only runs within one cert.
-    const specLabel = (inst: ReqInstance) => inst.specialisation ?? inst.tierName ?? "—";
+    const specLabel = (inst: ReqInstance) =>
+      inst.isGate ? PROGRAM_WIDE_BLOCK_NAME : inst.specialisation ?? inst.tierName ?? "—";
     const instancesByGroup = new Map<string, ReqInstance[]>();
     for (const inst of rowInstances) {
       const key = certGroupKey(inst);
@@ -1494,7 +1765,21 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
       peopleMoves: 0,
       easyWins: 0,
       netNew: 0,
+      ...(area.anchored ? { anchored: area.anchored } : {}),
     };
+    // The minimum-countries rule cannot be closed by certifying anyone, so it
+    // is reported beside the plan and never costed. The per-country rows for
+    // the target countries that DO exist are still built and costed above.
+    if (area.anchored && !area.anchored.minimumMet && area.anchored.minimumCountries !== null) {
+      targetResult.blockers = [
+        {
+          kind: "minimumCountries",
+          required: area.anchored.minimumCountries,
+          counted: area.anchored.targetCountries.length,
+          source: area.anchored.minimumCountriesSource,
+        },
+      ];
+    }
     if (chosenTier) {
       targetResult.tierPlan = {
         specialisationsRequired: chosenTier.specialisationsRequired,
@@ -1530,6 +1815,9 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
       // (two delivery rows on one cert, or a pooled row beside an each-country
       // one, are one cohort, not two).
       targetResult.tierPlan.deliveryCertShortfall = groupCost(tierDeployInsts, (i) => i.shortfall);
+      if (gateInsts.length > 0) {
+        targetResult.tierPlan.gateShortfall = groupCost(gateInsts, (i) => i.shortfall);
+      }
 
       // Reaching the tier needs only `needed` more specialisations, so pick that
       // many — greedily, by **marginal** cost (v2). A standalone per-specialisation
@@ -1545,12 +1833,15 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
       if (needed > 0 && remaining.length > 0) {
         const k = Math.min(needed, remaining.length);
         const pool = new Set(remaining);
+        // The program-wide requirements are paid for whichever specialisations
+        // are chosen, so they sit in every set's cost: a specialisation sharing
+        // a cert with them adds only what they do not already cover.
         for (let i = 0; i < k; i++) {
-          const base = specSetCost(chosenSpecs, bySpec);
+          const base = specSetCost(chosenSpecs, bySpec, gateInsts);
           let best: string | null = null;
           let bestMarginal = Infinity;
           for (const name of pool) {
-            const marginal = specSetCost([...chosenSpecs, name], bySpec) - base;
+            const marginal = specSetCost([...chosenSpecs, name], bySpec, gateInsts) - base;
             // localeCompare on a genuine tie, so the pick is deterministic rather
             // than dependent on Map insertion order.
             if (marginal < bestMarginal || (marginal === bestMarginal && best !== null && name.localeCompare(best) < 0)) {
@@ -1571,23 +1862,24 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
         // k × (n−k) set-cost evaluations over the handful of specialisations a
         // program has: not worth indexing, and deliberately left plain so it stays
         // readable rather than becoming something subtler that nobody trusts.
-        const baseline = specSetCost(chosenSpecs, bySpec);
+        const baseline = specSetCost(chosenSpecs, bySpec, gateInsts);
         for (const name of remaining) {
           if (marginalBySpec.has(name)) continue;
           const swaps = chosenSpecs.some(
-            (c) => specSetCost([...chosenSpecs.filter((x) => x !== c), name], bySpec) <= baseline,
+            (c) => specSetCost([...chosenSpecs.filter((x) => x !== c), name], bySpec, gateInsts) <= baseline,
           );
           if (!swaps) continue;
           alternativeSpecs.add(name);
-          marginalBySpec.set(name, specSetCost([...chosenSpecs, name], bySpec) - baseline);
+          marginalBySpec.set(name, specSetCost([...chosenSpecs, name], bySpec, gateInsts) - baseline);
         }
 
         for (const name of chosenSpecs) {
           for (const inst of bySpec.get(name)!) countedIds.add(inst.id);
         }
       }
-      // Tier delivery certs always count toward the tier.
+      // Tier delivery certs and program-wide requirements always count toward the tier.
       for (const inst of tierDeployInsts) countedIds.add(inst.id);
+      for (const inst of gateInsts) countedIds.add(inst.id);
     } else {
       // Non-tier targets: every instance counts.
       for (const inst of rowInstances) countedIds.add(inst.id);
@@ -1600,8 +1892,10 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
     allInstances.push(...rowInstances);
     preps.push({
       target: targetResult,
+      area,
       bySpec,
       tierDeployInsts,
+      gateInsts,
       counted,
       sharedByInstanceId,
       chosenSpecs,
@@ -1642,7 +1936,7 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
 
   // ── Roll instances back up into the per-target roadmap ──
   for (const {
-    target, bySpec, tierDeployInsts, counted, sharedByInstanceId,
+    target, area, bySpec, tierDeployInsts, gateInsts, counted, sharedByInstanceId,
     chosenSpecs, alternativeSpecs, marginalBySpec,
   } of preps) {
     const chosenSet = new Set(chosenSpecs);
@@ -1679,6 +1973,28 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
     }
     specs.sort((a, b) => (a.cost - b.cost) || a.name.localeCompare(b.name));
 
+    // The program-wide requirements lead the roadmap: every level needs them,
+    // so they are on the path whatever the specialisations turn out to be.
+    if (gateInsts.length > 0) {
+      const gateReqs = gateInsts.map((inst) => toPlanRequirement(inst, alloc, shared(inst)));
+      specs.unshift({
+        name: PROGRAM_WIDE_BLOCK_NAME,
+        kind: "programWide",
+        achieved: isAchievedNow(gateReqs),
+        projectedAchieved: isAchievedAtHorizon(gateReqs),
+        // Deduped (`groupCost`) rather than the plain sum a specialisation's
+        // `cost` is: this block typically pairs an "each target country" row
+        // with a theatre-wide row on the same cert, and summing them would show
+        // a figure the tier headline's `gateShortfall` beside it contradicts.
+        cost: groupCost(gateInsts, (i) => i.shortfall),
+        easyWins: gateInsts.reduce((s, i) => s + i.pool.filter((p) => p.tier === "easy-win").length, 0),
+        requirements: gateReqs,
+        // Counted for a tier target exactly like the delivery certs; a non-tier
+        // target sets no role on any block.
+        ...(target.tierPlan ? { chosen: true } : {}),
+      });
+    }
+
     // Surface tier deployment requirements as a synthetic specialisation block.
     if (target.tierPlan && tierDeployInsts.length > 0) {
       const deployReqs = tierDeployInsts.map((inst) => toPlanRequirement(inst, alloc, shared(inst)));
@@ -1711,7 +2027,7 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
     target.easyWins = easyWins;
     target.netNew = netNew;
     target.peopleMoves = targetEmails.size + netNew;
-    target.headline = buildHeadline(target, geo.scopeLabel, input.renewalWindowMonths);
+    target.headline = buildHeadline(target, area.scopeLabel, input.renewalWindowMonths);
   }
 
   // ── Candidate-centric drill-down ──
@@ -1801,7 +2117,9 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
   const netNew = netNewTotal(countedInstances, alloc);
 
   return {
-    scopeLabel: geo.scopeLabel,
+    // A standard scope's one label; an anchored plan names each area its
+    // targets resolved to (each program may be anchored differently).
+    scopeLabel: sharedArea ? sharedArea.scopeLabel : areaLabels.length > 0 ? areaLabels.join("; ") : "Target countries",
     renewalWindowMonths: input.renewalWindowMonths,
     planForWindow,
     targets,
@@ -1809,6 +2127,7 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
     eligible,
     renewals,
     riskImpacts,
+    skippedTargets,
     totals: {
       peopleMoves: alloc.closesByEmail.size + netNew,
       easyWins,
@@ -1852,6 +2171,7 @@ function buildRiskImpacts(all: ReqInstance[], countedInstanceIds: Set<string>): 
       aggregation: i.aggregation,
       country: i.country,
       scopeLabel: i.scopeLabel,
+      ...(i.population ? { population: i.population } : {}),
       required: i.required,
       attained: i.attained,
       projectedAttained: i.projectedAttained ?? i.attained,
@@ -1967,6 +2287,7 @@ function toPlanRequirement(
     aggregation: inst.aggregation,
     country: inst.country,
     scopeLabel: inst.scopeLabel,
+    ...(inst.population ? { population: inst.population } : {}),
     cert: inst.cert,
     required: inst.required,
     attained: inst.attained,
@@ -1985,18 +2306,57 @@ function toPlanRequirement(
   };
 }
 
+/**
+ * The blocker sentence, in the page's voice: what to do and where, then why.
+ * Shared by the headline; the page renders `blockers` itself too.
+ */
+export function blockerText(b: PlanBlocker, tiered: boolean): string {
+  const more = Math.max(0, b.required - b.counted);
+  const whose = b.source === "partner" ? "this partner's minimum" : "the program's default minimum";
+  return (
+    `Name ${more} more target countr${more === 1 ? "y" : "ies"} in Admin › Country Sets — ` +
+    // A program without tiers has no tier to withhold.
+    `${b.counted} of ${b.required} counted (${whose})${tiered ? ", and no tier is reached until then" : ""}.`
+  );
+}
+
 function buildHeadline(target: PlanTargetResult, scopeLabel: string, windowMonths: number): string {
+  const body = buildHeadlineBody(target, scopeLabel, windowMonths);
+  // A blocker leads: certifying people cannot clear it, so a reader who acts on
+  // the rest of the sentence alone would still not reach the target.
+  const blockers = target.blockers ?? [];
+  return blockers.length > 0 ? `${blockers.map((b) => blockerText(b, target.isTiered)).join(" ")} ${body}` : body;
+}
+
+function buildHeadlineBody(target: PlanTargetResult, scopeLabel: string, windowMonths: number): string {
   const where = scopeLabel === "Global" ? "globally" : `in ${scopeLabel}`;
+  if (target.peopleMoves === 0 && (target.blockers?.length ?? 0) > 0) {
+    // Never "fully compliant" while a blocker stands.
+    return `Otherwise, nobody is left to certify ${where}.`;
+  }
   if (target.peopleMoves === 0) {
     // Don't claim "nobody left to certify" when the window says otherwise: a
     // specialisation met today can still fall below target as training expires.
-    const atRisk = target.specialisations.filter((s) => s.achieved && s.projectedAchieved === false);
-    if (atRisk.length > 0) {
+    // The program-wide block is not a specialisation, so it is named on its
+    // own rather than counted as one ("1 specialisation falls below target"
+    // when no specialisation does).
+    const atRisk = target.specialisations.filter(
+      (s) => !s.kind && s.achieved && s.projectedAchieved === false,
+    );
+    const gatesAtRisk = target.specialisations.some(
+      (s) => s.kind === "programWide" && s.achieved && s.projectedAchieved === false,
+    );
+    if (atRisk.length > 0 || gatesAtRisk) {
       const n = atRisk.length;
+      const what = [
+        ...(gatesAtRisk ? ["the requirements every level needs"] : []),
+        ...(n > 0 ? [`${n} specialisation${n === 1 ? "" : "s"}`] : []),
+      ].join(" and ");
+      const plural = n > 1 || gatesAtRisk;
       return (
-        `${target.program} is compliant ${where} today, but ${n} specialisation${n === 1 ? "" : "s"} ` +
-        `fall${n === 1 ? "s" : ""} below target within ${windowMonths} month${windowMonths === 1 ? "" : "s"} ` +
-        `as training expires — renew to hold it.`
+        `${target.program} is compliant ${where} today, but ${what} ` +
+        `fall${plural ? "" : "s"} below target within ${windowMonths} month${windowMonths === 1 ? "" : "s"} ` +
+        `as training expires — renew to hold ${plural ? "them" : "it"}.`
       );
     }
     return `${target.program} is fully compliant ${where} — nobody left to certify.`;
@@ -2004,13 +2364,20 @@ function buildHeadline(target: PlanTargetResult, scopeLabel: string, windowMonth
   const noun = target.peopleMoves === 1 ? "person" : "people";
   const easy = target.easyWins > 0 ? `, ${target.easyWins} of them easy wins` : "";
   if (target.tierPlan && target.tierName) {
-    const { needed, deliveryCertShortfall } = target.tierPlan;
+    const { needed, deliveryCertShortfall, gateShortfall } = target.tierPlan;
     const parts: string[] = [];
+    if (gateShortfall && gateShortfall > 0) {
+      parts.push(
+        `${gateShortfall} ${gateShortfall === 1 ? "person" : "people"} for the requirements every level needs`,
+      );
+    }
     if (needed > 0) {
       // `chosen` is exactly `needed` long, and each figure is the specialisation's
       // *marginal* cost — so the listed parts add up to the headline's total
       // instead of overstating it by charging a shared certification twice.
-      const rec = target.specialisations.filter((s) => s.chosen && !s.name.endsWith("delivery certs"));
+      const rec = target.specialisations.filter(
+        (s) => s.chosen && !s.kind && !s.name.endsWith("delivery certs"),
+      );
       const names = rec.map(
         (s) => `${s.name} (${s.marginalCost ?? s.cost} to certify${s.easyWins > 0 ? `, ${s.easyWins} easy` : ""})`,
       );
@@ -2022,7 +2389,7 @@ function buildHeadline(target: PlanTargetResult, scopeLabel: string, windowMonth
       // A cost-neutral swap is worth naming: the pick between two equal paths is
       // arbitrary, and the other one may suit the business better.
       const alts = target.specialisations
-        .filter((s) => s.alternative && !s.name.endsWith("delivery certs"))
+        .filter((s) => s.alternative && !s.kind && !s.name.endsWith("delivery certs"))
         .map((s) => s.name);
       if (alts.length > 0) clause += ` — or swap in ${alts.join(" or ")} at the same cost`;
       parts.push(clause);

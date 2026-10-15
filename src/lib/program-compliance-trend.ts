@@ -1,4 +1,5 @@
 import prisma from "@/lib/prisma";
+import { isAnchoredProgram } from "@/lib/program-anchor";
 import {
   extractTitles,
   getEmailSetsByTitle,
@@ -24,6 +25,14 @@ import {
  *
  * By default we evaluate at the Global level for each program; the report can
  * be narrowed by theatre / region / country.
+ *
+ * **Anchored programs are excluded, and named in `unsupportedPrograms`.** This
+ * report pools every row of a program over ONE geography whatever its level,
+ * while an anchored program is defined over two populations at once (its
+ * Theatre rows over the anchor theatre, its CountrySet rows over each partner's
+ * target countries, with a per-partner minimum). Pooled here it would be
+ * misreported as plausible numbers, so it is left out and listed instead — the
+ * page says which programs are not shown and why.
  *
  * Presentation-agnostic and auth-agnostic: it takes a plain
  * `companyIds: number[] | null` scope, so the internal (JWT) route at
@@ -56,7 +65,13 @@ export async function computeComplianceTrend(
     scopeLabel = `Theatre: ${theatreParam}`;
   }
 
-  const rawData = await prisma.programData.findMany({
+  const anchoredRows = await prisma.program.findMany({
+    where: { anchorTheatre: { not: null } },
+    select: { name: true, anchorTheatre: true },
+  });
+  const anchored = new Set(anchoredRows.filter((p) => isAnchoredProgram(p)).map((p) => p.name));
+
+  const allRows = await prisma.programData.findMany({
     where: {
       ...(programFilter ? { programName: programFilter } : {}),
       // The trend report is specialisation-scoped; tier-scoped deployment rows
@@ -70,6 +85,12 @@ export async function computeComplianceTrend(
     },
   });
 
+  // The anchored programs this request would otherwise have shown.
+  const unsupportedPrograms = [
+    ...new Set(allRows.filter((r) => anchored.has(r.programName)).map((r) => r.programName)),
+  ].sort();
+  const rawData = allRows.filter((r) => !anchored.has(r.programName));
+
   // Narrow the type: every row here has a specialisation (filtered above).
   const data = rawData.filter(
     (r): r is typeof rawData[number] & { specialisation: NonNullable<typeof r.specialisation> } =>
@@ -79,7 +100,7 @@ export async function computeComplianceTrend(
   type Row = typeof data[number];
 
   if (data.length === 0) {
-    return { snapshots: [], programs: [], specialisations: [], scopeLabel };
+    return { snapshots: [], programs: [], specialisations: [], scopeLabel, unsupportedPrograms };
   }
 
   // Build month boundaries: 12 months of history (incl. current) + 12 months
@@ -151,5 +172,5 @@ export async function computeComplianceTrend(
   const programs = [...new Set(data.map((r) => r.programName))].sort();
   const specialisations = [...new Set(data.map((r) => r.specialisation.name))].sort();
 
-  return { snapshots, programs, specialisations, scopeLabel };
+  return { snapshots, programs, specialisations, scopeLabel, unsupportedPrograms };
 }

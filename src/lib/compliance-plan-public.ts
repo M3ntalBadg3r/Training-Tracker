@@ -1,8 +1,13 @@
 import type {
   CompliancePlanResult,
+  PlanBlocker,
+  PlanRequirement,
   PlanRiskImpact,
+  PlanSkippedTarget,
+  PlanSpecialisation,
   PlanTargetResult,
 } from "@/lib/compliance-plan";
+import type { AnchoredMeta } from "@/lib/program-levels";
 
 /**
  * The aggregates-only view of a compliance plan, for the read-only public API.
@@ -48,6 +53,26 @@ import type {
  * A per-country instance's `scopeLabel` is a country name for the same reason.
  * (`PlanCandidateClose.scopeLabel` becomes a country too, but closes live only
  * under `candidates`/`eligible`, which never reach this surface.)
+ *
+ * Re-audited again for anchored programs and program-wide requirements:
+ * `PlanTargetResult` gained `anchored` (an `AnchoredMeta`: the anchor theatre,
+ * the target Country Set's name, the in-theatre and out-of-theatre country
+ * names, the minimum, its source and whether it is met), `blockers`
+ * (`PlanBlocker`: a kind, two integers and a source enum) and
+ * `tierPlan.gateShortfall` (an integer); `PlanSpecialisation` gained `kind`
+ * (an enum); `PlanRequirement` and `PlanRiskImpact` gained `population` (an
+ * enum). Counts, geography names and a set name of the key's own single
+ * company (the anchored scope is refused for any other scope) — no person
+ * identifier. A target's `headline` may now lead with `blockerText`, which
+ * interpolates only integers. The by-reference pass-through stands.
+ *
+ * `skippedTargets` (`PlanSkippedTarget`: a program name and a reason enum)
+ * was added for the same feature and passes through by reference too.
+ *
+ * Because those nested types pass through by reference, a field added to any
+ * of them would reach partners unreviewed. The second block of assertions at
+ * the bottom of this file classifies every field of every nested type, so such
+ * an addition fails typecheck here and forces exactly that re-audit.
  */
 export interface PublicCompliancePlan {
   scopeLabel: string;
@@ -55,6 +80,7 @@ export interface PublicCompliancePlan {
   planForWindow: boolean;
   targets: PlanTargetResult[];
   riskImpacts: PlanRiskImpact[];
+  skippedTargets: PlanSkippedTarget[];
   totals: {
     peopleMoves: number;
     easyWins: number;
@@ -75,6 +101,7 @@ export function toPublicCompliancePlan(plan: CompliancePlanResult): PublicCompli
     planForWindow: plan.planForWindow,
     targets: plan.targets,
     riskImpacts: plan.riskImpacts,
+    skippedTargets: plan.skippedTargets,
     totals: {
       peopleMoves: plan.totals.peopleMoves,
       easyWins: plan.totals.easyWins,
@@ -110,6 +137,7 @@ type PublicPlanField =
   | "planForWindow"
   | "targets"
   | "riskImpacts"
+  | "skippedTargets"
   | "totals";
 
 /** Classified as person-level and deliberately never sent to the public API. */
@@ -140,3 +168,47 @@ type _PublicShapeMatchesClassification =
     : never;
 const _publicShapeIsCorrect: _PublicShapeMatchesClassification = true;
 void _publicShapeIsCorrect;
+
+// ── The nested types, held to the same discipline ───────────────────────────
+// `targets` and `riskImpacts` are passed through BY REFERENCE, so every field
+// of the types below reaches the public API. Each list here is the audited set:
+// a field added to one of these types without being added here fails typecheck,
+// which is the prompt to check it carries no person identifier (and, if one
+// ever does, to project that type here instead of passing it through).
+type AuditedTargetField =
+  | "program" | "mode" | "isTiered" | "tierName" | "headline" | "tierPlan"
+  | "specialisations" | "peopleMoves" | "easyWins" | "netNew" | "anchored" | "blockers";
+type AuditedSpecialisationField =
+  | "name" | "achieved" | "projectedAchieved" | "cost" | "easyWins" | "requirements"
+  | "chosen" | "alternative" | "marginalCost" | "kind";
+type AuditedRequirementField =
+  | "instanceId" | "requirementKey" | "specialisation" | "tierName" | "purpose" | "nativeLevel"
+  | "aggregation" | "country" | "scopeLabel" | "population" | "cert" | "required" | "attained"
+  | "projectedAttained" | "shortfall" | "projectedShortfall" | "renewalPool" | "easyWinPool"
+  | "lapsedPool" | "legacyPool" | "netNew" | "sharedWith" | "expiringSoon";
+type AuditedRiskImpactField =
+  | "program" | "specialisation" | "tierName" | "cert" | "aggregation" | "country" | "scopeLabel"
+  | "population" | "required" | "attained" | "projectedAttained" | "onPath";
+type AuditedTierPlanField =
+  | "specialisationsRequired" | "alreadyAchieved" | "needed" | "deliveryCertShortfall" | "gateShortfall";
+type AuditedBlockerField = "kind" | "required" | "counted" | "source";
+type AuditedSkippedTargetField = "program" | "reason";
+type AuditedAnchoredMetaField =
+  | "anchorTheatre" | "countrySet" | "targetCountries" | "outOfTheatreCountries"
+  | "minimumCountries" | "minimumCountriesSource" | "minimumMet";
+
+/** `true` only when `T`'s keys are exactly `K` — both directions, like the pair above. */
+type KeysExactly<T, K extends PropertyKey> =
+  [Exclude<keyof T, K>] extends [never] ? ([Exclude<K, keyof T>] extends [never] ? true : never) : never;
+
+const _nestedFieldsAreAudited: [
+  KeysExactly<PlanTargetResult, AuditedTargetField>,
+  KeysExactly<PlanSpecialisation, AuditedSpecialisationField>,
+  KeysExactly<PlanRequirement, AuditedRequirementField>,
+  KeysExactly<PlanRiskImpact, AuditedRiskImpactField>,
+  KeysExactly<NonNullable<PlanTargetResult["tierPlan"]>, AuditedTierPlanField>,
+  KeysExactly<PlanBlocker, AuditedBlockerField>,
+  KeysExactly<PlanSkippedTarget, AuditedSkippedTargetField>,
+  KeysExactly<AnchoredMeta, AuditedAnchoredMetaField>,
+] = [true, true, true, true, true, true, true, true];
+void _nestedFieldsAreAudited;

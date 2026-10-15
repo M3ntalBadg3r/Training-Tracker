@@ -16,7 +16,9 @@ import {
   parseScopeLevel,
   SCOPE_TO_REQ_LEVEL,
   type Aggregation,
+  type AnchoredPopulation,
   type CountryBreakdownRow,
+  type MinimumCountriesSource,
 } from "@/lib/program-levels";
 
 export const TRAINING_TYPE_LABELS: Record<string, string> = {
@@ -77,6 +79,14 @@ export interface Requirement {
    */
   trainedNotCertified?: number;
   alternatives: AlternativeEntry[];
+  /**
+   * Anchored view only: the population the row is counted over — the anchor
+   * theatre (`"theatre"`) or the partner's target countries
+   * (`"targetCountries"`) — and its display name (the theatre, or the set).
+   * Absent on every other view.
+   */
+  population?: AnchoredPopulation;
+  populationLabel?: string;
 }
 
 export interface Specialisation {
@@ -136,6 +146,21 @@ export interface TierDeploymentRequirement {
   countryBreakdown?: CountryBreakdownRow[] | null;
   projectedCountryBreakdown?: CountryBreakdownRow[] | null;
   alternatives: AlternativeEntry[];
+  /** Anchored view only (see `Requirement.population`). */
+  population?: AnchoredPopulation;
+  populationLabel?: string;
+}
+
+/**
+ * An anchored program's minimum-countries gate: how many target countries the
+ * partner names inside the anchor theatre, against whose minimum. When `met`
+ * is false no tier is reached.
+ */
+export interface MinimumCountriesGate {
+  required: number | null;
+  counted: number;
+  met: boolean;
+  source: MinimumCountriesSource;
 }
 
 export interface TierInfo {
@@ -162,6 +187,14 @@ export interface TierBlock {
   achievedSpecialisationCount: number;
   projectedAchievedSpecialisationCount: number | null;
   tiers: TierInfo[];
+  /**
+   * Program-wide gates (rows with neither a specialisation nor a tier), which
+   * every tier requires — shown once as "Required at every level". Optional so
+   * an older cached payload still renders; empty for a program with none.
+   */
+  gateRequirements?: TierDeploymentRequirement[];
+  /** Anchored programs only; null/absent elsewhere. */
+  minimumCountriesGate?: MinimumCountriesGate | null;
 }
 
 export type ViewStudentsFn = (
@@ -169,7 +202,9 @@ export type ViewStudentsFn = (
   trainingFullTitle: string,
   level: string,
   filterValue: string,
-  alternatives?: AlternativeEntry[]
+  alternatives?: AlternativeEntry[],
+  /** Anchored view only: the row's population, so the roster matches its figure. */
+  population?: AnchoredPopulation
 ) => void;
 
 export type RiskState = "compliant" | "atRisk" | "nonCompliant";
@@ -298,12 +333,12 @@ export function countModeLabel(aggregation: Aggregation | undefined): string {
  * confused side by side; everything else keeps its unit ("N people").
  */
 export function requiredText(
-  req: { quantityRequired: number; aggregation?: Aggregation },
+  req: { quantityRequired: number; aggregation?: Aggregation; population?: AnchoredPopulation },
   level: string,
   unitLabel: string
 ): string {
   if (isEachCountry(req)) return `${req.quantityRequired} per country`;
-  if (isMultiCountryScope(level)) return `${req.quantityRequired} total`;
+  if (isMultiCountryScope(level) || req.population === "targetCountries") return `${req.quantityRequired} total`;
   return `${req.quantityRequired} ${unitLabel}`.trim();
 }
 
@@ -338,6 +373,53 @@ export function countryBreakdownLines(
     return `${c.country}: ${attainedText(c.count, projected)} / ${required} (${state}${expiring ? `, ${expiring}` : ""})`;
   });
 }
+
+/** "theatre" / "target countries" — what each anchored population is, in words. */
+export const POPULATION_KIND_LABELS: Record<AnchoredPopulation, string> = {
+  theatre: "theatre",
+  targetCountries: "target countries",
+};
+
+/**
+ * "Counted over EMEA (theatre)" / "Counted over Set A (target countries)" for an
+ * anchored-view row, or undefined elsewhere. Shared by the table, the tier
+ * ladder and the PDF so the three say the same thing.
+ */
+export function populationText(req: { population?: AnchoredPopulation; populationLabel?: string }): string | undefined {
+  if (!req.population) return undefined;
+  const name = req.populationLabel ? `${req.populationLabel} ` : "";
+  return `Counted over ${name}(${POPULATION_KIND_LABELS[req.population]})`;
+}
+
+/** Whose rule a partner's minimum number of target countries came from, in words. */
+export const MINIMUM_SOURCE_LABELS: Record<MinimumCountriesSource, string> = {
+  partner: "partner setting",
+  default: "program default",
+  none: "no minimum set",
+};
+
+/**
+ * "Why no tier is reached" for an unmet minimum-countries gate, shared by the
+ * page's gate card, the tier ladder and the PDF.
+ */
+export function minimumGateText(
+  gate: MinimumCountriesGate,
+  anchorTheatre?: string | null,
+  /** A program without tiers has no tier to withhold, so the sentence says so. */
+  tiered = true
+): string {
+  const where = anchorTheatre ? ` inside ${anchorTheatre}` : "";
+  const required = gate.required ?? 0;
+  return (
+    `Target countries: ${gate.counted} of ${required} minimum (${MINIMUM_SOURCE_LABELS[gate.source]}). ` +
+    (tiered
+      ? `No tier can be reached until the partner names at least ${required} target countries${where}.`
+      : `The partner must name at least ${required} target countries${where}.`)
+  );
+}
+
+/** The heading the program-wide gates are shown under, once, in Tier Status. */
+export const GATES_HEADING = "Required at every level";
 
 /**
  * Why deployment requirements sit under a specialisation without deciding
@@ -559,6 +641,9 @@ function RequirementRowGroup({
                       ))}
                     </div>
                   )}
+                  {req.population && (
+                    <div className="text-[11px] text-cyan-700 mt-1">{populationText(req)}</div>
+                  )}
                 </div>
               ) : (
                 <span className="text-gray-300">—</span>
@@ -611,7 +696,15 @@ function RequirementRowGroup({
                   state={state}
                   onView={
                     level !== "global" && req.trainingTitle
-                      ? () => onViewStudents(req.trainingTitle!, req.trainingFullTitle, level, filterValue, req.alternatives)
+                      ? () =>
+                          onViewStudents(
+                            req.trainingTitle!,
+                            req.trainingFullTitle,
+                            level,
+                            filterValue,
+                            req.alternatives,
+                            req.population
+                          )
                       : undefined
                   }
                 />
@@ -631,7 +724,16 @@ function RequirementRowGroup({
               />
               {level !== "global" && req.trainingTitle && (
                 <button
-                  onClick={() => onViewStudents(req.trainingTitle!, req.trainingFullTitle, level, filterValue, req.alternatives)}
+                  onClick={() =>
+                    onViewStudents(
+                      req.trainingTitle!,
+                      req.trainingFullTitle,
+                      level,
+                      filterValue,
+                      req.alternatives,
+                      req.population
+                    )
+                  }
                   className="ml-2 inline-flex items-center gap-1 text-xs text-blue-600 hover:underline"
                 >
                   <Users size={12} /> View
@@ -668,13 +770,19 @@ function RequirementRowGroup({
                 </span>
                 {onView && count > 0 && req.trainingTitle && (
                   <button
-                    onClick={() => onView(req.trainingTitle!, req.trainingFullTitle, level, filterValue, req.alternatives)}
+                    onClick={() =>
+                      onView(req.trainingTitle!, req.trainingFullTitle, level, filterValue, req.alternatives, req.population)
+                    }
                     className="ml-2 inline-flex items-center gap-1 text-xs text-blue-600 hover:underline"
                   >
                     <Users size={12} /> View
                   </button>
                 )}
-                {isEachCountry(req) && <div className="text-[11px] text-gray-400 mt-0.5">across the area</div>}
+                {isEachCountry(req) && (
+                  <div className="text-[11px] text-gray-400 mt-0.5">
+                    {req.population === "targetCountries" ? "across the target countries" : "across the area"}
+                  </div>
+                )}
               </td>
             );
           })}
@@ -1056,7 +1164,10 @@ export function LoadingSpinner() {
  * One deployment requirement row inside a tier card (with per-theatre expand,
  * or — for an "each country" row — a per-country expand).
  */
-function TierRequirementRow({ req, multiCountry }: { req: TierDeploymentRequirement; multiCountry: boolean }) {
+function TierRequirementRow({ req, multiCountry: multiCountryView }: { req: TierDeploymentRequirement; multiCountry: boolean }) {
+  // A pooled row over an anchored program's target countries is a multi-country
+  // total, just as on a Region / Country Set view.
+  const multiCountry = multiCountryView || req.population === "targetCountries";
   const [expanded, setExpanded] = useState(false);
   const projected = req.projectedAttained ?? undefined;
   const state = riskState(req.attained, projected, req.quantityRequired);
@@ -1080,6 +1191,7 @@ function TierRequirementRow({ req, multiCountry }: { req: TierDeploymentRequirem
               <span className="text-xs text-gray-500"> or {req.alternatives.map((a) => a.trainingFullTitle).join(", ")}</span>
             )}
           </span>
+          {req.population && <div className="text-[11px] text-cyan-700">{populationText(req)}</div>}
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {eachCountry ? (
@@ -1146,8 +1258,26 @@ function TierRequirementRow({ req, multiCountry }: { req: TierDeploymentRequirem
  * multi-country view it labels pooled deployment rows "total" beside the "per
  * country" ones.
  */
-export function TierLadder({ block, level }: { block: TierBlock; level?: string }) {
+export function TierLadder({
+  block,
+  level,
+  anchorTheatre,
+}: {
+  block: TierBlock;
+  level?: string;
+  /** Anchored programs: names the theatre in the per-tier minimum-countries note. */
+  anchorTheatre?: string | null;
+}) {
   const multiCountry = level !== undefined && isMultiCountryScope(level);
+  const gates = block.gateRequirements ?? [];
+  const gatesMet = gates.every((g) => g.compliant);
+  // Amber when every gate is met today but one falls below by the horizon.
+  const gatesState = complianceRiskState(
+    gatesMet,
+    gates.some((g) => g.projectedCompliant === false) ? false : gatesMet
+  );
+  const minGate = block.minimumCountriesGate ?? null;
+  const minGateFails = minGate !== null && !minGate.met;
   const achieved = block.achievedSpecialisationCount;
   const projAchieved = block.projectedAchievedSpecialisationCount;
   const sorted = [...block.tiers].sort((a, b) => a.sortOrder - b.sortOrder);
@@ -1182,6 +1312,29 @@ export function TierLadder({ block, level }: { block: TierBlock; level?: string 
           )}
         </div>
       </div>
+
+      {/* Program-wide gates: every tier requires them, so they are shown once
+          here rather than repeated under each tier card. */}
+      {gates.length > 0 && (
+        <div className={`rounded-lg border p-4 ${gatesMet ? "border-gray-200 bg-white" : "border-red-200 bg-red-50/30"}`}>
+          <div className="flex items-center justify-between">
+            <h3 className="text-base font-semibold text-gray-800">{GATES_HEADING}</h3>
+            <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${RISK_BADGE[gatesState]}`}>
+              {RISK_STATUS_LABEL[gatesState]}
+            </span>
+          </div>
+          <p className="mt-1 text-xs text-gray-500">Every tier requires all of these, in addition to its own criteria.</p>
+          <div className="mt-3 space-y-1.5">
+            {gates.map((req, i) => (
+              <TierRequirementRow
+                key={`gate-${req.trainingTitle ?? i}-${req.population ?? ""}-${i}`}
+                req={req}
+                multiCountry={multiCountry}
+              />
+            ))}
+          </div>
+        </div>
+      )}
 
       {sorted.length === 0 ? (
         <p className="text-sm text-gray-500">No tiers configured for this program yet.</p>
@@ -1222,6 +1375,13 @@ export function TierLadder({ block, level }: { block: TierBlock; level?: string 
                   <span className="italic">none yet</span>
                 )}
               </div>
+              {!tier.compliant && (!gatesMet || minGateFails) && (
+                <div className="mt-1 text-xs text-red-700">
+                  {minGateFails
+                    ? `Not reachable until the partner names at least ${minGate.required ?? 0} target countries${anchorTheatre ? ` within ${anchorTheatre}` : ""}.`
+                    : `Not reachable until every "${GATES_HEADING}" requirement is met.`}
+                </div>
+              )}
 
               {tier.deploymentRequirements.length > 0 && (
                 <div className="mt-3 space-y-1.5">

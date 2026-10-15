@@ -51,6 +51,7 @@ model Company {
   apiKeys          ApiKeyCompany[]
   offerings        Offering[]
   countrySets      CountrySet[]
+  programSettings  ProgramCompanySetting[]
 
   @@map("companies")
 }
@@ -214,6 +215,8 @@ model CountrySet {
   // Cascade: a set only describes its company's geography.
   company Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
   members CountrySetMember[]
+  // Partner settings naming this set as a program's target countries.
+  programSettings ProgramCompanySetting[]
 
   @@unique([companyId, name])
   @@index([companyId])
@@ -247,11 +250,45 @@ model Program {
   //  "perAchievedSpecialisation" → each achieved specialisation's own deployment
   //                                requirements must be met.
   deploymentMode String   @default("flat") @map("deployment_mode")
+  // Anchored programs (see lib/program-anchor.ts): when set, the program is
+  // judged over TWO populations at once — its Theatre-level rows over this
+  // theatre, and its CountrySet-level rows over the partner's own target
+  // Country Set. Null = an ordinary single-level program.
+  anchorTheatre  String?  @map("anchor_theatre")
+  // The minimum number of target countries a partner must name, used when the
+  // partner has no ProgramCompanySetting of its own. Null = no default.
+  defaultMinimumCountries Int? @map("default_minimum_countries")
   createdAt      DateTime @default(now()) @map("created_at")
 
-  tiers ProgramTier[]
+  tiers           ProgramTier[]
+  companySettings ProgramCompanySetting[]
 
   @@map("programs")
+}
+
+/// A partner's (Company's) own terms for one program — tenant data hanging off
+/// a global program, the same shape as CountrySet. Keyed on Program.id (not
+/// the name) so a rename carries it along.
+model ProgramCompanySetting {
+  id                 Int      @id @default(autoincrement())
+  programId          Int      @map("program_id")
+  companyId          Int      @map("company_id")
+  // This partner's minimum number of target countries. Null falls back to
+  // Program.defaultMinimumCountries; both null = no minimum check. CHECK >= 1.
+  minimumCountries   Int?     @map("minimum_countries")
+  // Which of the company's Country Sets holds its target countries. Must belong
+  // to the same company (enforced in application code).
+  targetCountrySetId Int?     @map("target_country_set_id")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  program          Program     @relation(fields: [programId], references: [id], onDelete: Cascade)
+  company          Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  targetCountrySet CountrySet? @relation(fields: [targetCountrySetId], references: [id], onDelete: SetNull)
+
+  @@unique([programId, companyId])
+  @@index([companyId])
+  @@map("program_company_settings")
 }
 
 model ProgramTier {
@@ -286,9 +323,10 @@ model Specialisation {
 model ProgramData {
   id                Int           @id @default(autoincrement())
   programName       String        @map("program_name")
-  // A requirement belongs to EITHER a specialisation (specialisationId) OR a
-  // tier (tierId) — exactly one is set, enforced in application code. Existing
-  // rows all carry a specialisationId, so making it nullable is backward safe.
+  // A requirement belongs to a specialisation (specialisationId), a tier
+  // (tierId), or both (a "perTierPerSpecialisation" deployment row). A row with
+  // NEITHER is a program-wide gate: every tier of a tiered program requires it
+  // (lib/program-levels.ts:isProgramWideRow). Enforced in application code.
   specialisationId  Int?          @map("specialisation_id")
   tierId            Int?          @map("tier_id")
   // "qualification" → counts toward achieving the specialisation.

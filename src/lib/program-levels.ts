@@ -105,3 +105,81 @@ export interface CountryBreakdownRow {
   count: number;
   compliant: boolean;
 }
+
+// ---------------------------------------------------------------------------
+// Anchored programs (see lib/program-anchor.ts for the server half).
+//
+// An anchored program (`Program.anchorTheatre` set) is judged over TWO
+// populations in ONE view: its Theatre-level rows over the anchor theatre, and
+// its CountrySet-level rows over the partner's own target Country Set. Every
+// other view reads one level only (SCOPE_TO_REQ_LEVEL is one-to-one), so the
+// anchored view is deliberately NOT a member of SCOPE_LEVELS: adding it there
+// would break that one-to-one map and every Record keyed on ScopeLevel. Code
+// that can show an anchored view uses ProgramViewLevel instead.
+// ---------------------------------------------------------------------------
+
+export const ANCHORED_SCOPE = "anchored" as const;
+export type ProgramViewLevel = ScopeLevel | typeof ANCHORED_SCOPE;
+
+export const ANCHORED_SCOPE_LABEL = "Target countries";
+
+/** Validate a user-editable view level, anchored included. */
+export function parseProgramViewLevel(v: string | null | undefined): ProgramViewLevel | null {
+  if (v === ANCHORED_SCOPE) return ANCHORED_SCOPE;
+  return parseScopeLevel(v);
+}
+
+/** The only requirement levels an anchored program evaluates. */
+export const ANCHORED_REQ_LEVELS = ["Theatre", "CountrySet"] as const;
+export type AnchoredReqLevel = (typeof ANCHORED_REQ_LEVELS)[number];
+
+export function isAnchoredReqLevel(level: string): level is AnchoredReqLevel {
+  return (ANCHORED_REQ_LEVELS as readonly string[]).includes(level);
+}
+
+/**
+ * Which population an anchored program counts a row over: Theatre rows over the
+ * anchor theatre, CountrySet rows over the partner's target countries. `null`
+ * for any other level — such rows are not evaluated in an anchored view.
+ */
+export type AnchoredPopulation = "theatre" | "targetCountries";
+
+export function anchoredPopulationOf(level: string): AnchoredPopulation | null {
+  if (level === "Theatre") return "theatre";
+  if (level === "CountrySet") return "targetCountries";
+  return null;
+}
+
+/**
+ * A requirement row with neither a specialisation nor a tier is a
+ * **program-wide gate**: every tier of a tiered program requires it, in every
+ * deployment mode. Only valid on a tiered program (enforced on write).
+ */
+export function isProgramWideRow(row: {
+  specialisationId?: number | null;
+  tierId?: number | null;
+}): boolean {
+  return row.specialisationId == null && row.tierId == null;
+}
+
+/** Whose rule supplied a partner's minimum number of target countries. */
+export type MinimumCountriesSource = "partner" | "default" | "none";
+
+/**
+ * The anchored-view header every surface (dashboard, planning, public API)
+ * receives. `targetCountries` are the set's members INSIDE the anchor theatre —
+ * the population CountrySet rows are counted over and the only countries that
+ * count toward the minimum. `outOfTheatreCountries` are members outside it,
+ * listed so the page can warn about them rather than drop them silently.
+ */
+export interface AnchoredMeta {
+  anchorTheatre: string;
+  /** The Country Set the view is over; null when the partner has none to show. */
+  countrySet: string | null;
+  targetCountries: string[];
+  outOfTheatreCountries: string[];
+  minimumCountries: number | null;
+  minimumCountriesSource: MinimumCountriesSource;
+  /** `minimumCountries === null || targetCountries.length >= minimumCountries`. */
+  minimumMet: boolean;
+}

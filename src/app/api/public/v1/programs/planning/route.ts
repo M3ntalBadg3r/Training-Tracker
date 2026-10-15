@@ -30,7 +30,7 @@ import { COUNTRY_SET_SCOPE_ERROR, listCountrySetNames, singleCompanyId } from "@
  *
  * Two modes, mirroring the internal route:
  *  - `?options=true` → per-program selector metadata (name, isTiered, levels,
- *    tier names, specialisation names) so a caller can build a `targets` array,
+ *    tier names, specialisation names, `anchored`) so a caller can build a `targets` array,
  *    plus `countrySets` — the names `level=countrySet&countrySet=` accepts: the
  *    scoped company's own sets, empty unless the request is narrowed to exactly
  *    one company (a Country Set belongs to one company).
@@ -41,9 +41,13 @@ import { COUNTRY_SET_SCOPE_ERROR, listCountrySetNames, singleCompanyId } from "@
  * Query params (identical to the internal route):
  *  - `targets`  URL-encoded JSON array:
  *      [{ program, mode: "tier"|"specialisations"|"all", tier?, specialisations?[] }]
- *  - `level`    global (default) | theatre | region | countrySet | country
+ *  - `level`    global (default) | theatre | region | countrySet | country | anchored
  *  - `country` / `region` / `countrySet` / `theatre`  the selector for the chosen level
- *    (`level=countrySet` needs the request narrowed to exactly one company, else 400)
+ *    (`level=countrySet` and `level=anchored` need the request narrowed to
+ *    exactly one company, else 400). `level=anchored` plans only anchored
+ *    programs, each over its anchor theatre and the partner's target countries;
+ *    `countrySet` there is optional and defaults to each program's configured
+ *    target set for the company. Anchored programs are planned at no other level.
  *  - `renewalWindowMonths`  0 | 1 | 3 | 6 | 12 (default 3; 0 = no overlay)
  *  - `planForWindow`  true to size gaps from the projected end-of-window count
  *  - `companyId`  narrow to one of the key's companies (consumed by the guard)
@@ -85,7 +89,8 @@ export async function GET(request: NextRequest) {
     const options = await cachedReport(
       // "-v2": the value became `{programs, countrySets}`; see the internal route.
       // "-v3": the value now carries company-scoped set names.
-      `public-compliance-planning-options-v3|${scope}`,
+      // "-v4": each program now carries `anchored` (anchored programs).
+      `public-compliance-planning-options-v4|${scope}`,
       async () => {
         const [programs, countrySets] = await Promise.all([buildPlanningOptions(), listCountrySetNames(ctx.companyIds)]);
         return { programs, countrySets };
@@ -110,7 +115,9 @@ export async function GET(request: NextRequest) {
   // needs the request narrowed to exactly one company; otherwise 400 rather than
   // a plan over an empty area that reads as an honest zero. The rule depends
   // only on the key's own grant, so naming it discloses nothing.
-  if (req.level === "countrySet" && singleCompanyId(ctx.companyIds) === null) {
+  // `level=anchored` is the same rule: its target countries are a Country
+  // Set, and the partner's minimum and configured set belong to one company.
+  if ((req.level === "countrySet" || req.level === "anchored") && singleCompanyId(ctx.companyIds) === null) {
     return NextResponse.json({ error: COUNTRY_SET_SCOPE_ERROR }, { status: 400 });
   }
   if (req.targets.length === 0) {
