@@ -118,18 +118,24 @@ function restoreSummary(data: any): {
     c.countrySets > 0
       ? ` ${c.countrySets} country sets (${c.countrySetMembers} memberships).`
       : "";
+  // Partner program settings: same rule — only mention them when some came
+  // back from the archive.
+  const partnerSettings =
+    c.programCompanySettings > 0
+      ? ` ${c.programCompanySettings} program partner settings.`
+      : "";
   if (data.kind === "config") {
     return {
       type: warnings.length > 0 ? "warning" : "success",
       message: [
-        `Config restore complete — ${c.trainingData} trainings, ${c.regionData} regions, ${c.programData} program rules, ${c.importAliases} import aliases.${countrySets} Student data was not touched.`,
+        `Config restore complete — ${c.trainingData} trainings, ${c.regionData} regions, ${c.programData} program rules, ${c.importAliases} import aliases.${countrySets}${partnerSettings} Student data was not touched.`,
         ...warnings,
       ].join(" "),
     };
   }
 
   const parts = [
-    `Restore complete — ${c.regionData} regions, ${c.trainingData} trainings, ${c.students} students, ${c.trainingTaken} training records restored.${countrySets}`,
+    `Restore complete — ${c.regionData} regions, ${c.trainingData} trainings, ${c.students} students, ${c.trainingTaken} training records restored.${countrySets}${partnerSettings}`,
   ];
   if (c.companies?.restored > 0) {
     parts.push(`${c.companies.restored} companies matched or created.`);

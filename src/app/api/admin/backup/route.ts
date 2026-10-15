@@ -281,6 +281,38 @@ async function findCountrySetsForArchive() {
   return rows.map(({ company, ...rest }) => ({ ...rest, companyName: company.name }));
 }
 
+/**
+ * Per-partner program terms (`ProgramCompanySetting`) as both archive kinds
+ * write them. Every reference is carried by NAME beside the id: the program by
+ * `programName` (program ids are an install's own), the company by
+ * `companyName` (a config archive has no companies.json for its `companyId` to
+ * index), and the target set by `countrySetName` (sets get fresh ids on every
+ * restore). See {@link restoreProgramCompanySettings} for how each resolves.
+ */
+async function findProgramCompanySettingsForArchive() {
+  const rows = await prisma.programCompanySetting.findMany({
+    orderBy: { id: "asc" },
+    select: {
+      companyId: true,
+      minimumCountries: true,
+      createdAt: true,
+      updatedAt: true,
+      program: { select: { name: true } },
+      company: { select: { name: true } },
+      targetCountrySet: { select: { name: true } },
+    },
+  });
+  return rows.map((r) => ({
+    programName: r.program.name,
+    companyId: r.companyId,
+    companyName: r.company.name,
+    minimumCountries: r.minimumCountries,
+    countrySetName: r.targetCountrySet?.name ?? null,
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
+  }));
+}
+
 export async function generateBackupZip(opts: BackupOptions = {}): Promise<{
   buffer: ArrayBuffer;
   timestamp: string;
@@ -309,6 +341,7 @@ export async function generateBackupZip(opts: BackupOptions = {}): Promise<{
     userCompanies,
     countrySets,
     countrySetMembers,
+    programCompanySettings,
   ] = await Promise.all([
     prisma.productType.findMany({ orderBy: { id: "asc" } }),
     prisma.regionData.findMany({ orderBy: { country: "asc" } }),
@@ -332,6 +365,7 @@ export async function generateBackupZip(opts: BackupOptions = {}): Promise<{
     prisma.userCompany.findMany({ orderBy: [{ userId: "asc" }, { companyId: "asc" }] }),
     findCountrySetsForArchive(),
     prisma.countrySetMember.findMany({ orderBy: [{ countrySetId: "asc" }, { country: "asc" }] }),
+    findProgramCompanySettingsForArchive(),
   ]);
 
   const zip = new JSZip();
@@ -381,6 +415,10 @@ export async function generateBackupZip(opts: BackupOptions = {}): Promise<{
   // `companyName` (the fallback when the id does not map).
   zip.file("country_sets.json", JSON.stringify(countrySets, null, 2));
   zip.file("country_set_members.json", JSON.stringify(countrySetMembers, null, 2));
+  // Per-partner program terms. Every reference rides by name too (program,
+  // company, target set), because none of those ids survives a restore — see
+  // restoreProgramCompanySettings.
+  zip.file("program_company_settings.json", JSON.stringify(programCompanySettings, null, 2));
   // Credentials (password hashes, MFA secrets) are stripped unless the caller
   // explicitly opted in — and generateBackupArchive only honours that opt-in
   // for an encrypted archive. Without them a restore cannot recreate accounts,
@@ -433,6 +471,7 @@ export async function generateConfigZip(): Promise<{
     systemSetting,
     countrySets,
     countrySetMembers,
+    programCompanySettings,
   ] = await Promise.all([
     prisma.productType.findMany({ orderBy: { id: "asc" } }),
     prisma.regionData.findMany({ orderBy: { country: "asc" } }),
@@ -451,6 +490,7 @@ export async function generateConfigZip(): Promise<{
     prisma.systemSetting.findUnique({ where: { id: 1 } }),
     findCountrySetsForArchive(),
     prisma.countrySetMember.findMany({ orderBy: [{ countrySetId: "asc" }, { country: "asc" }] }),
+    findProgramCompanySettingsForArchive(),
   ]);
 
   const zip = new JSZip();
@@ -487,6 +527,10 @@ export async function generateConfigZip(): Promise<{
   // install: each row carries `companyName`, which is what the restore matches.
   zip.file("country_sets.json", JSON.stringify(countrySets, null, 2));
   zip.file("country_set_members.json", JSON.stringify(countrySetMembers, null, 2));
+  // Per-partner program terms. Every reference rides by name too (program,
+  // company, target set), because none of those ids survives a restore — see
+  // restoreProgramCompanySettings.
+  zip.file("program_company_settings.json", JSON.stringify(programCompanySettings, null, 2));
 
   const buffer = await zip.generateAsync({ type: "arraybuffer" });
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
@@ -645,6 +689,10 @@ export interface RestoreCounts {
   countrySetMembers: number;
   /** Live sets the restore deleted to make way for the archive's. */
   countrySetsReplaced: number;
+  /** Partner program settings in place after the restore. */
+  programCompanySettings: number;
+  /** Live partner settings the archive's own replaced. */
+  programCompanySettingsReplaced: number;
   /**
    * Split rather than a bare number: reporting the archive's row count as
    * "restored" is what let a restore that deleted every account and recreated
@@ -733,6 +781,10 @@ export async function restoreFullArchive(
   // Country Sets — present in newer archives only. Kept separate
   // from referenceArchive on purpose (see CountrySetArchive).
   const countrySetArchive = await readCountrySetArchive(zip);
+  // Per-partner program terms — present in newer archives only, and kept out
+  // of referenceArchive for the same reason (see
+  // ProgramCompanySettingArchive). Absent, the live settings are preserved.
+  const programCompanySettingArchive = await readProgramCompanySettingArchive(zip);
 
   // Does this archive actually carry credentials? The metadata flag is the
   // authoritative answer; the per-row check is the belt-and-braces fallback,
@@ -815,6 +867,7 @@ export async function restoreFullArchive(
   // Cast, not an annotation: assigned inside the transaction callback, which
   // control-flow analysis cannot see, so an annotated `= null` narrows to never.
   let countrySetResult = null as CountrySetRestoreResult | null;
+  let programCompanySettingResult = null as ProgramCompanySettingRestoreResult | null;
   // Highest sessionEpoch among the accounts this restore is about to delete.
   // Read inside the transaction, *before* the deleteMany destroys it.
   let liveSessionEpochMax = 0;
@@ -831,6 +884,10 @@ export async function restoreFullArchive(
     const liveCountrySetMembers: CountrySetMemberSnapshot[] = countrySetArchive
       ? []
       : await tx.countrySetMember.findMany({ select: { countrySetId: true, country: true } });
+    // Partner settings cascade away with the programs (restoreReferenceData
+    // deletes them all) and lose their target set when the sets are replaced,
+    // so capture them by name before anything below deletes either.
+    const liveProgramCompanySettings = await snapshotProgramCompanySettings(tx);
     await tx.trainingTaken.deleteMany({});
     await tx.student.deleteMany({});
     await tx.trainingData.deleteMany({});
@@ -901,6 +958,16 @@ export async function restoreFullArchive(
     // Rebuild Programs + Offerings reference data (after TrainingData exists as
     // an FK target). No-op for older archives that predate these files.
     await restoreReferenceData(tx, referenceArchive, companyIdMap);
+    // Partner settings re-link by name to both programs and Country Sets, so
+    // they go after both. Same company resolver as the sets, and the same
+    // "all" scope: a full restore replaces the whole dataset.
+    programCompanySettingResult = await restoreProgramCompanySettings(
+      tx,
+      programCompanySettingArchive,
+      liveProgramCompanySettings,
+      countrySetCompanyResolver(localCompanies, companyIdMap),
+      "all"
+    );
     if (students.length > 0) {
       const studentRows = students.map(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1085,6 +1152,8 @@ export async function restoreFullArchive(
     countrySets: countrySetResult?.sets ?? 0,
     countrySetMembers: countrySetResult?.members ?? 0,
     countrySetsReplaced: countrySetResult?.replacedSets ?? 0,
+    programCompanySettings: programCompanySettingResult?.settings ?? 0,
+    programCompanySettingsReplaced: programCompanySettingResult?.replaced ?? 0,
     users: {
       inArchive: users.length,
       restored: usersRestored,
@@ -1107,6 +1176,7 @@ export async function restoreFullArchive(
     );
   }
   warnings.push(...countrySetWarnings(countrySetResult));
+  warnings.push(...programCompanySettingWarnings(programCompanySettingResult));
   if (studentsReassigned > 0) {
     warnings.push(
       `${studentsReassigned} student(s) referenced a company that does not exist here and were assigned to the oldest company. Review their company on the Students page.`
@@ -1187,7 +1257,15 @@ async function restoreConfigArchive(zip: JSZip): Promise<NextResponse> {
   type TrainingDataRow = any;
   type OlxRelationRow = { parentTrainingTitle: string; subItemTrainingTitle: string };
   type SpecialisationRow = { id: number; name: string };
-  type ProgramRow = { id: number; name: string; isTiered?: boolean; deploymentMode?: string; createdAt?: string };
+  type ProgramRow = {
+    id: number;
+    name: string;
+    isTiered?: boolean;
+    deploymentMode?: string;
+    anchorTheatre?: string | null;
+    defaultMinimumCountries?: number | null;
+    createdAt?: string;
+  };
   type ProgramTierRow = {
     id: number;
     programName: string;
@@ -1255,6 +1333,10 @@ async function restoreConfigArchive(zip: JSZip): Promise<NextResponse> {
   // Cast, not an annotation: assigned inside the transaction callback, which
   // control-flow analysis cannot see, so an annotated `= null` narrows to never.
   let countrySetResult = null as CountrySetRestoreResult | null;
+  // Per-partner program terms: optional, like the sets; absent, the live
+  // settings are preserved.
+  const archiveProgramCompanySettings = await readProgramCompanySettingArchive(zip);
+  let programCompanySettingResult = null as ProgramCompanySettingRestoreResult | null;
   const systemSettingFile = zip.file("system_setting.json");
   const archiveSystemSetting: SystemSettingRow = systemSettingFile
     ? JSON.parse(await systemSettingFile.async("string"))
@@ -1272,6 +1354,10 @@ async function restoreConfigArchive(zip: JSZip): Promise<NextResponse> {
       // 1. Wipe the tables we'll rebuild from scratch. None of these are FK
       //    targets of Student or TrainingTaken, so it's safe to clear them.
       //    Order respects the remaining FKs inside this scope.
+      //    Partner settings cascade away with the programs below (and lose
+      //    their target set when 3a replaces the sets), so they are captured
+      //    by name first and rebuilt in step 6d.
+      const liveProgramCompanySettings = await snapshotProgramCompanySettings(tx);
       await tx.programDataAlternative.deleteMany({});
       await tx.programData.deleteMany({});
       await tx.programTier.deleteMany({});
@@ -1404,6 +1490,10 @@ async function restoreConfigArchive(zip: JSZip): Promise<NextResponse> {
             name: p.name,
             isTiered: p.isTiered ?? false,
             deploymentMode: p.deploymentMode ?? "flat",
+            // This path enumerates its columns (see Common Pitfalls), so the
+            // anchored-program pair is carried by hand; older archives lack
+            // both keys and restore an ordinary program.
+            ...archiveProgramAnchorFields(p),
             createdAt: p.createdAt ? new Date(p.createdAt) : new Date(),
           })),
         });
@@ -1500,6 +1590,22 @@ async function restoreConfigArchive(zip: JSZip): Promise<NextResponse> {
         }
       }
 
+      // 6d. Per-partner program terms, after both the programs (6) and the
+      //     Country Sets (3a) they re-link to by name. The company is matched
+      //     by companyName only — the same resolver as the sets, which never
+      //     follows a config archive's companyId — and only the resolved
+      //     companies' live settings are replaced, so an archive taken on
+      //     another install cannot wipe the terms of partners it does not name.
+      programCompanySettingResult = await restoreProgramCompanySettings(
+        tx,
+        archiveProgramCompanySettings,
+        liveProgramCompanySettings,
+        countrySetCompanyResolver(
+          await tx.company.findMany({ select: { id: true, name: true } })
+        ),
+        "resolvedCompanies"
+      );
+
       // 7. Reset autoincrement sequences for the tables we inserted with
       //    explicit ids, otherwise the next admin-created row will collide.
       const resetSequence = async (table: string) => {
@@ -1579,7 +1685,10 @@ async function restoreConfigArchive(zip: JSZip): Promise<NextResponse> {
   // the commit, for the same reason as the full restore.
   invalidateReportCache();
 
-  const configWarnings: string[] = countrySetWarnings(countrySetResult);
+  const configWarnings: string[] = [
+    ...countrySetWarnings(countrySetResult),
+    ...programCompanySettingWarnings(programCompanySettingResult),
+  ];
 
   return NextResponse.json({
     success: true,
@@ -1600,6 +1709,10 @@ async function restoreConfigArchive(zip: JSZip): Promise<NextResponse> {
       countrySets: countrySetResult?.source === "archive" ? countrySetResult.sets : 0,
       countrySetMembers: countrySetResult?.source === "archive" ? countrySetResult.members : 0,
       countrySetsReplaced: countrySetResult?.replacedSets ?? 0,
+      // Like the sets: only an archive-sourced figure is reported here.
+      programCompanySettings:
+        programCompanySettingResult?.source === "archive" ? programCompanySettingResult.settings : 0,
+      programCompanySettingsReplaced: programCompanySettingResult?.replaced ?? 0,
     },
   });
 }
@@ -1806,6 +1919,8 @@ export async function restoreReferenceData(
         name: p.name,
         isTiered: p.isTiered ?? false,
         deploymentMode: p.deploymentMode ?? "flat",
+        // Enumerated, so a new column has to be added here by hand.
+        ...archiveProgramAnchorFields(p),
         createdAt: p.createdAt ? new Date(p.createdAt) : new Date(),
       })),
     });
@@ -2270,5 +2385,351 @@ export async function restoreCountrySets(
     droppedSets,
     droppedLegacySets,
     replacedSets,
+  };
+}
+
+/**
+ * The anchored-program columns of an archived `programs.json` row, normalised
+ * for insert. Both restore paths enumerate a program's columns (neither spreads
+ * the row), so a column missing here is silently dropped on every round trip —
+ * the Common Pitfall the config restore is known for. An archive written before
+ * the columns existed lacks both keys and restores an ordinary, un-anchored
+ * program. `defaultMinimumCountries` must satisfy the `>= 1` CHECK, so anything
+ * that is not a positive Postgres `integer` (a hand-edited 0, a string) becomes
+ * null rather than aborting the whole restore.
+ */
+function archiveProgramAnchorFields(p: Record<string, unknown>): {
+  anchorTheatre: string | null;
+  defaultMinimumCountries: number | null;
+} {
+  const theatre = typeof p.anchorTheatre === "string" ? p.anchorTheatre.trim() : "";
+  return {
+    anchorTheatre: theatre === "" ? null : theatre,
+    defaultMinimumCountries: positivePgInt(p.defaultMinimumCountries),
+  };
+}
+
+/** A positive Postgres `integer`, or null. */
+function positivePgInt(v: unknown): number | null {
+  return typeof v === "number" && Number.isInteger(v) && v >= 1 && v <= MAX_PG_INT ? v : null;
+}
+
+/**
+ * `program_company_settings.json` as carried by an archive. `null` means the
+ * archive predates the file. Kept out of {@link ReferenceArchive} for the same
+ * reason as {@link CountrySetArchive}: its `present` flag decides whether the
+ * Programs tables are rebuilt, and an archive written before this feature
+ * carries programs.json but no settings file.
+ */
+export interface ProgramCompanySettingArchive {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  rows: any[];
+}
+
+/**
+ * A live partner setting, captured by name BEFORE the restore deletes
+ * anything. Both restore paths delete every program (which cascades every
+ * setting away) and may replace the Country Sets (which nulls the target
+ * link), so the live rows have to be read first if any of them are to survive.
+ */
+export interface ProgramCompanySettingSnapshot {
+  programName: string;
+  companyId: number;
+  minimumCountries: number | null;
+  countrySetName: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/** Outcome of {@link restoreProgramCompanySettings}. */
+export interface ProgramCompanySettingRestoreResult {
+  /** "archive" = the archive carried the file; "preserved" = live rows kept. */
+  source: "archive" | "preserved";
+  /** Settings in place after the restore. */
+  settings: number;
+  /** Live settings the archive's own replaced (see the replace scope). */
+  replaced: number;
+  /** Archived rows dropped: their program is not in the restored data. */
+  droppedNoProgram: number;
+  /**
+   * Archived rows dropped: their company does not resolve here. Never re-homed
+   * to another company — a partner's minimum on the wrong partner silently
+   * changes that partner's tier, which is worse than a missing row the warning
+   * names.
+   */
+  droppedNoCompany: number;
+  /**
+   * Live settings that could not be kept because the archive no longer carries
+   * their program (the restore rebuilt the program list without it).
+   */
+  droppedLivePrograms: number;
+  /**
+   * Rows kept with no target set because the set they named does not exist for
+   * that company after the restore. The partner's minimum is kept; the
+   * dashboard asks for a set instead of opening on one.
+   */
+  unlinkedSets: number;
+  /** Archived minimums that were not a positive integer and were cleared. */
+  invalidMinimums: number;
+}
+
+/**
+ * Which live settings an archive-bearing restore replaces — the
+ * {@link CountrySetReplaceScope} reasoning, applied to partner terms.
+ *
+ *  - `"all"` — every live setting. The full restore, which replaces the whole
+ *    dataset (programs, sets and all) by definition.
+ *  - `"resolvedCompanies"` — only the settings of companies at least one
+ *    archived row resolved to. The config restore: a config archive is
+ *    routinely taken on another install whose companies only partly overlap
+ *    this one's, and replacing wholesale would wipe the terms of every partner
+ *    the archive does not even mention. Within a resolved company the archive
+ *    is authoritative for every program it carries (a config restore rebuilds
+ *    the program list from the archive, so every program that still exists
+ *    afterwards is one the archive carries): a live setting for such a company
+ *    that the archive lacks is removed, the archive's own are written.
+ */
+export type ProgramCompanySettingReplaceScope = "all" | "resolvedCompanies";
+
+/** Read `program_company_settings.json`, or null when the archive predates it. */
+export async function readProgramCompanySettingArchive(
+  zip: JSZip
+): Promise<ProgramCompanySettingArchive | null> {
+  const file = zip.file("program_company_settings.json");
+  if (!file) return null;
+  const parsed = JSON.parse(await file.async("string"));
+  return { rows: Array.isArray(parsed) ? parsed : [] };
+}
+
+/**
+ * Capture every live partner setting by name. MUST be called inside the
+ * restore transaction before anything is deleted — see
+ * {@link ProgramCompanySettingSnapshot}.
+ */
+export async function snapshotProgramCompanySettings(
+  tx: PrismaTransactionClient
+): Promise<ProgramCompanySettingSnapshot[]> {
+  const rows = await tx.programCompanySetting.findMany({
+    orderBy: { id: "asc" },
+    select: {
+      companyId: true,
+      minimumCountries: true,
+      createdAt: true,
+      updatedAt: true,
+      program: { select: { name: true } },
+      targetCountrySet: { select: { name: true } },
+    },
+  });
+  return rows.map((r) => ({
+    programName: r.program.name,
+    companyId: r.companyId,
+    minimumCountries: r.minimumCountries,
+    countrySetName: r.targetCountrySet?.name ?? null,
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
+  }));
+}
+
+/**
+ * The warnings a partner-settings restore produces, shared by both restore
+ * paths so the wording cannot drift between them.
+ */
+export function programCompanySettingWarnings(
+  result: ProgramCompanySettingRestoreResult | null
+): string[] {
+  const out: string[] = [];
+  if (!result) return out;
+  if (result.droppedNoCompany > 0) {
+    out.push(
+      `${result.droppedNoCompany} program partner setting(s) could not be matched to a company on this system and were not restored. Create the company and restore again, or re-enter the settings on the program's page.`
+    );
+  }
+  if (result.droppedNoProgram > 0) {
+    out.push(
+      `${result.droppedNoProgram} program partner setting(s) named a program that is not in the restored data and were not restored.`
+    );
+  }
+  if (result.droppedLivePrograms > 0) {
+    out.push(
+      `${result.droppedLivePrograms} existing program partner setting(s) were removed because the restored data no longer contains their program.`
+    );
+  }
+  if (result.unlinkedSets > 0) {
+    out.push(
+      `${result.unlinkedSets} program partner setting(s) named a target Country Set that does not exist for that company after the restore; they were kept without a target set. Choose the set again on the program's page.`
+    );
+  }
+  if (result.invalidMinimums > 0) {
+    out.push(
+      `${result.invalidMinimums} program partner setting(s) carried an invalid minimum number of countries, which was cleared.`
+    );
+  }
+  return out;
+}
+
+/**
+ * Rebuild the per-partner program terms (`ProgramCompanySetting`) inside a
+ * restore transaction. MUST run after the Programs AND the Country Sets are in
+ * place: every row is re-linked by name to both.
+ *
+ * Both restore paths delete every program, which cascades every live setting
+ * away, so this always ends by writing the complete final set: the archive's
+ * resolved rows plus whichever live rows (`liveSnapshot`, captured before any
+ * delete) fall outside the replace scope.
+ *
+ *  - **Program** — by `programName` among the programs that exist now. A
+ *    missing one drops the row (counted).
+ *  - **Company** — through `resolver`, the Country Set resolver, so the two
+ *    cannot disagree: the full restore maps the archived `companyId` through
+ *    `companyIdMap` and falls back to `companyName`; the config restore matches
+ *    `companyName` only and NEVER follows an archived id. A row naming no
+ *    company at all is dropped rather than copied into every company (the
+ *    resolver's legacy rule is for sets, which pre-date per-company scoping;
+ *    a partner setting never had a global form). Unresolved → dropped and
+ *    counted, never re-homed.
+ *  - **Target set** — by (resolved company, `countrySetName`), exact name
+ *    first and then case-insensitively when that is unambiguous (set names are
+ *    unique per company case-insensitively in the admin routes). A name that
+ *    no longer resolves keeps the row with no target and is counted.
+ *  - `archive` null (an older archive): every live row is kept, re-linked by
+ *    name. A live row whose program the restore removed cannot be kept and is
+ *    counted.
+ */
+export async function restoreProgramCompanySettings(
+  tx: PrismaTransactionClient,
+  archive: ProgramCompanySettingArchive | null,
+  liveSnapshot: ProgramCompanySettingSnapshot[],
+  resolver: CountrySetCompanyResolver,
+  replaceScope: ProgramCompanySettingReplaceScope
+): Promise<ProgramCompanySettingRestoreResult> {
+  const [programs, companies, sets] = await Promise.all([
+    tx.program.findMany({ select: { id: true, name: true } }),
+    tx.company.findMany({ select: { id: true } }),
+    tx.countrySet.findMany({ select: { id: true, companyId: true, name: true } }),
+  ]);
+  const programIdByName = new Map(programs.map((p) => [p.name, p.id] as const));
+  const liveCompanyIds = new Set(companies.map((c) => c.id));
+  const setIdExact = new Map<string, number>();
+  // lower-cased key -> id, or null when two sets of one company fold together.
+  const setIdFolded = new Map<string, number | null>();
+  for (const s of sets) {
+    setIdExact.set(`${s.companyId}\u0000${s.name}`, s.id);
+    const folded = `${s.companyId}\u0000${s.name.toLowerCase()}`;
+    setIdFolded.set(folded, setIdFolded.has(folded) ? null : s.id);
+  }
+  const resolveProgram = (name: unknown): number | undefined =>
+    typeof name === "string" ? programIdByName.get(name) ?? programIdByName.get(name.trim()) : undefined;
+  // undefined = no set named; null = named but not found here.
+  const resolveSet = (companyId: number, name: unknown): number | null | undefined => {
+    if (typeof name !== "string" || name.trim() === "") return undefined;
+    const trimmed = name.trim();
+    const exact =
+      setIdExact.get(`${companyId}\u0000${name}`) ?? setIdExact.get(`${companyId}\u0000${trimmed}`);
+    if (exact !== undefined) return exact;
+    return setIdFolded.get(`${companyId}\u0000${trimmed.toLowerCase()}`) ?? null;
+  };
+
+  let droppedNoProgram = 0;
+  let droppedNoCompany = 0;
+  let droppedLivePrograms = 0;
+  let unlinkedSets = 0;
+  let invalidMinimums = 0;
+  // (programId, companyId) -> the row to write. First occurrence wins, and an
+  // archive row is always placed before any live row, so the archive wins a
+  // collision.
+  const finalRows = new Map<
+    string,
+    {
+      programId: number;
+      companyId: number;
+      minimumCountries: number | null;
+      targetCountrySetId: number | null;
+      createdAt: Date;
+      updatedAt: Date;
+    }
+  >();
+  const resolvedCompanyIds = new Set<number>();
+
+  if (archive) {
+    for (const row of archive.rows) {
+      if (!row || typeof row !== "object") continue;
+      const programId = resolveProgram(row.programName);
+      // A row with neither a company id nor a name has no partner to belong to.
+      const companyIds = isLegacyCountrySetRow(row) ? [] : resolver.resolve(row);
+      if (companyIds.length !== 1) {
+        droppedNoCompany++;
+        continue;
+      }
+      const companyId = companyIds[0];
+      // The company resolved, so this archive speaks for it even if the
+      // program does not exist here (it then replaces that company's terms).
+      resolvedCompanyIds.add(companyId);
+      if (programId === undefined) {
+        droppedNoProgram++;
+        continue;
+      }
+      const key = `${programId}:${companyId}`;
+      if (finalRows.has(key)) continue;
+      const minimumCountries = positivePgInt(row.minimumCountries);
+      if (row.minimumCountries != null && minimumCountries === null) invalidMinimums++;
+      const setId = resolveSet(companyId, row.countrySetName);
+      if (setId === null) unlinkedSets++;
+      finalRows.set(key, {
+        programId,
+        companyId,
+        minimumCountries,
+        targetCountrySetId: setId ?? null,
+        createdAt: archiveDate(row.createdAt),
+        updatedAt: archiveDate(row.updatedAt),
+      });
+    }
+  }
+
+  // Live rows the archive does not replace: all of them for an older archive,
+  // none for a full restore that carries the file, and the unresolved
+  // companies' rows for a config restore that does.
+  const keptLive = !archive
+    ? liveSnapshot
+    : replaceScope === "all"
+      ? []
+      : liveSnapshot.filter((s) => !resolvedCompanyIds.has(s.companyId));
+  const replaced = liveSnapshot.length - keptLive.length;
+  for (const s of keptLive) {
+    const programId = resolveProgram(s.programName);
+    if (programId === undefined || !liveCompanyIds.has(s.companyId)) {
+      droppedLivePrograms++;
+      continue;
+    }
+    const key = `${programId}:${s.companyId}`;
+    if (finalRows.has(key)) continue;
+    const setId = resolveSet(s.companyId, s.countrySetName);
+    if (setId === null) unlinkedSets++;
+    finalRows.set(key, {
+      programId,
+      companyId: s.companyId,
+      minimumCountries: s.minimumCountries,
+      targetCountrySetId: setId ?? null,
+      createdAt: s.createdAt,
+      updatedAt: s.updatedAt,
+    });
+  }
+
+  // Whatever the program/set cascades left behind is a subset of the
+  // snapshot, and every row of the snapshot that survives is in finalRows, so
+  // clearing and rewriting is exact. Fresh ids: nothing references a setting.
+  await tx.programCompanySetting.deleteMany({});
+  const data = [...finalRows.values()];
+  const written =
+    data.length > 0 ? (await tx.programCompanySetting.createMany({ data })).count : 0;
+
+  return {
+    source: archive ? "archive" : "preserved",
+    settings: written,
+    replaced,
+    droppedNoProgram,
+    droppedNoCompany,
+    droppedLivePrograms,
+    unlinkedSets,
+    invalidMinimums,
   };
 }
