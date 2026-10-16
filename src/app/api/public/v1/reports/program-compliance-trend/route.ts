@@ -16,7 +16,7 @@ import {
  * No projection is applied, and that is a claim worth stating rather than
  * leaving a reviewer to infer from its absence: the payload is
  * `{snapshots, programs, specialisations, scopeLabel, unsupportedPrograms}`
- * (the last naming anchored programs, which this report excludes), and a snapshot row is
+ * (the last naming programs with target countries, which this report excludes), and a snapshot row is
  * (program, specialisation, month, attained, required, pct, projected) — names
  * of programs, specialisations and months, and counts. No email, no person name,
  * at any depth.

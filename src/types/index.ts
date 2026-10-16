@@ -139,10 +139,10 @@ export interface ProgramSummaryRow {
   tierCount: number;
   /** Registry id — null only for a legacy program with requirement rows but no Program row. */
   id: number | null;
-  /** Anchored programs: the theatre their Theatre rows count over; null otherwise. */
-  anchorTheatre: string | null;
-  /** The minimum number of target countries a partner with no setting of its own must name. */
-  defaultMinimumCountries: number | null;
+  /** By Country Set view: the minimum number of countries a partner's set must hold, for a partner with no setting of its own. */
+  countrySetMinimumCountries: number | null;
+  /** By Theatre view: the minimum number of target countries, for a partner with no setting of its own. */
+  targetMinimumCountries: number | null;
   /** Program-wide gates: rows with neither a specialisation nor a tier (tiered programs only). */
   programWideCount: number;
 }

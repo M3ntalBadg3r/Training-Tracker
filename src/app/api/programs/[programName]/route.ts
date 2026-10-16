@@ -18,9 +18,12 @@ import { checkProgramViewRequest } from "@/lib/program-view-guard";
  *    (for a row naming no training) and per-title global holder counts with an
  *    optional per-theatre minimum.
  *
- * An **anchored** program (`level=anchored`, optional `countrySet=`) is one
- * view over two populations — its Theatre rows over the anchor theatre and its
- * CountrySet rows over the partner's target countries; it offers no other view.
+ * A program with **TargetCountries** rows judges its By Theatre view
+ * (`level=theatre&theatre=`, optional `countrySet=` naming the target set) over
+ * two populations — its Theatre rows over the theatre and its TargetCountries
+ * rows over the partner's target countries inside it, with the partner's
+ * minimum. By Country Set (`level=countrySet`, `countrySet=` optional, blank =
+ * the partner's configured set) carries the partner's Country Set minimum.
  *
  * A `meta` block reports the configured levels and whether any requirement uses
  * a per-theatre minimum, so the client can render the right sections.
@@ -75,14 +78,14 @@ export async function GET(
 
   // A Country Set is per-company tenant data: its name resolves only within one
   // company, and two companies may each own a same-named set over different
-  // countries. A countrySet (or anchored, which resolves the partner's target
-  // set) report or roster whose scope is not exactly one company (a SuperAdmin
-  // under "All companies", or an Admin holding several) is therefore refused
-  // rather than answered — the helpers would fail closed to an empty area, which
-  // reads as an honest "nothing here" and is not one. The page always sends a
-  // single company (it is company-gated), so only a hand-built request reaches
-  // this. An anchored program offers only the anchored view, and only it offers
-  // that view; an anchored roster must name the row's population. All of this
+  // countries. A countrySet report or roster — and a theatre one on a program
+  // with TargetCountries rows, which resolves the partner's target set and
+  // minimum — whose scope is not exactly one company (a SuperAdmin under "All
+  // companies", or an Admin holding several) is therefore refused rather than
+  // answered: the helpers would fail closed to an empty area, which reads as an
+  // honest "nothing here" and is not one. The page always sends a single
+  // company (it is company-gated), so only a hand-built request reaches this. A
+  // roster on such a Theatre view must name the row's population. All of this
   // lives in `lib/program-view-guard.ts`, shared with the public route.
   const checked = await checkProgramViewRequest({
     programName,

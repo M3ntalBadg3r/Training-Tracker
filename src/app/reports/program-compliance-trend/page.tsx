@@ -46,8 +46,9 @@ interface TrendResponse {
   specialisations: string[];
   scopeLabel: string;
   /**
-   * Anchored programs this report does not cover: it pools every row over one
-   * geography, which would misreport a program judged over two populations.
+   * Programs with target countries, which this report does not cover: it pools
+   * every row over one geography, which would misreport a program whose By
+   * Theatre view is judged over two populations.
    * Optional so an older cached payload still renders.
    */
   unsupportedPrograms?: string[];
@@ -256,8 +257,8 @@ function ProgramComplianceTrendPageInner() {
 
       {(data.unsupportedPrograms?.length ?? 0) > 0 && (
         <p className="mb-4 rounded-lg border border-gray-200 bg-gray-50 px-4 py-2 text-sm text-gray-600">
-          Not shown: {data.unsupportedPrograms!.join(", ")} — anchored programs are reported over their target
-          countries on their own dashboard, which this trend cannot reproduce.
+          Not shown: {data.unsupportedPrograms!.join(", ")} — these programs count target countries in their By
+          Theatre view, which this trend cannot reproduce. See each program&apos;s own dashboard.
         </p>
       )}
 

@@ -16,10 +16,13 @@ import {
   parseScopeLevel,
   SCOPE_TO_REQ_LEVEL,
   type Aggregation,
-  type AnchoredPopulation,
   type CountryBreakdownRow,
+  type MinimumCountriesGate,
   type MinimumCountriesSource,
+  type PopulationKind,
 } from "@/lib/program-levels";
+
+export type { MinimumCountriesGate };
 
 export const TRAINING_TYPE_LABELS: Record<string, string> = {
   Certification: "Certification",
@@ -80,12 +83,12 @@ export interface Requirement {
   trainedNotCertified?: number;
   alternatives: AlternativeEntry[];
   /**
-   * Anchored view only: the population the row is counted over — the anchor
-   * theatre (`"theatre"`) or the partner's target countries
-   * (`"targetCountries"`) — and its display name (the theatre, or the set).
-   * Absent on every other view.
+   * By Theatre view of a program with TargetCountries rows only: the population
+   * the row is counted over — the theatre (`"theatre"`) or the partner's target
+   * countries in it (`"targetCountries"`) — and its display name (the theatre,
+   * or the set). Absent on every other view.
    */
-  population?: AnchoredPopulation;
+  population?: PopulationKind;
   populationLabel?: string;
 }
 
@@ -146,21 +149,9 @@ export interface TierDeploymentRequirement {
   countryBreakdown?: CountryBreakdownRow[] | null;
   projectedCountryBreakdown?: CountryBreakdownRow[] | null;
   alternatives: AlternativeEntry[];
-  /** Anchored view only (see `Requirement.population`). */
-  population?: AnchoredPopulation;
+  /** By Theatre with target countries only (see `Requirement.population`). */
+  population?: PopulationKind;
   populationLabel?: string;
-}
-
-/**
- * An anchored program's minimum-countries gate: how many target countries the
- * partner names inside the anchor theatre, against whose minimum. When `met`
- * is false no tier is reached.
- */
-export interface MinimumCountriesGate {
-  required: number | null;
-  counted: number;
-  met: boolean;
-  source: MinimumCountriesSource;
 }
 
 export interface TierInfo {
@@ -193,7 +184,11 @@ export interface TierBlock {
    * an older cached payload still renders; empty for a program with none.
    */
   gateRequirements?: TierDeploymentRequirement[];
-  /** Anchored programs only; null/absent elsewhere. */
+  /**
+   * By Country Set (countries in the set) and By Theatre with target countries
+   * (target countries in the theatre) only; null/absent elsewhere. When `met`
+   * is false no tier is reached.
+   */
   minimumCountriesGate?: MinimumCountriesGate | null;
 }
 
@@ -203,8 +198,8 @@ export type ViewStudentsFn = (
   level: string,
   filterValue: string,
   alternatives?: AlternativeEntry[],
-  /** Anchored view only: the row's population, so the roster matches its figure. */
-  population?: AnchoredPopulation
+  /** By Theatre with target countries only: the row's population, so the roster matches its figure. */
+  population?: PopulationKind
 ) => void;
 
 export type RiskState = "compliant" | "atRisk" | "nonCompliant";
@@ -333,7 +328,7 @@ export function countModeLabel(aggregation: Aggregation | undefined): string {
  * confused side by side; everything else keeps its unit ("N people").
  */
 export function requiredText(
-  req: { quantityRequired: number; aggregation?: Aggregation; population?: AnchoredPopulation },
+  req: { quantityRequired: number; aggregation?: Aggregation; population?: PopulationKind },
   level: string,
   unitLabel: string
 ): string {
@@ -374,24 +369,24 @@ export function countryBreakdownLines(
   });
 }
 
-/** "theatre" / "target countries" — what each anchored population is, in words. */
-export const POPULATION_KIND_LABELS: Record<AnchoredPopulation, string> = {
+/** "theatre" / "target countries" — what each By Theatre population is, in words. */
+export const POPULATION_KIND_LABELS: Record<PopulationKind, string> = {
   theatre: "theatre",
   targetCountries: "target countries",
 };
 
 /**
- * "Counted over EMEA (theatre)" / "Counted over Set A (target countries)" for an
- * anchored-view row, or undefined elsewhere. Shared by the table, the tier
+ * "Counted over EMEA (theatre)" / "Counted over Set A (target countries)" for a
+ * By Theatre (with target countries) row, or undefined elsewhere. Shared by the table, the tier
  * ladder and the PDF so the three say the same thing.
  */
-export function populationText(req: { population?: AnchoredPopulation; populationLabel?: string }): string | undefined {
+export function populationText(req: { population?: PopulationKind; populationLabel?: string }): string | undefined {
   if (!req.population) return undefined;
   const name = req.populationLabel ? `${req.populationLabel} ` : "";
   return `Counted over ${name}(${POPULATION_KIND_LABELS[req.population]})`;
 }
 
-/** Whose rule a partner's minimum number of target countries came from, in words. */
+/** Whose rule a partner's minimum number of countries came from, in words. */
 export const MINIMUM_SOURCE_LABELS: Record<MinimumCountriesSource, string> = {
   partner: "partner setting",
   default: "program default",
@@ -400,22 +395,42 @@ export const MINIMUM_SOURCE_LABELS: Record<MinimumCountriesSource, string> = {
 
 /**
  * "Why no tier is reached" for an unmet minimum-countries gate, shared by the
- * page's gate card, the tier ladder and the PDF.
+ * page's gate card, the tier ladder and the PDF. Worded per view: By Country
+ * Set counts the countries in the set, By Theatre the target countries inside
+ * the theatre (`theatre` names it).
  */
 export function minimumGateText(
   gate: MinimumCountriesGate,
-  anchorTheatre?: string | null,
+  theatre?: string | null,
   /** A program without tiers has no tier to withhold, so the sentence says so. */
   tiered = true
 ): string {
-  const where = anchorTheatre ? ` inside ${anchorTheatre}` : "";
   const required = gate.required ?? 0;
+  const source = MINIMUM_SOURCE_LABELS[gate.source];
+  if (gate.view === "countrySet") {
+    return (
+      `${gate.counted} of ${required} countries in the set (${source}). ` +
+      (tiered
+        ? `No tier can be reached until the partner's Country Set holds at least ${required} countries.`
+        : `The partner's Country Set must hold at least ${required} countries.`)
+    );
+  }
+  const where = theatre ? ` in ${theatre}` : "";
   return (
-    `Target countries: ${gate.counted} of ${required} minimum (${MINIMUM_SOURCE_LABELS[gate.source]}). ` +
+    `${gate.counted} of ${required} target countries${where} (${source}). ` +
     (tiered
       ? `No tier can be reached until the partner names at least ${required} target countries${where}.`
       : `The partner must name at least ${required} target countries${where}.`)
   );
+}
+
+/** The one-line "not reachable" note a tier card shows under an unmet minimum gate. */
+export function minimumGateTierNote(gate: MinimumCountriesGate, theatre?: string | null): string {
+  const required = gate.required ?? 0;
+  if (gate.view === "countrySet") {
+    return `Not reachable until the partner's Country Set holds at least ${required} countries.`;
+  }
+  return `Not reachable until the partner names at least ${required} target countries${theatre ? ` in ${theatre}` : ""}.`;
 }
 
 /** The heading the program-wide gates are shown under, once, in Tier Status. */
@@ -1165,8 +1180,8 @@ export function LoadingSpinner() {
  * or — for an "each country" row — a per-country expand).
  */
 function TierRequirementRow({ req, multiCountry: multiCountryView }: { req: TierDeploymentRequirement; multiCountry: boolean }) {
-  // A pooled row over an anchored program's target countries is a multi-country
-  // total, just as on a Region / Country Set view.
+  // A pooled row over a partner's target countries is a multi-country total,
+  // just as on a Region / Country Set view.
   const multiCountry = multiCountryView || req.population === "targetCountries";
   const [expanded, setExpanded] = useState(false);
   const projected = req.projectedAttained ?? undefined;
@@ -1261,12 +1276,12 @@ function TierRequirementRow({ req, multiCountry: multiCountryView }: { req: Tier
 export function TierLadder({
   block,
   level,
-  anchorTheatre,
+  theatre,
 }: {
   block: TierBlock;
   level?: string;
-  /** Anchored programs: names the theatre in the per-tier minimum-countries note. */
-  anchorTheatre?: string | null;
+  /** By Theatre with target countries: names the theatre in the per-tier minimum-countries note. */
+  theatre?: string | null;
 }) {
   const multiCountry = level !== undefined && isMultiCountryScope(level);
   const gates = block.gateRequirements ?? [];
@@ -1378,7 +1393,7 @@ export function TierLadder({
               {!tier.compliant && (!gatesMet || minGateFails) && (
                 <div className="mt-1 text-xs text-red-700">
                   {minGateFails
-                    ? `Not reachable until the partner names at least ${minGate.required ?? 0} target countries${anchorTheatre ? ` within ${anchorTheatre}` : ""}.`
+                    ? minimumGateTierNote(minGate, theatre)
                     : `Not reachable until every "${GATES_HEADING}" requirement is met.`}
                 </div>
               )}

@@ -1,18 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { isAnchoredProgram } from "@/lib/program-anchor";
 import { authorizePublicRequest } from "@/lib/public-api";
 
 /**
  * GET /api/public/v1/programs — read-only list of the configured partner
  * programs, plus the shape each one needs so consumers know how to query the
  * per-program compliance endpoint:
- *  - `levels`: which compliance levels (Country/Theatre/Global) are configured
+ *  - `levels`: which requirement levels (Country/Region/CountrySet/
+ *    TargetCountries/Theatre/Global) are configured
  *  - `hasMinimumPerTheatre`: whether any requirement enforces a per-theatre
  *    minimum (drives the per-theatre breakdown on the Global level)
  *  - `isTiered`: whether the program has a tier ladder
- *  - `isAnchored` / `anchorTheatre`: whether the program is anchored (reported
- *    only via `level=anchored`), and the theatre its Theatre rows count over
+ *  - `hasTargetCountries`: whether the program has TargetCountries rows, so its
+ *    `level=theatre` view also counts each partner's target countries inside
+ *    the theatre (and needs the request narrowed to exactly one company)
  *
  * This list is deliberately NOT company-scoped, unlike every other endpoint on
  * this surface. Reviewed and kept, on this evidence:
@@ -24,9 +25,8 @@ import { authorizePublicRequest } from "@/lib/public-api";
  *    because offerings are tenant data. When something here is meant to be
  *    per-tenant, the schema says so.
  *  - Nothing per-company leaves this handler. The response is four fields per
- *    program — the program name, its configured levels, three booleans and the
- *    anchor theatre (a configured theatre name, global reference data) — all
- *    read from the registry tables above. No student, completion, count,
+ *    program — the program name, its configured levels and four booleans —
+ *    all read from the registry tables above. No student, completion, count,
  *    attainment or company value is read, derived or returned, so no key can
  *    learn anything about another key's companies from it. The compliance
  *    numbers that ARE tenant data live at `/api/public/v1/programs/{name}`,
@@ -48,17 +48,11 @@ export async function GET(request: NextRequest) {
     prisma.programData.findMany({
       select: { programName: true, level: true, minimumPerTheatre: true },
     }),
-    prisma.program.findMany({ select: { name: true, isTiered: true, anchorTheatre: true } }),
+    prisma.program.findMany({ select: { name: true, isTiered: true } }),
     prisma.programTier.findMany({ select: { programName: true } }),
   ]);
 
   const isTieredByName = new Map(registry.map((p) => [p.name, p.isTiered]));
-  // An anchored program is reported over its anchor theatre + each partner's
-  // target countries, in one view; the dashboard and planning need to know so
-  // they offer only that view. Blank is not anchored (`isAnchoredProgram`).
-  const anchorByName = new Map(
-    registry.map((p) => [p.name, isAnchoredProgram(p) ? p.anchorTheatre!.trim() : null])
-  );
   const hasTiers = new Set(tiers.map((t) => t.programName));
 
   const byProgram = new Map<string, { levels: Set<string>; hasMinimumPerTheatre: boolean }>();
@@ -88,8 +82,10 @@ export async function GET(request: NextRequest) {
       levels: [...info.levels],
       hasMinimumPerTheatre: info.hasMinimumPerTheatre,
       isTiered: isTieredByName.get(name) === true,
-      isAnchored: anchorByName.get(name) != null,
-      anchorTheatre: anchorByName.get(name) ?? null,
+      // A program with TargetCountries rows judges its By Theatre view over
+      // the theatre AND each partner's target countries inside it, which
+      // needs exactly one company; the dashboard reads this to know.
+      hasTargetCountries: info.levels.has("TargetCountries"),
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
 
