@@ -12,6 +12,7 @@ import {
   ChevronDown,
   ChevronRight,
   AlertTriangle,
+  Info,
 } from "lucide-react";
 import PageHeader from "@/components/layout/PageHeader";
 import LoadingState from "@/components/ui/LoadingState";
@@ -44,19 +45,19 @@ import { useDebounce } from "@/hooks/useDebounce";
 import { useFetchJson } from "@/hooks/useFetchJson";
 import {
   AGGREGATION_SHORT_LABELS,
-  ANCHORED_SCOPE,
-  ANCHORED_SCOPE_LABEL,
   SCOPE_LEVELS,
   SCOPE_LEVEL_LABELS,
   SCOPE_VALUE_NOUN,
-  parseProgramViewLevel,
+  parseScopeLevel,
   scopeLevelOffered,
   type Aggregation,
-  type AnchoredMeta,
-  type AnchoredPopulation,
+  type CountrySetMinimumMeta,
   type MinimumCountriesSource,
-  type ProgramViewLevel,
+  type MinimumView,
+  type PopulationKind,
   type ReqLevel,
+  type ScopeLevel,
+  type TargetCountriesMeta,
 } from "@/lib/program-levels";
 
 // ── API shapes (mirror lib/compliance-plan.ts) ──
@@ -74,8 +75,9 @@ interface PlanRequirement {
   /** Set on one country of an "each country" requirement; null when pooled. */
   country: string | null;
   scopeLabel: string;
-  /** Anchored plans only: which of the program's two populations the row counts over. */
-  population?: AnchoredPopulation;
+  /** Theatre plans of a program with target countries only: which of its two
+   *  populations the row counts over. */
+  population?: PopulationKind;
   cert: string;
   required: number;
   attained: number;
@@ -112,6 +114,9 @@ interface PlanSpecialisation {
 /** Something certifying people cannot fix — reported beside the plan, never costed. */
 interface PlanBlocker {
   kind: "minimumCountries";
+  view: MinimumView;
+  /** The theatre (theatre view) or the Country Set (country set view); null = no set configured. */
+  areaName: string | null;
   required: number;
   counted: number;
   source: MinimumCountriesSource;
@@ -134,9 +139,11 @@ interface PlanTargetResult {
   peopleMoves: number;
   easyWins: number;
   netNew: number;
-  /** Anchored plans only: the two populations and the partner's minimum. */
-  anchored?: AnchoredMeta;
-  /** Anchored plans only, and only when non-empty. */
+  /** Theatre plans of a program with target countries only. */
+  targetCountries?: TargetCountriesMeta;
+  /** Country Set plans only: the set planned over and its minimum. */
+  countrySetMinimum?: CountrySetMinimumMeta;
+  /** Only when non-empty. */
   blockers?: PlanBlocker[];
 }
 interface PlanCandidateClose {
@@ -168,7 +175,7 @@ interface PlanRiskImpact {
   aggregation: Aggregation;
   country: string | null;
   scopeLabel: string;
-  population?: AnchoredPopulation;
+  population?: PopulationKind;
   required: number;
   attained: number;
   projectedAttained: number;
@@ -198,9 +205,6 @@ interface CompliancePlanResult {
   eligible: PlanCandidate[];
   renewals: PlanRenewalRow[];
   riskImpacts: PlanRiskImpact[];
-  /** Targets the API left out for being on the wrong side of the Target
-   *  countries scope (optional so an older cached payload still renders). */
-  skippedTargets?: { program: string; reason: "anchoredOnly" | "notAnchored" }[];
   totals: {
     peopleMoves: number;
     easyWins: number;
@@ -221,10 +225,10 @@ interface PlanningOption {
   tiers: string[];
   specialisations: string[];
   /**
-   * Set for an anchored program, which is planned only at the "Target
-   * countries" scope (and nowhere else). Absent on an older cached payload.
+   * The program has TargetCountries rows, so a theatre plan of it also counts
+   * them over the partner's target countries. Absent on an older cached payload.
    */
-  anchored?: { anchorTheatre: string } | null;
+  targetCountries?: boolean;
 }
 interface PlanningOptionsResponse {
   programs: PlanningOption[];
@@ -253,64 +257,58 @@ interface TargetSelection {
 const WINDOW_OPTIONS = [0, 1, 3, 6, 12];
 const DEFAULT_WINDOW_MONTHS = 3;
 
-function parseLevel(v: string | null): ProgramViewLevel {
-  return parseProgramViewLevel(v) ?? "global";
-}
-
-/** Whether a program is planned at this scope: anchored programs at the
- *  anchored scope only, every other program everywhere else (the engine skips
- *  a target on the wrong side, so the picker does not offer one). */
-function plannableAt(level: ProgramViewLevel, o: PlanningOption): boolean {
-  return (level === ANCHORED_SCOPE) === !!o.anchored;
+function parseLevel(v: string | null): ScopeLevel {
+  return parseScopeLevel(v) ?? "global";
 }
 
 /**
  * Whether the scope selector offers a level. Global, Theatre and Country are
  * always offered, as they always were. Region and Country Set plan against
  * their OWN requirement rows (a region no longer pools the Country rows), so
- * offering one no program has rows at would only ever produce an empty plan —
- * and only a STANDARD program's rows count there, since an anchored program is
- * never planned at a single-population scope. Country Set additionally needs
- * the selected company to own at least one set: sets are per-company, so a
- * company with none has nothing to plan against. "Target countries" is offered
- * when some program is anchored, under the same set rule (the dashboard's).
+ * offering one no program has rows at would only ever produce an empty plan.
+ * Country Set additionally needs the selected company to own at least one set:
+ * sets are per-company, so a company with none has nothing to plan against.
  */
-function levelAvailable(level: ProgramViewLevel, options: PlanningOption[], countrySets: string[]): boolean {
-  if (level === ANCHORED_SCOPE) return countrySets.length > 0 && options.some((o) => !!o.anchored);
+function levelAvailable(level: ScopeLevel, options: PlanningOption[], countrySets: string[]): boolean {
   if (level === "global" || level === "theatre" || level === "country") return true;
   if (level === "countrySet" && countrySets.length === 0) return false;
-  return options.some((o) => !o.anchored && scopeLevelOffered(level, o.levels));
-}
-
-const VIEW_LEVELS: readonly ProgramViewLevel[] = [...SCOPE_LEVELS, ANCHORED_SCOPE];
-
-function levelLabel(level: ProgramViewLevel): string {
-  return level === ANCHORED_SCOPE ? ANCHORED_SCOPE_LABEL : SCOPE_LEVEL_LABELS[level];
-}
-
-function valueNoun(level: Exclude<ProgramViewLevel, "global">): string {
-  return level === ANCHORED_SCOPE ? "country set" : SCOPE_VALUE_NOUN[level];
+  return options.some((o) => scopeLevelOffered(level, o.levels));
 }
 
 /**
- * The blank option of the "Target countries" set picker. Blank is a real choice
- * there — each program's configured target set for this partner — so it names
- * the set the plan actually used once a plan for it has loaded (and every
- * target resolved the same one).
+ * The blank option of a Country Set picker where blank is a real choice — the
+ * Country Set scope (each program's partner Country Set-view set) and the
+ * Theatre scope's target set (each program's partner Theatre-view set). Once a
+ * plan for it has loaded it names the set the plan actually used, when every
+ * target resolved the same one.
  */
-function configuredSetLabel(plan: CompliancePlanResult | null, scopeValue: string): string {
+function configuredSetLabel(plan: CompliancePlanResult | null, view: "countrySet" | "theatre"): string {
   const base = "Partner's configured set";
-  if (!plan || scopeValue !== "") return base;
-  const sets = [...new Set(plan.targets.map((t) => t.anchored?.countrySet ?? null))];
+  if (!plan) return base;
+  const used = plan.targets.flatMap((t) =>
+    view === "theatre"
+      ? t.targetCountries ? [t.targetCountries.countrySet] : []
+      : t.countrySetMinimum ? [t.countrySetMinimum.countrySet] : [],
+  );
+  const sets = [...new Set(used)];
   if (sets.length !== 1) return base;
   return sets[0] ? `${base} (${sets[0]})` : `${base} (none configured)`;
 }
 
-/** Which population an anchored row is counted over, in words. */
-const POPULATION_LABEL: Record<AnchoredPopulation, string> = {
-  theatre: "anchor theatre",
+/** Which population a theatre plan's row is counted over, in words. */
+const POPULATION_LABEL: Record<PopulationKind, string> = {
+  theatre: "whole theatre",
   targetCountries: "target countries",
 };
+
+/** Whether a plan carries a targets program's populations — the only plans
+ *  whose exports gain a Population column, so every other plan's file is
+ *  unchanged. */
+function plansPopulations(targets: PlanTargetResult[]): boolean {
+  return targets.some(
+    (t) => !!t.targetCountries || t.specialisations.some((s) => s.requirements.some((r) => !!r.population)),
+  );
+}
 
 /**
  * The blocker sentence. Restates the server's `blockerText` rather than
@@ -320,29 +318,42 @@ const POPULATION_LABEL: Record<AnchoredPopulation, string> = {
 function blockerText(b: PlanBlocker, tiered: boolean): string {
   const more = Math.max(0, b.required - b.counted);
   const whose = b.source === "partner" ? "this partner's minimum" : "the program's default minimum";
+  const action =
+    b.view === "theatre"
+      ? `Name ${more} more target countr${more === 1 ? "y" : "ies"}${b.areaName ? ` in ${b.areaName}` : ""} in Admin › Country Sets`
+      : `Add ${more} more countr${more === 1 ? "y" : "ies"} to ${b.areaName ?? "a Country Set (none is configured for this partner)"} in Admin › Country Sets`;
   return (
-    `Name ${more} more target countr${more === 1 ? "y" : "ies"} in Admin › Country Sets — ` +
+    `${action} — ` +
     // A program without tiers has no tier to withhold.
     `${b.counted} of ${b.required} counted (${whose})${tiered ? ", and no tier is reached until then" : ""}.`
   );
 }
 
-/** The anchored header line under a target's headline: what it was planned over. */
-function anchoredLine(a: AnchoredMeta): string {
-  const countries = a.targetCountries.length > 0 ? a.targetCountries.join(", ") : "none";
-  const set = a.countrySet ? `${a.countrySet}: ` : "No target set: ";
-  const minimum =
-    a.minimumCountries === null
-      ? ""
-      : ` · minimum ${a.minimumCountries} (${a.minimumCountriesSource === "partner" ? "partner setting" : "program default"})`;
-  return `Target countries — ${set}${countries}, within ${a.anchorTheatre}${minimum}`;
+function minimumText(minimum: number | null, source: MinimumCountriesSource): string {
+  return minimum === null
+    ? ""
+    : ` · minimum ${minimum} (${source === "partner" ? "partner setting" : "program default"})`;
 }
 
-/** Members of the set that lie outside the anchor theatre and so count for nothing. */
-function outOfTheatreText(a: AnchoredMeta): string | null {
+/** The target-countries line under a target's headline: what it was planned over. */
+function targetCountriesLine(a: TargetCountriesMeta): string {
+  const countries = a.targetCountries.length > 0 ? a.targetCountries.join(", ") : "none";
+  const set = a.countrySet ? `${a.countrySet}: ` : "No target set: ";
+  return `Target countries — ${set}${countries}, within ${a.theatre}${minimumText(a.minimumCountries, a.minimumCountriesSource)}`;
+}
+
+/** The Country Set line under a target's headline: the set it was planned over. */
+function countrySetLine(m: CountrySetMinimumMeta): string {
+  const countries = m.countries.length > 0 ? m.countries.join(", ") : "none";
+  const set = m.countrySet ? `${m.countrySet}: ` : "No Country Set configured: ";
+  return `Country Set — ${set}${countries}${minimumText(m.minimumCountries, m.minimumCountriesSource)}`;
+}
+
+/** Members of the target set that lie outside the theatre and so count for nothing. */
+function outOfTheatreText(a: TargetCountriesMeta): string | null {
   const n = a.outOfTheatreCountries.length;
   if (n === 0) return null;
-  return `${a.outOfTheatreCountries.join(", ")} ${n === 1 ? "is" : "are"} in ${a.countrySet ?? "the set"} but outside ${a.anchorTheatre}, so ${n === 1 ? "it does" : "they do"} not count.`;
+  return `${a.outOfTheatreCountries.join(", ")} ${n === 1 ? "is" : "are"} in ${a.countrySet ?? "the set"} but outside ${a.theatre}, so ${n === 1 ? "it does" : "they do"} not count.`;
 }
 
 function parseWindowMonths(v: string | null): number {
@@ -975,11 +986,10 @@ function buildRoadmapSection(
   planForWindow: boolean,
 ): ReportTableSection {
   const rows: Record<string, string | number>[] = [];
-  // Only an anchored plan carries a Population column, as on the dashboard, so
-  // a standard plan's spreadsheet is byte-identical to what it was before
-  // anchored programs existed. Every target of an anchored plan carries
-  // `anchored`; no target of a standard plan does.
-  const anchored = targets.some((t) => t.anchored);
+  // Only a theatre plan of a program with target countries carries a
+  // Population column, as on the dashboard, so every other plan's spreadsheet
+  // is byte-identical to what it was before.
+  const withPopulation = plansPopulations(targets);
   for (const t of targets) {
     const target = t.tierName ?? (t.mode === "all" ? "All requirements" : "Specialisations");
     const tiered = !!t.tierPlan;
@@ -1019,8 +1029,8 @@ function buildRoadmapSection(
           // is one row per country here, the rectangle a pivot wants.
           countMode: AGGREGATION_SHORT_LABELS[r.aggregation],
           country: r.country ?? "",
-          // Appended last for the same reason; anchored plans only.
-          ...(anchored ? { population: r.population ? POPULATION_LABEL[r.population] : "" } : {}),
+          // Appended last for the same reason; target-countries plans only.
+          ...(withPopulation ? { population: r.population ? POPULATION_LABEL[r.population] : "" } : {}),
         });
       }
     }
@@ -1055,7 +1065,7 @@ function buildRoadmapSection(
       { key: "shared", header: "Shared with" },
       { key: "countMode", header: "Count Mode" },
       { key: "country", header: "Country" },
-      ...(anchored ? [{ key: "population", header: "Population" }] : []),
+      ...(withPopulation ? [{ key: "population", header: "Population" }] : []),
     ],
     rows,
   };
@@ -1071,6 +1081,8 @@ function buildBlockerSection(targets: PlanTargetResult[]): ReportTableSection | 
     (t.blockers ?? []).map((b) => ({
       Program: t.program,
       Target: t.tierName ?? "",
+      View: b.view === "theatre" ? "Theatre (target countries)" : "Country Set",
+      Area: b.areaName ?? "",
       Required: b.required,
       Counted: b.counted,
       Source: b.source === "partner" ? "Partner setting" : "Program default",
@@ -1084,8 +1096,10 @@ function buildBlockerSection(targets: PlanTargetResult[]): ReportTableSection | 
     columns: [
       { key: "Program", header: "Program" },
       { key: "Target", header: "Target" },
+      { key: "View", header: "View" },
+      { key: "Area", header: "Theatre / Country Set" },
       { key: "Required", header: "Minimum countries" },
-      { key: "Counted", header: "Target countries counted" },
+      { key: "Counted", header: "Countries counted" },
       { key: "Source", header: "Minimum from" },
       { key: "Action", header: "Action" },
     ],
@@ -1094,9 +1108,9 @@ function buildBlockerSection(targets: PlanTargetResult[]): ReportTableSection | 
 }
 
 function buildRiskImpactSection(impacts: PlanRiskImpact[], windowMonths: number): ReportTableSection {
-  // Anchored plans only (every impact of one carries `population`; none of a
-  // standard plan's does), so a standard plan's export is unchanged.
-  const anchored = impacts.some((i) => i.population !== undefined);
+  // Target-countries plans only (only their impacts carry `population`), so
+  // every other plan's export is unchanged.
+  const withPopulation = impacts.some((i) => i.population !== undefined);
   return {
     title: "Requirements at risk",
     subtitle: `Falling below target within ${windowMonths} month${windowMonths === 1 ? "" : "s"} as training expires`,
@@ -1112,7 +1126,7 @@ function buildRiskImpactSection(impacts: PlanRiskImpact[], windowMonths: number)
       { key: "OnPath", header: "On recommended path" },
       { key: "CountMode", header: "Count Mode" },
       { key: "Country", header: "Country" },
-      ...(anchored ? [{ key: "Population", header: "Population" }] : []),
+      ...(withPopulation ? [{ key: "Population", header: "Population" }] : []),
     ],
     rows: impacts.map((i) => ({
       Program: i.program,
@@ -1126,7 +1140,7 @@ function buildRiskImpactSection(impacts: PlanRiskImpact[], windowMonths: number)
       OnPath: i.onPath ? "Yes" : "No",
       CountMode: AGGREGATION_SHORT_LABELS[i.aggregation],
       Country: i.country ?? "",
-      ...(anchored ? { Population: i.population ? POPULATION_LABEL[i.population] : "" } : {}),
+      ...(withPopulation ? { Population: i.population ? POPULATION_LABEL[i.population] : "" } : {}),
     })),
   };
 }
@@ -1276,7 +1290,7 @@ function buildSpecGroup(
     if (row.kind === "single") {
       return toRow(row.r, {
         cert: requirementLabel(row.r),
-        // The page's grey second line naming an anchored row's population.
+        // The page's grey second line naming a row's population.
         scope: row.r.population
           ? { text: row.r.scopeLabel, sub: POPULATION_LABEL[row.r.population] }
           : row.r.scopeLabel,
@@ -1334,11 +1348,12 @@ function buildRoadmapPdfSections(
     // what is left of the page's header: the headline, the easy/net-new counts
     // and (for a tier target) the specialisation ladder.
     const lines = [t.headline, targetSummaryChips(t).slice(1).map((c) => c.text).join(" · ")];
-    if (t.anchored) {
-      lines.push(anchoredLine(t.anchored));
-      const out = outOfTheatreText(t.anchored);
+    if (t.targetCountries) {
+      lines.push(targetCountriesLine(t.targetCountries));
+      const out = outOfTheatreText(t.targetCountries);
       if (out) lines.push(out);
     }
+    if (t.countrySetMinimum) lines.push(countrySetLine(t.countrySetMinimum));
     if (t.tierPlan) lines.push(tierPlanLine(t.tierPlan));
     return {
       title: targetTitle(t),
@@ -1596,13 +1611,16 @@ function CompliancePlanningPageInner() {
   );
 
   // Scope. Seeded from the URL so Back from a record restores the view.
-  const [levelState, setLevel] = useState<ProgramViewLevel>(() => parseLevel(searchParams.get("level")));
+  const [levelState, setLevel] = useState<ScopeLevel>(() => parseLevel(searchParams.get("level")));
   const [scopeValueState, setScopeValue] = useState(() => searchParams.get("scope") ?? "");
+  // The Theatre scope's optional target set (for programs with target
+  // countries); blank = each program's partner Theatre-view set.
+  const [targetSetState, setTargetSet] = useState(() => searchParams.get("targetSet") ?? "");
   const theatres = useMemo(() => [...new Set(regionRows.map((r) => r.theatre).filter((t): t is string => !!t))].sort(), [regionRows]);
   const regions = useMemo(() => [...new Set(regionRows.map((r) => r.region).filter(Boolean))].sort(), [regionRows]);
   const countries = useMemo(() => [...new Set(regionRows.map((r) => r.country))].sort(), [regionRows]);
   const offeredLevels = useMemo(
-    () => VIEW_LEVELS.filter((l) => levelAvailable(l, options, countrySets)),
+    () => SCOPE_LEVELS.filter((l) => levelAvailable(l, options, countrySets)),
     [options, countrySets],
   );
 
@@ -1615,31 +1633,36 @@ function CompliancePlanningPageInner() {
   // writes these effective values, so a stale link is corrected in the address
   // bar rather than persisting.
   //
-  // "Target countries" (anchored) takes a Country Set too, but there the blank
-  // value is a real choice — "each program's configured target set for this
-  // partner" — rather than "not chosen yet", so a plan runs without one.
-  const level: ProgramViewLevel = optionsLoaded && !offeredLevels.includes(levelState) ? "global" : levelState;
+  // At the Country Set scope a blank value is a real choice — "each program's
+  // partner Country Set-view set" — rather than "not chosen yet", so a plan
+  // runs without one.
+  const level: ScopeLevel = optionsLoaded && !offeredLevels.includes(levelState) ? "global" : levelState;
   const scopeOptions =
     level === "theatre" ? theatres
       : level === "region" ? regions
-        : level === "countrySet" || level === ANCHORED_SCOPE ? countrySets
+        : level === "countrySet" ? countrySets
           : level === "country" ? countries
             : [];
-  const listLoaded = level === "countrySet" || level === ANCHORED_SCOPE ? optionsLoaded : regionRows.length > 0;
+  const listLoaded = level === "countrySet" ? optionsLoaded : regionRows.length > 0;
   const scopeValue =
     level === "global" || (listLoaded && !scopeOptions.includes(scopeValueState)) ? "" : scopeValueState;
-  // The programs the target picker offers at this scope (see `plannableAt`).
-  const plannable = useMemo(() => options.filter((o) => plannableAt(level, o)), [options, level]);
-  const hiddenAnchored = level === ANCHORED_SCOPE ? 0 : options.filter((o) => !!o.anchored).length;
-  // The anchor theatre(s) the "Target countries" scope is drawn within, for the
-  // "within EMEA" label beside the set picker.
-  const anchorTheatres = useMemo(
-    () => [...new Set(options.map((o) => o.anchored?.anchorTheatre).filter((t): t is string => !!t))].sort(),
-    [options],
-  );
 
   // Targets: program name → selection (only selected programs are keys).
   const [targets, setTargets] = useState<Record<string, TargetSelection>>(() => parseTargets(searchParams.get("targets")));
+
+  // The target-set picker shows on the Theatre scope when some selected
+  // program has target countries. Until the options have loaded nothing is
+  // known about that, so the seed passes through; once they have, a value the
+  // company does not own reads as blank (the configured default), derived like
+  // the scope value above, and the mirror drops it from the address bar.
+  const targetsProgramSelected = optionsLoaded
+    ? options.some((o) => !!o.targetCountries && !!targets[o.name])
+    : true;
+  const showTargetSet = level === "theatre" && optionsLoaded && targetsProgramSelected && countrySets.length > 0;
+  const targetSet =
+    level === "theatre" && targetsProgramSelected && (!optionsLoaded || countrySets.includes(targetSetState))
+      ? targetSetState
+      : "";
   const [renewalWindowMonths, setRenewalWindowMonths] = useState(() => parseWindowMonths(searchParams.get("window")));
   // Kept false when the window is off, matching the invariant the window <select> enforces.
   const [planForWindow, setPlanForWindow] = useState(
@@ -1654,11 +1677,12 @@ function CompliancePlanningPageInner() {
     const params = new URLSearchParams();
     params.set("level", level);
     if (level !== "global" && scopeValue) params.set("scope", scopeValue);
+    if (level === "theatre" && targetSet) params.set("targetSet", targetSet);
     params.set("window", String(renewalWindowMonths));
     if (planForWindow) params.set("planForWindow", "true");
     if (Object.keys(targets).length > 0) params.set("targets", JSON.stringify(targets));
     return params;
-  }, [level, scopeValue, renewalWindowMonths, planForWindow, targets]);
+  }, [level, scopeValue, targetSet, renewalWindowMonths, planForWindow, targets]);
 
   useEffect(() => {
     const qs = buildViewParams().toString();
@@ -1678,15 +1702,14 @@ function CompliancePlanningPageInner() {
   const updateTarget = (name: string, patch: Partial<TargetSelection>) =>
     setTargets((prev) => ({ ...prev, [name]: { ...prev[name], ...patch } }));
 
-  // Build the targets payload for the API. A selection for a program not
-  // plannable at this scope stays in state (and in the URL), so switching back
-  // restores it, but is not sent — the engine would answer it with nothing.
-  // Until the options have loaded nothing is known about which programs are
-  // anchored, so nothing is filtered yet.
+  // Build the targets payload for the API. Every program is plannable at every
+  // scope; a selection naming a program that no longer exists (a stale link)
+  // stays in state but is not sent. Until the options have loaded nothing is
+  // known about which programs exist, so nothing is filtered yet.
   const targetsPayload = useMemo(() => {
-    const plannableNames = new Set(plannable.map((o) => o.name));
+    const knownNames = new Set(options.map((o) => o.name));
     return Object.entries(targets)
-      .filter(([program]) => !optionsLoaded || plannableNames.has(program))
+      .filter(([program]) => !optionsLoaded || knownNames.has(program))
       .map(([program, sel]) => {
         if (sel.mode === "tier") return { program, mode: "tier", tier: sel.tier };
         if (sel.mode === "specialisations") return { program, mode: "specialisations", specialisations: sel.specialisations };
@@ -1694,16 +1717,18 @@ function CompliancePlanningPageInner() {
       })
       .filter((t) => t.mode !== "tier" || !!t.tier)
       .filter((t) => t.mode !== "specialisations" || (t.specialisations && t.specialisations.length > 0));
-  }, [targets, plannable, optionsLoaded]);
+  }, [targets, options, optionsLoaded]);
 
   // A Country Set value is only plannable once it has been checked against the
   // current company's list; until then it would ask the API to plan a set the
-  // newly selected company may not own.
-  // The anchored scope accepts a blank set (the configured default) but, like a
-  // Country Set, only once the company's own list has been checked.
+  // newly selected company may not own. The Country Set scope accepts a blank
+  // set (each program's configured one) but likewise only once the list has
+  // been checked, and so does a Theatre scope carrying a target set.
   const scopeReady =
     level === "global" ||
-    (level === ANCHORED_SCOPE ? optionsLoaded : !!scopeValue && (level !== "countrySet" || optionsLoaded));
+    (level === "countrySet"
+      ? optionsLoaded
+      : !!scopeValue && (level !== "theatre" || targetSet === "" || optionsLoaded));
   const debouncedPayload = useDebounce(JSON.stringify(targetsPayload), 400);
   const debouncedTargets = useMemo<unknown[]>(() => {
     try {
@@ -1725,14 +1750,14 @@ function CompliancePlanningPageInner() {
     params.set("level", level);
     if (level === "theatre") params.set("theatre", scopeValue);
     if (level === "region") params.set("region", scopeValue);
-    if (level === "countrySet") params.set("countrySet", scopeValue);
-    if (level === ANCHORED_SCOPE && scopeValue) params.set("countrySet", scopeValue);
+    if (level === "countrySet" && scopeValue) params.set("countrySet", scopeValue);
+    if (level === "theatre" && targetSet) params.set("countrySet", targetSet);
     if (level === "country") params.set("country", scopeValue);
     params.set("companyId", String(companyId));
     params.set("renewalWindowMonths", String(renewalWindowMonths));
     params.set("planForWindow", String(planForWindow && renewalWindowMonths > 0));
     return `/api/programs/planning?${params.toString()}`;
-  }, [active, debouncedPayload, level, scopeValue, companyId, renewalWindowMonths, planForWindow]);
+  }, [active, debouncedPayload, level, scopeValue, targetSet, companyId, renewalWindowMonths, planForWindow]);
 
   const { data: plan, loading } = useFetchJson<CompliancePlanResult>(planUrl, { enabled: active });
 
@@ -1798,7 +1823,7 @@ function CompliancePlanningPageInner() {
               <ReportExportMenu
                 show={showReportExport}
                 setShow={setShowReportExport}
-                document={() => buildPlanDocument(plan, levelLabel(level))}
+                document={() => buildPlanDocument(plan, SCOPE_LEVEL_LABELS[level])}
                 filename={`compliance-plan-${plan.scopeLabel}${
                   plan.renewalWindowMonths > 0 ? `-plus${plan.renewalWindowMonths}mo` : ""
                 }${plan.planForWindow ? "-planned" : ""}`}
@@ -1824,7 +1849,7 @@ function CompliancePlanningPageInner() {
             className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm bg-white"
           >
             {offeredLevels.map((l) => (
-              <option key={l} value={l}>{levelLabel(l)}</option>
+              <option key={l} value={l}>{SCOPE_LEVEL_LABELS[l]}</option>
             ))}
           </select>
           {level !== "global" && (
@@ -1834,32 +1859,38 @@ function CompliancePlanningPageInner() {
               className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm bg-white"
             >
               <option value="">
-                {level === ANCHORED_SCOPE ? configuredSetLabel(plan, scopeValue) : `Select ${valueNoun(level)}…`}
+                {level === "countrySet"
+                  ? configuredSetLabel(scopeValue === "" && !loading ? plan : null, "countrySet")
+                  : `Select ${SCOPE_VALUE_NOUN[level]}…`}
               </option>
               {scopeOptions.map((o) => <option key={o} value={o}>{o}</option>)}
             </select>
           )}
-          {level === ANCHORED_SCOPE && anchorTheatres.length > 0 && (
-            <span className="text-sm text-gray-600">within {anchorTheatres.join(" / ")}</span>
+          {showTargetSet && (
+            <label className="flex items-center gap-2 text-sm text-gray-600">
+              Target countries from
+              <select
+                value={targetSet}
+                onChange={(e) => setTargetSet(e.target.value)}
+                className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm bg-white"
+              >
+                <option value="">{configuredSetLabel(targetSet === "" && !loading ? plan : null, "theatre")}</option>
+                {countrySets.map((o) => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </label>
           )}
         </div>
-        {hiddenAnchored > 0 && (
-          <p className="text-xs text-gray-500 -mt-2">
-            {hiddenAnchored} anchored program{hiddenAnchored === 1 ? " is" : "s are"} planned under the{" "}
-            <span className="font-medium">{ANCHORED_SCOPE_LABEL}</span> scope only.
-          </p>
-        )}
 
         <div>
           <div className="text-sm font-medium text-gray-700 mb-2">Programs &amp; targets</div>
-          {plannable.length === 0 ? (
+          {options.length === 0 ? (
             <div className="text-sm text-gray-500">
-              No programs configured{options.length > 0 ? " for this scope" : ""}. Add requirements in{" "}
+              No programs configured. Add requirements in{" "}
               <Link href="/admin/program-data" className="text-blue-600 hover:underline">Admin › Program Data</Link>.
             </div>
           ) : (
             <div className="grid gap-2 sm:grid-cols-2">
-              {plannable.map((opt) => {
+              {options.map((opt) => {
                 const sel = targets[opt.name];
                 return (
                   <div key={opt.name} className={`rounded-lg border p-3 ${sel ? "border-blue-300 bg-blue-50/40" : "border-gray-200"}`}>
@@ -1941,27 +1972,6 @@ function CompliancePlanningPageInner() {
             </div>
           )}
 
-          {/* A target the API left out says so, rather than reading as a
-              program with nothing to do. The picker already hides the wrong
-              side, so this mostly catches a carried-over or hand-built URL. */}
-          {(plan.skippedTargets?.length ?? 0) > 0 && (
-            <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800">
-              <span className="font-medium">Not planned:</span>
-              <span>
-                {plan.skippedTargets!.map((t, i) => (
-                  <span key={t.program}>
-                    {i > 0 && "; "}
-                    <strong>{t.program}</strong>{" "}
-                    {t.reason === "anchoredOnly"
-                      ? "is anchored, so it is planned only under Target countries"
-                      : "is not anchored, so it cannot be planned under Target countries"}
-                  </span>
-                ))}
-                .
-              </span>
-            </div>
-          )}
-
           <KpiStrip cards={kpis} />
 
           {/* Aggregate roadmap. Keyed by the projection because SpecBlock's
@@ -2015,7 +2025,7 @@ function CompliancePlanningPageInner() {
           <Sparkles className="mx-auto mb-2 text-blue-400" size={28} />
           {debouncedTargets.length === 0
             ? "Select one or more programs and a target above to generate a gap-closing plan."
-            : `Choose a ${level === "global" ? "scope" : valueNoun(level)} to plan against.`}
+            : `Choose a ${level === "global" ? "scope" : SCOPE_VALUE_NOUN[level]} to plan against.`}
         </div>
       ))}
     </div>
@@ -2041,8 +2051,11 @@ function TargetCard({ target, windowMonths }: { target: PlanTargetResult; window
             {target.tierName && <span className="ml-2 text-sm font-normal text-indigo-600">→ {target.tierName}</span>}
           </h2>
           <p className="text-sm text-gray-600 mt-1">{target.headline}</p>
-          {target.anchored && (
-            <p className="text-xs text-gray-500 mt-1">{anchoredLine(target.anchored)}</p>
+          {target.targetCountries && (
+            <p className="text-xs text-gray-500 mt-1">{targetCountriesLine(target.targetCountries)}</p>
+          )}
+          {target.countrySetMinimum && (
+            <p className="text-xs text-gray-500 mt-1">{countrySetLine(target.countrySetMinimum)}</p>
           )}
         </div>
         <div className="flex items-center gap-3 text-sm">
@@ -2056,7 +2069,7 @@ function TargetCard({ target, windowMonths }: { target: PlanTargetResult; window
           the plan in red rather than folded into its numbers. */}
       {(target.blockers ?? []).map((b) => (
         <div
-          key={b.kind}
+          key={`${b.kind}-${b.view}`}
           className="mt-3 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
         >
           <AlertTriangle size={16} className="mt-0.5 shrink-0" />
@@ -2066,10 +2079,12 @@ function TargetCard({ target, windowMonths }: { target: PlanTargetResult; window
           </span>
         </div>
       ))}
-      {target.anchored && outOfTheatreText(target.anchored) && (
-        <div className="mt-2 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-          <AlertTriangle size={14} className="mt-0.5 shrink-0" />
-          <span>{outOfTheatreText(target.anchored)}</span>
+      {/* Informational, not a warning: any theatre may be viewed, so a target
+          set spanning several theatres always has members outside this one. */}
+      {target.targetCountries && outOfTheatreText(target.targetCountries) && (
+        <div className="mt-2 flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">
+          <Info size={14} className="mt-0.5 shrink-0" />
+          <span>{outOfTheatreText(target.targetCountries)}</span>
         </div>
       )}
 
