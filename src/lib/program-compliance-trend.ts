@@ -1,5 +1,4 @@
 import prisma from "@/lib/prisma";
-import { isAnchoredProgram } from "@/lib/program-anchor";
 import {
   extractTitles,
   getEmailSetsByTitle,
@@ -26,13 +25,14 @@ import {
  * By default we evaluate at the Global level for each program; the report can
  * be narrowed by theatre / region / country.
  *
- * **Anchored programs are excluded, and named in `unsupportedPrograms`.** This
- * report pools every row of a program over ONE geography whatever its level,
- * while an anchored program is defined over two populations at once (its
- * Theatre rows over the anchor theatre, its CountrySet rows over each partner's
- * target countries, with a per-partner minimum). Pooled here it would be
- * misreported as plausible numbers, so it is left out and listed instead — the
- * page says which programs are not shown and why.
+ * **Programs with TargetCountries rows are excluded, and named in
+ * `unsupportedPrograms`.** This report pools every row of a program over ONE
+ * geography whatever its level, while such a program's By Theatre view is
+ * defined over two populations at once (its Theatre rows over the theatre, its
+ * TargetCountries rows over each partner's own target countries, with a
+ * per-partner minimum). Pooled here it would be misreported as plausible
+ * numbers, so it is left out and listed instead — the page says which programs
+ * are not shown and why.
  *
  * Presentation-agnostic and auth-agnostic: it takes a plain
  * `companyIds: number[] | null` scope, so the internal (JWT) route at
@@ -65,11 +65,12 @@ export async function computeComplianceTrend(
     scopeLabel = `Theatre: ${theatreParam}`;
   }
 
-  const anchoredRows = await prisma.program.findMany({
-    where: { anchorTheatre: { not: null } },
-    select: { name: true, anchorTheatre: true },
+  const targetRows = await prisma.programData.findMany({
+    where: { level: "TargetCountries" },
+    distinct: ["programName"],
+    select: { programName: true },
   });
-  const anchored = new Set(anchoredRows.filter((p) => isAnchoredProgram(p)).map((p) => p.name));
+  const withTargets = new Set(targetRows.map((r) => r.programName));
 
   const allRows = await prisma.programData.findMany({
     where: {
@@ -85,11 +86,11 @@ export async function computeComplianceTrend(
     },
   });
 
-  // The anchored programs this request would otherwise have shown.
+  // The programs with target countries this request would otherwise have shown.
   const unsupportedPrograms = [
-    ...new Set(allRows.filter((r) => anchored.has(r.programName)).map((r) => r.programName)),
+    ...new Set(allRows.filter((r) => withTargets.has(r.programName)).map((r) => r.programName)),
   ].sort();
-  const rawData = allRows.filter((r) => !anchored.has(r.programName));
+  const rawData = allRows.filter((r) => !withTargets.has(r.programName));
 
   // Narrow the type: every row here has a specialisation (filtered above).
   const data = rawData.filter(

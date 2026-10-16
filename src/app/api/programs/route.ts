@@ -1,21 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { isAnchoredProgram } from "@/lib/program-anchor";
 import { requireAuth, handleAuthError } from "@/lib/auth";
 
 /**
  * Lists the distinct partner programs configured in ProgramData, plus the
  * shape each one needs so the UI can auto-adapt:
  *  - `levels`: which stored requirement levels (Country / Region / CountrySet /
- *    Theatre / Global) the program's rows carry. These are the raw
- *    `ProgramLevel` values and each maps one-to-one onto a dashboard view
- *    (`program-levels.ts:scopeLevelOffered`) — "By Region" is offered only when
+ *    TargetCountries / Theatre / Global) the program's rows carry. These are
+ *    the raw `ProgramLevel` values; `program-levels.ts:scopeLevelOffered` maps
+ *    them onto dashboard views (By Theatre reads Theatre + TargetCountries) — "By Region" is offered only when
  *    Region rows exist; it is no longer derived from the Country rows.
  *  - `hasMinimumPerTheatre`: whether any requirement enforces a per-theatre
  *    minimum (drives the per-theatre breakdown on the Global level)
- *  - `isAnchored` / `anchorTheatre`: an anchored program offers only the
- *    "Target countries" view (`level=anchored`), so the dashboard reads this
- *    before asking for a report at all
+ *  - `hasTargetCountries`: the program has TargetCountries rows, so its By
+ *    Theatre view also counts each partner's target countries inside the
+ *    viewed theatre (`program-target-countries.ts`)
  *
  * This single endpoint feeds the programs index page and the sidebar submenu,
  * replacing the two previously-hardcoded per-program entries.
@@ -31,17 +30,11 @@ export async function GET(request: NextRequest) {
     prisma.programData.findMany({
       select: { programName: true, level: true, minimumPerTheatre: true },
     }),
-    prisma.program.findMany({ select: { name: true, isTiered: true, anchorTheatre: true } }),
+    prisma.program.findMany({ select: { name: true, isTiered: true } }),
     prisma.programTier.findMany({ select: { programName: true } }),
   ]);
 
   const isTieredByName = new Map(registry.map((p) => [p.name, p.isTiered]));
-  // An anchored program is reported over its anchor theatre + each partner's
-  // target countries, in one view; the dashboard and planning need to know so
-  // they offer only that view. Blank is not anchored (`isAnchoredProgram`).
-  const anchorByName = new Map(
-    registry.map((p) => [p.name, isAnchoredProgram(p) ? p.anchorTheatre!.trim() : null])
-  );
   const hasTiers = new Set(tiers.map((t) => t.programName));
 
   const byProgram = new Map<string, { levels: Set<string>; hasMinimumPerTheatre: boolean }>();
@@ -71,8 +64,10 @@ export async function GET(request: NextRequest) {
       levels: [...info.levels],
       hasMinimumPerTheatre: info.hasMinimumPerTheatre,
       isTiered: isTieredByName.get(name) === true,
-      isAnchored: anchorByName.get(name) != null,
-      anchorTheatre: anchorByName.get(name) ?? null,
+      // A program with TargetCountries rows judges its By Theatre view over
+      // the theatre AND each partner's target countries inside it, which
+      // needs exactly one company; the dashboard reads this to know.
+      hasTargetCountries: info.levels.has("TargetCountries"),
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
 
