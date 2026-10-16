@@ -239,7 +239,7 @@ export default function ProgramDataPage() {
       parts.push(`Country Set view minimum ${p.countrySetMinimumCountries}`);
     }
     if (p.targetMinimumCountries != null) {
-      parts.push(`Theatre view minimum ${p.targetMinimumCountries} target`);
+      parts.push(`Theatre view minimum ${p.targetMinimumCountries} target ${p.targetMinimumCountries === 1 ? "country" : "countries"}`);
     }
     return parts.join(" · ");
   };

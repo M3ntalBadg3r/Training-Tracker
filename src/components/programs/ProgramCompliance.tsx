@@ -13,6 +13,7 @@ import LoadingState from "@/components/ui/LoadingState";
 import {
   AGGREGATION_SHORT_LABELS,
   isMultiCountryLevel,
+  NO_TARGET_SET_LABEL,
   parseScopeLevel,
   SCOPE_TO_REQ_LEVEL,
   type Aggregation,
@@ -381,9 +382,22 @@ export const POPULATION_KIND_LABELS: Record<PopulationKind, string> = {
  * ladder and the PDF so the three say the same thing.
  */
 export function populationText(req: { population?: PopulationKind; populationLabel?: string }): string | undefined {
-  if (!req.population) return undefined;
+  const cell = populationCellText(req);
+  return cell ? `Counted over ${cell}` : undefined;
+}
+
+/**
+ * "EMEA (theatre)", "Set 1 (target countries)" — or, for a partner with no
+ * target set, "target countries (no target set configured)" rather than the
+ * kind repeated as though it were a set's name. Shared by the row line above
+ * and the dashboard's export Population column.
+ */
+export function populationCellText(req: { population?: PopulationKind; populationLabel?: string }): string {
+  if (!req.population) return "";
+  const kind = POPULATION_KIND_LABELS[req.population];
+  if (req.populationLabel === NO_TARGET_SET_LABEL) return `${kind} (${NO_TARGET_SET_LABEL})`;
   const name = req.populationLabel ? `${req.populationLabel} ` : "";
-  return `Counted over ${name}(${POPULATION_KIND_LABELS[req.population]})`;
+  return `${name}(${kind})`;
 }
 
 /** Whose rule a partner's minimum number of countries came from, in words. */

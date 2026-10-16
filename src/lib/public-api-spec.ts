@@ -870,7 +870,7 @@ export const PUBLIC_API_ENDPOINTS: readonly PublicApiEndpoint[] = [
     paramSources: ["src/lib/compliance-plan-request.ts"],
     summary: "Compliance planning (aggregates only)",
     description:
-      "The action layer over program compliance: what it would take to close each gap. AGGREGATES ONLY — the named candidate, eligible-pool and renewal rosters the in-app planner shows are never returned over this API. Nothing analytical is lost: riskImpacts is the aggregate view of the same set the named renewal rows enumerate, and totals.renewalsAtRisk is its count. Use ?options=true first to discover the program, tier and specialisation names needed to build a targets array. Every program can be planned at every scope. At level=theatre, a program with TargetCountries-level requirements (options programs[].targetCountries) is planned over two populations — its Theatre-level requirements over the theatre and its TargetCountries-level ones over the partner's target countries inside it — and at level=countrySet each program is planned over its set; in both, a partner set holding fewer countries than its minimum is reported in targets[].blockers rather than costed. A tiered program's program-wide requirements form a \"Required at every level\" block in every tier and \"all\" target.",
+      "The action layer over program compliance: what it would take to close each gap. AGGREGATES ONLY — the named candidate, eligible-pool and renewal rosters the in-app planner shows are never returned over this API. Nothing analytical is lost: riskImpacts is the aggregate view of the same set the named renewal rows enumerate, and totals.renewalsAtRisk is its count. Use ?options=true first to discover the program, tier and specialisation names needed to build a targets array. Every program can be planned at every scope. At level=theatre, a program with TargetCountries-level requirements (options programs[].hasTargetCountries) is planned over two populations — its Theatre-level requirements over the theatre and its TargetCountries-level ones over the partner's target countries inside it — and at level=countrySet each program is planned over its set; in both, a partner set holding fewer countries than its minimum is reported in targets[].blockers rather than costed. A tiered program's program-wide requirements form a \"Required at every level\" block in every tier and \"all\" target.",
     parameters: [
       COMPANY_ID,
       {
@@ -943,7 +943,7 @@ export const PUBLIC_API_ENDPOINTS: readonly PublicApiEndpoint[] = [
                 },
                 tiers: arr(STR),
                 specialisations: arr(STR),
-                targetCountries: {
+                hasTargetCountries: {
                   type: "boolean",
                   description:
                     "Whether the program has TargetCountries-level requirements, so a theatre plan of it also counts the partner's target countries inside the theatre (and needs exactly one company).",
@@ -1007,7 +1007,7 @@ export const PUBLIC_API_ENDPOINTS: readonly PublicApiEndpoint[] = [
     routeFile: "reports/program-compliance-trend/route.ts",
     summary: "Program compliance trend",
     description:
-      "Twenty-four month-end snapshots per program and specialisation: twelve of history and twelve projected. Future months assume no new completions, so compliance decays as active certifications expire. A separate endpoint, not a value for {reportType}. Programs with TargetCountries-level requirements are not covered: this report pools every requirement over one geography, which would misreport a program whose By Theatre view is judged over two populations with a per-partner minimum, so they are left out and named in unsupportedPrograms.",
+      "Twenty-four month-end snapshots per program and specialisation: twelve of history and twelve projected. Future months assume no new completions, so compliance decays as active certifications expire. A separate endpoint, not a value for {reportType}. TargetCountries-level requirements are not covered: this report pools every requirement over one geography, which would misreport a requirement counted over each partner's own target countries with a per-partner minimum. Those rows are left out; the program's other requirements are reported as usual and the program is named in partialPrograms, or in unsupportedPrograms when it has nothing else to show.",
     parameters: [
       COMPANY_ID,
       {
@@ -1036,7 +1036,11 @@ export const PUBLIC_API_ENDPOINTS: readonly PublicApiEndpoint[] = [
       scopeLabel: STR,
       unsupportedPrograms: {
         ...arr(STR),
-        description: "Programs with TargetCountries-level requirements that this request would otherwise have included, left out because this report cannot reproduce their two-population By Theatre view. Use GET /api/public/v1/programs/{programName}?level=theatre instead.",
+        description: "Programs whose specialisation requirements are all TargetCountries-level, left out entirely because this report cannot reproduce them. Use GET /api/public/v1/programs/{programName}?level=theatre instead.",
+      },
+      partialPrograms: {
+        ...arr(STR),
+        description: "Programs reported without their TargetCountries-level requirements (the rest are included). Use GET /api/public/v1/programs/{programName}?level=theatre for those.",
       },
     }),
   },

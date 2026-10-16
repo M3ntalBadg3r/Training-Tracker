@@ -35,6 +35,15 @@ import type {
  * Server-only — imports Prisma.
  */
 
+/**
+ * The 400 for a By Theatre view (report, roster or plan) of a program with
+ * TargetCountries rows whose scope is not exactly one company. Its own message,
+ * not `COUNTRY_SET_SCOPE_ERROR`: the request names a theatre, and being told to
+ * pick a company "to report on a Country Set" would not explain itself.
+ */
+export const TARGET_COUNTRIES_SCOPE_ERROR =
+  "Select a single company to report on a By Theatre view with target countries";
+
 export interface ProgramTermsRow {
   id: number;
   name: string;

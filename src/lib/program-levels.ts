@@ -149,6 +149,14 @@ export function theatreViewPopulationOf(level: string): PopulationKind | null {
   return null;
 }
 
+/**
+ * The `populationLabel` of a target-countries population when the partner has
+ * no target set to name. Display helpers recognise it so a row reads "Counted
+ * over target countries (no target set configured)" rather than repeating the
+ * population kind as if it were a set's name.
+ */
+export const NO_TARGET_SET_LABEL = "no target set configured";
+
 /** Validate a user-editable population value (roster `?population=`). */
 export function parsePopulationKind(v: string | null | undefined): PopulationKind | null {
   return v === "theatre" || v === "targetCountries" ? v : null;

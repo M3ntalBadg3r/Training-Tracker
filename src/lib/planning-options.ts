@@ -22,7 +22,7 @@ export interface PlanningOption {
    * exactly one company). Registry data like the rest of this record — derived
    * from `levels`, carried separately so a caller need not know the level name.
    */
-  targetCountries: boolean;
+  hasTargetCountries: boolean;
 }
 
 /**
@@ -68,7 +68,7 @@ export async function buildPlanningOptions(): Promise<PlanningOption[]> {
       levels,
       tiers: tierNames,
       specialisations,
-      targetCountries: present.has("TargetCountries"),
+      hasTargetCountries: present.has("TargetCountries"),
     });
   }
   return result;

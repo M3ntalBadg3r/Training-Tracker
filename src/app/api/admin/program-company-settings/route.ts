@@ -77,6 +77,15 @@ export interface ProgramCompanySettingRow {
   defaultTargetMinimumCountries: number | null;
   targetCountrySetId: number | null;
   targetCountrySet: string | null;
+  /**
+   * Whether each view's terms are used at all (GET only): a minimum applies in
+   * the By Country Set view only when the program has Country Set rows, and in
+   * the By Theatre view only when it has Target countries rows. Otherwise the
+   * terms are kept but have no effect — the page says so rather than showing an
+   * "effective" minimum nothing enforces. Absent (POST/PUT responses) = unknown.
+   */
+  countrySetInUse?: boolean;
+  targetInUse?: boolean;
 }
 
 export interface ProgramOption {
@@ -230,14 +239,29 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(empty);
     }
 
-    const rows = await prisma.programCompanySetting.findMany({
-      where: companyFilter ? { companyId: { in: companyFilter } } : {},
-      orderBy: [{ programId: "asc" }, { companyId: "asc" }],
-      select: PROGRAM_COMPANY_SETTING_SELECT,
-    });
+    const [rows, levelRows] = await Promise.all([
+      prisma.programCompanySetting.findMany({
+        where: companyFilter ? { companyId: { in: companyFilter } } : {},
+        orderBy: [{ programId: "asc" }, { companyId: "asc" }],
+        select: PROGRAM_COMPANY_SETTING_SELECT,
+      }),
+      // Global registry data (programs carry no company), so unscoped.
+      prisma.programData.groupBy({
+        by: ["programName", "level"],
+        where: { level: { in: ["CountrySet", "TargetCountries"] } },
+      }),
+    ]);
+    const usesLevel = new Set(levelRows.map((r) => `${r.programName}\u0000${r.level}`));
     const response: ProgramCompanySettingsResponse = {
       programs,
-      rows: rows.map((r: SelectedSetting) => toSettingRow(r)),
+      rows: rows.map((r: SelectedSetting) => {
+        const row = toSettingRow(r);
+        return {
+          ...row,
+          countrySetInUse: usesLevel.has(`${row.programName}\u0000CountrySet`),
+          targetInUse: usesLevel.has(`${row.programName}\u0000TargetCountries`),
+        };
+      }),
     };
     return NextResponse.json(response);
   } catch (err) {

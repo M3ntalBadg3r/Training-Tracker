@@ -228,7 +228,7 @@ interface PlanningOption {
    * The program has TargetCountries rows, so a theatre plan of it also counts
    * them over the partner's target countries. Absent on an older cached payload.
    */
-  targetCountries?: boolean;
+  hasTargetCountries?: boolean;
 }
 interface PlanningOptionsResponse {
   programs: PlanningOption[];
@@ -1656,7 +1656,7 @@ function CompliancePlanningPageInner() {
   // company does not own reads as blank (the configured default), derived like
   // the scope value above, and the mirror drops it from the address bar.
   const targetsProgramSelected = optionsLoaded
-    ? options.some((o) => !!o.targetCountries && !!targets[o.name])
+    ? options.some((o) => !!o.hasTargetCountries && !!targets[o.name])
     : true;
   const showTargetSet = level === "theatre" && optionsLoaded && targetsProgramSelected && countrySets.length > 0;
   const targetSet =

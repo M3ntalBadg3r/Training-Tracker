@@ -3,7 +3,7 @@ import { requireAuth, handleAuthError } from "@/lib/auth";
 import { getAuthorizedCompanyIds, resolveCompanyFilter } from "@/lib/company-scope";
 import { cachedReport, scopeKey } from "@/lib/report-cache";
 import { buildPlanningOptions } from "@/lib/planning-options";
-import { COUNTRY_SET_SCOPE_ERROR, listCountrySetNames, singleCompanyId } from "@/lib/country-sets";
+import { listCountrySetNames, singleCompanyId } from "@/lib/country-sets";
 import { computeCompliancePlan, planRequiresSingleCompany } from "@/lib/compliance-plan";
 import {
   parsePlanRequest,
@@ -95,8 +95,9 @@ export async function GET(request: NextRequest) {
   // its target countries are the partner's Country Set, and the partner's
   // minimum and configured set are per company. The rule lives in
   // `planRequiresSingleCompany`, shared with the public route.
-  if (singleCompanyId(companyFilter) === null && (await planRequiresSingleCompany(req))) {
-    return NextResponse.json({ error: COUNTRY_SET_SCOPE_ERROR }, { status: 400 });
+  const scopeError = singleCompanyId(companyFilter) === null ? await planRequiresSingleCompany(req) : null;
+  if (scopeError !== null) {
+    return NextResponse.json({ error: scopeError }, { status: 400 });
   }
 
   if (req.targets.length === 0) {

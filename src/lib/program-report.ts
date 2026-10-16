@@ -23,7 +23,7 @@ import {
   isProgramWideRow,
   normaliseAggregation,
   theatreViewPopulationOf,
-  LEVEL_LABELS,
+  NO_TARGET_SET_LABEL,
   type Aggregation,
   type CountryBreakdownRow,
   type CountrySetMinimumMeta,
@@ -593,7 +593,7 @@ function prefixCountryCtx(ctx: CountryBucketContext | null): CountryBucketContex
 }
 
 /** The display label of a target-countries population with no set to name. */
-const TARGET_COUNTRIES_LABEL = LEVEL_LABELS.TargetCountries;
+const TARGET_COUNTRIES_LABEL = NO_TARGET_SET_LABEL;
 
 /**
  * The **By Theatre** view of a program with TargetCountries rows: one report

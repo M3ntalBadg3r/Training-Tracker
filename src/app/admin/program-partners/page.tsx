@@ -56,21 +56,35 @@ const EMPTY_FORM: FormState = {
   targetCountrySetId: "",
 };
 
-type MinimumSource = "partner" | "default" | "none";
+type MinimumSource = "partner" | "default" | "none" | "unused";
 
-/** The minimum that applies in one view: the partner's own, else the program default. */
-function effectiveMinimum(own: number | null, fallback: number | null): { value: number | null; source: MinimumSource } {
+/**
+ * The minimum that applies in one view: the partner's own, else the program
+ * default — or none at all when the program has no requirements at that view's
+ * level (`inUse === false`), since nothing would ever enforce it there.
+ */
+function effectiveMinimum(
+  own: number | null,
+  fallback: number | null,
+  inUse: boolean | undefined
+): { value: number | null; source: MinimumSource } {
+  if (inUse === false) return { value: null, source: "unused" };
   if (own != null) return { value: own, source: "partner" };
   if (fallback != null) return { value: fallback, source: "default" };
   return { value: null, source: "none" };
 }
 
 const csEffective = (r: ProgramCompanySettingRow) =>
-  effectiveMinimum(r.countrySetMinimumCountries, r.defaultCountrySetMinimumCountries);
+  effectiveMinimum(r.countrySetMinimumCountries, r.defaultCountrySetMinimumCountries, r.countrySetInUse);
 const targetEffective = (r: ProgramCompanySettingRow) =>
-  effectiveMinimum(r.targetMinimumCountries, r.defaultTargetMinimumCountries);
+  effectiveMinimum(r.targetMinimumCountries, r.defaultTargetMinimumCountries, r.targetInUse);
 
-function effectiveText(e: { value: number | null; source: MinimumSource }): string {
+function effectiveText(e: { value: number | null; source: MinimumSource }, view: "countrySet" | "theatre"): string {
+  if (e.source === "unused") {
+    return view === "countrySet"
+      ? "Not in use — no Country Set requirements"
+      : "Not in use — no Target countries requirements";
+  }
   if (e.source === "partner") return `${e.value} (partner)`;
   if (e.source === "default") return `${e.value} (program default)`;
   return "No minimum";
@@ -287,8 +301,8 @@ function ProgramPartnersInner() {
       countrySet: r.countrySet ?? "",
       targetMinimum: r.targetMinimumCountries ?? "",
       target: r.targetCountrySet ?? "",
-      csEffective: effectiveText(csEffective(r)),
-      targetEffective: effectiveText(targetEffective(r)),
+      csEffective: effectiveText(csEffective(r), "countrySet"),
+      targetEffective: effectiveText(targetEffective(r), "theatre"),
     }));
     const columns: { key: keyof (typeof out)[number]; header: string }[] = [
       { key: "program", header: "Program" },
@@ -408,14 +422,14 @@ function ProgramPartnersInner() {
                 <td className="px-4 py-3 text-gray-700">
                   {r.countrySet ?? <span className="text-gray-400">Not set</span>}
                 </td>
-                <td className="px-4 py-3 text-gray-700">{effectiveText(csEffective(r))}</td>
+                <td className="px-4 py-3 text-gray-700">{effectiveText(csEffective(r), "countrySet")}</td>
                 <td className="px-4 py-3 text-gray-700 border-l border-gray-100">
                   {r.targetMinimumCountries ?? <span className="text-gray-400">—</span>}
                 </td>
                 <td className="px-4 py-3 text-gray-700">
                   {r.targetCountrySet ?? <span className="text-gray-400">Not set</span>}
                 </td>
-                <td className="px-4 py-3 text-gray-700">{effectiveText(targetEffective(r))}</td>
+                <td className="px-4 py-3 text-gray-700">{effectiveText(targetEffective(r), "theatre")}</td>
                 <td className="px-4 py-3">
                   <div className="flex gap-1">
                     <button

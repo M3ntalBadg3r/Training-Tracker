@@ -27,7 +27,7 @@ import {
   GATES_HEADING,
   LoadingSpinner,
   MINIMUM_SOURCE_LABELS,
-  POPULATION_KIND_LABELS,
+  populationCellText,
   TierLadder,
   TRAINING_TYPE_LABELS,
   DEPLOYMENT_REQUIREMENTS_NOTE,
@@ -550,7 +550,7 @@ function ProgramDetailPageInner() {
   const multiCountryView = theatreTargetView || isMultiCountryScope(scopeLevel);
   /** "EMEA (theatre)" / "Set A (target countries)" — a By Theatre row's population, as a cell. */
   const populationCell = (req: { population?: PopulationKind; populationLabel?: string }): string =>
-    req.population ? `${req.populationLabel ?? ""} (${POPULATION_KIND_LABELS[req.population]})`.trim() : "";
+    populationCellText(req);
 
   // Flat export: Country / Region / Country Set / Theatre, and the theatre-count
   // Global shape.

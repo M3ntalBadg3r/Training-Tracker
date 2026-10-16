@@ -66,10 +66,11 @@ import {
   countriesInRegion,
   type ComplianceScope,
 } from "@/lib/program-compliance";
-import { countriesInCountrySet, singleCompanyId } from "@/lib/country-sets";
+import { COUNTRY_SET_SCOPE_ERROR, countriesInCountrySet, singleCompanyId } from "@/lib/country-sets";
 import {
   resolveCountrySetMinimum,
   resolveTargetArea,
+  TARGET_COUNTRIES_SCOPE_ERROR,
   type ProgramTermsRow,
 } from "@/lib/program-target-countries";
 import {
@@ -1619,12 +1620,14 @@ interface TierInfo {
 
 /**
  * Whether a plan request can only be answered for exactly ONE company — the
- * rule both planning routes enforce (a 400 with `COUNTRY_SET_SCOPE_ERROR`),
- * kept here so the two surfaces cannot disagree about it:
- *  - a Country Set plan always: a set name, and each partner's configured set
- *    and minimum, resolve only within one company;
- *  - a theatre plan only when some requested program has TargetCountries rows,
- *    whose target countries are that partner's Country Set. A theatre plan of
+ * rule both planning routes enforce — returning the 400's message, or null
+ * when any scope will do. Kept here so the two surfaces cannot disagree about
+ * either the rule or its wording:
+ *  - a Country Set plan always (`COUNTRY_SET_SCOPE_ERROR`): a set name, and
+ *    each partner's configured set and minimum, resolve only within one company;
+ *  - a theatre plan only when some requested program has TargetCountries rows
+ *    (`TARGET_COUNTRIES_SCOPE_ERROR`), whose target countries are that
+ *    partner's Country Set. A theatre plan of
  *    programs without them keeps answering any scope, as it always has.
  * Mirrors the engine: target countries apply only when a theatre is named.
  */
@@ -1632,14 +1635,14 @@ export async function planRequiresSingleCompany(req: {
   level: ScopeLevel;
   theatre: string;
   targets: PlanTarget[];
-}): Promise<boolean> {
-  if (req.level === "countrySet") return true;
-  if (req.level !== "theatre" || !req.theatre.trim() || req.targets.length === 0) return false;
+}): Promise<string | null> {
+  if (req.level === "countrySet") return COUNTRY_SET_SCOPE_ERROR;
+  if (req.level !== "theatre" || !req.theatre.trim() || req.targets.length === 0) return null;
   const row = await prisma.programData.findFirst({
     where: { programName: { in: [...new Set(req.targets.map((t) => t.program))] }, level: "TargetCountries" },
     select: { id: true },
   });
-  return row !== null;
+  return row !== null ? TARGET_COUNTRIES_SCOPE_ERROR : null;
 }
 
 export async function computeCompliancePlan(input: CompliancePlanInput): Promise<CompliancePlanResult> {

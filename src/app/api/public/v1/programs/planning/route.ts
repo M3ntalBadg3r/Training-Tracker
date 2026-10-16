@@ -9,7 +9,7 @@ import {
   emptyCompliancePlan,
 } from "@/lib/compliance-plan-request";
 import { buildPlanningOptions } from "@/lib/planning-options";
-import { COUNTRY_SET_SCOPE_ERROR, listCountrySetNames, singleCompanyId } from "@/lib/country-sets";
+import { listCountrySetNames, singleCompanyId } from "@/lib/country-sets";
 
 /**
  * GET /api/public/v1/programs/planning — read-only Compliance Planning, the
@@ -121,8 +121,9 @@ export async function GET(request: NextRequest) {
   // plan of a program with TargetCountries rows is the same rule: its target
   // countries are the partner's Country Set (`planRequiresSingleCompany`,
   // shared with the internal route).
-  if (singleCompanyId(ctx.companyIds) === null && (await planRequiresSingleCompany(req))) {
-    return NextResponse.json({ error: COUNTRY_SET_SCOPE_ERROR }, { status: 400 });
+  const scopeError = singleCompanyId(ctx.companyIds) === null ? await planRequiresSingleCompany(req) : null;
+  if (scopeError !== null) {
+    return NextResponse.json({ error: scopeError }, { status: 400 });
   }
   if (req.targets.length === 0) {
     return NextResponse.json(toPublicCompliancePlan(emptyCompliancePlan(req.renewalWindowMonths)));

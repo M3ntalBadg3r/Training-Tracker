@@ -25,14 +25,16 @@ import {
  * By default we evaluate at the Global level for each program; the report can
  * be narrowed by theatre / region / country.
  *
- * **Programs with TargetCountries rows are excluded, and named in
- * `unsupportedPrograms`.** This report pools every row of a program over ONE
- * geography whatever its level, while such a program's By Theatre view is
- * defined over two populations at once (its Theatre rows over the theatre, its
- * TargetCountries rows over each partner's own target countries, with a
- * per-partner minimum). Pooled here it would be misreported as plausible
- * numbers, so it is left out and listed instead — the page says which programs
- * are not shown and why.
+ * **TargetCountries rows are left out, and the programs they belong to are
+ * named.** This report pools every row of a program over ONE geography
+ * whatever its level, while a TargetCountries row only means something over a
+ * partner's own target countries inside a theatre, with a per-partner minimum.
+ * Pooled here it would be misreported as a plausible number. The program's
+ * other rows are kept — pooled exactly as before, which is what a program that
+ * also has a By Country view (the reason this level exists) needs — and the
+ * program is named in `partialPrograms`; one whose specialisation rows are ALL
+ * TargetCountries rows has nothing left to show and is named in
+ * `unsupportedPrograms`. The page says which, and why.
  *
  * Presentation-agnostic and auth-agnostic: it takes a plain
  * `companyIds: number[] | null` scope, so the internal (JWT) route at
@@ -86,11 +88,15 @@ export async function computeComplianceTrend(
     },
   });
 
-  // The programs with target countries this request would otherwise have shown.
-  const unsupportedPrograms = [
-    ...new Set(allRows.filter((r) => withTargets.has(r.programName)).map((r) => r.programName)),
+  // TargetCountries rows cannot be pooled over one geography (see above).
+  const rawData = allRows.filter((r) => r.level !== "TargetCountries");
+  const kept = new Set(rawData.map((r) => r.programName));
+  const affected = [
+    ...new Set(allRows.filter((r) => r.level === "TargetCountries" && withTargets.has(r.programName)).map((r) => r.programName)),
   ].sort();
-  const rawData = allRows.filter((r) => !withTargets.has(r.programName));
+  // Shown without their TargetCountries rows / not shown at all.
+  const partialPrograms = affected.filter((name) => kept.has(name));
+  const unsupportedPrograms = affected.filter((name) => !kept.has(name));
 
   // Narrow the type: every row here has a specialisation (filtered above).
   const data = rawData.filter(
@@ -101,7 +107,7 @@ export async function computeComplianceTrend(
   type Row = typeof data[number];
 
   if (data.length === 0) {
-    return { snapshots: [], programs: [], specialisations: [], scopeLabel, unsupportedPrograms };
+    return { snapshots: [], programs: [], specialisations: [], scopeLabel, unsupportedPrograms, partialPrograms };
   }
 
   // Build month boundaries: 12 months of history (incl. current) + 12 months
@@ -173,5 +179,5 @@ export async function computeComplianceTrend(
   const programs = [...new Set(data.map((r) => r.programName))].sort();
   const specialisations = [...new Set(data.map((r) => r.specialisation.name))].sort();
 
-  return { snapshots, programs, specialisations, scopeLabel, unsupportedPrograms };
+  return { snapshots, programs, specialisations, scopeLabel, unsupportedPrograms, partialPrograms };
 }
