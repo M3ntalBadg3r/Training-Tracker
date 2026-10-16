@@ -142,13 +142,14 @@ const PROGRAM_SCOPE_PARAMS: readonly PublicApiParam[] = [
     name: "countrySet",
     in: "query",
     description:
-      "The Country Set to report on when level=countrySet — a named group of countries that belongs to one company (two companies may each own a same-named set over different countries). Counts CountrySet-level requirements over that company's set's countries. A level=countrySet request must therefore narrow to exactly one company — with ?companyId=, or by using a key granted exactly one company — or it is a 400. An unknown or empty set has no countries and so meets nothing. GET /api/public/v1/country-sets lists each set's countries. With level=anchored it is optional and names the set holding the partner's target countries; omitted, the set configured in that partner's program settings is used (and with none configured, the target-country population is empty). Only members inside the program's anchor theatre count; the rest are listed in meta.anchored.outOfTheatreCountries.",
+      "The Country Set to report on when level=countrySet — a named group of countries that belongs to one company (two companies may each own a same-named set over different countries). Counts CountrySet-level requirements over that company's set's countries. A level=countrySet request must therefore narrow to exactly one company — with ?companyId=, or by using a key granted exactly one company — or it is a 400. An unknown or empty set has no countries and so meets nothing. GET /api/public/v1/country-sets lists each set's countries. With level=countrySet it is optional: omitted or blank, each program uses the Country Set configured for the partner's By Country Set view in its program settings (with none configured, the area is empty and nothing is met). With level=theatre, on a program that has TargetCountries requirements (hasTargetCountries in GET /api/public/v1/programs), it optionally names the set holding the partner's target countries; omitted, the set configured for the partner's By Theatre view is used (and with none configured, the target-country population is empty). Only the set's members inside the viewed theatre count as target countries; the rest are listed as outOfTheatreCountries. Ignored at every other level.",
     schema: { type: "string" },
   },
   {
     name: "theatre",
     in: "query",
-    description: "The theatre to report on when level=theatre. Counts Theatre-level requirements over that theatre.",
+    description:
+      "The theatre to report on when level=theatre. Counts Theatre-level requirements over that theatre and, on a program that has TargetCountries requirements, its TargetCountries-level requirements over the partner's target countries inside that theatre (which then needs the request narrowed to exactly one company). Any theatre may be named.",
     schema: { type: "string" },
   },
 ];
@@ -176,20 +177,23 @@ const ALTERNATIVE = obj({
   trainingFullTitle: NULLABLE_STR,
 });
 
-const LEVEL_ENUM = ["Country", "Region", "CountrySet", "Theatre", "Global"] as const;
+const LEVEL_ENUM = ["Country", "Region", "CountrySet", "TargetCountries", "Theatre", "Global"] as const;
 
 const AGGREGATION = {
   type: "string",
   enum: ["total", "eachCountry"],
   description:
-    'How a Region or CountrySet requirement is counted: "total" pools distinct holders across the whole area; "eachCountry" requires every country in the area to reach the quantity on its own. Always "total" at the other levels.',
+    'How a Region, CountrySet or TargetCountries requirement is counted: "total" pools distinct holders across the whole area; "eachCountry" requires every country in the area to reach the quantity on its own (an area with no countries is never met). Always "total" at the other levels.',
 } as const;
 
 /**
- * Anchored programs (`Program.anchorTheatre` set) are judged over two
- * populations in one view: Theatre-level requirements over the anchor theatre,
- * CountrySet-level requirements over the partner's target countries. These
- * fragments describe that on both program endpoints.
+ * Target countries and per-view minimums. A program with TargetCountries-level
+ * requirements judges its By Theatre view over two populations at once: its
+ * Theatre-level requirements over the viewed theatre, and its TargetCountries
+ * requirements over the partner's target countries — the members of the
+ * partner's By Theatre Country Set that lie inside that theatre. The By Theatre
+ * and By Country Set views each carry the partner's own minimum number of
+ * countries. These fragments describe that on both program endpoints.
  */
 const POPULATION_ENUM = ["theatre", "targetCountries"] as const;
 
@@ -197,34 +201,60 @@ const MINIMUM_SOURCE = {
   type: "string",
   enum: ["partner", "default", "none"],
   description:
-    "Whose rule the minimum number of target countries came from: the partner's own program settings, the program's default, or none (no minimum applies).",
+    "Whose rule the minimum number of countries came from: the partner's own program settings, the program's default for that view, or none (no minimum applies).",
 } as const;
 
-const ANCHORED_META = obj({
-  anchorTheatre: STR,
-  countrySet: { ...NULLABLE_STR, description: "The Country Set the target countries come from. Null when none was named and the partner has none configured." },
+const TARGET_COUNTRIES_META = obj({
+  theatre: { type: "string", description: "The viewed theatre." },
+  countrySet: {
+    ...NULLABLE_STR,
+    description: "The Country Set the target countries come from: the one named with ?countrySet=, else the partner's By Theatre set. Null when none was named and the partner has none configured.",
+  },
   targetCountries: {
     ...arr(STR),
-    description: "The set's members inside the anchor theatre — the population CountrySet-level requirements are counted over, and the only countries that count toward the minimum.",
+    description: "The set's members inside the viewed theatre — the population TargetCountries-level requirements are counted over, and the only countries that count toward the minimum.",
   },
   outOfTheatreCountries: {
     ...arr(STR),
-    description: "Members of the set outside the anchor theatre. Listed rather than dropped; they count toward nothing.",
+    description: "Members of the set outside the viewed theatre. Listed rather than dropped; they count toward nothing in this view.",
   },
-  minimumCountries: { type: ["integer", "null"], description: "The effective minimum number of target countries. Null when none applies." },
+  minimumCountries: { type: ["integer", "null"], description: "The effective minimum number of target countries (By Theatre view). Null when none applies." },
   minimumCountriesSource: MINIMUM_SOURCE,
   minimumMet: { type: "boolean", description: "True when no minimum applies or targetCountries meets it. When false, no tier is reached." },
 });
 
-/** The population fields an anchored-view requirement row carries; absent on every other view. */
+const COUNTRY_SET_MINIMUM_META = obj({
+  countrySet: {
+    ...NULLABLE_STR,
+    description: "The Country Set the view is over: the one named with ?countrySet=, else the partner's By Country Set set. Null when none was named and the partner has none configured.",
+  },
+  countries: { ...arr(STR), description: "The set's member countries — the area CountrySet-level requirements are counted over." },
+  minimumCountries: { type: ["integer", "null"], description: "The effective minimum number of countries in the set (By Country Set view). Null when none applies." },
+  minimumCountriesSource: MINIMUM_SOURCE,
+  minimumMet: { type: "boolean", description: "True when no minimum applies or the set's country count meets it. When false, no tier is reached." },
+});
+
+const MINIMUM_VIEW = {
+  type: "string",
+  enum: ["countrySet", "theatre"],
+  description: "Which view's minimum this is: countrySet (countries in the Country Set) or theatre (target countries inside the viewed theatre).",
+} as const;
+
+/**
+ * The population fields a requirement row carries on a By Theatre view of a
+ * program with TargetCountries requirements; absent on every other view.
+ */
 const POPULATION_FIELDS = {
   population: {
     type: "string",
     enum: POPULATION_ENUM,
     description:
-      'Anchored programs only: which population the row is counted over — "theatre" (a Theatre-level row, over the anchor theatre) or "targetCountries" (a CountrySet-level row, over the partner\'s target countries). Absent on every other view. Pass it as ?population= when asking for this row\'s roster.',
+      'By Theatre views of a program with TargetCountries requirements only: which population the row is counted over — "theatre" (a Theatre-level row, over the viewed theatre) or "targetCountries" (a TargetCountries-level row, over the partner\'s target countries inside it). Absent on every other view. Pass it as ?population= when asking for this row\'s roster.',
   },
-  populationLabel: { type: "string", description: "Anchored programs only: the anchor theatre's name, or the target Country Set's name." },
+  populationLabel: {
+    type: "string",
+    description: "Same views only: the viewed theatre's name, or the name of the Country Set the target countries come from.",
+  },
 };
 
 const PLAN_REQUIREMENT = obj({
@@ -240,7 +270,7 @@ const PLAN_REQUIREMENT = obj({
   nativeLevel: {
     type: "string",
     enum: LEVEL_ENUM,
-    description: "The requirement's authored level: Country, Region, CountrySet, Theatre or Global.",
+    description: "The requirement's authored level: Country, Region, CountrySet, TargetCountries, Theatre or Global.",
   },
   aggregation: AGGREGATION,
   country: {
@@ -253,7 +283,7 @@ const PLAN_REQUIREMENT = obj({
     type: "string",
     enum: POPULATION_ENUM,
     description:
-      'level=anchored plans only (absent otherwise): "theatre" for a Theatre-level requirement counted over the anchor theatre, "targetCountries" for a CountrySet-level one counted over the partner\'s target countries (or one of them, for an eachCountry instance).',
+      'Theatre plans of a program with TargetCountries requirements only (absent otherwise): "theatre" for a Theatre-level requirement counted over the theatre, "targetCountries" for a TargetCountries-level one counted over the partner\'s target countries inside it (or one of them, for an eachCountry instance).',
   },
   cert: STR,
   required: INT,
@@ -312,21 +342,32 @@ const PLAN_TARGET = obj({
   peopleMoves: INT,
   easyWins: INT,
   netNew: INT,
-  anchored: {
-    ...ANCHORED_META,
-    description: "level=anchored plans only (absent otherwise): the two populations this target was planned over and the partner's minimum number of target countries.",
+  targetCountries: {
+    ...TARGET_COUNTRIES_META,
+    description:
+      "Theatre plans of a program with TargetCountries requirements only (absent otherwise): the target countries this target was planned over and the partner's By Theatre minimum.",
+  },
+  countrySetMinimum: {
+    ...COUNTRY_SET_MINIMUM_META,
+    description:
+      "Country Set plans only (absent otherwise): the set this target was planned over — the named one, or this program's partner Country Set — and the partner's By Country Set minimum.",
   },
   blockers: {
     ...arr(
       obj({
         kind: { type: "string", enum: ["minimumCountries"] },
-        required: { type: "integer", description: "The minimum number of target countries." },
-        counted: { type: "integer", description: "Target countries inside the anchor theatre that count toward it." },
+        view: MINIMUM_VIEW,
+        areaName: {
+          ...NULLABLE_STR,
+          description: "The theatre (view=theatre) or the Country Set (view=countrySet) the minimum applies to. Null when no Country Set is configured for the partner.",
+        },
+        required: { type: "integer", description: "The minimum number of countries." },
+        counted: { type: "integer", description: "Countries that count toward it: target countries inside the theatre, or the set's member countries." },
         source: { type: "string", enum: ["partner", "default"], description: "Whether the minimum is the partner's own or the program default." },
       })
     ),
     description:
-      "What certifying people cannot fix, reported beside the plan and never costed into peopleMoves. minimumCountries: the partner names fewer target countries than its minimum, so no tier can be reached until more are added to its Country Set; the requirements over the countries it does have are still costed. Present only when non-empty, and only on level=anchored plans. The headline leads with it.",
+      "What certifying people cannot fix, reported beside the plan and never costed into peopleMoves. minimumCountries: the partner's set holds fewer countries than its minimum for that view, so no tier can be reached until more are added to the Country Set; the requirements over the countries it does have are still costed. Present only when non-empty, on theatre plans of a program with TargetCountries requirements and on Country Set plans. The headline leads with it.",
   },
 });
 
@@ -341,7 +382,7 @@ const PLAN_RISK_IMPACT = obj({
   population: {
     type: "string",
     enum: POPULATION_ENUM,
-    description: "level=anchored plans only (absent otherwise): which of the program's two populations the requirement is counted over.",
+    description: "Theatre plans of a program with TargetCountries requirements only (absent otherwise): which of the two populations the requirement is counted over.",
   },
   required: INT,
   attained: INT,
@@ -422,7 +463,7 @@ const PROGRAM_REQUIREMENT = obj({
   trainedNotCertified: {
     type: "integer",
     description:
-      "Country, region, countrySet, theatre and anchored levels, requirements whose primary training the catalogue holds as a Certification only (absent elsewhere): people in the same population as attained who hold a currently-valid instructor-led or OLX training that leads to this certification (or to a Certification alternative), but do not currently hold the certification or any alternative. A lapsed certification counts as not certified. Always today's figure, even with horizonMonths; for an eachCountry requirement, the area total. On an anchored program it is counted over the row's own population.",
+      "Country, region, countrySet and theatre levels, requirements whose primary training the catalogue holds as a Certification only (absent elsewhere): people in the same population as attained who hold a currently-valid instructor-led or OLX training that leads to this certification (or to a Certification alternative), but do not currently hold the certification or any alternative. A lapsed certification counts as not certified. Always today's figure, even with horizonMonths; for an eachCountry requirement, the area total. On a By Theatre view with target countries it is counted over the row's own population.",
   },
 });
 
@@ -620,7 +661,7 @@ export const PUBLIC_API_ENDPOINTS: readonly PublicApiEndpoint[] = [
     routeFile: "programs/route.ts",
     summary: "Partner program list",
     description:
-      "Every configured program with the shape needed to query its compliance. Deliberately NOT company-scoped: programs are a global registry carrying no company dimension, and nothing per-company is returned. ?companyId= is accepted but changes nothing here. An anchored program (isAnchored) is reported only with level=anchored.",
+      "Every configured program with the shape needed to query its compliance. Deliberately NOT company-scoped: programs are a global registry carrying no company dimension, and nothing per-company is returned. ?companyId= is accepted but changes nothing here. A program with hasTargetCountries set counts each partner's target countries in its level=theatre view, which then needs the request narrowed to exactly one company.",
     parameters: [COMPANY_ID],
     responseSchema: obj({
       programs: arr(
@@ -628,16 +669,15 @@ export const PUBLIC_API_ENDPOINTS: readonly PublicApiEndpoint[] = [
           name: STR,
           levels: {
             ...arr({ type: "string", enum: LEVEL_ENUM }),
-            description: "Configured requirement levels: Country, Region, CountrySet, Theatre, Global.",
+            description: "Configured requirement levels: Country, Region, CountrySet, TargetCountries, Theatre, Global.",
           },
           hasMinimumPerTheatre: BOOL,
           isTiered: BOOL,
-          isAnchored: {
+          hasTargetCountries: {
             type: "boolean",
             description:
-              "Whether the program is anchored: judged in one view over two populations — its Theatre-level requirements over anchorTheatre, its CountrySet-level requirements over each partner's target countries. An anchored program answers only level=anchored on GET /api/public/v1/programs/{programName}, and is planned only at level=anchored.",
+              "Whether the program has TargetCountries-level requirements. If so, its level=theatre view on GET /api/public/v1/programs/{programName} (and a theatre plan of it) counts its Theatre-level requirements over the theatre and its TargetCountries-level requirements over each partner's target countries inside that theatre, and needs the request narrowed to exactly one company.",
           },
-          anchorTheatre: { ...NULLABLE_STR, description: "The anchor theatre of an anchored program; null otherwise." },
         })
       ),
     }),
@@ -648,7 +688,7 @@ export const PUBLIC_API_ENDPOINTS: readonly PublicApiEndpoint[] = [
     routeFile: "programs/[programName]/route.ts",
     summary: "Per-program compliance",
     description:
-      "Compliance for one program at a chosen level and scope. Note that ?students=true only returns a roster when ?trainingTitle= is also supplied; on its own it returns the ordinary report. A tiered program additionally carries a tiers block. An anchored program (isAnchored in GET /api/public/v1/programs) is reported only with level=anchored: one view over two populations, its Theatre-level requirements over the anchor theatre and its CountrySet-level requirements over the partner's target countries (the chosen Country Set's members inside that theatre). Requirements at any other level are not evaluated and are named in meta.ignoredLevels. When the partner names fewer target countries than its minimum, no tier is reached (tiers.minimumCountriesGate), though specialisations are still judged.",
+      "Compliance for one program at a chosen level and scope. Note that ?students=true only returns a roster when ?trainingTitle= is also supplied; on its own it returns the ordinary report. A tiered program additionally carries a tiers block. On a program with TargetCountries-level requirements (hasTargetCountries in GET /api/public/v1/programs), level=theatre is one view over two populations: its Theatre-level requirements over the viewed theatre and its TargetCountries-level requirements over the partner's target countries (the members of the partner's By Theatre Country Set inside that theatre — any theatre may be viewed), described in meta.targetCountries. level=countrySet reports over the named set, or the partner's configured By Country Set set, described in meta.countrySetMinimum. Each of those two views carries the partner's minimum number of countries (its own, else the program default): when the set holds fewer, no tier is reached (tiers.minimumCountriesGate), though specialisations are still judged.",
     parameters: [
       COMPANY_ID,
       {
@@ -662,8 +702,8 @@ export const PUBLIC_API_ENDPOINTS: readonly PublicApiEndpoint[] = [
         name: "level",
         in: "query",
         description:
-          "Which level to report at. Each level counts only the requirements authored at it: region means Region-level requirements over the region's countries, and countrySet means CountrySet-level requirements over the set's countries. anchored is the only level an anchored program accepts, and only an anchored program accepts it — either mismatch is a 400, including the default, so an anchored program must be asked for with level=anchored. Like countrySet, level=anchored needs the request narrowed to exactly one company.",
-        schema: { type: "string", enum: ["country", "region", "countrySet", "theatre", "global", "anchored"], default: "country" },
+          "Which level to report at. Each level counts only the requirements authored at it: region means Region-level requirements over the region's countries, and countrySet means CountrySet-level requirements over the set's countries. theatre means Theatre-level requirements over the theatre plus, on a program with TargetCountries-level requirements, those over the partner's target countries inside it. countrySet always needs the request narrowed to exactly one company, and theatre does too on a program with TargetCountries-level requirements.",
+        schema: { type: "string", enum: ["country", "region", "countrySet", "theatre", "global"], default: "country" },
       },
       ...PROGRAM_SCOPE_PARAMS,
       {
@@ -696,7 +736,7 @@ export const PUBLIC_API_ENDPOINTS: readonly PublicApiEndpoint[] = [
         name: "population",
         in: "query",
         description:
-          "level=anchored rosters only, and then required: which population the roster is drawn from — the requirement row's own population value, theatre (the anchor theatre) or targetCountries (the partner's target countries) — so the list matches the row's figure. A roster request on an anchored program without it is a 400. Ignored at every other level and by the report itself.",
+          "Rosters on a level=theatre view of a program with TargetCountries-level requirements only, and then required: which population the roster is drawn from — the requirement row's own population value, theatre (the viewed theatre) or targetCountries (the partner's target countries inside it) — so the list matches the row's figure. Such a roster request without it is a 400. Ignored at every other level, on a program without TargetCountries-level requirements, and by the report itself.",
         schema: { type: "string", enum: POPULATION_ENUM },
       },
     ],
@@ -726,21 +766,20 @@ export const PUBLIC_API_ENDPOINTS: readonly PublicApiEndpoint[] = [
             meta: obj({
               levels: {
                 ...arr({ type: "string", enum: LEVEL_ENUM }),
-                description: "The requirement levels this program's rows use: Country, Region, CountrySet, Theatre, Global.",
+                description: "The requirement levels this program's rows use: Country, Region, CountrySet, TargetCountries, Theatre, Global.",
               },
               hasMinimumPerTheatre: BOOL,
               isTiered: { type: "boolean", description: "Absent from the empty out-of-scope payload." },
               deploymentMode: { type: "string", enum: ["flat", "perAchievedSpecialisation", "perTierPerSpecialisation"] },
-              isAnchored: { type: "boolean", description: "Anchored programs only (always true there); absent for every other program." },
-              anchorTheatre: { type: "string", description: "Anchored programs only: the theatre Theatre-level requirements are counted over." },
-              ignoredLevels: {
-                ...arr({ type: "string", enum: LEVEL_ENUM }),
-                description: "Anchored programs only: requirement levels the program has rows at that an anchored view does not evaluate (anything but Theatre and CountrySet).",
+              targetCountries: {
+                ...TARGET_COUNTRIES_META,
+                description:
+                  "level=theatre on a program with TargetCountries-level requirements only (absent otherwise): the target countries the view was counted over and the partner's By Theatre minimum.",
               },
-              anchored: {
-                ...ANCHORED_META,
-                type: ["object", "null"],
-                description: "Anchored programs only: the populations the view was counted over and the partner's minimum number of target countries. Null if the view could not be resolved.",
+              countrySetMinimum: {
+                ...COUNTRY_SET_MINIMUM_META,
+                description:
+                  "level=countrySet only (absent otherwise): the Country Set the view was counted over — the named one, else the partner's By Country Set set — and the partner's minimum number of countries in it.",
               },
             }),
             horizonMonths: INT,
@@ -767,18 +806,22 @@ export const PUBLIC_API_ENDPOINTS: readonly PublicApiEndpoint[] = [
                 gateRequirements: {
                   ...arr(TIER_DEPLOYMENT_REQUIREMENT),
                   description:
-                    "Program-wide requirements (\"Required at every level\"): rows with neither a specialisation nor a tier, which every tier requires in every deployment mode. Listed once here rather than under each tier, and never in the specialisation tables. Only those authored at the viewed level (on an anchored program, at Theatre or CountrySet). Empty when there are none.",
+                    "Program-wide requirements (\"Required at every level\"): rows with neither a specialisation nor a tier, which every tier requires in every deployment mode. Listed once here rather than under each tier, and never in the specialisation tables. Only those authored at the viewed level (on a level=theatre view, Theatre-level and TargetCountries-level ones). Empty when there are none.",
                 },
                 minimumCountriesGate: {
                   ...obj({
+                    view: MINIMUM_VIEW,
                     required: { type: ["integer", "null"], description: "The effective minimum; null means none applies and the gate is met." },
-                    counted: { type: "integer", description: "Target countries inside the anchor theatre." },
+                    counted: {
+                      type: "integer",
+                      description: "Countries counted: the Country Set's members (view=countrySet) or the target countries inside the viewed theatre (view=theatre).",
+                    },
                     met: BOOL,
                     source: MINIMUM_SOURCE,
                   }),
                   type: ["object", "null"],
                   description:
-                    "Anchored programs only (null otherwise): the partner's minimum number of target countries. When met is false every tier is unreached, now and at the horizon, whatever the counts say; specialisation achievement is unaffected.",
+                    "level=countrySet, and level=theatre on a program with TargetCountries-level requirements (null otherwise): the partner's minimum number of countries for that view. When met is false every tier is unreached, now and at the horizon, whatever the counts say; specialisation achievement is unaffected.",
                 },
               }),
               description: "Present only for a tiered program.",
@@ -817,7 +860,7 @@ export const PUBLIC_API_ENDPOINTS: readonly PublicApiEndpoint[] = [
     },
     errors: {
       "400":
-        "Invalid program name (the path segment was not valid percent-encoding), a ?companyId= this key was not granted, level=countrySet or level=anchored on a request not narrowed to exactly one company, level=anchored on a program that is not anchored, any other level on a program that is, or a roster (students=true with trainingTitle) on an anchored program without population=theatre or population=targetCountries.",
+        "Invalid program name (the path segment was not valid percent-encoding), a ?companyId= this key was not granted, level=countrySet — or level=theatre on a program with TargetCountries-level requirements — on a request not narrowed to exactly one company, or a roster (students=true with trainingTitle) on such a theatre view without population=theatre or population=targetCountries.",
     },
   },
 
@@ -827,7 +870,7 @@ export const PUBLIC_API_ENDPOINTS: readonly PublicApiEndpoint[] = [
     paramSources: ["src/lib/compliance-plan-request.ts"],
     summary: "Compliance planning (aggregates only)",
     description:
-      "The action layer over program compliance: what it would take to close each gap. AGGREGATES ONLY — the named candidate, eligible-pool and renewal rosters the in-app planner shows are never returned over this API. Nothing analytical is lost: riskImpacts is the aggregate view of the same set the named renewal rows enumerate, and totals.renewalsAtRisk is its count. Use ?options=true first to discover the program, tier and specialisation names needed to build a targets array. Anchored programs (options programs[].anchored) are planned only at level=anchored, and every other program only at the other levels: a target on the wrong side is left out of targets and named in skippedTargets with the reason. A tiered program's program-wide requirements form a \"Required at every level\" block in every tier and \"all\" target.",
+      "The action layer over program compliance: what it would take to close each gap. AGGREGATES ONLY — the named candidate, eligible-pool and renewal rosters the in-app planner shows are never returned over this API. Nothing analytical is lost: riskImpacts is the aggregate view of the same set the named renewal rows enumerate, and totals.renewalsAtRisk is its count. Use ?options=true first to discover the program, tier and specialisation names needed to build a targets array. Every program can be planned at every scope. At level=theatre, a program with TargetCountries-level requirements (options programs[].targetCountries) is planned over two populations — its Theatre-level requirements over the theatre and its TargetCountries-level ones over the partner's target countries inside it — and at level=countrySet each program is planned over its set; in both, a partner set holding fewer countries than its minimum is reported in targets[].blockers rather than costed. A tiered program's program-wide requirements form a \"Required at every level\" block in every tier and \"all\" target.",
     parameters: [
       COMPANY_ID,
       {
@@ -848,8 +891,8 @@ export const PUBLIC_API_ENDPOINTS: readonly PublicApiEndpoint[] = [
         name: "level",
         in: "query",
         description:
-          'The scope to plan at. Each scope plans against its own level\'s requirements only: region plans Region-level requirements over the region\'s countries, countrySet plans CountrySet-level requirements over the set\'s countries. An "eachCountry" requirement becomes one gap per country. An unrecognised value plans globally. anchored plans each anchored program over its two populations — Theatre-level requirements over its anchor theatre, CountrySet-level ones over the partner\'s target countries — and needs the request narrowed to exactly one company; countrySet is optional there and defaults to each program\'s configured target set for that partner.',
-        schema: { type: "string", enum: ["global", "theatre", "region", "countrySet", "country", "anchored"], default: "global" },
+          'The scope to plan at. Each scope plans against its own level\'s requirements only: region plans Region-level requirements over the region\'s countries, countrySet plans CountrySet-level requirements over the set\'s countries. An "eachCountry" requirement becomes one gap per country. An unrecognised value plans globally. theatre plans Theatre-level requirements over the theatre and, for a program with TargetCountries-level requirements, those over the partner\'s target countries inside it. countrySet always needs the request narrowed to exactly one company, and so does a named theatre when some requested program has TargetCountries-level requirements.',
+        schema: { type: "string", enum: ["global", "theatre", "region", "countrySet", "country"], default: "global" },
       },
       ...PROGRAM_SCOPE_PARAMS,
       {
@@ -875,16 +918,6 @@ export const PUBLIC_API_ENDPOINTS: readonly PublicApiEndpoint[] = [
             planForWindow: BOOL,
             targets: arr(PLAN_TARGET),
             riskImpacts: arr(PLAN_RISK_IMPACT),
-            skippedTargets: {
-              ...arr(
-                obj({
-                  program: STR,
-                  reason: { type: "string", enum: ["anchoredOnly", "notAnchored"] },
-                }),
-              ),
-              description:
-                "Targets left out for being on the wrong side of level=anchored: anchoredOnly = an anchored program asked for at another level (it is planned only at level=anchored); notAnchored = an ordinary program asked for at level=anchored. Unknown program names are dropped without an entry.",
-            },
             totals: obj({
               peopleMoves: { type: "integer", description: 'The "people to certify" headline, deduped so one person\'s exam counts once.' },
               easyWins: INT,
@@ -906,14 +939,14 @@ export const PUBLIC_API_ENDPOINTS: readonly PublicApiEndpoint[] = [
                 isTiered: BOOL,
                 levels: {
                   ...arr({ type: "string", enum: LEVEL_ENUM }),
-                  description: "The requirement levels this program's rows use: Country, Region, CountrySet, Theatre, Global.",
+                  description: "The requirement levels this program's rows use: Country, Region, CountrySet, TargetCountries, Theatre, Global.",
                 },
                 tiers: arr(STR),
                 specialisations: arr(STR),
-                anchored: {
-                  ...obj({ anchorTheatre: STR }),
-                  type: ["object", "null"],
-                  description: "Set for an anchored program, which is planned only at level=anchored; null for every other program.",
+                targetCountries: {
+                  type: "boolean",
+                  description:
+                    "Whether the program has TargetCountries-level requirements, so a theatre plan of it also counts the partner's target countries inside the theatre (and needs exactly one company).",
                 },
               })
             ),
@@ -929,7 +962,7 @@ export const PUBLIC_API_ENDPOINTS: readonly PublicApiEndpoint[] = [
     },
     errors: {
       "400":
-        "Invalid targets (the value was not parseable JSON), a ?companyId= this key was not granted, or level=countrySet or level=anchored on a request not narrowed to exactly one company.",
+        "Invalid targets (the value was not parseable JSON), a ?companyId= this key was not granted, or — on a request not narrowed to exactly one company — level=countrySet, or level=theatre with a theatre named and some requested program having TargetCountries-level requirements.",
     },
   },
 
@@ -974,7 +1007,7 @@ export const PUBLIC_API_ENDPOINTS: readonly PublicApiEndpoint[] = [
     routeFile: "reports/program-compliance-trend/route.ts",
     summary: "Program compliance trend",
     description:
-      "Twenty-four month-end snapshots per program and specialisation: twelve of history and twelve projected. Future months assume no new completions, so compliance decays as active certifications expire. A separate endpoint, not a value for {reportType}. Anchored programs are not covered: this report pools every requirement over one geography, which would misreport a program judged over two populations, so they are left out and named in unsupportedPrograms.",
+      "Twenty-four month-end snapshots per program and specialisation: twelve of history and twelve projected. Future months assume no new completions, so compliance decays as active certifications expire. A separate endpoint, not a value for {reportType}. Programs with TargetCountries-level requirements are not covered: this report pools every requirement over one geography, which would misreport a program whose By Theatre view is judged over two populations with a per-partner minimum, so they are left out and named in unsupportedPrograms.",
     parameters: [
       COMPANY_ID,
       {
@@ -1003,7 +1036,7 @@ export const PUBLIC_API_ENDPOINTS: readonly PublicApiEndpoint[] = [
       scopeLabel: STR,
       unsupportedPrograms: {
         ...arr(STR),
-        description: "Anchored programs this request would otherwise have included, left out because this report cannot reproduce their two-population view. Use GET /api/public/v1/programs/{programName}?level=anchored instead.",
+        description: "Programs with TargetCountries-level requirements that this request would otherwise have included, left out because this report cannot reproduce their two-population By Theatre view. Use GET /api/public/v1/programs/{programName}?level=theatre instead.",
       },
     }),
   },
