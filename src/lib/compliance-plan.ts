@@ -167,6 +167,8 @@ export interface PlanRequirement {
    */
   population?: PopulationKind;
   cert: string;
+  /** The requirement's optional display name (ProgramData.label); null when unnamed. Display only — `cert` stays the identity. */
+  label: string | null;
   required: number;
   attained: number;
   /**
@@ -342,6 +344,8 @@ export interface PlanRiskImpact {
   specialisation: string | null;
   tierName: string | null;
   cert: string;
+  /** See `PlanRequirement.label`. */
+  label: string | null;
   /** See `PlanRequirement.aggregation`. */
   aggregation: Aggregation;
   /** See `PlanRequirement.country` — set for one country of an "each country" requirement. */
@@ -487,6 +491,8 @@ interface ReqInstance {
   population?: PopulationKind;
   /** A tiered program's program-wide requirement (neither specialisation nor tier). */
   isGate: boolean;
+  /** Optional display name (ProgramData.label). */
+  label: string | null;
   /** Identity of the qualifying cert-set: two instances sharing it share moves. */
   certKey: string;
   cert: string;
@@ -939,6 +945,8 @@ interface RequirementRow {
   titles: string[];
   /** Display: " or "-joined full titles. */
   cert: string;
+  /** Optional display name (ProgramData.label). */
+  label: string | null;
 }
 
 type ProgramDataWithRelations = {
@@ -950,6 +958,7 @@ type ProgramDataWithRelations = {
   aggregation: string;
   quantityRequired: number;
   trainingTitle: string | null;
+  label: string | null;
   specialisation: { name: string } | null;
   trainingData: { fullTitle: string } | null;
   alternatives: { trainingTitle: string; trainingData: { fullTitle: string } | null }[];
@@ -976,6 +985,7 @@ function toRequirementRow(pd: ProgramDataWithRelations): RequirementRow | null {
     quantityRequired: pd.quantityRequired,
     titles,
     cert: [...new Set(fulls)].join(" or "),
+    label: pd.label ?? null,
   };
 }
 
@@ -1108,6 +1118,7 @@ function makeInstance(
     isGate: false,
     certKey,
     cert: row.cert,
+    label: row.label,
     required: row.quantityRequired,
     attained: figures.attained,
     projectedAttained: figures.projectedAttained,
@@ -1720,6 +1731,7 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
           aggregation: true,
           quantityRequired: true,
           trainingTitle: true,
+          label: true,
           specialisation: { select: { name: true } },
           trainingData: { select: { fullTitle: true } },
           alternatives: { select: { trainingTitle: true, trainingData: { select: { fullTitle: true } } } },
@@ -2302,6 +2314,7 @@ function buildRiskImpacts(all: ReqInstance[], countedInstanceIds: Set<string>): 
       specialisation: i.specialisation,
       tierName: i.tierName,
       cert: i.cert,
+      label: i.label,
       aggregation: i.aggregation,
       country: i.country,
       scopeLabel: i.scopeLabel,
@@ -2423,6 +2436,7 @@ function toPlanRequirement(
     scopeLabel: inst.scopeLabel,
     ...(inst.population ? { population: inst.population } : {}),
     cert: inst.cert,
+    label: inst.label,
     required: inst.required,
     attained: inst.attained,
     projectedAttained: inst.projectedAttained,

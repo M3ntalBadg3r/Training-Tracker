@@ -53,6 +53,12 @@ import type { CountrySetMinimumMeta, TargetCountriesMeta } from "@/lib/program-l
  * (`PlanCandidateClose.scopeLabel` becomes a country too, but closes live only
  * under `candidates`/`eligible`, which never reach this surface.)
  *
+ * Re-audited for requirement names: `PlanRequirement` and `PlanRiskImpact`
+ * gained `label`, the optional display name a SuperAdmin gives a program
+ * requirement (e.g. "4 per target country — any sales cert"). Program
+ * definitions are global registry data authored in Admin › Program Data, so it
+ * is catalogue text like `cert`, not a person identifier.
+ *
  * Re-audited for program-wide requirements: `PlanTargetResult` gained
  * `blockers` and `tierPlan.gateShortfall` (an integer); `PlanSpecialisation`
  * gained `kind` (an enum).
@@ -186,11 +192,11 @@ type AuditedSpecialisationField =
   | "chosen" | "alternative" | "marginalCost" | "kind";
 type AuditedRequirementField =
   | "instanceId" | "requirementKey" | "specialisation" | "tierName" | "purpose" | "nativeLevel"
-  | "aggregation" | "country" | "scopeLabel" | "population" | "cert" | "required" | "attained"
+  | "aggregation" | "country" | "scopeLabel" | "population" | "cert" | "label" | "required" | "attained"
   | "projectedAttained" | "shortfall" | "projectedShortfall" | "renewalPool" | "easyWinPool"
   | "lapsedPool" | "legacyPool" | "netNew" | "sharedWith" | "expiringSoon";
 type AuditedRiskImpactField =
-  | "program" | "specialisation" | "tierName" | "cert" | "aggregation" | "country" | "scopeLabel"
+  | "program" | "specialisation" | "tierName" | "cert" | "label" | "aggregation" | "country" | "scopeLabel"
   | "population" | "required" | "attained" | "projectedAttained" | "onPath";
 type AuditedTierPlanField =
   | "specialisationsRequired" | "alreadyAchieved" | "needed" | "deliveryCertShortfall" | "gateShortfall";

@@ -170,6 +170,8 @@ export interface ProgramDataRow {
   trainingType: string | null;
   trainingTitle: string | null;
   trainingFullTitle: string | null;
+  /** Optional display name for the rule; shown instead of the training list. */
+  label: string | null;
   quantityRequired: number;
   minimumPerTheatre: number | null;
   alternatives: ProgramDataAlternativeRow[];

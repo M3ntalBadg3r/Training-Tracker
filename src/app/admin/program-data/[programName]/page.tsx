@@ -320,9 +320,22 @@ export default function ProgramRequirementsPage() {
         {isMultiCountryLevel(r.level) && ` (${countModeLabel(r).toLowerCase()})`}
         {" · "}
       </span>
-      {r.quantityRequired}× {r.trainingFullTitle || "—"}
-      {r.alternatives.length > 0 && (
-        <span className="text-xs text-gray-500"> or {r.alternatives.map((a) => a.trainingFullTitle).join(", ")}</span>
+      {r.label ? (
+        <>
+          <span className="font-medium">{r.label}</span>
+          <span className="text-xs text-gray-500">
+            {" · "}
+            {r.quantityRequired}× {r.trainingFullTitle || "—"}
+            {r.alternatives.length > 0 && <> or {r.alternatives.map((a) => a.trainingFullTitle).join(", ")}</>}
+          </span>
+        </>
+      ) : (
+        <>
+          {r.quantityRequired}× {r.trainingFullTitle || "—"}
+          {r.alternatives.length > 0 && (
+            <span className="text-xs text-gray-500"> or {r.alternatives.map((a) => a.trainingFullTitle).join(", ")}</span>
+          )}
+        </>
       )}
     </>
   );
@@ -625,7 +638,8 @@ export default function ProgramRequirementsPage() {
                     </td>
                     <td className="px-4 py-3">{row.trainingType ? trainingTypeLabel(row.trainingType) : "—"}</td>
                     <td className="px-4 py-3">
-                      {row.trainingFullTitle || "—"}
+                      {row.label && <div className="font-medium">{row.label}</div>}
+                      <div className={row.label ? "text-xs text-gray-500" : undefined}>{row.trainingFullTitle || "—"}</div>
                       {row.alternatives && row.alternatives.length > 0 && (
                         <div className="text-xs text-gray-500 mt-0.5">
                           or {row.alternatives.map((a) => a.trainingFullTitle).join(", ")}

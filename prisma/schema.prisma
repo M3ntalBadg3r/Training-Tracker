@@ -362,6 +362,10 @@ model ProgramData {
   aggregation       String        @default("total")
   trainingType      TrainingType? @map("training_type")
   trainingTitle     String?       @map("training_title")
+  // Optional display name for the rule, e.g. "4 per target country — any
+  // sales cert". Shown as the row's title instead of the training and its
+  // alternatives; display only, never part of how the row is counted.
+  label             String?
   quantityRequired  Int           @map("quantity_required")
   minimumPerTheatre Int?          @map("minimum_per_theatre")
   createdAt         DateTime      @default(now()) @map("created_at")

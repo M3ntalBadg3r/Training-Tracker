@@ -52,6 +52,7 @@ export async function PUT(
         aggregation: v.aggregation,
         trainingType: v.trainingType as "Certification" | "Accreditation" | "InstructorLedTraining" | null,
         trainingTitle: v.trainingTitle,
+        label: v.label,
         quantityRequired: v.quantityRequired,
         minimumPerTheatre: v.minimumPerTheatre,
         alternatives:

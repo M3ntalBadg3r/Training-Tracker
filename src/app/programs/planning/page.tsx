@@ -79,6 +79,8 @@ interface PlanRequirement {
    *  populations the row counts over. */
   population?: PopulationKind;
   cert: string;
+  /** Optional display name for the requirement; shown instead of `cert`, which stays the identity. */
+  label?: string | null;
   required: number;
   attained: number;
   /** Holders left at the end of the renewal window; null when no window is set. */
@@ -172,6 +174,7 @@ interface PlanRiskImpact {
   specialisation: string | null;
   tierName: string | null;
   cert: string;
+  label?: string | null;
   aggregation: Aggregation;
   country: string | null;
   scopeLabel: string;
@@ -544,7 +547,7 @@ function riskImpactSegments(impact: PlanRiskImpact): Segment[] {
     { text: impact.program, bold: true },
     ...(owner ? [{ text: ` · ${owner}`, muted: true }] : []),
     { text: " — " },
-    { text: `${impact.cert}: ` },
+    { text: `${impact.label || impact.cert}: ` },
     { text: `${impact.attained} → ${impact.projectedAttained}`, bold: true },
     {
       text: ` / ${impact.required} (${impact.scopeLabel}${
@@ -771,9 +774,9 @@ function requirementState(r: PlanRequirement): RiskState {
   return riskState(r.attained, r.projectedAttained ?? undefined, r.required);
 }
 
-/** "4 × Cert A — each country". */
+/** "4 × Cert A — each country", or the requirement's own name when it has one. */
 function eachCountryTitle(r: PlanRequirement): string {
-  return `${r.required} × ${r.cert} — each country`;
+  return r.label || `${r.required} × ${r.cert} — each country`;
 }
 
 /** "2 of 5 countries short · 1 at risk" / "All 5 countries met". */
@@ -788,7 +791,7 @@ function eachCountryStatus(rows: PlanRequirement[]): string {
 
 /** The requirement cell for a plain row — names an empty-area placeholder for what it is. */
 function requirementLabel(r: PlanRequirement): string {
-  return r.aggregation === "eachCountry" ? `${eachCountryTitle(r)} (no countries in scope)` : r.cert;
+  return r.aggregation === "eachCountry" ? `${eachCountryTitle(r)} (no countries in scope)` : r.label || r.cert;
 }
 
 /** A target's heading: the program, and the tier it is aiming at. */
@@ -990,6 +993,8 @@ function buildRoadmapSection(
   // Population column, as on the dashboard, so every other plan's spreadsheet
   // is byte-identical to what it was before.
   const withPopulation = plansPopulations(targets);
+  // The same bargain for requirement names: a column only when some row has one.
+  const withNames = targets.some((t) => t.specialisations.some((s) => s.requirements.some((r) => !!r.label)));
   for (const t of targets) {
     const target = t.tierName ?? (t.mode === "all" ? "All requirements" : "Specialisations");
     const tiered = !!t.tierPlan;
@@ -1031,6 +1036,7 @@ function buildRoadmapSection(
           country: r.country ?? "",
           // Appended last for the same reason; target-countries plans only.
           ...(withPopulation ? { population: r.population ? POPULATION_LABEL[r.population] : "" } : {}),
+          ...(withNames ? { requirementName: r.label ?? "" } : {}),
         });
       }
     }
@@ -1066,6 +1072,7 @@ function buildRoadmapSection(
       { key: "countMode", header: "Count Mode" },
       { key: "country", header: "Country" },
       ...(withPopulation ? [{ key: "population", header: "Population" }] : []),
+      ...(withNames ? [{ key: "requirementName", header: "Requirement Name" }] : []),
     ],
     rows,
   };
@@ -1111,6 +1118,7 @@ function buildRiskImpactSection(impacts: PlanRiskImpact[], windowMonths: number)
   // Target-countries plans only (only their impacts carry `population`), so
   // every other plan's export is unchanged.
   const withPopulation = impacts.some((i) => i.population !== undefined);
+  const withNames = impacts.some((i) => !!i.label);
   return {
     title: "Requirements at risk",
     subtitle: `Falling below target within ${windowMonths} month${windowMonths === 1 ? "" : "s"} as training expires`,
@@ -1127,6 +1135,7 @@ function buildRiskImpactSection(impacts: PlanRiskImpact[], windowMonths: number)
       { key: "CountMode", header: "Count Mode" },
       { key: "Country", header: "Country" },
       ...(withPopulation ? [{ key: "Population", header: "Population" }] : []),
+      ...(withNames ? [{ key: "RequirementName", header: "Requirement Name" }] : []),
     ],
     rows: impacts.map((i) => ({
       Program: i.program,
@@ -1141,6 +1150,7 @@ function buildRiskImpactSection(impacts: PlanRiskImpact[], windowMonths: number)
       CountMode: AGGREGATION_SHORT_LABELS[i.aggregation],
       Country: i.country ?? "",
       ...(withPopulation ? { Population: i.population ? POPULATION_LABEL[i.population] : "" } : {}),
+      ...(withNames ? { RequirementName: i.label ?? "" } : {}),
     })),
   };
 }
@@ -2201,7 +2211,7 @@ function EachCountryRows({
         windowMonths={windowMonths}
         label={
           <span className="flex flex-wrap items-center gap-1.5">
-            <span className="font-medium">{row.summary.required} × {row.summary.cert}</span>
+            <span className="font-medium">{row.summary.label || `${row.summary.required} × ${row.summary.cert}`}</span>
             <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700">
               {row.summary.population === "targetCountries" ? "each target country" : "each country"}
             </span>
@@ -2277,7 +2287,17 @@ function ReqRow({
   const chips = candidateChips(r);
   return (
     <tr className={`border-b border-gray-50 ${ROW_BG[state]}`}>
-      <td className="py-1.5 pr-3">{label ?? requirementLabel(r)}</td>
+      <td className="py-1.5 pr-3">
+        {label ??
+          (r.label ? (
+            <>
+              <div className="font-medium">{requirementLabel(r)}</div>
+              <div className="text-[11px] text-gray-400">{r.cert}</div>
+            </>
+          ) : (
+            requirementLabel(r)
+          ))}
+      </td>
       <td className="py-1.5 pr-3">
         {scope ?? (
           <>

@@ -47,6 +47,25 @@ export { REQ_LEVELS };
  *  far below the bulk-import default `readJsonBody` applies. */
 export const REQUIREMENT_BODY_MAX_BYTES = 256 * 1024;
 
+/** Longest optional requirement name (`ProgramData.label`) accepted on write. */
+export const MAX_REQUIREMENT_LABEL_LENGTH = 120;
+export const REQUIREMENT_LABEL_LENGTH_ERROR = `Requirement name must be ${MAX_REQUIREMENT_LABEL_LENGTH} characters or fewer`;
+
+/**
+ * Parse an optional requirement name (`ProgramData.label`): absent, null or
+ * blank is "no name" (null); a string is trimmed and must fit the length cap;
+ * anything else is rejected rather than coerced. Shared by the single-row
+ * write routes and the import so both accept exactly the same values.
+ */
+export function parseRequirementLabel(raw: unknown): { ok: true; value: string | null } | { ok: false; error: string } {
+  if (raw == null) return { ok: true, value: null };
+  if (typeof raw !== "string") return { ok: false, error: "Requirement name must be text" };
+  const value = raw.trim();
+  if (value === "") return { ok: true, value: null };
+  if (value.length > MAX_REQUIREMENT_LABEL_LENGTH) return { ok: false, error: REQUIREMENT_LABEL_LENGTH_ERROR };
+  return { ok: true, value };
+}
+
 export const REQ_TRAINING_TYPES = ["Certification", "Accreditation", "InstructorLedTraining"] as const;
 export const REQ_PURPOSES = ["qualification", "deployment"] as const;
 
@@ -59,6 +78,7 @@ export interface ValidatedRequirement {
   aggregation: Aggregation;
   trainingType: string | null;
   trainingTitle: string | null;
+  label: string | null;
   quantityRequired: number;
   minimumPerTheatre: number | null;
   altData: { trainingType: string; trainingTitle: string }[];
@@ -74,6 +94,9 @@ export async function validateRequirementBody(body: Record<string, unknown>): Pr
 
   const programName = typeof body.programName === "string" ? body.programName.trim() : "";
   if (!programName) return err("Program name is required");
+
+  const label = parseRequirementLabel(body.label);
+  if (!label.ok) return err(label.error);
 
   const specialisationId = body.specialisationId == null ? null : Number(body.specialisationId);
   const tierId = body.tierId == null ? null : Number(body.tierId);
@@ -190,6 +213,7 @@ export async function validateRequirementBody(body: Record<string, unknown>): Pr
       aggregation,
       trainingType: hasTraining ? trainingType : null,
       trainingTitle: hasTraining ? trainingTitleRaw : null,
+      label: label.value,
       quantityRequired,
       minimumPerTheatre,
       altData,
@@ -208,6 +232,7 @@ export interface ProgramDataRecord {
   aggregation: string;
   trainingType: string | null;
   trainingTitle: string | null;
+  label: string | null;
   quantityRequired: number;
   minimumPerTheatre: number | null;
   specialisation: { name: string } | null;
@@ -241,6 +266,7 @@ export function serializeProgramDataRow(record: ProgramDataRecord): ProgramDataR
     trainingType: record.trainingType ?? null,
     trainingTitle: record.trainingTitle ?? null,
     trainingFullTitle: record.trainingData?.fullTitle ?? "—",
+    label: record.label ?? null,
     quantityRequired: record.quantityRequired,
     minimumPerTheatre: record.minimumPerTheatre ?? null,
     alternatives: record.alternatives.map((a) => ({

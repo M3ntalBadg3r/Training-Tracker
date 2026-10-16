@@ -15,6 +15,7 @@ import {
   MAX_MINIMUM_COUNTRIES,
   PROGRAM_WIDE_NOT_TIERED_ERROR,
   parseMinimumCountries,
+  parseRequirementLabel,
 } from "@/lib/program-data-write";
 
 /*
@@ -55,6 +56,8 @@ interface RawRow {
   quantityRequired?: string | number;
   minimumPerTheatre?: string | number | null;
   alternatives?: string;
+  /** Optional display name for the rule ("Requirement Name" column). */
+  label?: string;
   // Program / tier structure (round-tripped from export)
   deploymentMode?: string;
   tierSortOrder?: string | number | null;
@@ -177,6 +180,7 @@ interface ResolvedRow {
     aggregation: Aggregation;
     trainingType: "Certification" | "Accreditation" | "InstructorLedTraining" | null;
     trainingTitle: string | null;
+    label: string | null;
     quantityRequired: number;
     minimumPerTheatre: number | null;
     altData: { trainingType: string; trainingTitle: string }[];
@@ -306,6 +310,12 @@ export async function POST(request: NextRequest) {
     const rawAlternatives = raw.alternatives?.trim() ?? "";
 
     if (!programName) return { ok: false, message: "Program Name is required" };
+
+    // A blank cell or a dash means "no name", exactly as the single-row write
+    // routes treat an empty value; the length rule is the same shared one.
+    const rawLabel = String(raw.label ?? "").trim();
+    const parsedLabel = parseRequirementLabel(isNullMarker(rawLabel) ? null : rawLabel);
+    if (!parsedLabel.ok) return { ok: false, message: parsedLabel.error };
 
     const programWarnings: string[] = [];
     let hasMinimum = false;
@@ -478,6 +488,7 @@ export async function POST(request: NextRequest) {
           aggregation,
           trainingType: resolvedTrainingType,
           trainingTitle: resolvedTrainingTitle,
+          label: parsedLabel.value,
           quantityRequired,
           minimumPerTheatre,
           altData,
@@ -629,6 +640,7 @@ export async function POST(request: NextRequest) {
             aggregation: req.aggregation,
             trainingType: req.trainingType,
             trainingTitle: req.trainingTitle,
+            label: req.label,
             quantityRequired: req.quantityRequired,
             minimumPerTheatre: req.minimumPerTheatre,
             alternatives: req.altData.length > 0 ? {
