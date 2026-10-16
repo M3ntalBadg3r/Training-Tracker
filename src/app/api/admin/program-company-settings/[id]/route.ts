@@ -4,11 +4,10 @@ import { requireAuth, handleAuthError } from "@/lib/auth";
 import { canAccessCompany } from "@/lib/company-scope";
 import { readJsonBody } from "@/lib/request-body";
 import { invalidateReportCache } from "@/lib/report-cache";
-import { MINIMUM_COUNTRIES_ERROR, parseMinimumCountries } from "@/lib/program-data-write";
 import {
   PROGRAM_COMPANY_SETTING_SELECT,
-  checkTargetSet,
   parsePositiveId,
+  parseSettingBody,
   toSettingRow,
 } from "../route";
 
@@ -41,8 +40,9 @@ async function loadAccessibleSetting(
 
 /**
  * PUT /api/admin/program-company-settings/[id] — partial update. An absent
- * `minimumCountries` / `targetCountrySetId` key leaves that value alone; an
- * explicit `null` (or `""`) clears it. `programId` and `companyId` are
+ * `countrySetMinimumCountries` / `countrySetId` / `targetMinimumCountries` /
+ * `targetCountrySetId` key leaves that value alone; an explicit `null` (or
+ * `""`) clears it. Either set must belong to the row's own company. `programId` and `companyId` are
  * immutable: a body naming a different one is a 400 rather than silently
  * ignored, so a client that thinks it moved a row is told it did not.
  */
@@ -75,17 +75,9 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     return NextResponse.json({ error: "A partner setting's program cannot be changed" }, { status: 400 });
   }
 
-  const data: { minimumCountries?: number | null; targetCountrySetId?: number | null } = {};
-  if (Object.prototype.hasOwnProperty.call(body, "minimumCountries")) {
-    const minimum = parseMinimumCountries(body.minimumCountries);
-    if (!minimum.ok) return NextResponse.json({ error: MINIMUM_COUNTRIES_ERROR }, { status: 400 });
-    data.minimumCountries = minimum.value;
-  }
-  if (Object.prototype.hasOwnProperty.call(body, "targetCountrySetId")) {
-    const target = await checkTargetSet(body.targetCountrySetId, existing.companyId);
-    if (!target.ok) return NextResponse.json({ error: target.error }, { status: 400 });
-    data.targetCountrySetId = target.value;
-  }
+  const fields = await parseSettingBody(body, existing.companyId);
+  if (!fields.ok) return NextResponse.json({ error: fields.error }, { status: 400 });
+  const data = fields.value;
 
   try {
     // Pinned to the access-checked company, so even a concurrent change cannot

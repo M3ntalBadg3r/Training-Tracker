@@ -10,8 +10,6 @@ import {
   AGGREGATION_LABELS,
   LEVEL_LABELS,
   REQ_LEVELS,
-  ANCHORED_REQ_LEVELS,
-  isAnchoredReqLevel,
   isMultiCountryLevel,
   normaliseAggregation,
   type Aggregation,
@@ -40,7 +38,7 @@ interface FormState {
   specialisationId: number;
   purpose: string;
   level: string;
-  /** Count mode — only meaningful for Region / Country Set; "total" otherwise. */
+  /** Count mode — only meaningful for Region / Country Set / Target countries; "total" otherwise. */
   aggregation: Aggregation;
   trainingType: string;
   trainingTitle: string;
@@ -74,13 +72,6 @@ export type RequirementScope =
   | { kind: "programWide" }
   | { kind: "tier"; tierId: number; tierName: string };
 
-/** The level option label, spelled out for an anchored program. */
-function anchoredLevelLabel(level: ReqLevel, anchorTheatre: string): string {
-  if (level === "Theatre") return `Across ${anchorTheatre} (Theatre)`;
-  if (level === "CountrySet") return "Partner's target countries (Country Set)";
-  return LEVEL_LABELS[level];
-}
-
 interface Props {
   open: boolean;
   onClose: () => void;
@@ -111,11 +102,6 @@ interface Props {
    * "Required at every level" choice (a program-wide gate).
    */
   isTiered?: boolean;
-  /**
-   * The program's anchor theatre, when anchored: only Theatre (across that
-   * theatre) and Country Set (the partner's target countries) are offered.
-   */
-  anchorTheatre?: string | null;
 }
 
 /**
@@ -135,7 +121,6 @@ export default function RequirementModal({
   allowPurpose = false,
   tierRequiresSpecialisation = false,
   isTiered = false,
-  anchorTheatre = null,
 }: Props) {
   const isEdit = initial !== null;
   const isTierScope = scope.kind === "tier";
@@ -143,10 +128,7 @@ export default function RequirementModal({
   // requirement to a program-wide gate and back; an existing row keeps its kind.
   const [programWide, setProgramWide] = useState(() => scope.kind === "programWide");
   const canChooseProgramWide = !isEdit && isTiered && scope.kind !== "tier";
-  const levelOptions: readonly ReqLevel[] = anchorTheatre ? ANCHORED_REQ_LEVELS : REQ_LEVELS;
-  // A row at a level an anchored program does not use opens with no level, so
-  // the author must pick one the program counts (the server refuses the rest).
-  const initialLevelUnused = !!anchorTheatre && !!initial && !isAnchoredReqLevel(initial.level);
+  const levelOptions: readonly ReqLevel[] = REQ_LEVELS;
 
   // Seeded from `initial` at mount. The caller mounts this modal only while it
   // is open and keys it on the row being edited, so mounting *is* opening —
@@ -156,7 +138,7 @@ export default function RequirementModal({
       ? {
           specialisationId: initial.specialisationId ?? 0,
           purpose: initial.purpose ?? "qualification",
-          level: anchorTheatre && !isAnchoredReqLevel(initial.level) ? "" : initial.level,
+          level: initial.level,
           aggregation: normaliseAggregation(initial.level, initial.aggregation),
           trainingType: initial.trainingType ?? "",
           trainingTitle: initial.trainingTitle ?? "",
@@ -442,29 +424,20 @@ export default function RequirementModal({
               <option value="">Select level...</option>
               {levelOptions.map((l) => (
                 <option key={l} value={l}>
-                  {anchorTheatre ? anchoredLevelLabel(l, anchorTheatre) : LEVEL_LABELS[l]}
+                  {LEVEL_LABELS[l]}
                 </option>
               ))}
             </select>
-            {initialLevelUnused && !form.level && initial && (
-              <p className="mt-1 text-xs text-amber-700">
-                This requirement is at {LEVEL_LABELS[initial.level as ReqLevel] ?? initial.level} level, which this
-                program no longer uses — choose Theatre or Country Set to keep it.
-              </p>
-            )}
-            {anchorTheatre && form.level === "Theatre" && (
-              <p className="mt-1 text-xs text-gray-500">Counted across all of {anchorTheatre}.</p>
-            )}
-            {anchorTheatre && form.level === "CountrySet" && (
-              <p className="mt-1 text-xs text-gray-500">
-                Counted over each partner&apos;s own target countries (their Country Set, within {anchorTheatre}).
-              </p>
-            )}
-            {!anchorTheatre && form.level === "Region" && (
+            {form.level === "Region" && (
               <p className="mt-1 text-xs text-gray-500">Applies to whichever region is being viewed.</p>
             )}
-            {!anchorTheatre && form.level === "CountrySet" && (
+            {form.level === "CountrySet" && (
               <p className="mt-1 text-xs text-gray-500">Applies to whichever country set is being viewed.</p>
+            )}
+            {form.level === "TargetCountries" && (
+              <p className="mt-1 text-xs text-gray-500">
+                The partner&apos;s target countries inside the viewed theatre (By Theatre view).
+              </p>
             )}
           </div>
           {isMultiCountryLevel(form.level) && (
