@@ -7,16 +7,20 @@ import PageHeader from "@/components/layout/PageHeader";
 import Modal from "@/components/ui/Modal";
 import RequirementModal, { RequirementScope } from "../RequirementModal";
 import TierModal from "../TierModal";
-import AnchorSettingsFields, { type AnchorSettingsValue } from "../AnchorSettingsFields";
+import MinimumCountriesFields, {
+  EMPTY_MINIMUMS,
+  minimumsBody,
+  minimumsFromProgram,
+  type MinimumCountriesValue,
+} from "../MinimumCountriesFields";
 import { ProgramDataRow, ProgramTierRow, SpecialisationRow } from "@/types";
 import { trainingTypeLabel } from "@/lib/utils";
-import { Plus, Trash2, Pencil, ChevronUp, ChevronDown, Layers, Anchor, AlertTriangle, Users, Save } from "lucide-react";
+import { Plus, Trash2, Pencil, ChevronUp, ChevronDown, Layers, SlidersHorizontal, Users, Save } from "lucide-react";
 import {
   AGGREGATIONS,
   AGGREGATION_SHORT_LABELS,
   LEVEL_LABELS,
   REQ_LEVELS,
-  isAnchoredReqLevel,
   isMultiCountryLevel,
   isProgramWideRow,
   isReqLevel,
@@ -26,6 +30,8 @@ import {
 const TRAINING_TYPES = ["Certification", "Accreditation", "InstructorLedTraining"];
 
 const levelLabel = (level: string) => (isReqLevel(level) ? LEVEL_LABELS[level] : level);
+/** Target countries rows spelled out where a row is described in a sentence. */
+const TARGET_COUNTRIES_LONG_LABEL = "Target countries in the viewed theatre";
 const levelRank = (level: string) => (isReqLevel(level) ? REQ_LEVELS.indexOf(level) : REQ_LEVELS.length);
 
 /** Filter key for the Count Mode column: the row's count mode on a
@@ -64,12 +70,11 @@ export default function ProgramRequirementsPage() {
   const [deploymentMode, setDeploymentMode] = useState("flat");
   const [loading, setLoading] = useState(true);
 
-  // Anchored-program settings: the stored values, and the editable form.
-  const [anchorTheatre, setAnchorTheatre] = useState<string | null>(null);
-  const [anchorForm, setAnchorForm] = useState<AnchorSettingsValue>({ anchorTheatre: "", minimum: "" });
-  const [anchorSaving, setAnchorSaving] = useState(false);
-  const [anchorError, setAnchorError] = useState("");
-  const [anchorSaved, setAnchorSaved] = useState(false);
+  // The program's default minimum-countries settings (editable form).
+  const [minimumsForm, setMinimumsForm] = useState<MinimumCountriesValue>(EMPTY_MINIMUMS);
+  const [minimumsSaving, setMinimumsSaving] = useState(false);
+  const [minimumsError, setMinimumsError] = useState("");
+  const [minimumsSaved, setMinimumsSaved] = useState(false);
 
   // Filters
   const [filterSpec, setFilterSpec] = useState("");
@@ -123,8 +128,8 @@ export default function ProgramRequirementsPage() {
                 name: string;
                 isTiered: boolean;
                 deploymentMode: string;
-                anchorTheatre?: string | null;
-                defaultMinimumCountries?: number | null;
+                countrySetMinimumCountries: number | null;
+                targetMinimumCountries: number | null;
               }[]
             >)
           : null
@@ -134,11 +139,7 @@ export default function ProgramRequirementsPage() {
         if (me) {
           setIsTiered(me.isTiered);
           setDeploymentMode(me.deploymentMode || "flat");
-          setAnchorTheatre(me.anchorTheatre ?? null);
-          setAnchorForm({
-            anchorTheatre: me.anchorTheatre ?? "",
-            minimum: me.defaultMinimumCountries != null ? String(me.defaultMinimumCountries) : "",
-          });
+          setMinimumsForm(minimumsFromProgram(me));
         }
       })
       .catch(() => { /* ignore */ });
@@ -168,32 +169,27 @@ export default function ProgramRequirementsPage() {
     });
   };
 
-  const saveAnchorSettings = async () => {
-    setAnchorError("");
-    setAnchorSaved(false);
-    setAnchorSaving(true);
+  const saveMinimums = async () => {
+    setMinimumsError("");
+    setMinimumsSaved(false);
+    setMinimumsSaving(true);
     try {
       const res = await fetch(`/api/admin/program-data/program/${encodeURIComponent(programName)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          anchorTheatre: anchorForm.anchorTheatre || null,
-          // Un-anchoring clears the default minimum too: it only means
-          // anything on an anchored program.
-          defaultMinimumCountries: anchorForm.anchorTheatre ? anchorForm.minimum.trim() || null : null,
-        }),
+        body: JSON.stringify(minimumsBody(minimumsForm)),
       });
       const result = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setAnchorError(typeof result.error === "string" ? result.error : "Could not save the settings");
+        setMinimumsError(typeof result.error === "string" ? result.error : "Could not save the settings");
         return;
       }
-      setAnchorSaved(true);
+      setMinimumsSaved(true);
       fetchProgram();
     } catch {
-      setAnchorError("Could not save the settings");
+      setMinimumsError("Could not save the settings");
     } finally {
-      setAnchorSaving(false);
+      setMinimumsSaving(false);
     }
   };
 
@@ -217,15 +213,6 @@ export default function ProgramRequirementsPage() {
   const specRows = useMemo(() => rows.filter((r) => r.specialisationId != null && r.tierId == null), [rows]);
   // Program-wide gates: neither a specialisation nor a tier (tiered programs only).
   const gateRows = useMemo(() => rows.filter((r) => isProgramWideRow(r)), [rows]);
-  // Rows an anchored view never evaluates: anything but Theatre / Country Set.
-  const unusedLevelCounts = useMemo(() => {
-    if (!anchorTheatre) return [] as { level: string; count: number }[];
-    const counts = new Map<string, number>();
-    for (const r of rows) if (!isAnchoredReqLevel(r.level)) counts.set(r.level, (counts.get(r.level) ?? 0) + 1);
-    return [...counts.entries()]
-      .sort((a, b) => levelRank(a[0]) - levelRank(b[0]))
-      .map(([level, count]) => ({ level, count }));
-  }, [rows, anchorTheatre]);
   const tierReqsByTier = useMemo(() => {
     const map = new Map<number, ProgramDataRow[]>();
     for (const r of rows) {
@@ -329,11 +316,7 @@ export default function ProgramRequirementsPage() {
   const describeRow = (r: ProgramDataRow) => (
     <>
       <span className="text-gray-500">
-        {anchorTheatre && r.level === "Theatre"
-          ? `Across ${anchorTheatre}`
-          : anchorTheatre && r.level === "CountrySet"
-            ? "Target countries"
-            : levelLabel(r.level)}
+        {r.level === "TargetCountries" ? TARGET_COUNTRIES_LONG_LABEL : levelLabel(r.level)}
         {isMultiCountryLevel(r.level) && ` (${countModeLabel(r).toLowerCase()})`}
         {" · "}
       </span>
@@ -351,51 +334,38 @@ export default function ProgramRequirementsPage() {
       <section className="mb-6 bg-white rounded-lg border border-gray-200 p-4">
         <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
           <h2 className="flex items-center gap-2 text-base font-semibold text-gray-800">
-            <Anchor size={18} /> Anchoring
+            <SlidersHorizontal size={18} /> Minimum countries
           </h2>
-          {anchorTheatre && (
-            <Link
-              href={`/admin/program-partners?q=${encodeURIComponent(programName)}`}
-              className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800"
-            >
-              <Users size={15} /> Partner settings
-            </Link>
-          )}
+          <Link
+            href={`/admin/program-partners?q=${encodeURIComponent(programName)}`}
+            className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800"
+          >
+            <Users size={15} /> Partner settings
+          </Link>
         </div>
         <div className="max-w-md">
-          <AnchorSettingsFields value={anchorForm} onChange={(v) => { setAnchorForm(v); setAnchorSaved(false); }} idPrefix="program-settings" />
+          <MinimumCountriesFields
+            value={minimumsForm}
+            onChange={(v) => { setMinimumsForm(v); setMinimumsSaved(false); }}
+            idPrefix="program-settings"
+          />
         </div>
-        {anchorError && <div className="mt-3 p-2 bg-red-50 text-red-700 rounded text-sm">{anchorError}</div>}
+        {minimumsError && <div className="mt-3 p-2 bg-red-50 text-red-700 rounded text-sm">{minimumsError}</div>}
         <div className="mt-3 flex items-center gap-3">
           <button
-            onClick={saveAnchorSettings}
-            disabled={anchorSaving}
+            onClick={saveMinimums}
+            disabled={minimumsSaving}
             className="flex items-center gap-1 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
           >
-            <Save size={15} /> {anchorSaving ? "Saving…" : "Save anchoring"}
+            <Save size={15} /> {minimumsSaving ? "Saving…" : "Save minimums"}
           </button>
-          {anchorSaved && <span className="text-sm text-green-700">Saved.</span>}
+          {minimumsSaved && <span className="text-sm text-green-700">Saved.</span>}
         </div>
-        {anchorTheatre && (
-          <p className="mt-3 text-xs text-gray-500">
-            Each partner&apos;s own minimum and target Country Set are set on the Program Partners page.
-          </p>
-        )}
+        <p className="mt-3 text-xs text-gray-500">
+          These are the program defaults. Each partner&apos;s own minimums, its Country Set for the By Country Set
+          view and its target Country Set for the By Theatre view are set on the Program Partners page.
+        </p>
       </section>
-
-      {unusedLevelCounts.length > 0 && (
-        <div className="mb-6 flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 text-amber-800 rounded-lg text-sm">
-          <AlertTriangle size={16} className="shrink-0 mt-0.5" />
-          <div>
-            This program is anchored to {anchorTheatre}, so only Theatre and Country Set requirements are counted. Not
-            used:{" "}
-            {unusedLevelCounts
-              .map(({ level, count }) => `${count} ${levelLabel(level)} requirement${count === 1 ? "" : "s"}`)
-              .join(", ")}
-            . Edit them to Theatre or Country Set, or delete them.
-          </div>
-        </div>
-      )}
 
       {isTiered && (
         <section className="mb-6 bg-white rounded-lg border border-gray-200 p-4">
@@ -417,12 +387,7 @@ export default function ProgramRequirementsPage() {
             <ul className="space-y-1">
               {gateRows.map((r) => (
                 <li key={r.id} className="flex items-center justify-between text-sm">
-                  <span>
-                    {describeRow(r)}
-                    {anchorTheatre && !isAnchoredReqLevel(r.level) && (
-                      <span className="ml-2 text-xs text-amber-700">(not counted — level not used)</span>
-                    )}
-                  </span>
+                  <span>{describeRow(r)}</span>
                   <span className="flex gap-2">
                     <button onClick={() => openEdit(r)} className="px-2 py-0.5 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200">Edit</button>
                     <button onClick={() => { setDeleteTarget(r); setDeleteError(""); }} className="px-2 py-0.5 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200"><Trash2 size={12} /></button>
@@ -646,10 +611,15 @@ export default function ProgramRequirementsPage() {
                     {isTiered && (
                       <td className="px-4 py-3">{PURPOSE_LABELS[row.purpose] || row.purpose}</td>
                     )}
-                    <td className="px-4 py-3">{levelLabel(row.level)}</td>
+                    <td className="px-4 py-3">
+                      {levelLabel(row.level)}
+                      {row.level === "TargetCountries" && (
+                        <div className="text-xs text-gray-500 mt-0.5">In the viewed theatre (By Theatre view)</div>
+                      )}
+                    </td>
                     <td
                       className="px-4 py-3"
-                      title={isMultiCountryLevel(row.level) ? undefined : "Count mode applies only to Region and Country Set requirements"}
+                      title={isMultiCountryLevel(row.level) ? undefined : "Count mode applies only to Region, Country Set and Target countries requirements"}
                     >
                       {countModeLabel(row)}
                     </td>
@@ -704,7 +674,6 @@ export default function ProgramRequirementsPage() {
         allowPurpose={allowPurpose}
         tierRequiresSpecialisation={tierRequiresSpecialisation}
         isTiered={isTiered}
-        anchorTheatre={anchorTheatre}
       />
       )}
 
