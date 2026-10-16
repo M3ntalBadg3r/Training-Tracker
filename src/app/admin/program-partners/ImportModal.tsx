@@ -19,29 +19,67 @@ import { checkImportFile } from "@/lib/import-file";
  * in `api/admin/program-company-settings/import/route.ts`.
  */
 
-type FieldKey = "program" | "company" | "minimumCountries" | "targetCountrySet";
+type FieldKey =
+  | "program"
+  | "company"
+  | "countrySetMinimumCountries"
+  | "countrySet"
+  | "targetMinimumCountries"
+  | "targetCountrySet";
 
+/** The four value columns, and the body flag that says each was mapped. */
+const VALUE_FIELDS = [
+  { key: "countrySetMinimumCountries", mapped: "countrySetMinimumMapped" },
+  { key: "countrySet", mapped: "countrySetMapped" },
+  { key: "targetMinimumCountries", mapped: "targetMinimumMapped" },
+  { key: "targetCountrySet", mapped: "targetMapped" },
+] as const;
+
+// Aliases are the header with everything but letters stripped. No alias may
+// appear under two fields. Files exported before the By Country Set view had
+// partner terms carry `Minimum Target Countries` (read as Target Minimum) and
+// `Target Country Set`, which has always meant the By Theatre view's set.
 const TARGET_FIELDS: { key: FieldKey; label: string; required: boolean; aliases: string[] }[] = [
   { key: "program", label: "Program", required: true, aliases: ["program", "programname"] },
   { key: "company", label: "Company", required: false, aliases: ["company", "companyname", "partner"] },
   {
-    key: "minimumCountries",
-    label: "Minimum",
+    key: "countrySetMinimumCountries",
+    label: "Country Set minimum",
     required: false,
-    aliases: ["minimumtargetcountries", "minimumcountries", "minimum", "mincountries"],
+    aliases: ["countrysetminimum", "countrysetminimumcountries", "countrysetviewminimum"],
+  },
+  {
+    key: "countrySet",
+    label: "Country Set",
+    required: false,
+    aliases: ["countryset", "countrysetviewset"],
+  },
+  {
+    key: "targetMinimumCountries",
+    label: "Target minimum",
+    required: false,
+    aliases: [
+      "targetminimum",
+      "targetminimumcountries",
+      "theatreviewminimum",
+      "minimumtargetcountries",
+      "minimumcountries",
+      "minimum",
+      "mincountries",
+    ],
   },
   {
     key: "targetCountrySet",
-    label: "Target set",
+    label: "Target Country Set",
     required: false,
-    aliases: ["targetcountryset", "countryset", "targetset", "set"],
+    aliases: ["targetcountryset", "targetset"],
   },
 ];
 
 const TEMPLATE_CSV =
-  'Program,Company,Minimum Target Countries,Target Country Set\n' +
-  'Example Anchored Program,Company A,6,Set 1\n' +
-  'Example Anchored Program,Company B,8,Set 1\n';
+  "Program,Company,Country Set Minimum,Country Set,Target Minimum,Target Country Set\n" +
+  "Example Program,Company A,3,Set 1,6,Set 2\n" +
+  "Example Program,Company B,,Set 1,8,Set 1\n";
 
 interface ImportResult {
   dryRun?: boolean;
@@ -56,7 +94,9 @@ interface ImportResult {
   rows?: {
     program: string;
     company: string;
-    minimumCountries?: number | null;
+    countrySetMinimumCountries?: number | null;
+    countrySet?: string | null;
+    targetMinimumCountries?: number | null;
     targetCountrySet?: string | null;
     action: "create" | "update" | "unchanged";
   }[];
@@ -191,13 +231,16 @@ export default function ImportProgramPartnersModal({
     }
   };
 
+  const cellOf = (r: Record<string, string>, key: FieldKey) => {
+    const header = mapping[key];
+    return header ? r[header] ?? "" : "";
+  };
   const mappedRows = () =>
-    rows.map((r) => ({
-      program: mapping.program ? r[mapping.program] ?? "" : "",
-      company: mapping.company ? r[mapping.company] ?? "" : "",
-      minimumCountries: mapping.minimumCountries ? r[mapping.minimumCountries] ?? "" : "",
-      targetCountrySet: mapping.targetCountrySet ? r[mapping.targetCountrySet] ?? "" : "",
-    }));
+    rows.map((r) => {
+      const row: Record<string, string> = { program: cellOf(r, "program"), company: cellOf(r, "company") };
+      for (const f of VALUE_FIELDS) row[f.key] = cellOf(r, f.key);
+      return row;
+    });
 
   const submit = async (dryRun: boolean) => {
     const missing = TARGET_FIELDS.filter((f) => f.required && !mapping[f.key]);
@@ -219,8 +262,7 @@ export default function ImportProgramPartnersModal({
         body: JSON.stringify({
           rows: mappedRows(),
           defaultCompanyId: companyId === "" ? null : companyId,
-          minimumMapped: !!mapping.minimumCountries,
-          targetMapped: !!mapping.targetCountrySet,
+          ...Object.fromEntries(VALUE_FIELDS.map((f) => [f.mapped, !!mapping[f.key]])),
         }),
       });
       const data = await res.json().catch(() => null);
@@ -284,10 +326,11 @@ export default function ImportProgramPartnersModal({
         {step === "upload" && (
           <>
             <p className="text-sm text-gray-600">
-              Use the same columns as the export: Program, Company, Minimum Target Countries and Target Country Set.
-              Each row sets one partner&apos;s terms for one anchored program; rows the file does not mention are left
-              alone. A blank cell keeps the current value; &ldquo;none&rdquo; clears it. The target set must be one of
-              that company&apos;s own Country Sets.
+              Use the same columns as the export: Program, Company, Country Set Minimum, Country Set, Target Minimum
+              and Target Country Set. Each row sets one partner&apos;s terms for one program; rows the file does not
+              mention are left alone. A blank cell keeps the current value; &ldquo;none&rdquo; clears it. Both sets
+              must be that company&apos;s own Country Sets. Older files still import: a Minimum Target Countries column
+              is read as Target Minimum.
             </p>
             <div
               onDrop={(e) => {
@@ -330,7 +373,7 @@ export default function ImportProgramPartnersModal({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {TARGET_FIELDS.map((f) => (
                 <div key={f.key} className="flex items-center gap-3 min-w-0">
-                  <label className="w-24 shrink-0 text-sm font-medium text-gray-700">
+                  <label className="w-32 shrink-0 text-sm font-medium text-gray-700">
                     {f.label}
                     {f.required && <span className="text-red-500 ml-1">*</span>}
                   </label>
@@ -355,7 +398,7 @@ export default function ImportProgramPartnersModal({
             </div>
 
             <div className="flex items-center gap-3 min-w-0">
-              <label className="w-24 shrink-0 text-sm font-medium text-gray-700" htmlFor="import-default-company">
+              <label className="w-32 shrink-0 text-sm font-medium text-gray-700" htmlFor="import-default-company">
                 {mapping.company ? "Default company" : "Company"}
                 {!mapping.company && <span className="text-red-500 ml-1">*</span>}
               </label>
@@ -406,7 +449,9 @@ export default function ImportProgramPartnersModal({
                         <tr className="bg-gray-50 text-left">
                           <th className="px-3 py-2">Program</th>
                           <th className="px-3 py-2">Company</th>
-                          <th className="px-3 py-2">Minimum</th>
+                          <th className="px-3 py-2">Country Set minimum</th>
+                          <th className="px-3 py-2">Country Set</th>
+                          <th className="px-3 py-2">Target minimum</th>
                           <th className="px-3 py-2">Target set</th>
                           <th className="px-3 py-2">Action</th>
                         </tr>
@@ -416,7 +461,9 @@ export default function ImportProgramPartnersModal({
                           <tr key={i} className="border-t border-gray-100">
                             <td className="px-3 py-1.5">{r.program}</td>
                             <td className="px-3 py-1.5">{r.company}</td>
-                            <td className="px-3 py-1.5">{previewCell(r.minimumCountries)}</td>
+                            <td className="px-3 py-1.5">{previewCell(r.countrySetMinimumCountries)}</td>
+                            <td className="px-3 py-1.5">{previewCell(r.countrySet)}</td>
+                            <td className="px-3 py-1.5">{previewCell(r.targetMinimumCountries)}</td>
                             <td className="px-3 py-1.5">{previewCell(r.targetCountrySet)}</td>
                             <td className="px-3 py-1.5">
                               {r.action === "create" ? "Create" : r.action === "update" ? "Update" : "No change"}

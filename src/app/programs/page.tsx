@@ -12,16 +12,11 @@ interface ProgramInfo {
   levels: string[];
   hasMinimumPerTheatre: boolean;
   isTiered?: boolean;
-  /** Anchored programs are reported only over each partner's target countries. */
-  isAnchored?: boolean;
-  anchorTheatre?: string | null;
+  /** Has TargetCountries rows: its By Theatre view also counts each partner's target countries. */
+  hasTargetCountries?: boolean;
 }
 
 function describe(p: ProgramInfo): string {
-  if (p.isAnchored) {
-    const within = p.anchorTheatre ? ` within ${p.anchorTheatre}` : "";
-    return `View ${p.name}${p.isTiered ? " tier status" : " compliance"} by target countries${within}`;
-  }
   if (p.isTiered) {
     return `View ${p.name} tier status by achieved specialisations`;
   }

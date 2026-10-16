@@ -22,13 +22,14 @@ import type {
 import ImportProgramPartnersModal from "./ImportModal";
 
 /**
- * Program Partners — each partner's (company's) own terms for an anchored
- * program: the minimum number of target countries it must name and which of
- * its Country Sets holds them. Company-scoped like /admin/country-sets: the
- * list follows the header company switcher, a company Admin manages their own
- * companies' rows and a SuperAdmin all of them. The company scope is not
- * mirrored to the URL (CompanyScopeProvider persists it); `q`/`sort`/`sortDir`
- * are.
+ * Program Partners — each partner's (company's) own terms for a program, per
+ * view: for the By Country Set view, its minimum number of countries and the
+ * Country Set the view opens on; for the By Theatre view, its minimum number
+ * of target countries and the Country Set listing them. Any program may carry
+ * partner rows. Company-scoped like /admin/country-sets: the list follows the
+ * header company switcher, a company Admin manages their own companies' rows
+ * and a SuperAdmin all of them. The company scope is not mirrored to the URL
+ * (CompanyScopeProvider persists it); `q`/`sort`/`sortDir` are.
  */
 
 interface FormState {
@@ -37,7 +38,9 @@ interface FormState {
   companyName: string;
   programId: number | "";
   programName: string;
-  minimum: string;
+  countrySetMinimum: string;
+  countrySetId: number | "";
+  targetMinimum: string;
   targetCountrySetId: number | "";
 }
 
@@ -47,39 +50,58 @@ const EMPTY_FORM: FormState = {
   companyName: "",
   programId: "",
   programName: "",
-  minimum: "",
+  countrySetMinimum: "",
+  countrySetId: "",
+  targetMinimum: "",
   targetCountrySetId: "",
 };
 
-/** The minimum that applies to a row: the partner's own, else the program default. */
-function effectiveMinimum(r: ProgramCompanySettingRow): { value: number | null; source: "partner" | "default" | "none" } {
-  if (r.minimumCountries != null) return { value: r.minimumCountries, source: "partner" };
-  if (r.defaultMinimumCountries != null) return { value: r.defaultMinimumCountries, source: "default" };
+type MinimumSource = "partner" | "default" | "none" | "unused";
+
+/**
+ * The minimum that applies in one view: the partner's own, else the program
+ * default — or none at all when the program has no requirements at that view's
+ * level (`inUse === false`), since nothing would ever enforce it there.
+ */
+function effectiveMinimum(
+  own: number | null,
+  fallback: number | null,
+  inUse: boolean | undefined
+): { value: number | null; source: MinimumSource } {
+  if (inUse === false) return { value: null, source: "unused" };
+  if (own != null) return { value: own, source: "partner" };
+  if (fallback != null) return { value: fallback, source: "default" };
   return { value: null, source: "none" };
 }
 
-/**
- * What a row means now. A row survives its program being un-anchored (it
- * comes back into force if the program is anchored again), but while the
- * program is not anchored nothing reads it — so it must not claim a minimum.
- */
-const NOT_IN_USE = "Not in use — program not anchored";
+const csEffective = (r: ProgramCompanySettingRow) =>
+  effectiveMinimum(r.countrySetMinimumCountries, r.defaultCountrySetMinimumCountries, r.countrySetInUse);
+const targetEffective = (r: ProgramCompanySettingRow) =>
+  effectiveMinimum(r.targetMinimumCountries, r.defaultTargetMinimumCountries, r.targetInUse);
 
-function effectiveText(r: ProgramCompanySettingRow, anchoredIds: Set<number>): string {
-  if (!anchoredIds.has(r.programId)) return NOT_IN_USE;
-  const e = effectiveMinimum(r);
-  if (e.source === "partner") return String(e.value);
+function effectiveText(e: { value: number | null; source: MinimumSource }, view: "countrySet" | "theatre"): string {
+  if (e.source === "unused") {
+    return view === "countrySet"
+      ? "Not in use — no Country Set requirements"
+      : "Not in use — no Target countries requirements";
+  }
+  if (e.source === "partner") return `${e.value} (partner)`;
   if (e.source === "default") return `${e.value} (program default)`;
   return "No minimum";
 }
+
+const setCount = (n: number) => `${n} ${n === 1 ? "country" : "countries"}`;
 
 // Module-level so the sorter's memo is not invalidated on every render.
 const SORT_ACCESSORS: Record<string, SortAccessor<ProgramCompanySettingRow>> = {
   program: (r) => r.programName,
   company: (r) => r.companyName,
-  minimum: (r) => r.minimumCountries,
+  csMinimum: (r) => r.countrySetMinimumCountries,
+  countrySet: (r) => r.countrySet ?? "",
+  csEffective: (r) => csEffective(r).value,
+  targetMinimum: (r) => r.targetMinimumCountries,
   target: (r) => r.targetCountrySet ?? "",
-  effective: (r) => effectiveMinimum(r).value,
+  targetEffective: (r) => targetEffective(r).value,
 };
 const DEFAULT_SORT_KEY = "program";
 
@@ -105,8 +127,6 @@ function ProgramPartnersInner() {
   );
   const rows = useMemo(() => (Array.isArray(data?.rows) ? data.rows : []), [data]);
   const programs = useMemo(() => (Array.isArray(data?.programs) ? data.programs : []), [data]);
-  // The GET lists only anchored programs; a row naming any other is dormant.
-  const anchoredIds = useMemo(() => new Set(programs.map((p) => p.id)), [programs]);
 
   // View state seeded from the URL (re-validated — it is user-editable text).
   const [search, setSearch] = useState(() => searchParams.get("q") ?? "");
@@ -124,6 +144,7 @@ function ProgramPartnersInner() {
       (r) =>
         r.programName.toLowerCase().includes(q) ||
         r.companyName.toLowerCase().includes(q) ||
+        (r.countrySet ?? "").toLowerCase().includes(q) ||
         (r.targetCountrySet ?? "").toLowerCase().includes(q)
     );
   }, [rows, search]);
@@ -201,7 +222,9 @@ function ProgramPartnersInner() {
       companyName: r.companyName,
       programId: r.programId,
       programName: r.programName,
-      minimum: r.minimumCountries != null ? String(r.minimumCountries) : "",
+      countrySetMinimum: r.countrySetMinimumCountries != null ? String(r.countrySetMinimumCountries) : "",
+      countrySetId: r.countrySetId ?? "",
+      targetMinimum: r.targetMinimumCountries != null ? String(r.targetMinimumCountries) : "",
       targetCountrySetId: r.targetCountrySetId ?? "",
     });
     setFormError("");
@@ -226,7 +249,9 @@ function ProgramPartnersInner() {
     try {
       const payload = {
         ...(isCreate ? { companyId: form.companyId, programId: form.programId } : {}),
-        minimumCountries: form.minimum.trim() === "" ? null : form.minimum.trim(),
+        countrySetMinimumCountries: form.countrySetMinimum.trim() === "" ? null : form.countrySetMinimum.trim(),
+        countrySetId: form.countrySetId === "" ? null : form.countrySetId,
+        targetMinimumCountries: form.targetMinimum.trim() === "" ? null : form.targetMinimum.trim(),
         targetCountrySetId: form.targetCountrySetId === "" ? null : form.targetCountrySetId,
       };
       const res = await fetch(
@@ -267,21 +292,27 @@ function ProgramPartnersInner() {
   };
 
   const handleExport = (fmt: ExportFormat) => {
-    // The import's own columns, so the file round-trips. "Effective Minimum"
-    // is read-only context and ignored by the import.
+    // The import's own columns, so the file round-trips. The two "Effective"
+    // columns are read-only context and ignored by the import.
     const out = sorted.map((r) => ({
       program: r.programName,
       company: r.companyName,
-      minimum: r.minimumCountries ?? "",
+      csMinimum: r.countrySetMinimumCountries ?? "",
+      countrySet: r.countrySet ?? "",
+      targetMinimum: r.targetMinimumCountries ?? "",
       target: r.targetCountrySet ?? "",
-      effective: effectiveText(r, anchoredIds),
+      csEffective: effectiveText(csEffective(r), "countrySet"),
+      targetEffective: effectiveText(targetEffective(r), "theatre"),
     }));
     const columns: { key: keyof (typeof out)[number]; header: string }[] = [
       { key: "program", header: "Program" },
       { key: "company", header: "Company" },
-      { key: "minimum", header: "Minimum Target Countries" },
+      { key: "csMinimum", header: "Country Set Minimum" },
+      { key: "countrySet", header: "Country Set" },
+      { key: "targetMinimum", header: "Target Minimum" },
       { key: "target", header: "Target Country Set" },
-      { key: "effective", header: "Effective Minimum" },
+      { key: "csEffective", header: "Effective Country Set Minimum" },
+      { key: "targetEffective", header: "Effective Target Minimum" },
     ];
     if (fmt === "csv") exportToCsv(out, columns, "program-partners");
     else if (fmt === "excel") exportToExcel(out, columns, "program-partners");
@@ -307,7 +338,7 @@ function ProgramPartnersInner() {
     <div>
       <PageHeader
         title="Program Partners"
-        description="Each partner's own terms for an anchored program: its minimum number of target countries and the Country Set that holds them."
+        description="Each partner's own terms for a program: its minimum and Country Set for the By Country Set view, and its minimum and target Country Set for the By Theatre view."
         showBack
         helpSlug="program-partners"
       />
@@ -324,13 +355,15 @@ function ProgramPartnersInner() {
       </section>
 
       <p className="mb-4 text-sm text-gray-600">
-        A partner with no minimum of its own uses the program&apos;s default. Only countries inside the program&apos;s
-        anchor theatre count toward the minimum.
+        A partner with no minimum of its own uses the program&apos;s default. In the By Country Set view the minimum
+        is compared with the number of countries in the set; in the By Theatre view, with the number of the
+        partner&apos;s target countries inside the theatre being viewed (only for programs with Target countries
+        requirements).
       </p>
 
       {noPrograms && (
         <div className="mb-4 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
-          No program is anchored yet. A SuperAdmin anchors a program to a theatre in Admin › Program Data.
+          There are no programs yet. A SuperAdmin creates programs in Admin › Program Data.
         </div>
       )}
       {noCompanies && (
@@ -347,19 +380,32 @@ function ProgramPartnersInner() {
       <div className="bg-white rounded-lg border border-gray-200 overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
+            <tr className="bg-gray-50 border-b border-gray-200 text-xs uppercase tracking-wide text-gray-500">
+              <th colSpan={2} />
+              <th colSpan={3} className="px-4 pt-2 text-left font-semibold border-l border-gray-200">
+                By Country Set view
+              </th>
+              <th colSpan={3} className="px-4 pt-2 text-left font-semibold border-l border-gray-200">
+                By Theatre view
+              </th>
+              <th />
+            </tr>
             <tr className="bg-gray-50 border-b border-gray-200">
               {th("program", "Program")}
               {th("company", "Company")}
-              {th("minimum", "Minimum target countries")}
+              {th("csMinimum", "Minimum countries")}
+              {th("countrySet", "Country Set")}
+              {th("csEffective", "Effective minimum")}
+              {th("targetMinimum", "Minimum target countries")}
               {th("target", "Target Country Set")}
-              {th("effective", "Effective minimum")}
+              {th("targetEffective", "Effective minimum")}
               <th className="px-4 py-3 text-left font-semibold text-gray-700">Actions</th>
             </tr>
           </thead>
           <tbody>
             {sorted.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
+                <td colSpan={9} className="px-4 py-8 text-center text-gray-500">
                   {rows.length === 0 ? "No partner settings yet." : "No partner settings match your search."}
                 </td>
               </tr>
@@ -370,13 +416,20 @@ function ProgramPartnersInner() {
                 <td className="px-4 py-3">
                   <span className="inline-block px-2 py-0.5 text-xs bg-gray-100 text-gray-600 rounded">{r.companyName}</span>
                 </td>
-                <td className="px-4 py-3 text-gray-700">{r.minimumCountries ?? <span className="text-gray-400">—</span>}</td>
+                <td className="px-4 py-3 text-gray-700 border-l border-gray-100">
+                  {r.countrySetMinimumCountries ?? <span className="text-gray-400">—</span>}
+                </td>
+                <td className="px-4 py-3 text-gray-700">
+                  {r.countrySet ?? <span className="text-gray-400">Not set</span>}
+                </td>
+                <td className="px-4 py-3 text-gray-700">{effectiveText(csEffective(r), "countrySet")}</td>
+                <td className="px-4 py-3 text-gray-700 border-l border-gray-100">
+                  {r.targetMinimumCountries ?? <span className="text-gray-400">—</span>}
+                </td>
                 <td className="px-4 py-3 text-gray-700">
                   {r.targetCountrySet ?? <span className="text-gray-400">Not set</span>}
                 </td>
-                <td className={`px-4 py-3 ${anchoredIds.has(r.programId) ? "text-gray-700" : "text-amber-700"}`}>
-                  {effectiveText(r, anchoredIds)}
-                </td>
+                <td className="px-4 py-3 text-gray-700">{effectiveText(targetEffective(r), "theatre")}</td>
                 <td className="px-4 py-3">
                   <div className="flex gap-1">
                     <button
@@ -432,7 +485,12 @@ function ProgramPartnersInner() {
                 options={companies}
                 value={form.companyId === "" ? null : form.companyId}
                 onChange={(next) =>
-                  setForm((f) => ({ ...f, companyId: typeof next === "number" ? next : "", targetCountrySetId: "" }))
+                  setForm((f) => ({
+                    ...f,
+                    companyId: typeof next === "number" ? next : "",
+                    countrySetId: "",
+                    targetCountrySetId: "",
+                  }))
                 }
                 clearable
                 placeholder="-- Select a company --"
@@ -454,10 +512,10 @@ function ProgramPartnersInner() {
                 onChange={(e) => setForm((f) => ({ ...f, programId: e.target.value ? Number(e.target.value) : "" }))}
                 className={`${SELECT_CLASS} w-full`}
               >
-                <option value="">-- Select an anchored program --</option>
+                <option value="">-- Select a program --</option>
                 {programs.map((p) => (
                   <option key={p.id} value={p.id}>
-                    {p.name} ({p.anchorTheatre})
+                    {p.name}
                   </option>
                 ))}
               </select>
@@ -467,55 +525,110 @@ function ProgramPartnersInner() {
               </div>
             )}
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="partner-minimum">
-              Minimum target countries <span className="font-normal text-gray-400">(optional)</span>
-            </label>
-            <input
-              id="partner-minimum"
-              type="number"
-              min={1}
-              max={1000}
-              step={1}
-              value={form.minimum}
-              onChange={(e) => setForm((f) => ({ ...f, minimum: e.target.value }))}
-              placeholder={
-                selectedProgram?.defaultMinimumCountries != null
-                  ? `Program default: ${selectedProgram.defaultMinimumCountries}`
-                  : "No minimum"
-              }
-              className={`${INPUT_CLASS} w-full`}
-            />
-            <p className="mt-1 text-xs text-gray-500">
-              Leave blank to use the program&apos;s default. Below this number of target countries, no tier is reached.
-            </p>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="partner-set">
-              Target Country Set <span className="font-normal text-gray-400">(optional)</span>
-            </label>
-            <select
-              id="partner-set"
-              value={form.targetCountrySetId}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, targetCountrySetId: e.target.value ? Number(e.target.value) : "" }))
-              }
-              disabled={form.companyId === "" || setsLoading}
-              className={`${SELECT_CLASS} w-full disabled:opacity-50`}
-            >
-              <option value="">
-                {form.companyId === "" ? "Pick a company first" : setsLoading ? "Loading sets…" : "Not set"}
-              </option>
-              {companySets.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name} ({s.countries.length} {s.countries.length === 1 ? "country" : "countries"})
+          <fieldset className="space-y-3 border-t border-gray-200 pt-3">
+            <legend className="text-sm font-semibold text-gray-800">By Country Set view</legend>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="partner-cs-minimum">
+                Minimum countries <span className="font-normal text-gray-400">(optional)</span>
+              </label>
+              <input
+                id="partner-cs-minimum"
+                type="number"
+                min={1}
+                max={1000}
+                step={1}
+                value={form.countrySetMinimum}
+                onChange={(e) => setForm((f) => ({ ...f, countrySetMinimum: e.target.value }))}
+                placeholder={
+                  selectedProgram?.countrySetMinimumCountries != null
+                    ? `Program default: ${selectedProgram.countrySetMinimumCountries}`
+                    : "No minimum"
+                }
+                className={`${INPUT_CLASS} w-full`}
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                Leave blank to use the program&apos;s default. A Country Set with fewer countries reaches no tier.
+              </p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="partner-cs-set">
+                Country Set <span className="font-normal text-gray-400">(optional)</span>
+              </label>
+              <select
+                id="partner-cs-set"
+                value={form.countrySetId}
+                onChange={(e) => setForm((f) => ({ ...f, countrySetId: e.target.value ? Number(e.target.value) : "" }))}
+                disabled={form.companyId === "" || setsLoading}
+                className={`${SELECT_CLASS} w-full disabled:opacity-50`}
+              >
+                <option value="">
+                  {form.companyId === "" ? "Pick a company first" : setsLoading ? "Loading sets…" : "Not set"}
                 </option>
-              ))}
-            </select>
-            <p className="mt-1 text-xs text-gray-500">
-              The company&apos;s own set listing its target countries. The program dashboard opens on it.
-            </p>
-          </div>
+                {companySets.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} ({setCount(s.countries.length)})
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-gray-500">
+                The company&apos;s own set the By Country Set view opens on.
+              </p>
+            </div>
+          </fieldset>
+          <fieldset className="space-y-3 border-t border-gray-200 pt-3">
+            <legend className="text-sm font-semibold text-gray-800">By Theatre view</legend>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="partner-target-minimum">
+                Minimum target countries <span className="font-normal text-gray-400">(optional)</span>
+              </label>
+              <input
+                id="partner-target-minimum"
+                type="number"
+                min={1}
+                max={1000}
+                step={1}
+                value={form.targetMinimum}
+                onChange={(e) => setForm((f) => ({ ...f, targetMinimum: e.target.value }))}
+                placeholder={
+                  selectedProgram?.targetMinimumCountries != null
+                    ? `Program default: ${selectedProgram.targetMinimumCountries}`
+                    : "No minimum"
+                }
+                className={`${INPUT_CLASS} w-full`}
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                Leave blank to use the program&apos;s default. With fewer target countries inside the viewed theatre,
+                no tier is reached. Applies only to programs with Target countries requirements.
+              </p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="partner-target-set">
+                Target Country Set <span className="font-normal text-gray-400">(optional)</span>
+              </label>
+              <select
+                id="partner-target-set"
+                value={form.targetCountrySetId}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, targetCountrySetId: e.target.value ? Number(e.target.value) : "" }))
+                }
+                disabled={form.companyId === "" || setsLoading}
+                className={`${SELECT_CLASS} w-full disabled:opacity-50`}
+              >
+                <option value="">
+                  {form.companyId === "" ? "Pick a company first" : setsLoading ? "Loading sets…" : "Not set"}
+                </option>
+                {companySets.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} ({setCount(s.countries.length)})
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-gray-500">
+                The company&apos;s own set listing its target countries. In the By Theatre view, only those inside the
+                theatre being viewed count.
+              </p>
+            </div>
+          </fieldset>
           {formError && (
             <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2">{formError}</div>
           )}
@@ -539,8 +652,8 @@ function ProgramPartnersInner() {
       >
         <p className="text-gray-600">
           Delete the settings for <strong>{deleteTarget?.companyName}</strong> on{" "}
-          <strong>{deleteTarget?.programName}</strong>? The partner will then use the program&apos;s default minimum
-          and have no target Country Set chosen.
+          <strong>{deleteTarget?.programName}</strong>? The partner will then use the program&apos;s default minimums
+          and have no Country Set or target Country Set chosen.
         </p>
         {deleteError && (
           <div className="mt-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2">{deleteError}</div>

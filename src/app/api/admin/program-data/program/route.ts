@@ -4,7 +4,7 @@ import { requireSuperAdmin, handleAuthError } from "@/lib/auth";
 import { invalidateReportCache } from "@/lib/report-cache";
 import { readJsonBody } from "@/lib/request-body";
 import { REQ_LEVELS, isProgramWideRow } from "@/lib/program-levels";
-import { parseAnchorSettings } from "@/lib/program-data-write";
+import { parseProgramMinimums } from "@/lib/program-data-write";
 
 const levelRank = (l: string) => (REQ_LEVELS as readonly string[]).indexOf(l);
 
@@ -46,8 +46,8 @@ export async function GET(request: NextRequest) {
     tierCount: number;
     /** Registry id — null only for legacy rows with no Program row. */
     id: number | null;
-    anchorTheatre: string | null;
-    defaultMinimumCountries: number | null;
+    countrySetMinimumCountries: number | null;
+    targetMinimumCountries: number | null;
     /** Rows with neither a specialisation nor a tier (tiered programs only). */
     programWideCount: number;
   }
@@ -64,8 +64,8 @@ export async function GET(request: NextRequest) {
         deploymentMode: "flat",
         tierCount: 0,
         id: null,
-        anchorTheatre: null,
-        defaultMinimumCountries: null,
+        countrySetMinimumCountries: null,
+        targetMinimumCountries: null,
         programWideCount: 0,
       };
       agg.set(name, a);
@@ -79,8 +79,8 @@ export async function GET(request: NextRequest) {
     a.isTiered = p.isTiered;
     a.deploymentMode = p.deploymentMode;
     a.id = p.id;
-    a.anchorTheatre = p.anchorTheatre?.trim() ? p.anchorTheatre.trim() : null;
-    a.defaultMinimumCountries = p.defaultMinimumCountries;
+    a.countrySetMinimumCountries = p.countrySetMinimumCountries;
+    a.targetMinimumCountries = p.targetMinimumCountries;
   }
 
   for (const r of rows) {
@@ -99,7 +99,8 @@ export async function GET(request: NextRequest) {
       name,
       requirementCount: a.requirementCount,
       specialisations: [...a.specialisations].sort(),
-      // Canonical level order (Country, Region, Country Set, Theatre, Global)
+      // Canonical level order (Country, Region, Country Set, Target countries,
+      // Theatre, Global)
       // rather than alphabetical, so the admin card reads the same everywhere.
       levels: [...a.levels].sort((x, y) => levelRank(x) - levelRank(y)),
       hasMinimumPerTheatre: a.hasMinimumPerTheatre,
@@ -107,8 +108,8 @@ export async function GET(request: NextRequest) {
       deploymentMode: a.deploymentMode,
       tierCount: a.tierCount,
       id: a.id,
-      anchorTheatre: a.anchorTheatre,
-      defaultMinimumCountries: a.defaultMinimumCountries,
+      countrySetMinimumCountries: a.countrySetMinimumCountries,
+      targetMinimumCountries: a.targetMinimumCountries,
       programWideCount: a.programWideCount,
     }))
     .sort((x, y) => x.name.localeCompare(y.name));
@@ -119,9 +120,8 @@ export async function GET(request: NextRequest) {
 /**
  * POST /api/admin/program-data/program
  * Creates an empty program (registry row). Body: { name, isTiered?,
- * deploymentMode?, anchorTheatre?, defaultMinimumCountries? }. An anchor
- * theatre must exist in Region Data (400 otherwise); the default minimum is a
- * whole number 1–1000 or null.
+ * deploymentMode?, countrySetMinimumCountries?, targetMinimumCountries? }.
+ * Each default minimum is a whole number 1–1000, or null/"" for none.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -146,12 +146,12 @@ export async function POST(request: NextRequest) {
     typeof body.deploymentMode === "string" && DEPLOYMENT_MODES.includes(body.deploymentMode)
       ? body.deploymentMode
       : "flat";
-  const anchor = await parseAnchorSettings(body);
-  if (!anchor.ok) {
-    return NextResponse.json({ error: anchor.error }, { status: 400 });
+  const minimums = parseProgramMinimums(body);
+  if (!minimums.ok) {
+    return NextResponse.json({ error: minimums.error }, { status: 400 });
   }
-  const anchorTheatre = anchor.value.anchorTheatre ?? null;
-  const defaultMinimumCountries = anchor.value.defaultMinimumCountries ?? null;
+  const countrySetMinimumCountries = minimums.value.countrySetMinimumCountries ?? null;
+  const targetMinimumCountries = minimums.value.targetMinimumCountries ?? null;
 
   const existing = await prisma.program.findUnique({ where: { name } });
   if (existing) {
@@ -159,7 +159,7 @@ export async function POST(request: NextRequest) {
   }
 
   const program = await prisma.program.create({
-    data: { name, isTiered, deploymentMode, anchorTheatre, defaultMinimumCountries },
+    data: { name, isTiered, deploymentMode, countrySetMinimumCountries, targetMinimumCountries },
   });
   invalidateReportCache();
   return NextResponse.json(
@@ -168,9 +168,8 @@ export async function POST(request: NextRequest) {
       name: program.name,
       isTiered: program.isTiered,
       deploymentMode: program.deploymentMode,
-      anchorTheatre: program.anchorTheatre,
-      defaultMinimumCountries: program.defaultMinimumCountries,
-      warnings: [] as string[],
+      countrySetMinimumCountries: program.countrySetMinimumCountries,
+      targetMinimumCountries: program.targetMinimumCountries,
     },
     { status: 201 }
   );

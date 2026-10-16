@@ -852,10 +852,10 @@ const helpSections: Record<string, HelpSection> = {
           <li>For each month-end, the report re-runs the same OR-logic union of primary + alternative trainings used by the live program dashboards, counting only trainings that were <strong>completed by that month and still valid</strong> (not yet expired). This makes each point a true snapshot of that moment — historical lines reflect how compliance actually built up over time.</li>
           <li><strong>Solid lines</strong> are history; <strong>dashed lines</strong>{" "}(after the &quot;Forecast →&quot; marker) project the next 12 months. The forecast assumes <strong>no new completions</strong>{" "}and simply shows compliance decaying as today&apos;s active certifications reach their expiry date — an &quot;if nothing changes&quot; view that surfaces upcoming renewal gaps.</li>
           <li>The <strong>Forecast 12-mo Δ</strong> KPI shows the projected change (in percentage points) from now to 12 months out — a negative value flags certifications due to lapse.</li>
-          <li>Narrow the view with the <strong>Theatre / Region / Country</strong>{" "}filters (the &quot;Showing&quot; caption states the active scope); the report is also scoped to the company selected in the header. The program dropdown lists every program found in Program Data except anchored ones.</li>
+          <li>Narrow the view with the <strong>Theatre / Region / Country</strong>{" "}filters (the &quot;Showing&quot; caption states the active scope); the report is also scoped to the company selected in the header. The program dropdown lists every program found in Program Data except those with Target countries requirements.</li>
           <li>This report is also available over the <strong>public API</strong>{" "}at <code>/api/public/v1/reports/program-compliance-trend</code>, for a partner portal or BI tool holding an API key.</li>
           <li>The trend does not distinguish requirement levels: it counts every requirement of a program as distinct holders pooled across the chosen geography. A Region or Country Set requirement counted <em>in each country</em>{" "}is therefore shown pooled here, not country by country &mdash; use the program dashboard for the per-country view.</li>
-          <li><strong>Anchored programs are not shown.</strong>{" "}An anchored program is judged over two areas at once &mdash; its anchor theatre and each partner&apos;s target countries, with a per-partner minimum &mdash; which a single pooled trend cannot reproduce, so it is left out of the chart and the program list rather than shown with misleading figures. A note above the chart names any that were left out; use the program&apos;s own dashboard (with its <strong>Compliance as of</strong>{" "}projection) instead.</li>
+          <li><strong>Target countries requirements are not included.</strong>{" "}They count each partner&apos;s own target countries inside a theatre, with a per-partner minimum &mdash; which a single pooled trend cannot reproduce &mdash; so they are left out rather than shown with misleading figures. The program&apos;s other requirements are still charted. A note above the chart names the programs affected (and any with nothing else to show); use the program&apos;s own By Theatre view (with its <strong>Compliance as of</strong>{" "}projection) for those requirements.</li>
         </ul>
       </>
     ),
@@ -1018,9 +1018,9 @@ const helpSections: Record<string, HelpSection> = {
           </li>
           <li>
             <strong>Program Partners</strong>{" "}&mdash; Each partner&apos;s own
-            terms for an anchored program: its minimum number of target countries
-            and the Country Set that lists them. Managed by each company&apos;s
-            Admins.
+            terms for a program: for the By Country Set view and the By Theatre
+            view, a minimum number of countries and the Country Set to use.
+            Managed by each company&apos;s Admins.
           </li>
           <li>
             <strong>Training Data</strong>{" "}&mdash; Manage training program
@@ -2176,9 +2176,9 @@ const helpSections: Record<string, HelpSection> = {
             <tr>
               <td><code>program_company_settings.json</code></td>
               <td>
-                Each partner&apos;s settings for an anchored program (minimum
-                target countries and target Country Set), recorded by program,
-                company and set name
+                Each partner&apos;s settings for a program (its By Country Set
+                minimum and set, and its By Theatre minimum and target set),
+                recorded by program, company and set name
               </td>
             </tr>
             <tr>
@@ -2243,8 +2243,8 @@ const helpSections: Record<string, HelpSection> = {
         <p>
           A <strong>config backup</strong> contains the reference dataset only
           — product types, regions, country sets, the training catalogue, OLX
-          relationships, specialisations, programs (including their anchor
-          theatre and default minimum), program partner settings, import
+          relationships, specialisations, programs (including their default
+          minimum numbers of countries), program partner settings, import
           aliases, and system settings — and
           excludes students and training records. Use this to clone the
           catalogue/program setup into a freshly installed instance without
@@ -2372,14 +2372,22 @@ const helpSections: Record<string, HelpSection> = {
         <p>
           <strong>Program partner settings</strong>{" "}(Admin &rsaquo; Program
           Partners) follow the same rules. Each is matched to its program, its
-          company and its target Country Set by name. A full restore replaces them
-          all; a config restore replaces only those of the companies the archive
-          names. One whose company or program does not exist on this system is
-          left out rather than given to another company, and one whose target set
-          no longer exists is kept with its minimum but without a target set; the
-          result says how many of each. An archive taken before partner settings
-          existed keeps the settings already on this system, except for programs
-          the restore removed.
+          company and both of its Country Sets by name. A full restore replaces
+          them all; a config restore replaces only those of the companies the
+          archive names. One whose company or program does not exist on this
+          system is left out rather than given to another company, and one whose
+          Country Set or target set no longer exists is kept with its minimums
+          but without that set; the result says how many of each. An archive
+          taken before partner settings existed keeps the settings already on
+          this system, except for programs the restore removed.
+        </p>
+        <p>
+          An archive written by a development build from before this release,
+          when a program could be tied to one theatre, is converted as it is
+          restored, the same way upgrading converts a database: that
+          program&apos;s Country Set requirements become Target countries
+          requirements and its minimum (and each partner&apos;s) becomes the By
+          Theatre minimum. A warning in the result says when this happened.
         </p>
         <p>
           <strong>Important:</strong> Restoring a backup{" "}
@@ -2672,44 +2680,44 @@ const helpSections: Record<string, HelpSection> = {
           program cannot be made non-tiered while it still has any — remove them first.
         </p>
 
-        <h3>Anchored programs</h3>
+        <h3>Target countries and minimum countries</h3>
         <p>
-          Some programs judge a partner over two areas at once: requirements across a whole
-          theatre (&ldquo;15 &times; Cert A across EMEA&rdquo;) <em>and</em>{" "}requirements
-          over the partner&apos;s own chosen countries (&ldquo;4 &times; Cert A in each target
-          country&rdquo;). Set the program&apos;s <strong>Anchor theatre</strong>{" "}— in the New
-          Program dialog, or in the <strong>Anchoring</strong>{" "}card on the program&apos;s
-          page — to make it an <strong>anchored program</strong>. Then:
+          A program can judge a partner over a whole theatre <em>and</em>{" "}over the
+          partner&apos;s own chosen countries in it (&ldquo;15 &times; Cert A across
+          EMEA&rdquo; plus &ldquo;4 &times; Cert A in each target country&rdquo;), alongside
+          its By Country, By Country Set and other views:
         </p>
         <ul>
           <li>
-            <strong>Theatre</strong>{" "}requirements count across the anchor theatre (shown as{" "}
-            <em>Across EMEA</em>).
+            <strong>Target countries</strong>{" "}is a requirement level (shown as{" "}
+            <em>In the viewed theatre (By Theatre view)</em>). Its requirements are counted in
+            the program&apos;s <strong>By Theatre</strong>{" "}view over each partner&apos;s{" "}
+            <strong>target countries</strong>: the countries in that partner&apos;s target
+            Country Set that lie inside the theatre being viewed. Any theatre can be viewed.
+            Total and In each country both work as usual.
           </li>
           <li>
-            <strong>Country Set</strong>{" "}requirements count over each partner&apos;s{" "}
-            <strong>target countries</strong>: the countries in that partner&apos;s Country Set
-            that lie inside the anchor theatre. Total and In each country both work as usual.
+            In the same By Theatre view, <strong>Theatre</strong>{" "}requirements still count
+            across the whole theatre. A program with no Target countries requirements keeps
+            the By Theatre view it always had.
           </li>
           <li>
-            Requirements at any other level are <strong>not counted</strong>. The requirement
-            form offers only the two levels, the page warns about any existing rows at other
-            levels, and the dashboard names them too.
-          </li>
-          <li>
-            The program&apos;s dashboard has a single <strong>Target countries</strong>{" "}view
-            instead of the usual level selector.
+            The <strong>By Country Set</strong>{" "}view counts Country Set requirements over
+            the set being viewed, which by default is the partner&apos;s own set for that view.
           </li>
         </ul>
         <p>
-          <strong>Default minimum target countries</strong>{" "}(optional) is how many target
-          countries a partner must name before <em>any</em>{" "}tier is reached. Each partner can
-          have their own minimum, and their own target Country Set, on{" "}
+          The <strong>Minimum countries</strong>{" "}card on the program&apos;s page (also in
+          the New Program dialog) holds two optional defaults, each a whole number from 1 to
+          1000: <strong>Minimum countries &mdash; By Country Set view</strong>{" "}(how many
+          countries a partner&apos;s Country Set must hold) and{" "}
+          <strong>Minimum target countries &mdash; By Theatre view</strong>{" "}(how many of a
+          partner&apos;s target countries must lie inside the viewed theatre; used only when
+          the program has Target countries requirements). Below the minimum no tier is reached
+          in that view. Each partner can have their own minimums, and their own sets, on{" "}
           <strong>Admin &rsaquo; Program Partners</strong>{" "}(the{" "}
-          <strong>Partner settings</strong>{" "}link on the Anchoring card); a partner without
-          their own minimum uses this default, and with neither there is no minimum. Clearing
-          the anchor theatre turns the program back into an ordinary one and clears the
-          default minimum with it.
+          <strong>Partner settings</strong>{" "}link on the card); a partner without their own
+          minimum uses the program&apos;s default, and with neither there is no minimum.
         </p>
 
         <h3>Fields</h3>
@@ -2731,11 +2739,11 @@ const helpSections: Record<string, HelpSection> = {
             </tr>
             <tr>
               <td><strong>Level</strong></td>
-              <td>Whether this requirement applies at Country, Region, Country Set, Theatre, or Global level. Each dashboard view reads only the requirements at its own level — see <em>Levels and count modes</em> below. An anchored program accepts only Theatre (across the anchor theatre) and Country Set (the partner&apos;s target countries).</td>
+              <td>Whether this requirement applies at Country, Region, Country Set, Target countries, Theatre, or Global level. Each dashboard view reads only the requirements at its own level — see <em>Levels and count modes</em> below — except By Theatre, which reads Theatre and Target countries requirements together.</td>
             </tr>
             <tr>
               <td><strong>Count mode</strong></td>
-              <td>Region and Country Set requirements only. <strong>Total across the area</strong>{" "}counts distinct holders anywhere in the region or set; <strong>In each country</strong>{" "}requires every country in it to reach the quantity on its own. Every other level always counts in total.</td>
+              <td>Region, Country Set and Target countries requirements only. <strong>Total across the area</strong>{" "}counts distinct holders anywhere in the region, set or target countries; <strong>In each country</strong>{" "}requires every country in it to reach the quantity on its own. Every other level always counts in total.</td>
             </tr>
             <tr>
               <td><strong>Type</strong></td>
@@ -2747,7 +2755,7 @@ const helpSections: Record<string, HelpSection> = {
             </tr>
             <tr>
               <td><strong>Quantity Required</strong></td>
-              <td>For Country/Theatre: number of people needed in that country or theatre. For Region/Country Set: the number of people needed across the whole area (<em>Total</em>) or in every one of its countries (<em>In each country</em>). For Global with training: number of people globally. For Global without training: number of compliant theatres needed.</td>
+              <td>For Country/Theatre: number of people needed in that country or theatre. For Region/Country Set/Target countries: the number of people needed across the whole area (<em>Total</em>) or in every one of its countries (<em>In each country</em>). For Global with training: number of people globally. For Global without training: number of compliant theatres needed.</td>
             </tr>
             <tr>
               <td><strong>Minimum per Theatre</strong></td>
@@ -2781,10 +2789,12 @@ const helpSections: Record<string, HelpSection> = {
           viewed on the dashboard — a Region requirement is not tied to one named region.
           Country Sets are custom groups of countries that each company manages
           for itself under <strong>Admin &rsaquo; Country Sets</strong>; a Country
-          Set requirement is counted over the viewed company&apos;s own set.
+          Set requirement is counted over the viewed company&apos;s own set.{" "}
+          <strong>Target countries</strong>{" "}requirements likewise apply to whichever
+          theatre is viewed, over the partner&apos;s target countries in it.
         </p>
         <p>
-          Because both levels span several countries, each of their requirements has a{" "}
+          Because these levels span several countries, each of their requirements has a{" "}
           <strong>count mode</strong>:
         </p>
         <ul>
@@ -2835,15 +2845,16 @@ const helpSections: Record<string, HelpSection> = {
         <p>
           Expected columns: Program Name, Specialisation, Level, Count Mode, Training Type,
           Training, Quantity Required, Minimum per Theatre, Alternatives, plus the optional
-          program-level <strong>Anchor Theatre</strong>{" "}and{" "}
-          <strong>Default Minimum Countries</strong>{" "}columns. Column names are
+          program-level <strong>Country Set Minimum Countries</strong>{" "}and{" "}
+          <strong>Target Minimum Countries</strong>{" "}columns. Column names are
           matched case-insensitively. Specialisations are auto-created if they don&apos;t
           exist. Training is matched by display name against the training catalog.
           Alternatives are specified as pipe-separated training names (e.g.,
           &quot;Training A|Training B&quot;).
         </p>
         <p>
-          <strong>Level</strong>{" "}accepts Country, Region, Country Set, Theatre or Global.{" "}
+          <strong>Level</strong>{" "}accepts Country, Region, Country Set, Target Countries,
+          Theatre or Global.{" "}
           <strong>Count Mode</strong>{" "}accepts <em>Total</em>{" "}or <em>Each country</em>;
           a blank cell means Total, so older files without the column import unchanged.{" "}
           <em>Each country</em>{" "}on a Country, Theatre or Global row is an error, as is an
@@ -2851,16 +2862,20 @@ const helpSections: Record<string, HelpSection> = {
           Global is dropped and reported as a warning in the preview.
         </p>
         <p>
-          <strong>Anchor Theatre</strong>{" "}must name a theatre from Region Data, and{" "}
-          <strong>Default Minimum Countries</strong>{" "}must be a whole number from 1 to 1000.
-          The first value given for a program wins (a different one on a later row is a
-          warning), and a blank or missing cell leaves the stored setting alone, so older
-          files import unchanged; an anchor is cleared in the editor, not by import. On an
-          anchored program, a row at any level other than Theatre or Country Set is an error.
-          A row with a Level but a blank Specialisation <em>and</em>{" "}a blank Tier is a{" "}
+          The two minimum columns take a whole number from 1 to 1000. The first value given
+          for a program wins (a different one on a later row is a warning), and a blank or
+          missing cell leaves the stored setting alone, so older files import unchanged; a
+          minimum is cleared in the editor, not by import. A row with a Level but a blank
+          Specialisation <em>and</em>{" "}a blank Tier is a{" "}
           <strong>Required at every level</strong>{" "}requirement on a tiered program, and an
           error on any other. The export writes all of this back out, including a settings-only
-          row for an anchored program with no requirements yet, so it round-trips.
+          row for a program with minimums but no requirements yet, so it round-trips.
+        </p>
+        <p>
+          Files exported by an earlier version still import: a{" "}
+          <strong>Default Minimum Countries</strong>{" "}column is read as Target Minimum
+          Countries, and an <strong>Anchor Theatre</strong>{" "}value is ignored with a warning
+          while that program&apos;s Country Set rows are imported as Target countries rows.
         </p>
         <p>
           Use <strong>Validate</strong> to check all rows for errors before committing,
@@ -2962,41 +2977,41 @@ const helpSections: Record<string, HelpSection> = {
           a level really takes.
         </p>
 
-        <h3>Target countries (anchored programs)</h3>
+        <h3>Target countries and minimum countries</h3>
         <p>
-          An <strong>anchored program</strong>{" "}is planned only under the{" "}
-          <strong>Target countries</strong>{" "}scope, and every other program only
-          under the other scopes, so the program list changes with the scope (a note
-          says how many anchored programs are planned elsewhere; if a plan still
-          names one on the wrong side, a <strong>Not planned</strong>{" "}note says which
-          and why). The scope is offered
-          when some program is anchored and the selected company has at least one
-          Country Set. Its set picker defaults to{" "}
-          <strong>Partner&apos;s configured set</strong>{" "}&mdash; each program&apos;s
-          target set from <strong>Admin &rsaquo; Program Partners</strong>{" "}&mdash; or
-          you can pick a set to use for every program.
+          Every program can be planned at every scope. Under the{" "}
+          <strong>Theatre</strong>{" "}scope, when a selected program has Target countries
+          requirements and the company has Country Sets, a{" "}
+          <strong>Target countries from</strong>{" "}picker appears. Its blank option,{" "}
+          <strong>Partner&apos;s configured set</strong>, uses each program&apos;s own target
+          set from <strong>Admin &rsaquo; Program Partners</strong>{" "}(and names the set used
+          once the plan loads); or pick one set for every program. Under the{" "}
+          <strong>Country Set</strong>{" "}scope a blank set likewise means each
+          program&apos;s own partner set, so a plan runs without choosing one.
         </p>
         <p>
-          Each anchored program is planned over its two areas at once: Theatre
-          requirements across its anchor theatre and Country Set requirements over the
-          target countries (the set&apos;s countries inside that theatre). The roadmap
-          says which each row is counted over, and a line under the target&apos;s
-          headline lists the target countries, the minimum and any set countries
-          outside the theatre that do not count. Someone certified in a target country
-          counts toward that country <em>and</em>{" "}the theatre-wide figure, so a
-          per-country requirement and a theatre-wide one on the same certification
-          are not charged twice.
+          A program with Target countries requirements is planned over two areas at once
+          under the Theatre scope: Theatre requirements across the theatre and Target
+          countries requirements over the target countries (the set&apos;s countries inside
+          that theatre). The roadmap says which each row is counted over, and a line under the
+          target&apos;s headline lists the target countries and the minimum, with a blue note
+          for any set countries outside the theatre, which do not count. A Country Set plan
+          shows the set and its minimum the same way. Someone certified in a target country
+          counts toward that country <em>and</em>{" "}the theatre-wide figure, so a per-country
+          requirement and a theatre-wide one on the same certification are not charged twice.
         </p>
         <p>
-          If the partner has <strong>fewer target countries than its minimum</strong>,
-          a red <strong>blocker</strong>{" "}leads the target: &ldquo;Name N more target
-          countries in Admin &rsaquo; Country Sets&rdquo;. No tier is reached until
-          that is done, and no amount of certifying people fixes it, so it is never
-          counted in <strong>People to certify</strong>{" "}&mdash; the requirements over
-          the countries the partner does have are still costed. The whole-page export
-          adds a <strong>Blockers</strong>{" "}section when there is one, and on a
-          Target countries plan the CSV and Excel roadmap and requirements-at-risk
-          sections end with a <strong>Population</strong>{" "}column.
+          If the partner&apos;s set holds <strong>fewer countries than its minimum</strong>{" "}
+          for that view, a red <strong>blocker</strong>{" "}leads the target: &ldquo;Name N more
+          target countries in EMEA in Admin &rsaquo; Country Sets&rdquo;, or &ldquo;Add N more
+          countries to Set A&hellip;&rdquo;. No tier is reached until that is done, and no
+          amount of certifying people fixes it, so it is never counted in{" "}
+          <strong>People to certify</strong>{" "}&mdash; the requirements over the countries the
+          partner does have are still costed. The whole-page export adds a{" "}
+          <strong>Blockers</strong>{" "}section (with <strong>View</strong>{" "}and{" "}
+          <strong>Theatre / Country Set</strong>{" "}columns) when there is one, and on a plan
+          that includes a program with Target countries requirements the CSV and Excel roadmap
+          and requirements-at-risk sections end with a <strong>Population</strong>{" "}column.
         </p>
         <p>
           Your selection — scope, programs, targets and the renewal window — is
@@ -3217,9 +3232,8 @@ const helpSections: Record<string, HelpSection> = {
           <li>
             A summary line describing how the program is configured &mdash;
             which levels it has requirements at (country, region, country set,
-            theatre, global) and whether it is <strong>tiered</strong>. An{" "}
-            <strong>anchored</strong>{" "}program says instead that it is viewed by
-            target countries within its anchor theatre.
+            target countries, theatre, global) and whether it is{" "}
+            <strong>tiered</strong>.
           </li>
         </ul>
       </>
@@ -3273,50 +3287,53 @@ const helpSections: Record<string, HelpSection> = {
           link.
         </p>
 
-        <h3>Target countries (anchored programs)</h3>
+        <h3>Target countries in the By Theatre view</h3>
         <p>
-          An <strong>anchored program</strong>{" "}judges a partner over two areas at
-          once, and its dashboard has one view instead of the Level and Value
-          dropdowns: <strong>Target countries (Country Set)</strong>, a choice of the
-          selected company&apos;s Country Sets, &ldquo;within&rdquo; the
-          program&apos;s anchor theatre. It opens on the set named in the
-          partner&apos;s settings on <strong>Admin &rsaquo; Program Partners</strong>,
-          if there is one; otherwise pick a set. A company with no Country Sets is
-          told to add one.
+          On a program with <strong>Target countries</strong>{" "}requirements, the{" "}
+          <strong>By Theatre</strong>{" "}view gains a <strong>Target countries</strong>{" "}
+          picker over the selected company&apos;s Country Sets. Its blank option,{" "}
+          <strong>Partner&apos;s configured set</strong>, uses the set named in the
+          partner&apos;s settings on <strong>Admin &rsaquo; Program Partners</strong>{" "}
+          (shown in brackets, or <em>none configured</em>). Any theatre can be viewed.
         </p>
         <ul>
           <li>
-            <strong>Theatre</strong>{" "}requirements are counted across the anchor
-            theatre, and <strong>Country Set</strong>{" "}requirements over the
-            partner&apos;s <strong>target countries</strong>{" "}&mdash; the set&apos;s
-            countries that lie inside that theatre. Each requirement says which it
-            was counted over (&ldquo;Counted over EMEA (theatre)&rdquo; or
-            &ldquo;Counted over Set 1 (target countries)&rdquo;), and its{" "}
-            <strong>View</strong>{" "}list is drawn from that same population.
+            <strong>Theatre</strong>{" "}requirements are counted across the theatre, and{" "}
+            <strong>Target countries</strong>{" "}requirements over the partner&apos;s{" "}
+            <strong>target countries</strong>{" "}&mdash; the set&apos;s countries that lie
+            inside that theatre. Each requirement says which it was counted over
+            (&ldquo;Counted over EMEA (theatre)&rdquo; or &ldquo;Counted over Set A (target
+            countries)&rdquo;), and its <strong>View</strong>{" "}list is drawn from that same
+            population.
           </li>
           <li>
-            A line above the report gives the number of target countries, lists them,
-            and shows the partner&apos;s <strong>minimum</strong>{" "}and whose rule it is
-            (partner setting or program default).
+            A line above the report gives the number of target countries in the theatre,
+            which set they come from, lists them, and shows the partner&apos;s{" "}
+            <strong>minimum</strong>{" "}and whose rule it is (partner setting or program
+            default).
           </li>
           <li>
-            Countries in the set but <strong>outside the anchor theatre</strong>{" "}are
-            named in an amber warning: they count toward neither the minimum nor the
-            requirements.
-          </li>
-          <li>
-            Requirements at any other level are not counted, and an amber warning
-            names those levels.
+            Countries in the set but <strong>outside the theatre</strong>{" "}are named in a
+            blue note: they count toward neither the minimum nor the target-country
+            requirements in this view.
           </li>
           <li>
             When the partner has <strong>fewer target countries than its
             minimum</strong>, a red <em>Minimum target countries not met</em>{" "}notice
-            appears and <strong>no tier is reached</strong>, whatever the other
-            figures say, until more countries are added to the set. Specialisations
-            are still shown as achieved or not, because the minimum is about the
-            partner&apos;s footprint rather than who holds what.
+            appears and <strong>no tier is reached</strong>, whatever the other figures
+            say, until more countries are added to the set. Specialisations are still
+            shown as achieved or not, because the minimum is about the partner&apos;s
+            footprint rather than who holds what.
           </li>
         </ul>
+        <p>
+          The <strong>By Country Set</strong>{" "}view works the same way for its own
+          minimum: its set picker&apos;s blank option is the partner&apos;s configured set,
+          a line above the report gives the number of countries in the set and the minimum,
+          and a red <em>Minimum countries in the Country Set not met</em>{" "}notice appears
+          when the set holds too few. With no set configured, the page points you to{" "}
+          <strong>Admin &rsaquo; Program Partners</strong>.
+        </p>
 
         <h3>Tier Status</h3>
         <p>
@@ -3391,14 +3408,15 @@ const helpSections: Record<string, HelpSection> = {
         <h3>Theatre Report</h3>
         <p>
           Shown when the <strong>View</strong> level is By Theatre (available when
-          the program has theatre-level requirements). Pick a theatre to view its
-          compliance.
+          the program has Theatre or Target countries requirements). Pick a theatre
+          to view its compliance; Target countries requirements are counted over the
+          partner&apos;s target countries in it, as described above.
         </p>
 
         <h3>Trained not certified</h3>
         <p>
-          On the By Country, By Region, By Country Set and By Theatre views, and an
-          anchored program&apos;s Target countries view, each{" "}
+          On the By Country, By Region, By Country Set and By Theatre views (where
+          target countries are counted over their own population), each{" "}
           <strong>Certification</strong>{" "}requirement has a{" "}
           <strong>Trained not certified</strong>{" "}row under Attained. It counts
           the people in the same population as Attained who hold a current
@@ -3519,12 +3537,14 @@ const helpSections: Record<string, HelpSection> = {
           same figures into its combined cells and amber shading.
         </p>
         <p>
-          On an anchored program&apos;s Target countries view the exports add a{" "}
-          <strong>Population</strong>{" "}column at the end (e.g. &ldquo;EMEA
-          (theatre)&rdquo;), and the PDF also lists the anchor theatre, the target
-          countries and the minimum, carries the warnings, and shows the{" "}
-          <strong>Required at every level</strong>{" "}requirements and any unmet
-          minimum in its Tier Status section.
+          On a By Theatre view with target countries the exports add{" "}
+          <strong>Count Mode</strong>, <strong>Countries Met</strong>,{" "}
+          <strong>Total Holders</strong>{" "}and a <strong>Population</strong>{" "}column
+          at the end (e.g. &ldquo;EMEA (theatre)&rdquo;), and the PDF also lists the
+          target set, the target countries and the minimum, notes any countries
+          outside the theatre, and shows the <strong>Required at every level</strong>{" "}
+          requirements and any unmet minimum in its Tier Status section. Every other
+          view&apos;s exports are unchanged.
         </p>
       </>
     ),
@@ -3702,6 +3722,14 @@ const helpSections: Record<string, HelpSection> = {
           view at all.
         </p>
         <p>
+          A company&apos;s sets also serve as its per-program choices on{" "}
+          <strong>Admin &rsaquo; Program Partners</strong>: the set a program&apos;s By
+          Country Set view opens on, and the set listing the company&apos;s{" "}
+          <strong>target countries</strong>{" "}for a program&apos;s By Theatre view (only
+          the set&apos;s countries inside the viewed theatre count there). Deleting a set a
+          partner uses keeps that partner&apos;s minimums and leaves the set empty.
+        </p>
+        <p>
           The read-only public API lists each company&apos;s sets and their
           countries at <code>GET /api/public/v1/country-sets</code>, for the
           companies the API key may read. Sets are managed only here.
@@ -3797,77 +3825,79 @@ const helpSections: Record<string, HelpSection> = {
     content: (
       <>
         <p>
-          <strong>Program Partners</strong>{" "}holds each partner&apos;s own terms for
-          an <strong>anchored program</strong>{" "}&mdash; a program a SuperAdmin has
-          anchored to a theatre in <strong>Admin &rsaquo; Program Data</strong>. An
-          anchored program counts its Theatre requirements across that theatre and its
-          Country Set requirements over each partner&apos;s{" "}
-          <strong>target countries</strong>. This page says, per partner (company):
+          <strong>Program Partners</strong>{" "}holds each partner&apos;s own terms for a
+          program. A program&apos;s <strong>By Country Set</strong>{" "}view counts its
+          Country Set requirements over a Country Set, and its{" "}
+          <strong>By Theatre</strong>{" "}view can count Target countries requirements over
+          the partner&apos;s <strong>target countries</strong>{" "}&mdash; the countries in a
+          Country Set that lie inside the theatre being viewed. Each view can also require a
+          minimum number of countries. This page says, per partner (company) and program:
         </p>
         <ul>
           <li>
-            <strong>Minimum target countries</strong>{" "}&mdash; how many target countries
-            the partner must have before <em>any</em>{" "}tier of the program is reached.
-            Leave it blank to use the program&apos;s default; if the program has no
-            default either, there is no minimum.
+            <strong>By Country Set view</strong>{" "}&mdash; <strong>Minimum countries</strong>{" "}
+            (how many countries the partner&apos;s Country Set must hold before{" "}
+            <em>any</em>{" "}tier is reached in that view) and <strong>Country Set</strong>{" "}
+            (which of the company&apos;s own sets that view opens on).
           </li>
           <li>
-            <strong>Target Country Set</strong>{" "}&mdash; which of the company&apos;s own
-            Country Sets lists its target countries. The program dashboard and Compliance
-            Planning open on this set; without one, the dashboard asks you to pick a set.
+            <strong>By Theatre view</strong>{" "}&mdash;{" "}
+            <strong>Minimum target countries</strong>{" "}(how many of the partner&apos;s target
+            countries must lie inside the viewed theatre before any tier is reached there) and{" "}
+            <strong>Target Country Set</strong>{" "}(the company&apos;s set that lists its target
+            countries). These apply only to programs with Target countries requirements.
           </li>
         </ul>
         <p>
-          The <strong>Effective minimum</strong>{" "}column shows the number that actually
-          applies and whose rule it is &mdash; the partner&apos;s own or the program
-          default.
-        </p>
-        <p>
-          <strong>Only countries inside the program&apos;s anchor theatre count.</strong>{" "}
-          A country in the set but outside the theatre counts toward neither the minimum
-          nor the requirements, and the dashboard names it in a warning. So a set of six
-          countries with one outside the theatre counts as five.
+          Leave a minimum blank to use the program&apos;s default for that view; if the
+          program has no default either, there is no minimum. Each view has an{" "}
+          <strong>Effective minimum</strong>{" "}column showing the number that actually
+          applies and whose rule it is &mdash; &ldquo;6 (partner)&rdquo;, &ldquo;3 (program
+          default)&rdquo; or &ldquo;No minimum&rdquo;. A country in the target set but
+          outside the viewed theatre does not count, so a set of six countries with one
+          outside the theatre counts as five there.
         </p>
 
         <h3>Who can edit</h3>
         <p>
           Partner settings belong to a company, like Country Sets: a company&apos;s Admins
           manage that company&apos;s settings and a SuperAdmin can manage every
-          company&apos;s. The program itself, its anchor theatre and its default minimum
-          stay with the SuperAdmin in Program Data. The list follows the company switcher in
-          the page header.
+          company&apos;s. The program itself and its default minimums stay with the
+          SuperAdmin in Program Data. The list follows the company switcher in the page
+          header.
         </p>
 
         <h3>Adding &amp; Editing</h3>
         <p>
           Use <strong>Add Partner Settings</strong>, pick the <strong>Company</strong>{" "}
-          and the anchored <strong>Program</strong>, then the optional minimum and target
-          set. Each company has at most one row per program. The target set list shows only
+          and the <strong>Program</strong>{" "}(any program), then fill in either view&apos;s
+          section. Each company has at most one row per program. The set lists show only
           that company&apos;s sets. The company and program cannot be changed afterwards;
           delete the row and add a new one instead. If the header is showing a different
           company, it switches to the new row&apos;s company so you can see it.
         </p>
         <p>
-          Deleting a Country Set that a partner uses as its target set keeps the
-          partner&apos;s minimum and leaves the target set empty. Deleting the program or the
-          company removes the partner&apos;s settings with it.
+          Deleting a Country Set that a partner uses keeps the partner&apos;s minimums and
+          leaves that set empty. Deleting the program or the company removes the
+          partner&apos;s settings with it.
         </p>
 
         <h3>Searching &amp; Sorting</h3>
         <p>
-          The search box matches the program, the company and the target set. Click a column
+          The search box matches the program, the company and either set. Click a column
           header to sort. The search and sort are kept in the page address, so{" "}
           <strong>Back</strong>{" "}returns you to the same view.
         </p>
 
         <h3>Import &amp; Export</h3>
         <p>
-          <strong>Export</strong>{" "}downloads the list as CSV, Excel or PDF.{" "}
-          <strong>Import</strong>{" "}takes a CSV or Excel file with the same columns &mdash;{" "}
-          <strong>Program</strong>, <strong>Company</strong>,{" "}
-          <strong>Minimum Target Countries</strong>{" "}and{" "}
-          <strong>Target Country Set</strong>{" "}&mdash; so an export can be edited and
-          imported back.
+          <strong>Export</strong>{" "}downloads the list as CSV, Excel or PDF, with the
+          columns <strong>Program</strong>, <strong>Company</strong>,{" "}
+          <strong>Country Set Minimum</strong>, <strong>Country Set</strong>,{" "}
+          <strong>Target Minimum</strong>, <strong>Target Country Set</strong>{" "}and the two
+          read-only <strong>Effective</strong>{" "}columns. <strong>Import</strong>{" "}takes a
+          CSV or Excel file with the first six of those columns, so an export can be edited
+          and imported back (the Effective columns are ignored).
         </p>
         <ul>
           <li>
@@ -3876,11 +3906,16 @@ const helpSections: Record<string, HelpSection> = {
           </li>
           <li>
             The Company cell is matched against the companies you can access; a blank one
-            uses the company picked in the dialog. The Program must be an anchored program,
-            and the target set must be one of that company&apos;s own sets.
+            uses the company picked in the dialog. Each set must be one of that
+            company&apos;s own sets.
           </li>
           <li>
             A blank cell keeps the current value, and <strong>none</strong>{" "}clears it.
+          </li>
+          <li>
+            A file from an earlier version still imports: its{" "}
+            <strong>Minimum Target Countries</strong>{" "}column is read as Target Minimum and
+            its <strong>Target Country Set</strong>{" "}keeps its meaning.
           </li>
           <li>
             <strong>Preview</strong>{" "}shows what will be created, updated or left
@@ -3890,9 +3925,9 @@ const helpSections: Record<string, HelpSection> = {
         </ul>
         <p>
           Partner settings are included in both the full and the config backups. A restore
-          matches each one to its program, company and target set by name, and leaves out
-          (and counts) any whose company or program does not exist on the system being
-          restored &mdash; it never gives a partner&apos;s terms to a different company.
+          matches each one to its program, company and sets by name, and leaves out (and
+          counts) any whose company or program does not exist on the system being restored
+          &mdash; it never gives a partner&apos;s terms to a different company.
         </p>
       </>
     ),
@@ -3947,10 +3982,10 @@ const helpSections: Record<string, HelpSection> = {
             <tr><td><code>GET /api/public/v1/reports/&#123;type&#125;</code></td><td>Report aggregates (e.g. <code>expiring-soon</code>, <code>legacy-gap</code>, <code>learner-scorecard</code>).</td></tr>
             <tr><td><code>GET /api/public/v1/offerings</code></td><td>Offering definitions for the key&rsquo;s companies. Add <code>?country=</code> or <code>?region=</code> for Onshore/Nearshore/Offshore holder counts; <code>?name=</code> for one offering.</td></tr>
             <tr><td><code>GET /api/public/v1/country-sets</code></td><td>The Country Sets owned by the key&rsquo;s companies, each with its countries. <code>?name=</code> for one set.</td></tr>
-            <tr><td><code>GET /api/public/v1/programs</code></td><td>Partner program list (levels, per-theatre-minimum flag, tiered flag).</td></tr>
-            <tr><td><code>GET /api/public/v1/programs/&#123;name&#125;</code></td><td>Per-program compliance — <code>?level=</code> (country, region, countrySet, theatre or global) with the matching <code>?country=</code>/<code>?region=</code>/<code>?countrySet=</code>/<code>?theatre=</code>, and <code>?horizonMonths=</code>. Includes each requirement&rsquo;s count mode and, for Certification requirements, the Trained not certified figure. <code>?trainingTitle=&amp;students=true</code> returns the holder roster; add <code>&amp;trainedNotCertified=true</code> for the people behind that figure.</td></tr>
+            <tr><td><code>GET /api/public/v1/programs</code></td><td>Partner program list (levels, per-theatre-minimum flag, tiered flag, and whether the program has Target countries requirements).</td></tr>
+            <tr><td><code>GET /api/public/v1/programs/&#123;name&#125;</code></td><td>Per-program compliance — <code>?level=</code> (country, region, countrySet, theatre or global) with the matching <code>?country=</code>/<code>?region=</code>/<code>?countrySet=</code>/<code>?theatre=</code>, and <code>?horizonMonths=</code>. Includes each requirement&rsquo;s count mode and, for Certification requirements, the Trained not certified figure. <code>?trainingTitle=&amp;students=true</code> returns the holder roster; add <code>&amp;trainedNotCertified=true</code> for the people behind that figure. On a By Theatre view with target countries, the report describes the target countries and minimum, and a roster needs <code>?population=theatre</code> or <code>?population=targetCountries</code>.</td></tr>
             <tr><td><code>GET /api/public/v1/programs/planning</code></td><td>Compliance planning, <strong>aggregates only</strong> — roadmap, gaps, risk impacts and totals. <code>?options=true</code> lists the program/tier/specialisation names; <code>?targets=</code> takes a URL-encoded JSON array.</td></tr>
-            <tr><td><code>GET /api/public/v1/reports/program-compliance-trend</code></td><td>12 months of compliance history plus a 12-month forecast, per program and specialisation.</td></tr>
+            <tr><td><code>GET /api/public/v1/reports/program-compliance-trend</code></td><td>12 months of compliance history plus a 12-month forecast, per program and specialisation. Target countries requirements are left out: a program&apos;s other requirements are shown and the program named in <code>partialPrograms</code> (or in <code>unsupportedPrograms</code> when nothing else is left).</td></tr>
             <tr><td><code>GET /api/public/v1/reports/renewal-forecast</code></td><td>Projected renewals vs lapses over the next 12 months, with an at-risk-by-training breakdown.</td></tr>
           </tbody>
         </table>

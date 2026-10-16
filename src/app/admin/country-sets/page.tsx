@@ -426,7 +426,7 @@ function CountrySetsInner() {
 
       {usage > 0 && (
         <p className="mb-4 text-sm text-gray-600">
-          {usage === 1 ? "1 program has" : `${usage} programs have`} Country Set requirements. Those apply to whichever set is being viewed, so every set here can be reported against.
+          {usage === 1 ? "1 program has" : `${usage} programs have`} Country Set or Target countries requirements. Those apply to whichever set is being viewed or configured as a partner&apos;s target countries, so every set here can be reported against.
         </p>
       )}
 
@@ -630,7 +630,7 @@ function CountrySetsInner() {
         </p>
         {usage > 0 && (
           <p className="mt-2 text-sm text-amber-700">
-            Programs with Country Set requirements will no longer be able to report against this set for its
+            Programs with Country Set or Target countries requirements will no longer be able to report against this set for its
             company.
           </p>
         )}

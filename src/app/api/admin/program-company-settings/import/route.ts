@@ -4,18 +4,21 @@ import { requireAuth, handleAuthError } from "@/lib/auth";
 import { canAccessCompany, getAuthorizedCompanyIds } from "@/lib/company-scope";
 import { readJsonBody } from "@/lib/request-body";
 import { invalidateReportCache } from "@/lib/report-cache";
-import { isAnchoredProgram } from "@/lib/program-anchor";
-import { MINIMUM_COUNTRIES_ERROR, parseMinimumCountries } from "@/lib/program-data-write";
+import { MAX_MINIMUM_COUNTRIES, parseMinimumCountries } from "@/lib/program-data-write";
 import { parsePositiveId } from "../route";
 
 /**
  * Bulk import for Program Partners — `POST /api/admin/program-company-settings/import`
  * (`?dryRun=true` validates and previews without writing).
  *
- * Body: `{ rows: [{ program, company?, minimumCountries?, targetCountrySet? }],
- * defaultCompanyId?, minimumMapped?, targetMapped? }`. The columns are the
- * page export's own (Program / Company / Minimum Target Countries / Target
- * Country Set), so an exported file round-trips.
+ * Body: `{ rows: [{ program, company?, countrySetMinimumCountries?, countrySet?,
+ * targetMinimumCountries?, targetCountrySet? }], defaultCompanyId?,
+ * countrySetMinimumMapped?, countrySetMapped?, targetMinimumMapped?,
+ * targetMapped? }`. The columns are the page export's own (Program / Company /
+ * Country Set Minimum / Country Set / Target Minimum / Target Country Set), so
+ * an exported file round-trips. The page maps an older file's `Minimum
+ * Countries` / `Minimum Target Countries` header to Target Minimum; its
+ * `Target Country Set` header already means the By Theatre view's set.
  *
  * Semantics, mirroring the Country Sets import:
  *  - **One row per (program, company), upserted.** Rows not named in the file
@@ -25,10 +28,11 @@ import { parsePositiveId } from "../route";
  *    access only — exactly first, then case-insensitively when unambiguous. A
  *    company the caller cannot access gets the SAME message as one that does
  *    not exist, so the import cannot discover other tenants' names.
- *  - **Program** by name (exact, then case-insensitive when unambiguous), and
- *    only an anchored program — partner terms mean nothing on any other.
- *  - **Target Country Set** by name within that row's company only (a set of
- *    another company resolves exactly like a missing one).
+ *  - **Program** by name (exact, then case-insensitive when unambiguous). Any
+ *    program may carry partner terms.
+ *  - **Country Set** and **Target Country Set** by name within that row's
+ *    company only (a set of another company resolves exactly like a missing
+ *    one).
  *  - An unmapped column, or a blank cell, writes nothing: an existing row keeps
  *    its value and a new row starts empty. `none` (or a dash) clears it.
  *  - A row whose values already match is reported `unchanged` and not written.
@@ -42,9 +46,25 @@ const CLEAR_MARKERS = new Set(["—", "-", "–", "n/a", "none"]);
 interface RawRow {
   program?: unknown;
   company?: unknown;
-  minimumCountries?: unknown;
+  countrySetMinimumCountries?: unknown;
+  countrySet?: unknown;
+  targetMinimumCountries?: unknown;
   targetCountrySet?: unknown;
 }
+
+/** The two minimum columns: the field, its mapped flag in the body, and its column label. */
+const MINIMUM_COLUMNS = [
+  { field: "countrySetMinimumCountries", mapped: "countrySetMinimumMapped", label: "Country Set Minimum" },
+  { field: "targetMinimumCountries", mapped: "targetMinimumMapped", label: "Target Minimum" },
+] as const;
+/** The two set columns: the field (and its id field), its mapped flag, and its column label. */
+const SET_COLUMNS = [
+  { field: "countrySet", idField: "countrySetId", mapped: "countrySetMapped", label: "Country Set" },
+  { field: "targetCountrySet", idField: "targetCountrySetId", mapped: "targetMapped", label: "Target Country Set" },
+] as const;
+type MinimumField = (typeof MINIMUM_COLUMNS)[number]["field"];
+type SetField = (typeof SET_COLUMNS)[number]["field"];
+type SetIdField = (typeof SET_COLUMNS)[number]["idField"];
 
 type Cell = { ok: true; value: string } | { ok: false };
 function cell(v: unknown): Cell {
@@ -70,11 +90,17 @@ interface Planned {
   programName: string;
   companyId: number;
   companyName: string;
-  /** `undefined` = leave alone. */
-  minimumCountries: number | null | undefined;
-  /** `undefined` = leave alone. */
-  targetCountrySetId: number | null | undefined;
-  targetCountrySetName: string | null | undefined;
+  /** Each value: `undefined` = leave alone, `null` = clear. */
+  minimums: Record<MinimumField, number | null | undefined>;
+  setIds: Record<SetIdField, number | null | undefined>;
+  setNames: Record<SetField, string | null | undefined>;
+}
+
+/** The entries whose value is not `undefined` ("leave alone"). */
+function definedOnly<K extends string>(o: Record<K, number | null | undefined>): Partial<Record<K, number | null>> {
+  const out: Partial<Record<K, number | null>> = {};
+  for (const [k, v] of Object.entries(o) as [K, number | null | undefined][]) if (v !== undefined) out[k] = v;
+  return out;
 }
 
 export async function POST(request: NextRequest) {
@@ -99,8 +125,7 @@ export async function POST(request: NextRequest) {
   if (rows.length > MAX_ROWS) {
     return NextResponse.json({ error: `Too many rows in a single import (max ${MAX_ROWS.toLocaleString()}).` }, { status: 413 });
   }
-  const minimumMapped = body.minimumMapped === true;
-  const targetMapped = body.targetMapped === true;
+  const mapped = (flag: string) => body[flag] === true;
 
   // The default company must be one the caller may access — checked before
   // anything else is read, like the POST.
@@ -125,9 +150,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Company not found" }, { status: 404 });
   }
 
-  const programs = (
-    await prisma.program.findMany({ select: { id: true, name: true, anchorTheatre: true } })
-  );
+  const programs = await prisma.program.findMany({ select: { id: true, name: true } });
 
   const errors: { row: number; message: string }[] = [];
   const addError = (row: number, message: string) => {
@@ -140,8 +163,8 @@ export async function POST(request: NextRequest) {
     row: number;
     program: { id: number; name: string };
     company: { id: number; name: string };
-    minimumText: string;
-    targetText: string;
+    /** Mapped cells only; an unmapped column reads as blank. */
+    text: Record<MinimumField | SetField, string>;
   }
   const stage1: Stage1[] = [];
   let blankRows = 0;
@@ -150,14 +173,15 @@ export async function POST(request: NextRequest) {
     const r: RawRow = raw && typeof raw === "object" ? raw : {};
     const programCell = cell(r.program);
     const companyCell = cell(r.company);
-    const minimumCell = cell(r.minimumCountries);
-    const targetCell = cell(r.targetCountrySet);
-    if (!programCell.ok || !companyCell.ok || !minimumCell.ok || !targetCell.ok) {
+    const valueCells = [...MINIMUM_COLUMNS, ...SET_COLUMNS].map((c) => ({ col: c, cell: cell(r[c.field]) }));
+    if (!programCell.ok || !companyCell.ok || valueCells.some((v) => !v.cell.ok)) {
       addError(rowNo, "Every cell must be text");
       return;
     }
+    const text = {} as Record<MinimumField | SetField, string>;
+    for (const { col, cell: c } of valueCells) text[col.field] = c.ok && mapped(col.mapped) ? c.value : "";
     // A wholly blank row (a trailing line) is not an error.
-    if (!programCell.value && !companyCell.value && !minimumCell.value && !targetCell.value) {
+    if (!programCell.value && !companyCell.value && valueCells.every((v) => v.cell.ok && !v.cell.value)) {
       blankRows++;
       return;
     }
@@ -173,10 +197,6 @@ export async function POST(request: NextRequest) {
     }
     if ("many" in pm) {
       addError(rowNo, `Program "${programCell.value.slice(0, 80)}" matches more than one program — use the exact name`);
-      return;
-    }
-    if (!isAnchoredProgram(pm.one)) {
-      addError(rowNo, `Program "${pm.one.name}" is not anchored — partner settings apply only to anchored programs`);
       return;
     }
 
@@ -204,8 +224,7 @@ export async function POST(request: NextRequest) {
       row: rowNo,
       program: { id: pm.one.id, name: pm.one.name },
       company,
-      minimumText: minimumMapped ? minimumCell.value : "",
-      targetText: targetMapped ? targetCell.value : "",
+      text,
     });
   });
 
@@ -230,35 +249,47 @@ export async function POST(request: NextRequest) {
       continue;
     }
 
-    let minimumCountries: number | null | undefined;
-    if (s.minimumText === "") minimumCountries = undefined;
-    else if (CLEAR_MARKERS.has(s.minimumText.toLowerCase())) minimumCountries = null;
-    else {
-      const m = parseMinimumCountries(s.minimumText);
-      if (!m.ok || m.value === null) {
-        addError(s.row, `Minimum Target Countries "${s.minimumText.slice(0, 20)}": ${MINIMUM_COUNTRIES_ERROR}`);
-        continue;
+    const minimums = {} as Planned["minimums"];
+    let rowError: string | null = null;
+    for (const col of MINIMUM_COLUMNS) {
+      const t = s.text[col.field];
+      if (t === "") minimums[col.field] = undefined;
+      else if (CLEAR_MARKERS.has(t.toLowerCase())) minimums[col.field] = null;
+      else {
+        const m = parseMinimumCountries(t);
+        if (!m.ok || m.value === null) {
+          rowError = `${col.label} "${t.slice(0, 20)}" must be a whole number from 1 to ${MAX_MINIMUM_COUNTRIES}`;
+          break;
+        }
+        minimums[col.field] = m.value;
       }
-      minimumCountries = m.value;
     }
 
-    let targetCountrySetId: number | null | undefined;
-    let targetCountrySetName: string | null | undefined;
-    if (s.targetText === "") targetCountrySetId = undefined;
-    else if (CLEAR_MARKERS.has(s.targetText.toLowerCase())) {
-      targetCountrySetId = null;
-      targetCountrySetName = null;
-    } else {
-      const sm = matchByName(setsByCompany.get(s.company.id) ?? [], s.targetText);
-      if (!sm || "many" in sm) {
-        addError(
-          s.row,
-          `Country set "${s.targetText.slice(0, 80)}" was not found for ${s.company.name}${sm ? " (more than one matches — use the exact name)" : ""}`
-        );
-        continue;
+    const setIds = {} as Planned["setIds"];
+    const setNames = {} as Planned["setNames"];
+    if (!rowError) {
+      for (const col of SET_COLUMNS) {
+        const t = s.text[col.field];
+        if (t === "") {
+          setIds[col.idField] = undefined;
+          setNames[col.field] = undefined;
+        } else if (CLEAR_MARKERS.has(t.toLowerCase())) {
+          setIds[col.idField] = null;
+          setNames[col.field] = null;
+        } else {
+          const sm = matchByName(setsByCompany.get(s.company.id) ?? [], t);
+          if (!sm || "many" in sm) {
+            rowError = `${col.label} "${t.slice(0, 80)}" was not found for ${s.company.name}${sm ? " (more than one matches — use the exact name)" : ""}`;
+            break;
+          }
+          setIds[col.idField] = sm.one.id;
+          setNames[col.field] = sm.one.name;
+        }
       }
-      targetCountrySetId = sm.one.id;
-      targetCountrySetName = sm.one.name;
+    }
+    if (rowError) {
+      addError(s.row, rowError);
+      continue;
     }
 
     // Recorded only once the row is valid, so an invalid first row does not
@@ -270,9 +301,9 @@ export async function POST(request: NextRequest) {
       programName: s.program.name,
       companyId: s.company.id,
       companyName: s.company.name,
-      minimumCountries,
-      targetCountrySetId,
-      targetCountrySetName,
+      minimums,
+      setIds,
+      setNames,
     });
   }
 
@@ -282,7 +313,15 @@ export async function POST(request: NextRequest) {
           programId: { in: [...new Set(planned.map((p) => p.programId))] },
           companyId: { in: [...new Set(planned.map((p) => p.companyId))] },
         },
-        select: { id: true, programId: true, companyId: true, minimumCountries: true, targetCountrySetId: true },
+        select: {
+          id: true,
+          programId: true,
+          companyId: true,
+          countrySetMinimumCountries: true,
+          countrySetId: true,
+          targetMinimumCountries: true,
+          targetCountrySetId: true,
+        },
       })
     : [];
   const existingByKey = new Map(existing.map((e) => [pairKey(e.programId, e.companyId), e]));
@@ -290,9 +329,11 @@ export async function POST(request: NextRequest) {
   const actionOf = (p: Planned): "create" | "update" | "unchanged" => {
     const e = existingByKey.get(pairKey(p.programId, p.companyId));
     if (!e) return "create";
-    const sameMin = p.minimumCountries === undefined || p.minimumCountries === e.minimumCountries;
-    const sameSet = p.targetCountrySetId === undefined || p.targetCountrySetId === e.targetCountrySetId;
-    return sameMin && sameSet ? "unchanged" : "update";
+    const same = (want: number | null | undefined, have: number | null) => want === undefined || want === have;
+    const unchanged =
+      MINIMUM_COLUMNS.every((c) => same(p.minimums[c.field], e[c.field])) &&
+      SET_COLUMNS.every((c) => same(p.setIds[c.idField], e[c.idField]));
+    return unchanged ? "unchanged" : "update";
   };
   const actions = planned.map((p) => ({ p, action: actionOf(p) }));
   const count = (a: string) => actions.filter((x) => x.action === a).length;
@@ -307,8 +348,10 @@ export async function POST(request: NextRequest) {
   const preview = actions.slice(0, 200).map(({ p, action }) => ({
     program: p.programName,
     company: p.companyName,
-    minimumCountries: p.minimumCountries,
-    targetCountrySet: p.targetCountrySetName,
+    countrySetMinimumCountries: p.minimums.countrySetMinimumCountries,
+    countrySet: p.setNames.countrySet,
+    targetMinimumCountries: p.minimums.targetMinimumCountries,
+    targetCountrySet: p.setNames.targetCountrySet,
     action,
   }));
 
@@ -327,8 +370,10 @@ export async function POST(request: NextRequest) {
               data: toCreate.map((p) => ({
                 programId: p.programId,
                 companyId: p.companyId,
-                minimumCountries: p.minimumCountries ?? null,
-                targetCountrySetId: p.targetCountrySetId ?? null,
+                countrySetMinimumCountries: p.minimums.countrySetMinimumCountries ?? null,
+                countrySetId: p.setIds.countrySetId ?? null,
+                targetMinimumCountries: p.minimums.targetMinimumCountries ?? null,
+                targetCountrySetId: p.setIds.targetCountrySetId ?? null,
               })),
             });
           }
@@ -337,8 +382,8 @@ export async function POST(request: NextRequest) {
             await tx.programCompanySetting.update({
               where: { id: e.id, companyId: p.companyId },
               data: {
-                ...(p.minimumCountries !== undefined ? { minimumCountries: p.minimumCountries } : {}),
-                ...(p.targetCountrySetId !== undefined ? { targetCountrySetId: p.targetCountrySetId } : {}),
+                ...definedOnly(p.minimums),
+                ...definedOnly(p.setIds),
               },
             });
           }

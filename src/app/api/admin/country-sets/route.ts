@@ -212,13 +212,17 @@ export const DUPLICATE_NAME_RESPONSE = () =>
     { status: 409 }
   );
 
-/** Distinct programs with any Country Set row — programs are global, not tenant data. */
+/**
+ * Distinct programs with any Country Set or Target countries row — programs are
+ * global, not tenant data. Both levels read a partner's Country Set: CountrySet
+ * rows over the set viewed in By Country Set, TargetCountries rows over the
+ * partner's target set inside the theatre viewed in By Theatre.
+ */
 async function countProgramsUsingCountrySetLevel(): Promise<number> {
-  // The CountrySet requirement level is generic — it applies to whichever
-  // set is being viewed — so there is no per-set usage to report. This is
-  // the global figure (distinct programs with any Country Set row).
+  // Both levels are generic — they apply to whichever set is being viewed or
+  // configured — so there is no per-set usage to report, only this figure.
   const rows = await prisma.programData.findMany({
-    where: { level: "CountrySet" },
+    where: { level: { in: ["CountrySet", "TargetCountries"] } },
     distinct: ["programName"],
     select: { programName: true },
   });

@@ -4,7 +4,7 @@ import { requireSuperAdmin, handleAuthError } from "@/lib/auth";
 import { safeDecodeParam } from "@/lib/utils";
 import { invalidateReportCache } from "@/lib/report-cache";
 import { readJsonBody } from "@/lib/request-body";
-import { anchoredLevelWarnings, parseAnchorSettings } from "@/lib/program-data-write";
+import { parseProgramMinimums } from "@/lib/program-data-write";
 
 /**
  * PATCH /api/admin/program-data/program/[programName]
@@ -16,10 +16,10 @@ import { anchoredLevelWarnings, parseAnchorSettings } from "@/lib/program-data-w
  *    that still has program-wide gates (rows with neither a specialisation
  *    nor a tier) is refused — those rows only mean something on a tiered
  *    program.
- *  - anchorTheatre (a Region Data theatre, or null/"" to clear) and
- *    defaultMinimumCountries (1–1000 or null). Anchoring a program that has
- *    rows at levels an anchored view never evaluates still succeeds, but the
- *    response's `warnings[]` names them.
+ *  - countrySetMinimumCountries / targetMinimumCountries: the program's default
+ *    minimum countries for the By Country Set view and the By Theatre view
+ *    (target countries). Each 1–1000, or null/"" to clear; an absent key
+ *    leaves the stored value alone.
  * Any subset may be provided; a settings-only PATCH omits newName.
  */
 export async function PATCH(
@@ -53,9 +53,9 @@ export async function PATCH(
     typeof body.deploymentMode === "string" && DEPLOYMENT_MODES.includes(body.deploymentMode)
       ? body.deploymentMode
       : "flat";
-  const anchor = await parseAnchorSettings(body);
-  if (!anchor.ok) {
-    return NextResponse.json({ error: anchor.error }, { status: 400 });
+  const minimums = parseProgramMinimums(body);
+  if (!minimums.ok) {
+    return NextResponse.json({ error: minimums.error }, { status: 400 });
   }
 
   // Existence check: the program must exist either in the registry or as rows.
@@ -98,14 +98,16 @@ export async function PATCH(
     const settings: {
       isTiered?: boolean;
       deploymentMode?: string;
-      anchorTheatre?: string | null;
-      defaultMinimumCountries?: number | null;
+      countrySetMinimumCountries?: number | null;
+      targetMinimumCountries?: number | null;
     } = {};
     if (hasIsTiered) settings.isTiered = body.isTiered as boolean;
     if (hasDeploymentMode) settings.deploymentMode = deploymentMode;
-    if (anchor.value.anchorTheatre !== undefined) settings.anchorTheatre = anchor.value.anchorTheatre;
-    if (anchor.value.defaultMinimumCountries !== undefined) {
-      settings.defaultMinimumCountries = anchor.value.defaultMinimumCountries;
+    if (minimums.value.countrySetMinimumCountries !== undefined) {
+      settings.countrySetMinimumCountries = minimums.value.countrySetMinimumCountries;
+    }
+    if (minimums.value.targetMinimumCountries !== undefined) {
+      settings.targetMinimumCountries = minimums.value.targetMinimumCountries;
     }
 
     if (existingProgram) {
@@ -132,16 +134,13 @@ export async function PATCH(
 
   const after = await prisma.program.findUnique({
     where: { name: finalName },
-    select: { anchorTheatre: true, defaultMinimumCountries: true },
+    select: { countrySetMinimumCountries: true, targetMinimumCountries: true },
   });
-  const anchorTheatre = after?.anchorTheatre?.trim() ? after.anchorTheatre.trim() : null;
-  const warnings = await anchoredLevelWarnings(finalName, anchorTheatre);
   return NextResponse.json({
     success: true,
     updated,
-    anchorTheatre,
-    defaultMinimumCountries: after?.defaultMinimumCountries ?? null,
-    warnings,
+    countrySetMinimumCountries: after?.countrySetMinimumCountries ?? null,
+    targetMinimumCountries: after?.targetMinimumCountries ?? null,
   });
 }
 

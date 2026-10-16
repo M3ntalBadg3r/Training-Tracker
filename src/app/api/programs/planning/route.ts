@@ -3,8 +3,8 @@ import { requireAuth, handleAuthError } from "@/lib/auth";
 import { getAuthorizedCompanyIds, resolveCompanyFilter } from "@/lib/company-scope";
 import { cachedReport, scopeKey } from "@/lib/report-cache";
 import { buildPlanningOptions } from "@/lib/planning-options";
-import { COUNTRY_SET_SCOPE_ERROR, listCountrySetNames, singleCompanyId } from "@/lib/country-sets";
-import { computeCompliancePlan } from "@/lib/compliance-plan";
+import { listCountrySetNames, singleCompanyId } from "@/lib/country-sets";
+import { computeCompliancePlan, planRequiresSingleCompany } from "@/lib/compliance-plan";
 import {
   parsePlanRequest,
   planCacheKeyParts,
@@ -16,7 +16,7 @@ import {
  *
  * Two modes:
  *  - `?options=true`  → per-program selector metadata (name, isTiered, levels,
- *    tier names, specialisation names, `anchored`) so the page can build the target selector
+ *    tier names, specialisation names, `targetCountries`) so the page can build the target selector
  *    without one detail fetch per program, plus `countrySets` — the names a
  *    "By Country Set" scope can pick from: the scoped company's own sets, empty
  *    unless the scope is exactly one company (sets are per-company tenant data).
@@ -69,8 +69,10 @@ export async function GET(request: NextRequest) {
       // "-v2": the value became `{programs, countrySets}` (it was the bare
       // programs array), so no entry of the old shape can ever be served.
       // "-v3": the value now carries company-scoped set names.
-      // "-v4": each program now carries `anchored` (anchored programs).
-      `compliance-planning-options-v4|${scopeKey(companyFilter)}`,
+      // "-v4": each program carried a per-program field since retired.
+      // "-v5": that field became `targetCountries: boolean`, and `levels` may
+      // include TargetCountries.
+      `compliance-planning-options-v5|${scopeKey(companyFilter)}`,
       async () => {
         const [programs, countrySets] = await Promise.all([buildPlanningOptions(), listCountrySetNames(companyFilter)]);
         return { programs, countrySets };
@@ -89,10 +91,13 @@ export async function GET(request: NextRequest) {
   // A Country Set name resolves only within one company (sets are per-company
   // tenant data), so a countrySet plan over any other scope is refused rather
   // than planned against an empty area. The page always sends one company.
-  // The anchored scope is the same rule twice over: its target countries are a
-  // Country Set, and the partner's minimum and configured set are per company.
-  if ((req.level === "countrySet" || req.level === "anchored") && singleCompanyId(companyFilter) === null) {
-    return NextResponse.json({ error: COUNTRY_SET_SCOPE_ERROR }, { status: 400 });
+  // A theatre plan of a program with TargetCountries rows is the same rule:
+  // its target countries are the partner's Country Set, and the partner's
+  // minimum and configured set are per company. The rule lives in
+  // `planRequiresSingleCompany`, shared with the public route.
+  const scopeError = singleCompanyId(companyFilter) === null ? await planRequiresSingleCompany(req) : null;
+  if (scopeError !== null) {
+    return NextResponse.json({ error: scopeError }, { status: 400 });
   }
 
   if (req.targets.length === 0) {

@@ -15,8 +15,8 @@ import {
  *
  * No projection is applied, and that is a claim worth stating rather than
  * leaving a reviewer to infer from its absence: the payload is
- * `{snapshots, programs, specialisations, scopeLabel, unsupportedPrograms}`
- * (the last naming anchored programs, which this report excludes), and a snapshot row is
+ * `{snapshots, programs, specialisations, scopeLabel, unsupportedPrograms, partialPrograms}`
+ * (the last naming programs with target countries, which this report excludes), and a snapshot row is
  * (program, specialisation, month, attained, required, pct, projected) — names
  * of programs, specialisations and months, and counts. No email, no person name,
  * at any depth.
@@ -43,7 +43,7 @@ export async function GET(request: NextRequest) {
   // Fail closed: a key with no accessible companies gets the empty payload,
   // matching the internal route's out-of-scope response.
   if (ctx.companyIds.length === 0) {
-    return NextResponse.json({ snapshots: [], programs: [], specialisations: [], scopeLabel: TREND_DEFAULT_SCOPE_LABEL, unsupportedPrograms: [] });
+    return NextResponse.json({ snapshots: [], programs: [], specialisations: [], scopeLabel: TREND_DEFAULT_SCOPE_LABEL, unsupportedPrograms: [], partialPrograms: [] });
   }
 
   const body = await cachedReport(

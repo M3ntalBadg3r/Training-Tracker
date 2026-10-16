@@ -1,6 +1,5 @@
 import prisma from "@/lib/prisma";
 import { REQ_LEVELS } from "@/lib/program-levels";
-import { isAnchoredProgram } from "@/lib/program-anchor";
 
 /** Per-program metadata for the Compliance Planning target selector. */
 export interface PlanningOption {
@@ -8,7 +7,8 @@ export interface PlanningOption {
   isTiered: boolean;
   /**
    * The requirement levels this program's rows are authored at — any of
-   * Country, Region, CountrySet, Theatre and Global, in that order. A planning
+   * Country, Region, CountrySet, TargetCountries, Theatre and Global, in that
+   * order (`REQ_LEVELS`). A planning
    * scope is only worth offering when some program carries its level
    * (`scopeLevelOffered`), because each scope plans against its own level's
    * rows and nothing else.
@@ -17,14 +17,12 @@ export interface PlanningOption {
   tiers: string[];
   specialisations: string[];
   /**
-   * Set when the program is anchored (`Program.anchorTheatre`): it is planned
-   * only at the anchored scope ("Target countries"), over its Theatre rows in
-   * this theatre and its CountrySet rows in the partner's target countries —
-   * and never at any other scope. `null` for every standard program.
-   * Registry data like the rest of this record: the theatre is a property of
-   * the program, not of any company.
+   * The program has TargetCountries rows, so a theatre plan of it also counts
+   * those rows over the partner's target countries in the theatre (and needs
+   * exactly one company). Registry data like the rest of this record — derived
+   * from `levels`, carried separately so a caller need not know the level name.
    */
-  anchored: { anchorTheatre: string } | null;
+  hasTargetCountries: boolean;
 }
 
 /**
@@ -42,7 +40,7 @@ export interface PlanningOption {
  */
 export async function buildPlanningOptions(): Promise<PlanningOption[]> {
   const [programs, programData, tiers] = await Promise.all([
-    prisma.program.findMany({ select: { name: true, isTiered: true, anchorTheatre: true } }),
+    prisma.program.findMany({ select: { name: true, isTiered: true } }),
     prisma.programData.findMany({
       select: { programName: true, level: true, specialisation: { select: { name: true } } },
     }),
@@ -50,9 +48,6 @@ export async function buildPlanningOptions(): Promise<PlanningOption[]> {
   ]);
 
   const isTieredByName = new Map(programs.map((p) => [p.name, p.isTiered]));
-  const anchorByName = new Map(
-    programs.filter((p) => isAnchoredProgram(p)).map((p) => [p.name, p.anchorTheatre!.trim()]),
-  );
   const names = new Set<string>([
     ...programs.filter((p) => p.isTiered).map((p) => p.name),
     ...programData.map((d) => d.programName),
@@ -73,7 +68,7 @@ export async function buildPlanningOptions(): Promise<PlanningOption[]> {
       levels,
       tiers: tierNames,
       specialisations,
-      anchored: anchorByName.has(name) ? { anchorTheatre: anchorByName.get(name)! } : null,
+      hasTargetCountries: present.has("TargetCountries"),
     });
   }
   return result;

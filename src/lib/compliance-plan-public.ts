@@ -3,11 +3,10 @@ import type {
   PlanBlocker,
   PlanRequirement,
   PlanRiskImpact,
-  PlanSkippedTarget,
   PlanSpecialisation,
   PlanTargetResult,
 } from "@/lib/compliance-plan";
-import type { AnchoredMeta } from "@/lib/program-levels";
+import type { CountrySetMinimumMeta, TargetCountriesMeta } from "@/lib/program-levels";
 
 /**
  * The aggregates-only view of a compliance plan, for the read-only public API.
@@ -54,20 +53,26 @@ import type { AnchoredMeta } from "@/lib/program-levels";
  * (`PlanCandidateClose.scopeLabel` becomes a country too, but closes live only
  * under `candidates`/`eligible`, which never reach this surface.)
  *
- * Re-audited again for anchored programs and program-wide requirements:
- * `PlanTargetResult` gained `anchored` (an `AnchoredMeta`: the anchor theatre,
- * the target Country Set's name, the in-theatre and out-of-theatre country
- * names, the minimum, its source and whether it is met), `blockers`
- * (`PlanBlocker`: a kind, two integers and a source enum) and
- * `tierPlan.gateShortfall` (an integer); `PlanSpecialisation` gained `kind`
- * (an enum); `PlanRequirement` and `PlanRiskImpact` gained `population` (an
- * enum). Counts, geography names and a set name of the key's own single
- * company (the anchored scope is refused for any other scope) — no person
- * identifier. A target's `headline` may now lead with `blockerText`, which
- * interpolates only integers. The by-reference pass-through stands.
+ * Re-audited for program-wide requirements: `PlanTargetResult` gained
+ * `blockers` and `tierPlan.gateShortfall` (an integer); `PlanSpecialisation`
+ * gained `kind` (an enum).
  *
- * `skippedTargets` (`PlanSkippedTarget`: a program name and a reason enum)
- * was added for the same feature and passes through by reference too.
+ * Re-audited again for target countries and per-view minimums, which replaced
+ * an earlier single-view mode (its target-level meta and its `skippedTargets`
+ * list are gone — every program is now plannable at every scope, so nothing is
+ * ever skipped). `PlanTargetResult` now carries `targetCountries` (a
+ * `TargetCountriesMeta`: the viewed theatre, the target Country Set's name,
+ * the in-theatre and out-of-theatre country names, the minimum, its source and
+ * whether it is met) on a theatre plan of a program with TargetCountries rows,
+ * and `countrySetMinimum` (a `CountrySetMinimumMeta`: the set's name, its
+ * member country names, the minimum, its source and whether it is met) on a
+ * Country Set plan. `PlanBlocker` is a kind, a view enum, a theatre or set
+ * name, two integers and a source enum. `PlanRequirement` and `PlanRiskImpact`
+ * carry `population` (an enum). Counts, geography names and set names of the
+ * key's own single company (both views are refused for any other scope) — no
+ * person identifier. A target's `headline` may lead with `blockerText`, which
+ * interpolates only integers and that theatre or set name. The by-reference
+ * pass-through stands.
  *
  * Because those nested types pass through by reference, a field added to any
  * of them would reach partners unreviewed. The second block of assertions at
@@ -80,7 +85,6 @@ export interface PublicCompliancePlan {
   planForWindow: boolean;
   targets: PlanTargetResult[];
   riskImpacts: PlanRiskImpact[];
-  skippedTargets: PlanSkippedTarget[];
   totals: {
     peopleMoves: number;
     easyWins: number;
@@ -101,7 +105,6 @@ export function toPublicCompliancePlan(plan: CompliancePlanResult): PublicCompli
     planForWindow: plan.planForWindow,
     targets: plan.targets,
     riskImpacts: plan.riskImpacts,
-    skippedTargets: plan.skippedTargets,
     totals: {
       peopleMoves: plan.totals.peopleMoves,
       easyWins: plan.totals.easyWins,
@@ -137,7 +140,6 @@ type PublicPlanField =
   | "planForWindow"
   | "targets"
   | "riskImpacts"
-  | "skippedTargets"
   | "totals";
 
 /** Classified as person-level and deliberately never sent to the public API. */
@@ -177,7 +179,8 @@ void _publicShapeIsCorrect;
 // ever does, to project that type here instead of passing it through).
 type AuditedTargetField =
   | "program" | "mode" | "isTiered" | "tierName" | "headline" | "tierPlan"
-  | "specialisations" | "peopleMoves" | "easyWins" | "netNew" | "anchored" | "blockers";
+  | "specialisations" | "peopleMoves" | "easyWins" | "netNew" | "targetCountries"
+  | "countrySetMinimum" | "blockers";
 type AuditedSpecialisationField =
   | "name" | "achieved" | "projectedAchieved" | "cost" | "easyWins" | "requirements"
   | "chosen" | "alternative" | "marginalCost" | "kind";
@@ -191,11 +194,12 @@ type AuditedRiskImpactField =
   | "population" | "required" | "attained" | "projectedAttained" | "onPath";
 type AuditedTierPlanField =
   | "specialisationsRequired" | "alreadyAchieved" | "needed" | "deliveryCertShortfall" | "gateShortfall";
-type AuditedBlockerField = "kind" | "required" | "counted" | "source";
-type AuditedSkippedTargetField = "program" | "reason";
-type AuditedAnchoredMetaField =
-  | "anchorTheatre" | "countrySet" | "targetCountries" | "outOfTheatreCountries"
+type AuditedBlockerField = "kind" | "view" | "areaName" | "required" | "counted" | "source";
+type AuditedTargetCountriesMetaField =
+  | "theatre" | "countrySet" | "targetCountries" | "outOfTheatreCountries"
   | "minimumCountries" | "minimumCountriesSource" | "minimumMet";
+type AuditedCountrySetMinimumMetaField =
+  | "countrySet" | "countries" | "minimumCountries" | "minimumCountriesSource" | "minimumMet";
 
 /** `true` only when `T`'s keys are exactly `K` — both directions, like the pair above. */
 type KeysExactly<T, K extends PropertyKey> =
@@ -208,7 +212,7 @@ const _nestedFieldsAreAudited: [
   KeysExactly<PlanRiskImpact, AuditedRiskImpactField>,
   KeysExactly<NonNullable<PlanTargetResult["tierPlan"]>, AuditedTierPlanField>,
   KeysExactly<PlanBlocker, AuditedBlockerField>,
-  KeysExactly<PlanSkippedTarget, AuditedSkippedTargetField>,
-  KeysExactly<AnchoredMeta, AuditedAnchoredMetaField>,
+  KeysExactly<TargetCountriesMeta, AuditedTargetCountriesMetaField>,
+  KeysExactly<CountrySetMinimumMeta, AuditedCountrySetMinimumMetaField>,
 ] = [true, true, true, true, true, true, true, true];
 void _nestedFieldsAreAudited;

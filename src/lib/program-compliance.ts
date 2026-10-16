@@ -618,8 +618,9 @@ export interface TierLadderInput {
   gateReqIds?: number[];
   /**
    * A fail-closed precondition that lies outside the requirement rows — the
-   * anchored-program minimum-countries gate (a partner naming fewer target
-   * countries than its minimum). When true no tier is reached, whatever the
+   * minimum-countries gate of a By Country Set view, or of a By Theatre view
+   * with target countries (a partner's set holding fewer countries than its
+   * minimum). When true no tier is reached, whatever the
    * counts say. Specialisation achievement is deliberately NOT affected: the
    * minimum is about the partner's footprint, not about who holds what.
    */
