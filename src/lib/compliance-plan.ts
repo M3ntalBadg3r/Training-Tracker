@@ -67,17 +67,22 @@ import {
   type ComplianceScope,
 } from "@/lib/program-compliance";
 import { countriesInCountrySet, singleCompanyId } from "@/lib/country-sets";
-import { isAnchoredProgram, resolveAnchoredArea } from "@/lib/program-anchor";
 import {
-  ANCHORED_SCOPE,
+  resolveCountrySetMinimum,
+  resolveTargetArea,
+  type ProgramTermsRow,
+} from "@/lib/program-target-countries";
+import {
   isProgramWideRow,
   normaliseAggregation,
   type Aggregation,
-  type AnchoredMeta,
-  type AnchoredPopulation,
+  type CountrySetMinimumMeta,
   type MinimumCountriesSource,
-  type ProgramViewLevel,
+  type MinimumView,
+  type PopulationKind,
   type ReqLevel,
+  type ScopeLevel,
+  type TargetCountriesMeta,
 } from "@/lib/program-levels";
 
 // ─── Public types ────────────────────────────────────────────────────────────
@@ -97,19 +102,21 @@ export interface PlanTarget {
 export interface CompliancePlanInput {
   targets: PlanTarget[];
   /**
-   * The selected plan scope. Each standard scope plans against its own level's
-   * rows only. `"anchored"` plans each ANCHORED program over its two
-   * populations at once (Theatre rows over its anchor theatre, CountrySet rows
-   * over the partner's target countries) and is the only scope an anchored
-   * program is planned at — see `resolvePlanArea`.
+   * The selected plan scope. Each scope plans against its own levels' rows
+   * only (`SCOPE_REQ_LEVELS`). Every scope reads one level except `"theatre"`,
+   * which — for a program with TargetCountries rows — also counts those rows
+   * over the partner's target countries inside the theatre (see
+   * `resolveTheatreTargetPlanArea`).
    */
-  level: ProgramViewLevel;
+  level: ScopeLevel;
   country: string;
   region: string;
   /**
-   * Country Set name, used when `level` is "countrySet" — and when it is
-   * "anchored", where a blank value means "each program's configured target
-   * set for this partner" (`ProgramCompanySetting.targetCountrySetId`).
+   * A Country Set name. At `level` "countrySet" it is the set planned over;
+   * blank means each program's partner Country Set-view set
+   * (`ProgramCompanySetting.countrySetId`). At `level` "theatre" it names the
+   * target set for programs with TargetCountries rows; blank means each
+   * program's partner Theatre-view set (`ProgramCompanySetting.targetCountrySetId`).
    */
   countrySet: string;
   theatre: string;
@@ -151,12 +158,13 @@ export interface PlanRequirement {
   /** The population label this instance is counted over, e.g. "UK" / "Global". */
   scopeLabel: string;
   /**
-   * Anchored plans only (absent otherwise, so a standard plan's payload is
-   * unchanged): which of the program's two populations this row is counted
-   * over — `"theatre"` (the anchor theatre) or `"targetCountries"` (the
-   * partner's target countries, or one of them for an "each country" row).
+   * Theatre plans of a program with TargetCountries rows only (absent
+   * otherwise, so every other plan's payload is unchanged): which of the
+   * program's two populations this row is counted over — `"theatre"` (the
+   * viewed theatre) or `"targetCountries"` (the partner's target countries in
+   * it, or one of them for an "each country" row).
    */
-  population?: AnchoredPopulation;
+  population?: PopulationKind;
   cert: string;
   required: number;
   attained: number;
@@ -239,14 +247,22 @@ export const PROGRAM_WIDE_BLOCK_NAME = "Required at every level";
  * Something that blocks a target and that certifying people cannot fix. Never
  * costed into "People to certify" — it is reported beside the plan instead.
  *
- * `minimumCountries`: an anchored program's partner names fewer target
- * countries (inside the anchor theatre) than its minimum, so no tier can be
- * reached until more are added to the Country Set. `required` is the minimum,
- * `counted` the target countries that count toward it, and `source` whose rule
- * the minimum is (`partner` setting or program `default`).
+ * `minimumCountries`: fewer countries than the program's minimum for the
+ * view, so no tier can be reached until more are added to a Country Set.
+ *  - `view: "theatre"` — a program with TargetCountries rows, planned at a
+ *    theatre: the partner names fewer target countries inside that theatre
+ *    (`areaName`) than its Theatre-view minimum.
+ *  - `view: "countrySet"` — planned at a Country Set: the set (`areaName`, or
+ *    null when the partner has none configured) holds fewer countries than the
+ *    program's Country Set-view minimum.
+ * `required` is the minimum, `counted` the countries that count toward it, and
+ * `source` whose rule the minimum is (`partner` setting or program `default`).
  */
 export interface PlanBlocker {
   kind: "minimumCountries";
+  view: MinimumView;
+  /** The theatre (theatre view) or the Country Set (country set view); null = no set configured. */
+  areaName: string | null;
   required: number;
   counted: number;
   source: MinimumCountriesSource;
@@ -275,13 +291,20 @@ export interface PlanTargetResult {
   easyWins: number;
   netNew: number;
   /**
-   * Anchored plans only: the two populations this target was planned over
-   * (anchor theatre, the target Country Set and its in-theatre countries, the
-   * members left out because they lie outside the theatre) and the partner's
-   * minimum. Aggregates and geography names — no person identifier.
+   * Theatre plans of a program with TargetCountries rows only: the target
+   * countries this target was planned over (the theatre, the target Country
+   * Set and its in-theatre countries, the members left out because they lie
+   * outside the theatre) and the partner's Theatre-view minimum. Aggregates
+   * and geography names — no person identifier.
    */
-  anchored?: AnchoredMeta;
-  /** Anchored plans only, and only when non-empty. See `PlanBlocker`. */
+  targetCountries?: TargetCountriesMeta;
+  /**
+   * Country Set plans only: the set this target was planned over (the one
+   * requested, or the partner's configured Country Set-view set when none
+   * was), its members and the program's Country Set-view minimum.
+   */
+  countrySetMinimum?: CountrySetMinimumMeta;
+  /** Only when non-empty. See `PlanBlocker`. */
   blockers?: PlanBlocker[];
 }
 
@@ -323,8 +346,8 @@ export interface PlanRiskImpact {
   /** See `PlanRequirement.country` — set for one country of an "each country" requirement. */
   country: string | null;
   scopeLabel: string;
-  /** See `PlanRequirement.population` — anchored plans only. */
-  population?: AnchoredPopulation;
+  /** See `PlanRequirement.population` — theatre plans of a targets program only. */
+  population?: PopulationKind;
   required: number;
   attained: number;
   projectedAttained: number;
@@ -359,19 +382,6 @@ export interface PlanRenewalRow {
   onPath: boolean;
 }
 
-/**
- * A requested target the plan left out because it is on the wrong side of the
- * anchored scope: an anchored program asked for at a standard scope
- * (`anchoredOnly` — it is planned only under Target countries), or a standard
- * program asked for at `level=anchored` (`notAnchored`). Reported rather than
- * dropped silently, so a plan that omits a program says why instead of reading
- * as "nothing to do" for it. Program name and an enum only — no person data.
- */
-export interface PlanSkippedTarget {
-  program: string;
-  reason: "anchoredOnly" | "notAnchored";
-}
-
 export interface CompliancePlanResult {
   scopeLabel: string;
   renewalWindowMonths: number;
@@ -400,8 +410,6 @@ export interface CompliancePlanResult {
    * same `onPath` marker, so the two always agree.
    */
   riskImpacts: PlanRiskImpact[];
-  /** Targets left out for being on the wrong side of the anchored scope. */
-  skippedTargets: PlanSkippedTarget[];
   totals: {
     peopleMoves: number;
     easyWins: number;
@@ -455,8 +463,8 @@ interface ReqInstance {
   /**
    * The population this instance is counted over: `global`, `theatre:X`,
    * `country:X`, `region:X`, `countrySet:<companyId>:X` (a set is per-company)
-   * or, for an anchored program's target countries,
-   * `anchoredTargets:<companyId>:<set>`.
+   * or, for a program's target countries in a theatre,
+   * `targetCountries:<companyId>:<theatre>:<set>`.
    * Used instead of `scopeLabel` in ids and group keys, because a country set
    * may be named like a country and the two must not collide. A per-country instance carries `country:X`.
    */
@@ -465,17 +473,17 @@ interface ReqInstance {
    * The plan AREA this instance belongs to (`PlanArea.areaKey`), part of
    * `certGroupKey`. Every population inside one area is NESTED: a standard
    * scope has exactly one population (plus the per-country slices of it), and
-   * an anchored program's area is the anchor theatre ⊇ its target countries ⊇
-   * each single target country. `groupCost` and `sharesPopulation` rely on
-   * that nesting — see `certGroupKey`. Two areas whose populations are not
-   * nested in each other (two programs anchored to different theatres, or to
+   * a theatre area of a program with TargetCountries rows is the theatre ⊇ its
+   * target countries ⊇ each single target country. `groupCost` and
+   * `sharesPopulation` rely on that nesting — see `certGroupKey`. Two areas
+   * whose populations are not nested in each other (two programs with
    * different target sets) carry different keys and are never deduped against
    * each other, which can over-count but never under-count.
    */
   areaKey: string;
   scopeLabel: string;
-  /** Anchored plans only — see `PlanRequirement.population`. */
-  population?: AnchoredPopulation;
+  /** Theatre plans of a targets program only — see `PlanRequirement.population`. */
+  population?: PopulationKind;
   /** A tiered program's program-wide requirement (neither specialisation nor tier). */
   isGate: boolean;
   /** Identity of the qualifying cert-set: two instances sharing it share moves. */
@@ -722,42 +730,48 @@ interface GeoPlan {
    * carry that count mode (`normaliseAggregation`).
    */
   countries: string[] | null;
-  /** Anchored areas only: which of the program's two populations this is. */
-  population?: AnchoredPopulation;
+  /** Theatre areas of a targets program only: which of the two populations this is. */
+  population?: PopulationKind;
 }
 
 /**
  * Everything a target is planned over: one population per requirement level in
- * play, the key that scopes the cost dedup, and — for an anchored program — the
- * anchored header the page and the blocker read.
+ * play, the key that scopes the cost dedup, and the per-view header (target
+ * countries, or the Country Set's minimum) the page and the blocker read.
  *
- * A standard scope is ONE population (`resolveGeoPlan`), shared by every
- * target. An anchored scope is resolved PER PROGRAM, because each program may
- * be anchored to its own theatre and the partner may have configured a
- * different target set for each.
+ * Most scopes are ONE population (`resolveGeoPlan`), shared by every target.
+ * Two cases are resolved PER PROGRAM instead, because the partner's terms are
+ * per program: a theatre plan of a program with TargetCountries rows (each
+ * program may name its own target set), and a Country Set plan with no set
+ * named (each program's configured Country Set-view set).
  */
 interface PlanArea {
   /** See `ReqInstance.areaKey`. */
   areaKey: string;
   scopeLabel: string;
   populations: GeoPlan[];
-  anchored: AnchoredMeta | null;
+  targetCountries: TargetCountriesMeta | null;
 }
 
 function standardArea(geo: GeoPlan): PlanArea {
-  return { areaKey: geo.populationKey, scopeLabel: geo.scopeLabel, populations: [geo], anchored: null };
+  return { areaKey: geo.populationKey, scopeLabel: geo.scopeLabel, populations: [geo], targetCountries: null };
 }
 
+/** Prefix of every theatre area that carries a target-countries population. */
+const THEATRE_TARGETS_AREA_PREFIX = "theatreTargets:";
+
 /**
- * The anchored area for one program and one company: Theatre rows over the
- * anchor theatre, CountrySet rows over the partner's target countries (the
- * set's members inside the theatre, resolved by `resolveAnchoredArea`, which is
- * the one resolver the dashboard and the public API use as well).
+ * The theatre area for one program with TargetCountries rows and one company:
+ * Theatre rows over the viewed theatre, TargetCountries rows over the
+ * partner's target countries (the target set's members inside the theatre,
+ * resolved by `resolveTargetArea`, the one resolver the dashboard and the
+ * public API use as well). The target set is the requested `countrySet`, or —
+ * blank — the partner's configured Theatre-view set.
  *
- * `null` when the program is not anchored or the scope is not exactly one
- * company — the routes 400 the latter before ever reaching here, so for a
- * caller that skips that check the target simply plans nothing rather than
- * resolving a set name across tenants.
+ * When the scope is not exactly one company (the routes 400 that before ever
+ * reaching here) the target population is EMPTY rather than the target being
+ * dropped: its TargetCountries rows then fail closed — an "each country" row
+ * as its unmet placeholder, a pooled row over nobody — instead of vanishing.
  *
  * The area key names BOTH populations. Inside it they are nested (the target
  * countries lie inside the theatre by construction — members outside it are
@@ -769,28 +783,48 @@ function standardArea(geo: GeoPlan): PlanArea {
  * different target sets over the same theatre: two DISJOINT target-wide
  * populations would share a group and be charged `max` instead of a sum.
  */
-async function resolveAnchoredPlanArea(
-  program: { id: number; name: string; anchorTheatre: string | null; defaultMinimumCountries: number | null },
+async function resolveTheatreTargetPlanArea(
+  program: ProgramTermsRow,
+  theatre: string,
   input: CompliancePlanInput,
-): Promise<PlanArea | null> {
-  const area = await resolveAnchoredArea({ program, countrySet: input.countrySet, companyIds: input.companyIds });
-  if ("error" in area) return null;
+): Promise<PlanArea> {
+  const area = await resolveTargetArea({ program, theatre, countrySet: input.countrySet, companyIds: input.companyIds });
+  const theatrePopulation: GeoPlan = {
+    reqLevel: "Theatre",
+    scope: "error" in area ? { theatre, companyIds: input.companyIds } : area.theatreScope,
+    scopeLabel: theatre,
+    populationKey: "error" in area ? `theatre:${theatre}` : area.theatrePopulationKey,
+    countries: null,
+    population: "theatre",
+  };
+  const targetLabel = `Target countries in ${theatre}`;
+  if ("error" in area) {
+    return {
+      areaKey: `${THEATRE_TARGETS_AREA_PREFIX}theatre:${theatre}|targetCountries:none`,
+      scopeLabel: theatre,
+      populations: [
+        theatrePopulation,
+        {
+          reqLevel: "TargetCountries",
+          // `in: []` — nobody, never the world.
+          scope: { countries: [], companyIds: input.companyIds },
+          scopeLabel: targetLabel,
+          populationKey: "targetCountries:none",
+          countries: [],
+          population: "targetCountries",
+        },
+      ],
+      targetCountries: null,
+    };
+  }
   const { meta } = area;
-  const targetLabel = meta.countrySet ?? "Target countries";
   return {
-    areaKey: `anchored:${area.theatrePopulationKey}|${area.targetPopulationKey}`,
-    scopeLabel: meta.countrySet ? `${meta.countrySet} within ${meta.anchorTheatre}` : `${meta.anchorTheatre} (no target countries)`,
+    areaKey: `${THEATRE_TARGETS_AREA_PREFIX}${area.theatrePopulationKey}|${area.targetPopulationKey}`,
+    scopeLabel: theatre,
     populations: [
+      theatrePopulation,
       {
-        reqLevel: "Theatre",
-        scope: area.theatreScope,
-        scopeLabel: meta.anchorTheatre,
-        populationKey: area.theatrePopulationKey,
-        countries: null,
-        population: "theatre",
-      },
-      {
-        reqLevel: "CountrySet",
+        reqLevel: "TargetCountries",
         scope: area.targetScope,
         scopeLabel: targetLabel,
         populationKey: area.targetPopulationKey,
@@ -798,13 +832,36 @@ async function resolveAnchoredPlanArea(
         population: "targetCountries",
       },
     ],
-    anchored: meta,
+    targetCountries: meta,
   };
 }
 
-async function resolveGeoPlan(
-  input: CompliancePlanInput & { level: Exclude<ProgramViewLevel, typeof ANCHORED_SCOPE> },
-): Promise<GeoPlan> {
+/** The `populationKey` of a Country Set population — one definition for the
+ *  shared and the per-program area, so a blank set that resolves to "Set 1"
+ *  and an explicit "Set 1" are the same population and dedup together. */
+function countrySetPopulationKey(companyId: number | null, countrySet: string): string {
+  return `countrySet:${companyId ?? "none"}:${countrySet}`;
+}
+
+/**
+ * The Country Set area for one program when the request names no set: the
+ * partner's configured Country Set-view set (`resolveCountrySetMinimum`). With
+ * no set configured the area has no countries, so the plan fails closed over
+ * it. Also returns the minimum meta the blocker reads.
+ */
+function countrySetPlanArea(companyId: number, meta: CountrySetMinimumMeta, companyIds: number[] | null): PlanArea {
+  const countries = [...meta.countries].sort((a, b) => a.localeCompare(b));
+  return standardArea({
+    reqLevel: "CountrySet",
+    // `in: []` for an empty or unconfigured set — nobody, never the world.
+    scope: { countries, companyIds },
+    scopeLabel: meta.countrySet ?? "the partner's Country Set (none configured)",
+    populationKey: countrySetPopulationKey(companyId, meta.countrySet ?? ""),
+    countries,
+  });
+}
+
+async function resolveGeoPlan(input: CompliancePlanInput): Promise<GeoPlan> {
   const { level, country, region, countrySet, theatre, companyIds } = input;
 
   if (level === "country" && country) {
@@ -828,7 +885,7 @@ async function resolveGeoPlan(
       countries,
     };
   }
-  if (level === "countrySet" && countrySet) {
+  if (level === "countrySet") {
     // A Country Set is per-company tenant data: its name resolves only within
     // ONE company, and two companies may each own a same-named set over
     // different countries. The routes refuse a countrySet plan whose scope is
@@ -838,13 +895,17 @@ async function resolveGeoPlan(
     // sets. The company is in `populationKey` for the same reason the set name
     // is: "Set 1" of company 3 and "Set 1" of company 7 are different
     // populations and must never share a group or instance id.
+    //
+    // A BLANK set means each program's configured set, resolved per program in
+    // the orchestrator; this shared area is then only the fail-closed fallback
+    // (an empty area — never Global, which a blank value used to fall to).
     const companyId = singleCompanyId(companyIds);
-    const countries = await countriesInCountrySet(countrySet, companyIds);
+    const countries = countrySet ? await countriesInCountrySet(countrySet, companyIds) : [];
     return {
       reqLevel: "CountrySet",
       scope: { countries, companyIds },
-      scopeLabel: countrySet,
-      populationKey: `countrySet:${companyId ?? "none"}:${countrySet}`,
+      scopeLabel: countrySet || "Country Set",
+      populationKey: countrySetPopulationKey(companyId, countrySet),
       countries,
     };
   }
@@ -870,7 +931,7 @@ interface RequirementRow {
   tierId: number | null;
   purpose: string;
   level: ReqLevel;
-  /** Normalised: "eachCountry" only on a Region/CountrySet row. */
+  /** Normalised: "eachCountry" only on a Region/CountrySet/TargetCountries row. */
   aggregation: Aggregation;
   quantityRequired: number;
   /** Qualifying cert trainingTitles: primary + alternatives. */
@@ -1062,9 +1123,10 @@ function makeInstance(
  *  candidate pools. Only requirements authored at a level the area has a
  *  population for are in play (mirroring the program dashboards) — others
  *  return no instance. A standard area has one population, so that is "the
- *  selected scope's own level"; an anchored area has two, so each row is
- *  counted over its OWN population (Theatre rows over the anchor theatre,
- *  CountrySet rows over the target countries). A pooled ("total") row gives one
+ *  selected scope's own level"; a theatre area of a program with
+ *  TargetCountries rows has two, so each row is counted over its OWN
+ *  population (Theatre rows over the theatre, TargetCountries rows over the
+ *  target countries). A pooled ("total") row gives one
  *  instance; an "each country" row gives one per country
  *  (`buildEachCountryInstances`). Pools are only computed when there's a gap. */
 async function buildInstances(
@@ -1418,16 +1480,17 @@ export function allocateCandidates(instances: ReqInstance[]): AllocationResult {
  *
  * **The invariant everything below rests on: the populations inside one area
  * are nested.** A standard scope has one population, so every scope-wide
- * instance of a group shares it. An anchored area has a CHAIN — anchor theatre
- * ⊇ target countries ⊇ each target country — so its scope-wide instances can
- * sit over two different populations (a Theatre "total" row and a CountrySet
- * "total" row on one cert), but one is always inside the other, and every
+ * instance of a group shares it. A theatre area of a program with
+ * TargetCountries rows has a CHAIN — the theatre ⊇ target countries ⊇ each
+ * target country — so its scope-wide instances can sit over two different
+ * populations (a Theatre "total" row and a TargetCountries "total" row on one
+ * cert), but one is always inside the other, and every
  * per-country instance is inside both. That is what makes the `max` in
  * `groupCost` a sound charge for the scope-wide side: one cohort of N new
  * holders placed in the INNERMOST population counts toward every scope-wide
  * instance of the group, so the largest gap is enough. If an area ever held
  * two populations that are NOT nested (two disjoint target sets), `max` would
- * under-count; `resolveAnchoredPlanArea` keys the area on both populations so
+ * under-count; `resolveTheatreTargetPlanArea` keys the area on both populations so
  * that can only happen by changing it.
  */
 function certGroupKey(inst: ReqInstance): string {
@@ -1443,11 +1506,10 @@ function certGroupKey(inst: ReqInstance): string {
  * Everything else in an area shares by the nesting invariant on `certGroupKey`:
  * the same population trivially; a scope-wide instance and a per-country one
  * because the country is inside every scope-wide population of the area; and
- * (anchored areas only) two scope-wide instances over different populations,
- * because a person certified in a target country is inside the anchor theatre
- * too. For a standard scope that last case never arises — every scope-wide
- * instance has the one population — so this reads exactly as it did before
- * anchored areas existed.
+ * (theatre areas with target countries only) two scope-wide instances over
+ * different populations, because a person certified in a target country is
+ * inside the theatre too. For a single-population area that last case never
+ * arises — every scope-wide instance has the one population.
  */
 function sharesPopulation(a: ReqInstance, b: ReqInstance): boolean {
   if (certGroupKey(a) !== certGroupKey(b)) return false;
@@ -1461,7 +1523,8 @@ function sharesPopulation(a: ReqInstance, b: ReqInstance): boolean {
  *
  * Per `certGroupKey`, the cost is `max(P, Σ_c g_c)`:
  *  - `P` is the largest value among the group's scope-wide instances. They share
- *    one population (or, in an anchored area, nested ones — see `certGroupKey`),
+ *    one population (or, in a theatre area with target countries, nested ones —
+ *    see `certGroupKey`),
  *    so a single cohort of N new holders placed in the innermost satisfies every
  *    one whose gap is ≤ N — three specialisations each needing 2 holders of the
  *    same cert cost 2 people, not 6.
@@ -1471,8 +1534,8 @@ function sharesPopulation(a: ReqInstance, b: ReqInstance): boolean {
  *  - The max, not the sum, of the two sides because every per-country holder is
  *    also inside the area: people certified to close the countries' gaps count
  *    toward the area-wide total as well. "4 × Cert A in each country" beside
- *    "2 × Cert A total" is never charged twice — and in an anchored area "4 in
- *    each target country" beside "15 across the anchor theatre" is
+ *    "2 × Cert A total" is never charged twice — and in a theatre area "4 in
+ *    each target country" beside "15 across the theatre" is
  *    `max(15 − have, Σ country gaps)`, never their sum.
  *
  * With no per-country instances this is exactly the old max-per-group rule, so a
@@ -1554,6 +1617,31 @@ interface TierInfo {
 
 // ─── Orchestrator ────────────────────────────────────────────────────────────
 
+/**
+ * Whether a plan request can only be answered for exactly ONE company — the
+ * rule both planning routes enforce (a 400 with `COUNTRY_SET_SCOPE_ERROR`),
+ * kept here so the two surfaces cannot disagree about it:
+ *  - a Country Set plan always: a set name, and each partner's configured set
+ *    and minimum, resolve only within one company;
+ *  - a theatre plan only when some requested program has TargetCountries rows,
+ *    whose target countries are that partner's Country Set. A theatre plan of
+ *    programs without them keeps answering any scope, as it always has.
+ * Mirrors the engine: target countries apply only when a theatre is named.
+ */
+export async function planRequiresSingleCompany(req: {
+  level: ScopeLevel;
+  theatre: string;
+  targets: PlanTarget[];
+}): Promise<boolean> {
+  if (req.level === "countrySet") return true;
+  if (req.level !== "theatre" || !req.theatre.trim() || req.targets.length === 0) return false;
+  const row = await prisma.programData.findFirst({
+    where: { programName: { in: [...new Set(req.targets.map((t) => t.program))] }, level: "TargetCountries" },
+    select: { id: true },
+  });
+  return row !== null;
+}
+
 export async function computeCompliancePlan(input: CompliancePlanInput): Promise<CompliancePlanResult> {
   const now = new Date();
   const horizon = input.renewalWindowMonths > 0 ? addMonths(now, input.renewalWindowMonths) : null;
@@ -1561,10 +1649,12 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
   const planForWindow = horizon !== null && input.planForWindow;
 
   const idx = await buildCatalogueIndex();
-  // A standard scope is one population shared by every target; an anchored
-  // scope is resolved per program inside the loop (`resolveAnchoredPlanArea`).
-  const anchoredLevel = input.level === ANCHORED_SCOPE;
-  const sharedArea = input.level === ANCHORED_SCOPE ? null : standardArea(await resolveGeoPlan({ ...input, level: input.level }));
+  // Every scope has one population shared by every target, except where the
+  // partner's per-program terms decide the area: a theatre plan of a program
+  // with TargetCountries rows, and a Country Set plan with no set named. Those
+  // are resolved per program inside the loop.
+  const sharedArea = standardArea(await resolveGeoPlan(input));
+  const planTheatre = input.level === "theatre" ? input.theatre.trim() : "";
   const areaLabels: string[] = [];
 
   const targets: PlanTargetResult[] = [];
@@ -1604,32 +1694,16 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
   // window-dependent `shortfall`, so a specialisation dropping off the path
   // took its expiring holders out of the panel with it.
   const allInstances: ReqInstance[] = [];
-  const skippedTargets: PlanSkippedTarget[] = [];
 
+  // Load every target's program and resolve the area it is planned over
+  // first, so the theatre areas can be reconciled across targets before any
+  // instance is built (see below).
+  const loaded = [];
   for (const target of input.targets) {
     const programRow = await prisma.program.findUnique({
       where: { name: target.program },
-      select: { id: true, name: true, isTiered: true, anchorTheatre: true, defaultMinimumCountries: true },
+      select: { id: true, name: true, isTiered: true, countrySetMinimumCountries: true, targetMinimumCountries: true },
     });
-    // The anchored scope plans only anchored programs and every other scope
-    // only the rest: an anchored program is judged over two populations at once
-    // and has no single-population view, while a standard program has no
-    // anchor to resolve. A target on the wrong side yields nothing at all — the
-    // page offers each program only at the scopes it can be planned at.
-    const anchoredProgram = isAnchoredProgram(programRow);
-    if (anchoredProgram !== anchoredLevel) {
-      // An unknown program is filtered by the routes and never reported here;
-      // a real one on the wrong side is named so the plan can say why.
-      if (programRow) {
-        skippedTargets.push({ program: target.program, reason: anchoredProgram ? "anchoredOnly" : "notAnchored" });
-      }
-      continue;
-    }
-    const area = anchoredLevel
-      ? programRow ? await resolveAnchoredPlanArea(programRow, input) : null
-      : sharedArea;
-    if (!area) continue;
-    if (!areaLabels.includes(area.scopeLabel)) areaLabels.push(area.scopeLabel);
 
     const [programData, tierRows] = await Promise.all([
       prisma.programData.findMany({
@@ -1655,6 +1729,50 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
       }),
     ]);
 
+    // Which area this target is planned over (see `PlanArea`).
+    let area: PlanArea = sharedArea;
+    let countrySetMinimum: CountrySetMinimumMeta | null = null;
+    if (programRow && planTheatre && programData.some((d) => d.level === "TargetCountries")) {
+      area = await resolveTheatreTargetPlanArea(programRow, planTheatre, input);
+    } else if (programRow && input.level === "countrySet") {
+      const resolved = await resolveCountrySetMinimum({
+        program: programRow,
+        countrySet: input.countrySet,
+        companyIds: input.companyIds,
+      });
+      // A scope that is not one company is refused by the routes; should a
+      // caller skip that, the shared (empty) area stands and nothing is
+      // resolved across tenants.
+      if (!("error" in resolved)) {
+        countrySetMinimum = resolved.meta;
+        // A named set is the one shared area every program plans over; a
+        // blank one is each program's own configured set.
+        if (!input.countrySet.trim()) area = countrySetPlanArea(resolved.companyId, resolved.meta, [resolved.companyId]);
+      }
+    }
+    loaded.push({ target, programRow, programData, tierRows, area, countrySetMinimum });
+  }
+
+  // A theatre plan mixing programs WITH target countries and programs without:
+  // when every targets program resolved the SAME target population, all of
+  // them — and the plain theatre programs — share one area keyed on both
+  // populations. That is sound because the populations are still a nested
+  // chain (the theatre ⊇ those target countries ⊇ each one), and it is what
+  // lets one person certified for a cert two programs both need count once,
+  // exactly as two plain theatre programs always have. Different target
+  // populations keep their own per-program keys (disjoint target sets must
+  // never share a group), which can over-count but never under-count.
+  const theatreAreaKeys = new Set(
+    loaded.filter((l) => l.area.areaKey.startsWith(THEATRE_TARGETS_AREA_PREFIX)).map((l) => l.area.areaKey),
+  );
+  if (theatreAreaKeys.size === 1) {
+    const [key] = theatreAreaKeys;
+    for (const l of loaded) if (l.area === sharedArea) l.area = { ...sharedArea, areaKey: key };
+  }
+
+  for (const { target, programRow, programData, tierRows, area, countrySetMinimum } of loaded) {
+    if (!areaLabels.includes(area.scopeLabel)) areaLabels.push(area.scopeLabel);
+
     const isTiered = programRow?.isTiered === true;
     const rows = programData
       .map(toRequirementRow)
@@ -1662,7 +1780,7 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
     // A program-wide requirement: a row with neither a specialisation nor a
     // tier, on a tiered program (the write path refuses one anywhere else).
     // Every tier requires it, so it is costed into every tier target exactly as
-    // the tier's own delivery certs are — at every scope, not only anchored.
+    // the tier's own delivery certs are — at every scope.
     const isGate = (r: RequirementRow) =>
       isTiered && isProgramWideRow({ specialisationId: r.specialisationId, tierId: r.tierId });
 
@@ -1765,21 +1883,35 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
       peopleMoves: 0,
       easyWins: 0,
       netNew: 0,
-      ...(area.anchored ? { anchored: area.anchored } : {}),
+      ...(area.targetCountries ? { targetCountries: area.targetCountries } : {}),
+      ...(countrySetMinimum ? { countrySetMinimum } : {}),
     };
     // The minimum-countries rule cannot be closed by certifying anyone, so it
     // is reported beside the plan and never costed. The per-country rows for
-    // the target countries that DO exist are still built and costed above.
-    if (area.anchored && !area.anchored.minimumMet && area.anchored.minimumCountries !== null) {
-      targetResult.blockers = [
-        {
-          kind: "minimumCountries",
-          required: area.anchored.minimumCountries,
-          counted: area.anchored.targetCountries.length,
-          source: area.anchored.minimumCountriesSource,
-        },
-      ];
+    // the countries that DO exist are still built and costed above.
+    const blockers: PlanBlocker[] = [];
+    const tc = area.targetCountries;
+    if (tc && !tc.minimumMet && tc.minimumCountries !== null) {
+      blockers.push({
+        kind: "minimumCountries",
+        view: "theatre",
+        areaName: tc.theatre,
+        required: tc.minimumCountries,
+        counted: tc.targetCountries.length,
+        source: tc.minimumCountriesSource,
+      });
     }
+    if (countrySetMinimum && !countrySetMinimum.minimumMet && countrySetMinimum.minimumCountries !== null) {
+      blockers.push({
+        kind: "minimumCountries",
+        view: "countrySet",
+        areaName: countrySetMinimum.countrySet,
+        required: countrySetMinimum.minimumCountries,
+        counted: countrySetMinimum.countries.length,
+        source: countrySetMinimum.minimumCountriesSource,
+      });
+    }
+    if (blockers.length > 0) targetResult.blockers = blockers;
     if (chosenTier) {
       targetResult.tierPlan = {
         specialisationsRequired: chosenTier.specialisationsRequired,
@@ -2117,9 +2249,9 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
   const netNew = netNewTotal(countedInstances, alloc);
 
   return {
-    // A standard scope's one label; an anchored plan names each area its
-    // targets resolved to (each program may be anchored differently).
-    scopeLabel: sharedArea ? sharedArea.scopeLabel : areaLabels.length > 0 ? areaLabels.join("; ") : "Target countries",
+    // The shared area's label; a Country Set plan with no set named names each
+    // set its targets resolved to (each program may be configured differently).
+    scopeLabel: areaLabels.length > 0 ? areaLabels.join("; ") : sharedArea.scopeLabel,
     renewalWindowMonths: input.renewalWindowMonths,
     planForWindow,
     targets,
@@ -2127,7 +2259,6 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
     eligible,
     renewals,
     riskImpacts,
-    skippedTargets,
     totals: {
       peopleMoves: alloc.closesByEmail.size + netNew,
       easyWins,
@@ -2308,13 +2439,18 @@ function toPlanRequirement(
 
 /**
  * The blocker sentence, in the page's voice: what to do and where, then why.
- * Shared by the headline; the page renders `blockers` itself too.
+ * Shared by the headline; the page renders `blockers` itself too (restating
+ * this — keep the two in step).
  */
 export function blockerText(b: PlanBlocker, tiered: boolean): string {
   const more = Math.max(0, b.required - b.counted);
   const whose = b.source === "partner" ? "this partner's minimum" : "the program's default minimum";
+  const action =
+    b.view === "theatre"
+      ? `Name ${more} more target countr${more === 1 ? "y" : "ies"}${b.areaName ? ` in ${b.areaName}` : ""} in Admin › Country Sets`
+      : `Add ${more} more countr${more === 1 ? "y" : "ies"} to ${b.areaName ?? "a Country Set (none is configured for this partner)"} in Admin › Country Sets`;
   return (
-    `Name ${more} more target countr${more === 1 ? "y" : "ies"} in Admin › Country Sets — ` +
+    `${action} — ` +
     // A program without tiers has no tier to withhold.
     `${b.counted} of ${b.required} counted (${whose})${tiered ? ", and no tier is reached until then" : ""}.`
   );
