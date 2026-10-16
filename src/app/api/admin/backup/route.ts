@@ -286,19 +286,24 @@ async function findCountrySetsForArchive() {
  * write them. Every reference is carried by NAME beside the id: the program by
  * `programName` (program ids are an install's own), the company by
  * `companyName` (a config archive has no companies.json for its `companyId` to
- * index), and the target set by `countrySetName` (sets get fresh ids on every
- * restore). See {@link restoreProgramCompanySettings} for how each resolves.
+ * index), and both sets by name (sets get fresh ids on every restore):
+ * `countrySetName` for the By Country Set view, `targetCountrySetName` for the
+ * By Theatre view. See {@link restoreProgramCompanySettings} for how each
+ * resolves, and {@link normaliseArchivedSettingRow} for the older row shape
+ * that used `countrySetName` for the target set.
  */
 async function findProgramCompanySettingsForArchive() {
   const rows = await prisma.programCompanySetting.findMany({
     orderBy: { id: "asc" },
     select: {
       companyId: true,
-      minimumCountries: true,
+      countrySetMinimumCountries: true,
+      targetMinimumCountries: true,
       createdAt: true,
       updatedAt: true,
       program: { select: { name: true } },
       company: { select: { name: true } },
+      countrySet: { select: { name: true } },
       targetCountrySet: { select: { name: true } },
     },
   });
@@ -306,8 +311,10 @@ async function findProgramCompanySettingsForArchive() {
     programName: r.program.name,
     companyId: r.companyId,
     companyName: r.company.name,
-    minimumCountries: r.minimumCountries,
-    countrySetName: r.targetCountrySet?.name ?? null,
+    countrySetMinimumCountries: r.countrySetMinimumCountries,
+    countrySetName: r.countrySet?.name ?? null,
+    targetMinimumCountries: r.targetMinimumCountries,
+    targetCountrySetName: r.targetCountrySet?.name ?? null,
     createdAt: r.createdAt,
     updatedAt: r.updatedAt,
   }));
@@ -416,7 +423,7 @@ export async function generateBackupZip(opts: BackupOptions = {}): Promise<{
   zip.file("country_sets.json", JSON.stringify(countrySets, null, 2));
   zip.file("country_set_members.json", JSON.stringify(countrySetMembers, null, 2));
   // Per-partner program terms. Every reference rides by name too (program,
-  // company, target set), because none of those ids survives a restore — see
+  // company, both Country Sets), because none of those ids survives a restore — see
   // restoreProgramCompanySettings.
   zip.file("program_company_settings.json", JSON.stringify(programCompanySettings, null, 2));
   // Credentials (password hashes, MFA secrets) are stripped unless the caller
@@ -528,7 +535,7 @@ export async function generateConfigZip(): Promise<{
   zip.file("country_sets.json", JSON.stringify(countrySets, null, 2));
   zip.file("country_set_members.json", JSON.stringify(countrySetMembers, null, 2));
   // Per-partner program terms. Every reference rides by name too (program,
-  // company, target set), because none of those ids survives a restore — see
+  // company, both Country Sets), because none of those ids survives a restore — see
   // restoreProgramCompanySettings.
   zip.file("program_company_settings.json", JSON.stringify(programCompanySettings, null, 2));
 
@@ -885,7 +892,7 @@ export async function restoreFullArchive(
       ? []
       : await tx.countrySetMember.findMany({ select: { countrySetId: true, country: true } });
     // Partner settings cascade away with the programs (restoreReferenceData
-    // deletes them all) and lose their target set when the sets are replaced,
+    // deletes them all) and lose both their sets when the sets are replaced,
     // so capture them by name before anything below deletes either.
     const liveProgramCompanySettings = await snapshotProgramCompanySettings(tx);
     await tx.trainingTaken.deleteMany({});
@@ -1175,6 +1182,10 @@ export async function restoreFullArchive(
       `This archive was created without user credentials, so its ${users.length} user account(s) could not be restored. Existing accounts were left untouched. To carry accounts across, take a backup with "Include user credentials" enabled.`
     );
   }
+  // Only when the reference tables were actually rebuilt from this archive.
+  if (referenceArchive.present) {
+    warnings.push(...legacyTargetCountryWarnings(referenceArchive.targetCountryConversion));
+  }
   warnings.push(...countrySetWarnings(countrySetResult));
   warnings.push(...programCompanySettingWarnings(programCompanySettingResult));
   if (studentsReassigned > 0) {
@@ -1262,6 +1273,9 @@ async function restoreConfigArchive(zip: JSZip): Promise<NextResponse> {
     name: string;
     isTiered?: boolean;
     deploymentMode?: string;
+    countrySetMinimumCountries?: number | null;
+    targetMinimumCountries?: number | null;
+    // Written by an older version only; see convertLegacyTargetCountryRows.
     anchorTheatre?: string | null;
     defaultMinimumCountries?: number | null;
     createdAt?: string;
@@ -1313,7 +1327,13 @@ async function restoreConfigArchive(zip: JSZip): Promise<NextResponse> {
   // program_tiers.json is optional — older config archives predate tiers.
   const archiveProgramTiers = await readJson<ProgramTierRow[]>("program_tiers.json");
   const archiveSpecialisations = await readJson<SpecialisationRow[]>("specialisations.json");
-  const archiveProgramData = await readJson<ProgramDataRow[]>("program_data.json");
+  // An older archive's target-country rows arrive at the CountrySet level and
+  // are converted here, before anything is written (programs.json is in hand).
+  const { programData: archiveProgramData, conversion: targetCountryConversion } =
+    convertLegacyTargetCountryRows(
+      archivePrograms,
+      await readJson<ProgramDataRow[]>("program_data.json")
+    );
   const archiveProgramDataAlternatives = await readJson<ProgramDataAlternativeRow[]>(
     "program_data_alternatives.json"
   );
@@ -1355,7 +1375,7 @@ async function restoreConfigArchive(zip: JSZip): Promise<NextResponse> {
       //    targets of Student or TrainingTaken, so it's safe to clear them.
       //    Order respects the remaining FKs inside this scope.
       //    Partner settings cascade away with the programs below (and lose
-      //    their target set when 3a replaces the sets), so they are captured
+      //    both their sets when 3a replaces the sets), so they are captured
       //    by name first and rebuilt in step 6d.
       const liveProgramCompanySettings = await snapshotProgramCompanySettings(tx);
       await tx.programDataAlternative.deleteMany({});
@@ -1491,9 +1511,9 @@ async function restoreConfigArchive(zip: JSZip): Promise<NextResponse> {
             isTiered: p.isTiered ?? false,
             deploymentMode: p.deploymentMode ?? "flat",
             // This path enumerates its columns (see Common Pitfalls), so the
-            // anchored-program pair is carried by hand; older archives lack
-            // both keys and restore an ordinary program.
-            ...archiveProgramAnchorFields(p),
+            // per-view minimums are carried by hand; older archives lack both
+            // keys and restore a program with no minimums.
+            ...archiveProgramMinimumFields(p),
             createdAt: p.createdAt ? new Date(p.createdAt) : new Date(),
           })),
         });
@@ -1686,6 +1706,7 @@ async function restoreConfigArchive(zip: JSZip): Promise<NextResponse> {
   invalidateReportCache();
 
   const configWarnings: string[] = [
+    ...legacyTargetCountryWarnings(targetCountryConversion),
     ...countrySetWarnings(countrySetResult),
     ...programCompanySettingWarnings(programCompanySettingResult),
   ];
@@ -1746,6 +1767,11 @@ export interface ReferenceArchive {
   offeringData: any[];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   offeringDataAlternatives: any[];
+  /**
+   * What {@link convertLegacyTargetCountryRows} did to `programData` while it
+   * was read (already applied: `programData` holds the converted rows).
+   */
+  targetCountryConversion: LegacyTargetCountryConversion;
 }
 
 /** Read the reference/config tables from a full backup zip (all optional). */
@@ -1760,13 +1786,21 @@ export async function readReferenceArchive(zip: JSZip): Promise<ReferenceArchive
     zip.file("offerings.json") ||
     zip.file("specialisations.json")
   );
+  const programs = await read("programs.json");
+  // An older archive's target-country rows are converted on the way in, so
+  // restoreReferenceData inserts them already at the right level.
+  const { programData, conversion } = convertLegacyTargetCountryRows(
+    programs,
+    await read("program_data.json")
+  );
   return {
     present,
+    targetCountryConversion: conversion,
     olxRelations: await read("olx_sub_item_relations.json"),
-    programs: await read("programs.json"),
+    programs,
     programTiers: await read("program_tiers.json"),
     specialisations: await read("specialisations.json"),
-    programData: await read("program_data.json"),
+    programData,
     programDataAlternatives: await read("program_data_alternatives.json"),
     offerings: await read("offerings.json"),
     offeringSpecialisations: await read("offering_specialisations.json"),
@@ -1920,7 +1954,7 @@ export async function restoreReferenceData(
         isTiered: p.isTiered ?? false,
         deploymentMode: p.deploymentMode ?? "flat",
         // Enumerated, so a new column has to be added here by hand.
-        ...archiveProgramAnchorFields(p),
+        ...archiveProgramMinimumFields(p),
         createdAt: p.createdAt ? new Date(p.createdAt) : new Date(),
       })),
     });
@@ -2389,24 +2423,92 @@ export async function restoreCountrySets(
 }
 
 /**
- * The anchored-program columns of an archived `programs.json` row, normalised
+ * The per-view minimum columns of an archived `programs.json` row, normalised
  * for insert. Both restore paths enumerate a program's columns (neither spreads
  * the row), so a column missing here is silently dropped on every round trip —
- * the Common Pitfall the config restore is known for. An archive written before
- * the columns existed lacks both keys and restores an ordinary, un-anchored
- * program. `defaultMinimumCountries` must satisfy the `>= 1` CHECK, so anything
- * that is not a positive Postgres `integer` (a hand-edited 0, a string) becomes
- * null rather than aborting the whole restore.
+ * the Common Pitfall the config restore is known for. Both must satisfy the
+ * `>= 1` CHECK, so anything that is not a positive Postgres `integer` (a
+ * hand-edited 0, a string) becomes null rather than aborting the whole restore.
+ *
+ * Three archive generations arrive here:
+ *  - current: `countrySetMinimumCountries` + `targetMinimumCountries`;
+ *  - written between the two program-settings releases on `dev`:
+ *    `defaultMinimumCountries` (and `anchorTheatre`, see
+ *    {@link convertLegacyTargetCountryRows}). It meant the minimum number of
+ *    target countries, so it maps to `targetMinimumCountries` — exactly the
+ *    column rename the `20261016000001_target_countries` migration performs;
+ *  - older still: neither key, which restores a program with no minimums.
  */
-function archiveProgramAnchorFields(p: Record<string, unknown>): {
-  anchorTheatre: string | null;
-  defaultMinimumCountries: number | null;
+function archiveProgramMinimumFields(p: Record<string, unknown>): {
+  countrySetMinimumCountries: number | null;
+  targetMinimumCountries: number | null;
 } {
-  const theatre = typeof p.anchorTheatre === "string" ? p.anchorTheatre.trim() : "";
   return {
-    anchorTheatre: theatre === "" ? null : theatre,
-    defaultMinimumCountries: positivePgInt(p.defaultMinimumCountries),
+    countrySetMinimumCountries: positivePgInt(p.countrySetMinimumCountries),
+    targetMinimumCountries: positivePgInt(
+      "targetMinimumCountries" in p ? p.targetMinimumCountries : p.defaultMinimumCountries
+    ),
   };
+}
+
+/** Outcome of {@link convertLegacyTargetCountryRows}. */
+export interface LegacyTargetCountryConversion {
+  /** Requirement rows moved from CountrySet to TargetCountries. */
+  rows: number;
+  /** Programs those rows belong to. */
+  programs: number;
+}
+
+/**
+ * Convert an older archive's program requirements the way the
+ * `20261016000001_target_countries` migration converts a database.
+ *
+ * Between the two program-settings releases on `dev`, a program could carry an
+ * `anchorTheatre`; its CountrySet rows then meant "the partner's target
+ * countries", which is now the TargetCountries level. So for every archived
+ * program with a non-blank `anchorTheatre`, its CountrySet rows are restored as
+ * TargetCountries rows (aggregation unchanged — `eachCountry` is valid on both
+ * levels), and every other row is left alone. The theatre itself is dropped:
+ * target countries now apply in whichever theatre is viewed.
+ *
+ * Programs are restored before `program_data` on both paths, and the programs
+ * file is in hand before either insert, so the converted set is known in time.
+ * An archive with no such program (every archive before that release, and
+ * every archive written since this one) passes through unchanged.
+ */
+export function convertLegacyTargetCountryRows<T extends { programName?: unknown; level?: unknown }>(
+  programs: Record<string, unknown>[],
+  programData: T[]
+): { programData: T[]; conversion: LegacyTargetCountryConversion } {
+  const converted = new Set<string>();
+  for (const p of programs) {
+    if (typeof p?.name === "string" && typeof p.anchorTheatre === "string" && p.anchorTheatre.trim() !== "") {
+      converted.add(p.name);
+    }
+  }
+  if (converted.size === 0) return { programData, conversion: { rows: 0, programs: 0 } };
+  let rows = 0;
+  const touched = new Set<string>();
+  const out = programData.map((r) => {
+    if (r?.level === "CountrySet" && typeof r.programName === "string" && converted.has(r.programName)) {
+      rows++;
+      touched.add(r.programName);
+      return { ...r, level: "TargetCountries" };
+    }
+    return r;
+  });
+  return { programData: out, conversion: { rows, programs: touched.size } };
+}
+
+/**
+ * The warning for {@link convertLegacyTargetCountryRows}, shared by both
+ * restore paths so the wording cannot drift between them.
+ */
+export function legacyTargetCountryWarnings(c: LegacyTargetCountryConversion | null): string[] {
+  if (!c || c.rows === 0) return [];
+  return [
+    `This archive was written by an older version in which ${c.programs} program(s) were tied to one theatre. Their ${c.rows} Country Set requirement(s) were restored as Target countries requirements, which the By Theatre view counts over each partner's target countries in whichever theatre is viewed; their minimum number of countries now applies to that view. Review them in Admin › Program Data.`,
+  ];
 }
 
 /** A positive Postgres `integer`, or null. */
@@ -2435,10 +2537,58 @@ export interface ProgramCompanySettingArchive {
 export interface ProgramCompanySettingSnapshot {
   programName: string;
   companyId: number;
-  minimumCountries: number | null;
+  /** By Country Set view: the partner's minimum and its set, by name. */
+  countrySetMinimumCountries: number | null;
   countrySetName: string | null;
+  /** By Theatre view: the partner's minimum and its target set, by name. */
+  targetMinimumCountries: number | null;
+  targetCountrySetName: string | null;
   createdAt: Date;
   updatedAt: Date;
+}
+
+/**
+ * One archived `program_company_settings.json` row, read into the current
+ * shape. Two shapes exist, and they collide on a name:
+ *
+ *  - **current** — `countrySetMinimumCountries`/`countrySetName` (By Country
+ *    Set view) and `targetMinimumCountries`/`targetCountrySetName` (By Theatre
+ *    view);
+ *  - **older** (written on `dev` before the per-view terms) — a single
+ *    `minimumCountries` and `countrySetName`, which then named the partner's
+ *    TARGET set. Read naively, that `countrySetName` would land on the By
+ *    Country Set view and the target set would be lost.
+ *
+ * An older row is told apart by the ABSENCE of the `targetMinimumCountries`
+ * key (every current row writes it, `null` included). It maps the way the
+ * `20261016000001_target_countries` migration maps a database: its minimum and
+ * set become the By Theatre view's terms, and it has no By Country Set terms.
+ */
+interface ArchivedSettingTerms {
+  countrySetMinimumCountries: unknown;
+  countrySetName: unknown;
+  targetMinimumCountries: unknown;
+  targetCountrySetName: unknown;
+  legacy: boolean;
+}
+
+function normaliseArchivedSettingRow(row: Record<string, unknown>): ArchivedSettingTerms {
+  if (!("targetMinimumCountries" in row)) {
+    return {
+      countrySetMinimumCountries: null,
+      countrySetName: null,
+      targetMinimumCountries: row.minimumCountries,
+      targetCountrySetName: row.countrySetName,
+      legacy: true,
+    };
+  }
+  return {
+    countrySetMinimumCountries: row.countrySetMinimumCountries,
+    countrySetName: row.countrySetName,
+    targetMinimumCountries: row.targetMinimumCountries,
+    targetCountrySetName: row.targetCountrySetName,
+    legacy: false,
+  };
 }
 
 /** Outcome of {@link restoreProgramCompanySettings}. */
@@ -2464,13 +2614,23 @@ export interface ProgramCompanySettingRestoreResult {
    */
   droppedLivePrograms: number;
   /**
-   * Rows kept with no target set because the set they named does not exist for
-   * that company after the restore. The partner's minimum is kept; the
-   * dashboard asks for a set instead of opening on one.
+   * Rows kept with no By Country Set view set because the set they named does
+   * not exist for that company after the restore. The partner's minimum is
+   * kept; the dashboard asks for a set instead of opening on one.
    */
-  unlinkedSets: number;
-  /** Archived minimums that were not a positive integer and were cleared. */
+  unlinkedCountrySets: number;
+  /** The same, for the By Theatre view's target set. */
+  unlinkedTargetSets: number;
+  /**
+   * Archived minimums that were not a positive integer and were cleared — one
+   * per minimum, so a row with both views' minimums invalid counts twice.
+   */
   invalidMinimums: number;
+  /**
+   * Archived rows in the older single-set shape, restored as By Theatre view
+   * terms (see {@link normaliseArchivedSettingRow}).
+   */
+  legacyRows: number;
 }
 
 /**
@@ -2513,18 +2673,22 @@ export async function snapshotProgramCompanySettings(
     orderBy: { id: "asc" },
     select: {
       companyId: true,
-      minimumCountries: true,
+      countrySetMinimumCountries: true,
+      targetMinimumCountries: true,
       createdAt: true,
       updatedAt: true,
       program: { select: { name: true } },
+      countrySet: { select: { name: true } },
       targetCountrySet: { select: { name: true } },
     },
   });
   return rows.map((r) => ({
     programName: r.program.name,
     companyId: r.companyId,
-    minimumCountries: r.minimumCountries,
-    countrySetName: r.targetCountrySet?.name ?? null,
+    countrySetMinimumCountries: r.countrySetMinimumCountries,
+    countrySetName: r.countrySet?.name ?? null,
+    targetMinimumCountries: r.targetMinimumCountries,
+    targetCountrySetName: r.targetCountrySet?.name ?? null,
     createdAt: r.createdAt,
     updatedAt: r.updatedAt,
   }));
@@ -2554,14 +2718,24 @@ export function programCompanySettingWarnings(
       `${result.droppedLivePrograms} existing program partner setting(s) were removed because the restored data no longer contains their program.`
     );
   }
-  if (result.unlinkedSets > 0) {
+  if (result.unlinkedCountrySets > 0) {
     out.push(
-      `${result.unlinkedSets} program partner setting(s) named a target Country Set that does not exist for that company after the restore; they were kept without a target set. Choose the set again in Admin › Program Partners.`
+      `${result.unlinkedCountrySets} program partner setting(s) named a Country Set for the By Country Set view that does not exist for that company after the restore; they were kept without that set. Choose it again in Admin › Program Partners.`
+    );
+  }
+  if (result.unlinkedTargetSets > 0) {
+    out.push(
+      `${result.unlinkedTargetSets} program partner setting(s) named a target-countries Country Set for the By Theatre view that does not exist for that company after the restore; they were kept without a target set. Choose it again in Admin › Program Partners.`
     );
   }
   if (result.invalidMinimums > 0) {
     out.push(
-      `${result.invalidMinimums} program partner setting(s) carried an invalid minimum number of countries, which was cleared.`
+      `${result.invalidMinimums} minimum number(s) of countries in the program partner settings were invalid and were cleared.`
+    );
+  }
+  if (result.legacyRows > 0) {
+    out.push(
+      `${result.legacyRows} program partner setting(s) came from an older version that held one minimum and one Country Set per partner; they were restored as the partner's By Theatre view terms (minimum target countries and target set), with no By Country Set view terms.`
     );
   }
   return out;
@@ -2587,10 +2761,14 @@ export function programCompanySettingWarnings(
  *    resolver's legacy rule is for sets, which pre-date per-company scoping;
  *    a partner setting never had a global form). Unresolved → dropped and
  *    counted, never re-homed.
- *  - **Target set** — by (resolved company, `countrySetName`), exact name
- *    first and then case-insensitively when that is unambiguous (set names are
- *    unique per company case-insensitively in the admin routes). A name that
- *    no longer resolves keeps the row with no target and is counted.
+ *  - **Both sets** — the By Country Set view's set and the By Theatre view's
+ *    target set, each by (resolved company, name), exact name first and then
+ *    case-insensitively when that is unambiguous (set names are unique per
+ *    company case-insensitively in the admin routes). A name that no longer
+ *    resolves keeps the row with that set unlinked and is counted per view.
+ *  - **Minimums** — each view's separately; one that is not a positive
+ *    Postgres integer is cleared and counted.
+ *  - **Older rows** — see {@link normaliseArchivedSettingRow}.
  *  - `archive` null (an older archive): every live row is kept, re-linked by
  *    name. A live row whose program the restore removed cannot be kept and is
  *    counted.
@@ -2632,8 +2810,10 @@ export async function restoreProgramCompanySettings(
   let droppedNoProgram = 0;
   let droppedNoCompany = 0;
   let droppedLivePrograms = 0;
-  let unlinkedSets = 0;
+  let unlinkedCountrySets = 0;
+  let unlinkedTargetSets = 0;
   let invalidMinimums = 0;
+  let legacyRows = 0;
   // (programId, companyId) -> the row to write. First occurrence wins, and an
   // archive row is always placed before any live row, so the archive wins a
   // collision.
@@ -2642,7 +2822,9 @@ export async function restoreProgramCompanySettings(
     {
       programId: number;
       companyId: number;
-      minimumCountries: number | null;
+      countrySetMinimumCountries: number | null;
+      countrySetId: number | null;
+      targetMinimumCountries: number | null;
       targetCountrySetId: number | null;
       createdAt: Date;
       updatedAt: Date;
@@ -2670,15 +2852,24 @@ export async function restoreProgramCompanySettings(
       }
       const key = `${programId}:${companyId}`;
       if (finalRows.has(key)) continue;
-      const minimumCountries = positivePgInt(row.minimumCountries);
-      if (row.minimumCountries != null && minimumCountries === null) invalidMinimums++;
-      const setId = resolveSet(companyId, row.countrySetName);
-      if (setId === null) unlinkedSets++;
+      const terms = normaliseArchivedSettingRow(row);
+      if (terms.legacy) legacyRows++;
+      const minimum = (v: unknown): number | null => {
+        const n = positivePgInt(v);
+        if (v != null && n === null) invalidMinimums++;
+        return n;
+      };
+      const countrySetId = resolveSet(companyId, terms.countrySetName);
+      if (countrySetId === null) unlinkedCountrySets++;
+      const targetSetId = resolveSet(companyId, terms.targetCountrySetName);
+      if (targetSetId === null) unlinkedTargetSets++;
       finalRows.set(key, {
         programId,
         companyId,
-        minimumCountries,
-        targetCountrySetId: setId ?? null,
+        countrySetMinimumCountries: minimum(terms.countrySetMinimumCountries),
+        countrySetId: countrySetId ?? null,
+        targetMinimumCountries: minimum(terms.targetMinimumCountries),
+        targetCountrySetId: targetSetId ?? null,
         createdAt: archiveDate(row.createdAt),
         updatedAt: archiveDate(row.updatedAt),
       });
@@ -2702,13 +2893,17 @@ export async function restoreProgramCompanySettings(
     }
     const key = `${programId}:${s.companyId}`;
     if (finalRows.has(key)) continue;
-    const setId = resolveSet(s.companyId, s.countrySetName);
-    if (setId === null) unlinkedSets++;
+    const countrySetId = resolveSet(s.companyId, s.countrySetName);
+    if (countrySetId === null) unlinkedCountrySets++;
+    const targetSetId = resolveSet(s.companyId, s.targetCountrySetName);
+    if (targetSetId === null) unlinkedTargetSets++;
     finalRows.set(key, {
       programId,
       companyId: s.companyId,
-      minimumCountries: s.minimumCountries,
-      targetCountrySetId: setId ?? null,
+      countrySetMinimumCountries: s.countrySetMinimumCountries,
+      countrySetId: countrySetId ?? null,
+      targetMinimumCountries: s.targetMinimumCountries,
+      targetCountrySetId: targetSetId ?? null,
       createdAt: s.createdAt,
       updatedAt: s.updatedAt,
     });
@@ -2729,7 +2924,9 @@ export async function restoreProgramCompanySettings(
     droppedNoProgram,
     droppedNoCompany,
     droppedLivePrograms,
-    unlinkedSets,
+    unlinkedCountrySets,
+    unlinkedTargetSets,
     invalidMinimums,
+    legacyRows,
   };
 }
