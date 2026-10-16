@@ -1017,7 +1017,7 @@ const helpSections: Record<string, HelpSection> = {
             Each company has its own sets, managed by its Admins.
           </li>
           <li>
-            <strong>Program Partners</strong>{" "}&mdash; Each partner&apos;s own
+            <strong>Partner Specific Program Settings</strong>{" "}&mdash; Each partner&apos;s own
             terms for a program: for the By Country Set view and the By Theatre
             view, a minimum number of countries and the Country Set to use.
             Managed by each company&apos;s Admins.
@@ -2244,12 +2244,12 @@ const helpSections: Record<string, HelpSection> = {
           A <strong>config backup</strong> contains the reference dataset only
           — product types, regions, country sets, the training catalogue, OLX
           relationships, specialisations, programs (including their default
-          minimum numbers of countries), program partner settings, import
+          minimum numbers of countries), partner specific program settings, import
           aliases, and system settings — and
           excludes students and training records. Use this to clone the
           catalogue/program setup into a freshly installed instance without
           carrying any learner data across. A config backup does not include
-          companies, so its Country Sets and program partner settings are
+          companies, so its Country Sets and partner specific program settings are
           restored only to companies with the same name on the target system
           &mdash; create those companies first.
         </p>
@@ -2370,8 +2370,8 @@ const helpSections: Record<string, HelpSection> = {
           first.
         </p>
         <p>
-          <strong>Program partner settings</strong>{" "}(Admin &rsaquo; Program
-          Partners) follow the same rules. Each is matched to its program, its
+          <strong>Partner specific program settings</strong>{" "}(Admin &rsaquo; Partner Specific
+          Program Settings) follow the same rules. Each is matched to its program, its
           company and both of its Country Sets by name. A full restore replaces
           them all; a config restore replaces only those of the companies the
           archive names. One whose company or program does not exist on this
@@ -2715,7 +2715,7 @@ const helpSections: Record<string, HelpSection> = {
           partner&apos;s target countries must lie inside the viewed theatre; used only when
           the program has Target countries requirements). Below the minimum no tier is reached
           in that view. Each partner can have their own minimums, and their own sets, on{" "}
-          <strong>Admin &rsaquo; Program Partners</strong>{" "}(the{" "}
+          <strong>Admin &rsaquo; Partner Specific Program Settings</strong>{" "}(the{" "}
           <strong>Partner settings</strong>{" "}link on the card); a partner without their own
           minimum uses the program&apos;s default, and with neither there is no minimum.
         </p>
@@ -2984,7 +2984,7 @@ const helpSections: Record<string, HelpSection> = {
           requirements and the company has Country Sets, a{" "}
           <strong>Target countries from</strong>{" "}picker appears. Its blank option,{" "}
           <strong>Partner&apos;s configured set</strong>, uses each program&apos;s own target
-          set from <strong>Admin &rsaquo; Program Partners</strong>{" "}(and names the set used
+          set from <strong>Admin &rsaquo; Partner Specific Program Settings</strong>{" "}(and names the set used
           once the plan loads); or pick one set for every program. Under the{" "}
           <strong>Country Set</strong>{" "}scope a blank set likewise means each
           program&apos;s own partner set, so a plan runs without choosing one.
@@ -3293,7 +3293,7 @@ const helpSections: Record<string, HelpSection> = {
           <strong>By Theatre</strong>{" "}view gains a <strong>Target countries</strong>{" "}
           picker over the selected company&apos;s Country Sets. Its blank option,{" "}
           <strong>Partner&apos;s configured set</strong>, uses the set named in the
-          partner&apos;s settings on <strong>Admin &rsaquo; Program Partners</strong>{" "}
+          partner&apos;s settings on <strong>Admin &rsaquo; Partner Specific Program Settings</strong>{" "}
           (shown in brackets, or <em>none configured</em>). Any theatre can be viewed.
         </p>
         <ul>
@@ -3332,7 +3332,7 @@ const helpSections: Record<string, HelpSection> = {
           a line above the report gives the number of countries in the set and the minimum,
           and a red <em>Minimum countries in the Country Set not met</em>{" "}notice appears
           when the set holds too few. With no set configured, the page points you to{" "}
-          <strong>Admin &rsaquo; Program Partners</strong>.
+          <strong>Admin &rsaquo; Partner Specific Program Settings</strong>.
         </p>
 
         <h3>Tier Status</h3>
@@ -3723,7 +3723,7 @@ const helpSections: Record<string, HelpSection> = {
         </p>
         <p>
           A company&apos;s sets also serve as its per-program choices on{" "}
-          <strong>Admin &rsaquo; Program Partners</strong>: the set a program&apos;s By
+          <strong>Admin &rsaquo; Partner Specific Program Settings</strong>: the set a program&apos;s By
           Country Set view opens on, and the set listing the company&apos;s{" "}
           <strong>target countries</strong>{" "}for a program&apos;s By Theatre view (only
           the set&apos;s countries inside the viewed theatre count there). Deleting a set a
@@ -3821,11 +3821,11 @@ const helpSections: Record<string, HelpSection> = {
     ),
   },
   "program-partners": {
-    title: "Program Partners",
+    title: "Partner Specific Program Settings",
     content: (
       <>
         <p>
-          <strong>Program Partners</strong>{" "}holds each partner&apos;s own terms for a
+          <strong>Partner Specific Program Settings</strong>{" "}holds each partner&apos;s own terms for a
           program. A program&apos;s <strong>By Country Set</strong>{" "}view counts its
           Country Set requirements over a Country Set, and its{" "}
           <strong>By Theatre</strong>{" "}view can count Target countries requirements over

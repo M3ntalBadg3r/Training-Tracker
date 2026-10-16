@@ -2705,37 +2705,37 @@ export function programCompanySettingWarnings(
   if (!result) return out;
   if (result.droppedNoCompany > 0) {
     out.push(
-      `${result.droppedNoCompany} program partner setting(s) could not be matched to a company on this system and were not restored. Create the company and restore again, or re-enter them in Admin › Program Partners.`
+      `${result.droppedNoCompany} partner specific program setting(s) could not be matched to a company on this system and were not restored. Create the company and restore again, or re-enter them in Admin › Partner Specific Program Settings.`
     );
   }
   if (result.droppedNoProgram > 0) {
     out.push(
-      `${result.droppedNoProgram} program partner setting(s) named a program that is not in the restored data and were not restored.`
+      `${result.droppedNoProgram} partner specific program setting(s) named a program that is not in the restored data and were not restored.`
     );
   }
   if (result.droppedLivePrograms > 0) {
     out.push(
-      `${result.droppedLivePrograms} existing program partner setting(s) were removed because the restored data no longer contains their program.`
+      `${result.droppedLivePrograms} existing partner specific program setting(s) were removed because the restored data no longer contains their program.`
     );
   }
   if (result.unlinkedCountrySets > 0) {
     out.push(
-      `${result.unlinkedCountrySets} program partner setting(s) named a Country Set for the By Country Set view that does not exist for that company after the restore; they were kept without that set. Choose it again in Admin › Program Partners.`
+      `${result.unlinkedCountrySets} partner specific program setting(s) named a Country Set for the By Country Set view that does not exist for that company after the restore; they were kept without that set. Choose it again in Admin › Partner Specific Program Settings.`
     );
   }
   if (result.unlinkedTargetSets > 0) {
     out.push(
-      `${result.unlinkedTargetSets} program partner setting(s) named a target-countries Country Set for the By Theatre view that does not exist for that company after the restore; they were kept without a target set. Choose it again in Admin › Program Partners.`
+      `${result.unlinkedTargetSets} partner specific program setting(s) named a target-countries Country Set for the By Theatre view that does not exist for that company after the restore; they were kept without a target set. Choose it again in Admin › Partner Specific Program Settings.`
     );
   }
   if (result.invalidMinimums > 0) {
     out.push(
-      `${result.invalidMinimums} minimum number(s) of countries in the program partner settings were invalid and were cleared.`
+      `${result.invalidMinimums} minimum number(s) of countries in the partner specific program settings were invalid and were cleared.`
     );
   }
   if (result.legacyRows > 0) {
     out.push(
-      `${result.legacyRows} program partner setting(s) came from an older version that held one minimum and one Country Set per partner; they were restored as the partner's By Theatre view terms (minimum target countries and target set), with no By Country Set view terms.`
+      `${result.legacyRows} partner specific program setting(s) came from an older version that held one minimum and one Country Set per partner; they were restored as the partner's By Theatre view terms (minimum target countries and target set), with no By Country Set view terms.`
     );
   }
   return out;

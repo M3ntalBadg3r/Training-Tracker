@@ -122,7 +122,7 @@ function restoreSummary(data: any): {
   // back from the archive.
   const partnerSettings =
     c.programCompanySettings > 0
-      ? ` ${c.programCompanySettings} program partner settings.`
+      ? ` ${c.programCompanySettings} partner specific program settings.`
       : "";
   if (data.kind === "config") {
     return {

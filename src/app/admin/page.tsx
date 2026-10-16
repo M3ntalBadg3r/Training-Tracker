@@ -20,6 +20,7 @@ import {
   Award,
   Package,
   MapPinned,
+  Handshake,
 } from "lucide-react";
 import { useAuth } from "@/components/auth/AuthProvider";
 
@@ -43,6 +44,7 @@ const ADMIN_CARDS: AdminCard[] = [
   { href: "/admin/specialisations", title: "Specialisations", description: "Manage partner program specialisations", icon: Award, superAdminOnly: true },
   { href: "/admin/region-data", title: "Region Data", description: "Manage countries and regions", icon: Globe, superAdminOnly: true },
   { href: "/admin/country-sets", title: "Country Sets", description: "Group countries into custom sets for partner program reporting", icon: MapPinned },
+  { href: "/admin/program-partners", title: "Partner Specific Program Settings", description: "Each partner's own minimum countries and Country Sets for a program's views", icon: Handshake },
   { href: "/admin/system-settings", title: "System Settings", description: "Configure the default date format and other instance-wide settings", icon: SlidersHorizontal, superAdminOnly: true },
   { href: "/admin/api-keys", title: "API Keys", description: "Issue read-only public API keys scoped to companies", icon: KeyRound, superAdminOnly: true },
   { href: "/admin/cleanup", title: "Data Clean-Up", description: "Scan and fix data quality issues", icon: Sparkles, superAdminOnly: true },
@@ -71,7 +73,7 @@ export default function AdminPage() {
               className="flex items-center justify-between p-4 bg-white rounded-lg border border-gray-200 hover:border-blue-300 hover:shadow-sm transition-all"
             >
               <div className="flex items-center gap-3">
-                <Icon size={20} className="text-blue-600" />
+                <Icon size={20} className="shrink-0 text-blue-600" />
                 <div>
                   <h3 className="font-semibold">{card.title}</h3>
                   <p className="text-sm text-gray-500">{card.description}</p>

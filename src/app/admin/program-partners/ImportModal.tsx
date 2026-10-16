@@ -11,8 +11,8 @@ import CompanyPicker from "@/components/company/CompanyPicker";
 import { checkImportFile } from "@/lib/import-file";
 
 /**
- * Program Partners import dialog — the Country Sets dialog's flow (upload, map
- * columns, preview with `?dryRun=true`, import) over the Program Partners
+ * Partner Specific Program Settings import dialog — the Country Sets dialog's flow (upload, map
+ * columns, preview with `?dryRun=true`, import) over the Partner Specific Program Settings
  * export's own columns, so an exported file round-trips. The semantics —
  * one row per program and company, upserted; company per row with a default
  * for blank cells; blank or unmapped cells write nothing, "none" clears — live
@@ -308,7 +308,7 @@ export default function ImportProgramPartnersModal({
     );
 
   return (
-    <Modal open={open} onClose={close} title="Import Program Partners" size="2xl">
+    <Modal open={open} onClose={close} title="Import Partner Specific Program Settings" size="2xl">
       <div className="space-y-4">
         <div className="flex justify-end">
           <Button variant="secondary" size="sm" onClick={downloadTemplate}>

@@ -7,7 +7,7 @@ import { invalidateReportCache } from "@/lib/report-cache";
 import { MAX_MINIMUM_COUNTRIES, parseMinimumCountries } from "@/lib/program-data-write";
 
 /**
- * Program Partners admin API — a partner's (Company's) own terms for a
+ * Partner Specific Program Settings admin API — a partner's (Company's) own terms for a
  * program, one row per (program, company), separately for the two views that
  * carry a minimum number of countries:
  *  - **By Country Set view**: `countrySetMinimumCountries` (null falls back to
@@ -266,7 +266,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(response);
   } catch (err) {
     console.warn("program-company-settings GET failed", err);
-    return NextResponse.json({ error: "Could not load program partner settings" }, { status: 500 });
+    return NextResponse.json({ error: "Could not load partner specific program settings" }, { status: 500 });
   }
 }
 
