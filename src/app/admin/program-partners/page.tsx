@@ -22,7 +22,7 @@ import type {
 import ImportProgramPartnersModal from "./ImportModal";
 
 /**
- * Program Partners — each partner's (company's) own terms for a program, per
+ * Partner Specific Program Settings — each partner's (company's) own terms for a program, per
  * view: for the By Country Set view, its minimum number of countries and the
  * Country Set the view opens on; for the By Theatre view, its minimum number
  * of target countries and the Country Set listing them. Any program may carry
@@ -319,7 +319,7 @@ function ProgramPartnersInner() {
     else exportToPdf(out, columns, "program-partners");
   };
 
-  if (loading) return <LoadingState label="Loading program partners…" />;
+  if (loading) return <LoadingState label="Loading partner specific program settings…" />;
 
   const noCompanies = !companyScope.loading && companies.length === 0;
   const noPrograms = programs.length === 0;
@@ -337,7 +337,7 @@ function ProgramPartnersInner() {
   return (
     <div>
       <PageHeader
-        title="Program Partners"
+        title="Partner Specific Program Settings"
         description="Each partner's own terms for a program: its minimum and Country Set for the By Country Set view, and its minimum and target Country Set for the By Theatre view."
         showBack
         helpSlug="program-partners"
@@ -373,7 +373,7 @@ function ProgramPartnersInner() {
       )}
       {error && (
         <div className="mb-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">
-          Could not load program partners.
+          Could not load partner specific program settings.
         </div>
       )}
 
@@ -678,7 +678,7 @@ function ProgramPartnersInner() {
 
 export default function ProgramPartnersPage() {
   return (
-    <Suspense fallback={<LoadingState label="Loading program partners…" />}>
+    <Suspense fallback={<LoadingState label="Loading partner specific program settings…" />}>
       <ProgramPartnersInner />
     </Suspense>
   );

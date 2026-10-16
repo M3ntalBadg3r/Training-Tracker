@@ -1291,7 +1291,7 @@ function ProgramDetailPageInner() {
                   <span>
                     This partner has no Country Set configured for this program — select one above, or set it in{" "}
                     <Link href="/admin/program-partners" className="text-blue-600 hover:underline">
-                      Admin &rsaquo; Program Partners
+                      Admin &rsaquo; Partner Specific Program Settings
                     </Link>
                     .
                   </span>

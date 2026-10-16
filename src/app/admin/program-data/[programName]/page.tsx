@@ -363,7 +363,7 @@ export default function ProgramRequirementsPage() {
         </div>
         <p className="mt-3 text-xs text-gray-500">
           These are the program defaults. Each partner&apos;s own minimums, its Country Set for the By Country Set
-          view and its target Country Set for the By Theatre view are set on the Program Partners page.
+          view and its target Country Set for the By Theatre view are set on the Partner Specific Program Settings page.
         </p>
       </section>
 

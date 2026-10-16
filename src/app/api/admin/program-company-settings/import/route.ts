@@ -8,7 +8,7 @@ import { MAX_MINIMUM_COUNTRIES, parseMinimumCountries } from "@/lib/program-data
 import { parsePositiveId } from "../route";
 
 /**
- * Bulk import for Program Partners — `POST /api/admin/program-company-settings/import`
+ * Bulk import for Partner Specific Program Settings — `POST /api/admin/program-company-settings/import`
  * (`?dryRun=true` validates and previews without writing).
  *
  * Body: `{ rows: [{ program, company?, countrySetMinimumCountries?, countrySet?,
