@@ -42,6 +42,10 @@ export interface Requirement {
   trainingType: string | null;
   trainingTitle: string | null;
   trainingFullTitle: string;
+  /** Optional display name for the rule (ProgramData.label). When set it is
+   *  the row's title and the training + alternatives become its subtitle.
+   *  Optional so an older cached payload still renders. */
+  label?: string | null;
   quantityRequired: number;
   attained: number;
   // Global-level fields: a global holder count, optionally gated by a
@@ -130,6 +134,8 @@ export interface TierDeploymentRequirement {
   trainingType: string | null;
   trainingTitle: string | null;
   trainingFullTitle: string;
+  /** Optional display name for the rule — see `Requirement.label`. */
+  label?: string | null;
   quantityRequired: number;
   attained: number;
   compliant: boolean;
@@ -658,7 +664,8 @@ function RequirementRowGroup({
             <td key={spec.name} className="px-4 py-2 text-center border border-gray-200">
               {req ? (
                 <div>
-                  <div className="font-medium">{req.trainingFullTitle}</div>
+                  {req.label && <div className="font-semibold">{req.label}</div>}
+                  <div className={req.label ? "text-xs text-gray-600" : "font-medium"}>{req.trainingFullTitle}</div>
                   <div className="text-xs text-gray-500">{trainingTypeLabel(req.trainingType)}</div>
                   {req.alternatives && req.alternatives.length > 0 && (
                     <div className="text-xs text-blue-600 mt-1">
@@ -1039,7 +1046,8 @@ function RequirementRows({ req }: { req: Requirement }) {
           ) : null}
         </td>
         <td className="px-4 py-3">
-          <div className="font-medium">{req.trainingFullTitle}</div>
+          {req.label && <div className="font-semibold">{req.label}</div>}
+          <div className={req.label ? "text-xs text-gray-600" : "font-medium"}>{req.trainingFullTitle}</div>
           {req.alternatives && req.alternatives.length > 0 && (
             <div className="text-xs text-blue-600 mt-0.5">
               {req.alternatives.map((a, i) => (
@@ -1214,12 +1222,22 @@ function TierRequirementRow({ req, multiCountry: multiCountryView }: { req: Tier
           {req.specialisationName && (
             <span className="text-[11px] uppercase tracking-wide text-gray-500 mr-1">{req.specialisationName}:</span>
           )}
-          <span className="text-sm">
-            {req.trainingFullTitle}
-            {req.alternatives.length > 0 && (
-              <span className="text-xs text-gray-500"> or {req.alternatives.map((a) => a.trainingFullTitle).join(", ")}</span>
-            )}
-          </span>
+          {req.label ? (
+            <>
+              <span className="text-sm font-medium">{req.label}</span>
+              <div className="text-xs text-gray-500">
+                {req.trainingFullTitle}
+                {req.alternatives.length > 0 && <> or {req.alternatives.map((a) => a.trainingFullTitle).join(", ")}</>}
+              </div>
+            </>
+          ) : (
+            <span className="text-sm">
+              {req.trainingFullTitle}
+              {req.alternatives.length > 0 && (
+                <span className="text-xs text-gray-500"> or {req.alternatives.map((a) => a.trainingFullTitle).join(", ")}</span>
+              )}
+            </span>
+          )}
           {req.population && <div className="text-[11px] text-cyan-700">{populationText(req)}</div>}
         </div>
         <div className="flex items-center gap-2 shrink-0">

@@ -2676,6 +2676,14 @@ const helpSections: Record<string, HelpSection> = {
           achieving any specialisation.
         </p>
         <p>
+          Give one a <strong>Name</strong>{" "}in the requirement form — for example
+          &ldquo;4 per target country &mdash; any sales cert&rdquo; — and the dashboard shows
+          that name as its title, with the training and its alternatives on a smaller line
+          beneath, which is far easier to read than a long list of alternatives. The name is
+          optional, up to 120 characters, available on every requirement, and never changes
+          how the row is counted.
+        </p>
+        <p>
           They exist only on tiered programs: a non-tiered program refuses them, and a
           program cannot be made non-tiered while it still has any — remove them first.
         </p>
@@ -2846,7 +2854,9 @@ const helpSections: Record<string, HelpSection> = {
           Expected columns: Program Name, Specialisation, Level, Count Mode, Training Type,
           Training, Quantity Required, Minimum per Theatre, Alternatives, plus the optional
           program-level <strong>Country Set Minimum Countries</strong>{" "}and{" "}
-          <strong>Target Minimum Countries</strong>{" "}columns. Column names are
+          <strong>Target Minimum Countries</strong>{" "}columns and an optional{" "}
+          <strong>Requirement Name</strong>{" "}(the rule&apos;s name, up to 120 characters).
+          Column names are
           matched case-insensitively. Specialisations are auto-created if they don&apos;t
           exist. Training is matched by display name against the training catalog.
           Alternatives are specified as pipe-separated training names (e.g.,

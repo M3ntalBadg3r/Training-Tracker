@@ -1295,6 +1295,13 @@
                                       "type": "string",
                                       "description": "Falls back to \"—\" when the training has been deleted."
                                     },
+                                    "label": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ],
+                                      "description": "Optional display name for the requirement (e.g. \"4 per target country — any sales cert\"). Display only; null when unnamed."
+                                    },
                                     "quantityRequired": {
                                       "type": "integer"
                                     },
@@ -1468,6 +1475,13 @@
                                     "trainingFullTitle": {
                                       "type": "string",
                                       "description": "Falls back to \"—\" when the training has been deleted."
+                                    },
+                                    "label": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ],
+                                      "description": "Optional display name for the requirement (e.g. \"4 per target country — any sales cert\"). Display only; null when unnamed."
                                     },
                                     "quantityRequired": {
                                       "type": "integer"
@@ -1871,6 +1885,13 @@
                                           "type": "string",
                                           "description": "Falls back to \"—\" when the training has been deleted."
                                         },
+                                        "label": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ],
+                                          "description": "Optional display name for the requirement (e.g. \"4 per target country — any sales cert\"). Display only; null when unnamed."
+                                        },
                                         "quantityRequired": {
                                           "type": "integer"
                                         },
@@ -2070,6 +2091,13 @@
                                   "trainingFullTitle": {
                                     "type": "string",
                                     "description": "Falls back to \"—\" when the training has been deleted."
+                                  },
+                                  "label": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ],
+                                    "description": "Optional display name for the requirement (e.g. \"4 per target country — any sales cert\"). Display only; null when unnamed."
                                   },
                                   "quantityRequired": {
                                     "type": "integer"
@@ -2702,6 +2730,13 @@
                                           "cert": {
                                             "type": "string"
                                           },
+                                          "label": {
+                                            "type": [
+                                              "string",
+                                              "null"
+                                            ],
+                                            "description": "Optional display name for the requirement (e.g. \"4 per target country — any sales cert\"). Display only; null when unnamed."
+                                          },
                                           "required": {
                                             "type": "integer"
                                           },
@@ -2946,6 +2981,13 @@
                               },
                               "cert": {
                                 "type": "string"
+                              },
+                              "label": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "description": "Optional display name for the requirement (e.g. \"4 per target country — any sales cert\"). Display only; null when unnamed."
                               },
                               "aggregation": {
                                 "type": "string",

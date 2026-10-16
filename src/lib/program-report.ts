@@ -440,6 +440,7 @@ export async function buildProgramReport(opts: BuildProgramReportOptions) {
           trainingType: req.trainingType ?? null,
           trainingTitle: req.trainingTitle ?? null,
           trainingFullTitle: req.trainingData?.fullTitle ?? "Theatre Compliance",
+          label: req.label ?? null,
           quantityRequired: req.quantityRequired,
           // A Global row is always pooled — "eachCountry" is only meaningful on
           // a multi-country level, and normaliseAggregation forces it off here.
@@ -778,6 +779,8 @@ type SpecReqRow = {
   trainingType: string | null;
   trainingTitle: string | null;
   trainingData: { fullTitle: string } | null;
+  /** Optional display name (ProgramData.label); display only. */
+  label?: string | null;
   quantityRequired: number;
   alternatives: Array<{
     trainingType: string;
@@ -865,6 +868,7 @@ function buildSpecialisationsWith(
       trainingType: req.trainingType ?? null,
       trainingTitle: req.trainingTitle ?? null,
       trainingFullTitle: req.trainingData?.fullTitle ?? "—",
+      label: req.label ?? null,
       quantityRequired: req.quantityRequired,
       aggregation,
       // Spread rather than assigned, so the key is genuinely absent (not
@@ -977,6 +981,8 @@ interface TierBlockRow {
   trainingTitle: string | null;
   quantityRequired: number;
   minimumPerTheatre: number | null;
+  /** Optional display name (ProgramData.label); display only. */
+  label?: string | null;
   specialisation: { name: string } | null;
   trainingData: { fullTitle: string } | null;
   alternatives: { trainingType: string; trainingTitle: string; trainingData: { fullTitle: string } | null }[];
@@ -1103,6 +1109,7 @@ function evaluateTierBlock(params: {
     trainingType: string | null;
     trainingTitle: string | null;
     trainingFullTitle: string;
+    label: string | null;
     quantityRequired: number;
     minimumPerTheatre: number | null;
     aggregation: Aggregation;
@@ -1123,6 +1130,7 @@ function evaluateTierBlock(params: {
       trainingType: r.trainingType,
       trainingTitle: r.trainingTitle,
       trainingFullTitle: r.trainingData?.fullTitle ?? "—",
+      label: r.label ?? null,
       quantityRequired: r.quantityRequired,
       minimumPerTheatre: r.minimumPerTheatre ?? null,
       aggregation,
@@ -1209,6 +1217,7 @@ function evaluateTierBlock(params: {
       trainingType: d.trainingType,
       trainingTitle: d.trainingTitle,
       trainingFullTitle: d.trainingFullTitle,
+      label: d.label,
       quantityRequired: d.quantityRequired,
       minimumPerTheatre: d.minimumPerTheatre,
       attained: snapNow.reqAttained.get(id) ?? 0,

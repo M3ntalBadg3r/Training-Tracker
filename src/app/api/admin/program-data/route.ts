@@ -62,6 +62,7 @@ export async function POST(request: NextRequest) {
       aggregation: v.aggregation,
       trainingType: v.trainingType as "Certification" | "Accreditation" | "InstructorLedTraining" | null,
       trainingTitle: v.trainingTitle,
+      label: v.label,
       quantityRequired: v.quantityRequired,
       minimumPerTheatre: v.minimumPerTheatre,
       alternatives:

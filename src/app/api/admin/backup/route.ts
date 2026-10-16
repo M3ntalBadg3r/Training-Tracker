@@ -1560,6 +1560,8 @@ async function restoreConfigArchive(zip: JSZip): Promise<NextResponse> {
             aggregation: normaliseAggregation(p.level, p.aggregation),
             trainingType: p.trainingType ?? null,
             trainingTitle: p.trainingTitle ?? null,
+            // Optional display name; an older archive has none.
+            label: typeof p.label === "string" && p.label.trim() !== "" ? p.label : null,
             quantityRequired: p.quantityRequired,
             minimumPerTheatre: p.minimumPerTheatre ?? null,
             createdAt: p.createdAt ? new Date(p.createdAt) : new Date(),
@@ -1984,6 +1986,8 @@ export async function restoreReferenceData(
         aggregation: normaliseAggregation(p.level, p.aggregation),
         trainingType: p.trainingType ?? null,
         trainingTitle: p.trainingTitle ?? null,
+        // Optional display name; an older archive has none.
+        label: typeof p.label === "string" && p.label.trim() !== "" ? p.label : null,
         quantityRequired: p.quantityRequired,
         minimumPerTheatre: p.minimumPerTheatre ?? null,
         createdAt: p.createdAt ? new Date(p.createdAt) : new Date(),

@@ -47,7 +47,13 @@ interface FormState {
   trainingFullTitle: string;
   quantityRequired: number;
   minimumPerTheatre: number | null;
+  /** Optional display name for the rule; blank = none. */
+  label: string;
 }
+
+/** Restates `MAX_REQUIREMENT_LABEL_LENGTH` (lib/program-data-write.ts, which
+ *  imports Prisma and so cannot be bundled here); the server enforces it. */
+const MAX_LABEL_LENGTH = 120;
 
 const EMPTY_FORM: FormState = {
   specialisationId: 0,
@@ -59,6 +65,7 @@ const EMPTY_FORM: FormState = {
   trainingFullTitle: "",
   quantityRequired: 1,
   minimumPerTheatre: null,
+  label: "",
 };
 
 /**
@@ -145,6 +152,7 @@ export default function RequirementModal({
           trainingFullTitle: initial.trainingFullTitle ?? "",
           quantityRequired: initial.quantityRequired,
           minimumPerTheatre: initial.minimumPerTheatre ?? null,
+          label: initial.label ?? "",
         }
       : EMPTY_FORM
   );
@@ -234,6 +242,8 @@ export default function RequirementModal({
         // Only Global requirements carry a per-theatre minimum.
         minimumPerTheatre: noTraining || form.level !== "Global" ? null : (form.minimumPerTheatre ?? null),
         alternatives: showAlts ? alternatives.filter((a) => a.trainingTitle) : [],
+        // Always sent: the PUT replaces the row, so leaving it out would clear it.
+        label: form.label.trim() || null,
       };
       const url = isEdit ? `/api/admin/program-data/${initial!.id}` : "/api/admin/program-data";
       const method = isEdit ? "PUT" : "POST";
@@ -616,6 +626,23 @@ export default function RequirementModal({
                   : isMultiCountryLevel(form.level)
                     ? "Number of people with this training needed across the whole area."
                     : "Number of people with this training needed."}
+            </p>
+          </div>
+          <div>
+            <label htmlFor="req-label" className="block text-sm font-medium mb-1">
+              Name <span className="font-normal text-gray-400">(optional)</span>
+            </label>
+            <input
+              id="req-label"
+              type="text"
+              maxLength={MAX_LABEL_LENGTH}
+              value={form.label}
+              onChange={(e) => setForm((f) => ({ ...f, label: e.target.value }))}
+              placeholder="e.g. 4 per target country — any sales cert"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
+            />
+            <p className="mt-1 text-xs text-gray-500">
+              Shown as the requirement&apos;s title instead of its training list. It does not change how the requirement is counted.
             </p>
           </div>
           <div className="flex justify-end gap-2 pt-2">

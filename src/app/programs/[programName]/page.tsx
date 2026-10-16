@@ -552,6 +552,14 @@ function ProgramDetailPageInner() {
   const populationCell = (req: { population?: PopulationKind; populationLabel?: string }): string =>
     populationCellText(req);
 
+  // A "Requirement Name" column is appended to the flat exports only when some
+  // requirement in this view carries a name, so every other export stays
+  // byte-identical to before names existed.
+  const hasRequirementNames = specs.some((spec) =>
+    [...spec.requirements, ...(spec.deploymentRequirements ?? [])].some((r) => !!r.label)
+  );
+  const requirementNameColumn = hasRequirementNames ? [{ key: "requirementName", header: "Requirement Name" }] : [];
+
   // Flat export: Country / Region / Country Set / Theatre, and the theatre-count
   // Global shape.
   const buildExportData = (specList: Specialisation[], levelLabel: string, filterValue: string) => {
@@ -597,6 +605,7 @@ function ProgramDetailPageInner() {
         // By Theatre with target countries only, and last, so every existing
         // column keeps its position and every other view is byte-identical.
         if (theatreTargetView) row.population = populationCell(req);
+        if (hasRequirementNames) row.requirementName = req.label ?? "";
         rows.push(row);
       };
       spec.requirements.forEach((req) => emit(req, "Qualification"));
@@ -633,6 +642,7 @@ function ProgramDetailPageInner() {
         ]
       : []),
     ...(theatreTargetView ? [{ key: "population", header: "Population" }] : []),
+    ...requirementNameColumn,
   ];
 
   // Global-level export with per-theatre minimums (global counts + breakdown rows).
@@ -667,6 +677,7 @@ function ProgramDetailPageInner() {
           theatreRequired: req.quantityRequired,
           theatreCompliant: req.compliant ? "Yes" : "No",
           ...projCols(globalAttained, projectedGlobal, req.quantityRequired),
+          ...(hasRequirementNames ? { requirementName: req.label ?? "" } : {}),
         });
         if (req.theatreBreakdown) {
           for (const t of req.theatreBreakdown) {
@@ -685,6 +696,7 @@ function ProgramDetailPageInner() {
               theatreRequired: tReq,
               theatreCompliant: t.compliant ? "Yes" : "No",
               ...projCols(t.count, tProjected, tReq),
+              ...(hasRequirementNames ? { requirementName: req.label ?? "" } : {}),
             });
           }
         }
@@ -714,6 +726,7 @@ function ProgramDetailPageInner() {
           { key: "projectedCompliant", header: "Projected Compliant" },
         ]
       : []),
+    ...requirementNameColumn,
   ];
 
   const sectionSlug = programName.replace(/[^a-z0-9]+/gi, "-").toLowerCase();
@@ -782,14 +795,21 @@ function ProgramDetailPageInner() {
       : [...baseColumns, statusColumn];
     const tierColumns = [...baseColumns, statusColumn];
 
+    // A named requirement leads with its name; the training and its
+    // alternatives become the grey second line, as on the page.
     const trainingCell = (
       trainingFullTitle: string,
       alternatives: AlternativeEntry[] | undefined,
-      prefix?: string | null
-    ): ReportRichCell => ({
-      text: prefix ? `${prefix}: ${trainingFullTitle}` : trainingFullTitle,
-      sub: alternativesText(alternatives),
-    });
+      prefix?: string | null,
+      label?: string | null
+    ): ReportRichCell => {
+      const title = label || trainingFullTitle;
+      const alts = alternativesText(alternatives);
+      return {
+        text: prefix ? `${prefix}: ${title}` : title,
+        sub: label ? [trainingFullTitle, alts].filter(Boolean).join(" ") : alts,
+      };
+    };
 
     const attainedCell = (
       attained: number,
@@ -844,7 +864,7 @@ function ProgramDetailPageInner() {
       if (!globalCards && isEachCountry(req)) {
         const state = riskState(req.attained, req.projectedAttained, req.quantityRequired);
         const cells: Record<string, ReportCellValue> = {
-          training: trainingCell(req.trainingFullTitle, req.alternatives),
+          training: trainingCell(req.trainingFullTitle, req.alternatives, null, req.label),
           type: trainingTypeLabel(req.trainingType),
           attained: eachCountryCell(
             req.countriesMet ?? 0,
@@ -874,7 +894,7 @@ function ProgramDetailPageInner() {
         ? complianceRiskState(req.compliant, req.projectedCompliant)
         : countState;
       const cells: Record<string, ReportCellValue> = {
-        training: trainingCell(req.trainingFullTitle, req.alternatives),
+        training: trainingCell(req.trainingFullTitle, req.alternatives, null, req.label),
         type: trainingTypeLabel(req.trainingType),
         attained: attainedCell(attained, projected, req.quantityRequired),
         status: { text: RISK_STATUS_LABEL[statusState], align: "center" },
@@ -901,7 +921,7 @@ function ProgramDetailPageInner() {
       const cells: Record<string, ReportCellValue> = {
         // In "perTierPerSpecialisation" mode each row belongs to one
         // specialisation, which the page prefixes to the training name.
-        training: trainingCell(req.trainingFullTitle, req.alternatives, req.specialisationName),
+        training: trainingCell(req.trainingFullTitle, req.alternatives, req.specialisationName, req.label),
         type: trainingTypeLabel(req.trainingType),
         attained: each
           ? eachCountryCell(
