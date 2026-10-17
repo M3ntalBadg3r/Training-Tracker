@@ -560,7 +560,7 @@ const helpSections: Record<string, HelpSection> = {
     content: (
       <>
         <p>
-          The Reports section contains nine report pages, each accessible from
+          The Reports section contains thirteen report pages, each accessible from
           the sidebar or the Reports landing page. Dashboard chart cards link
           directly to the relevant report. Every report exports as CSV, Excel,
           or PDF, and a PDF export can include the report&rsquo;s metric cards
@@ -587,6 +587,9 @@ const helpSections: Record<string, HelpSection> = {
 
         <h3>By Function</h3>
         <p>Stacked bar of Cert/Accred/ILT per function (Sales, Pre-Sales, Deployments), plus an active-vs-expired donut. Tick <strong>Count people, not records (active holders)</strong>{" "}to switch the chart and KPI cards from raw record counts to the number of distinct active holders, so multiple certs held by the same person don&rsquo;t skew the figures.</p>
+
+        <h3>Country Coverage by Function</h3>
+        <p>Every country in the chosen theatre (or region), with the certifications and accreditations held there split by function, how many people hold them, the headcount and the coverage %. See the report&rsquo;s own help for the details.</p>
 
         <h3>Expiring Soon</h3>
         <p>Horizon bar showing records expiring within 1/3/6/12 months, plus a theatre × month stacked bar showing where the cliff falls.</p>
@@ -861,6 +864,28 @@ const helpSections: Record<string, HelpSection> = {
     ),
   },
 
+  "reports-country-coverage": {
+    title: "Country Coverage by Function",
+    content: (
+      <>
+        <p>
+          One row per country, for answering &ldquo;where in this theatre are we
+          thin?&rdquo;. Pick a theatre with the scope filter (a region or a single
+          country narrows it further); leave it on All theatres to see every
+          country grouped by theatre, with a subtotal for each.
+        </p>
+        <ul>
+          <li><strong>Every country is listed</strong>{" "}— the list comes from Region Data, so a country configured in the theatre with no students, or with nobody certified, still appears with zeros. Countries with a headcount of zero are greyed out.</li>
+          <li><strong>Held</strong>{" "}— how many certifications and/or accreditations people in the country hold, split by the training&rsquo;s function (Sales, Pre-Sales, Deployments). Someone who re-sat the same certification counts it once.</li>
+          <li><strong>People holding</strong>{" "}— distinct people holding at least one, per function and in total. A person with a Sales certification and a Pre-Sales accreditation counts once under each function but only once under <strong>Any</strong>, so the function columns can add up to more than Any.</li>
+          <li><strong>Coverage</strong>{" "}— people holding at least one ÷ the country&rsquo;s headcount. Shown as &ldquo;—&rdquo; for a country with no students.</li>
+          <li><strong>Counting</strong>{" "}— count certifications and accreditations together (the default), or either one on its own. The column headings follow your choice.</li>
+          <li><strong>Include expired (inactive)</strong>{" "}— off by default, so only certifications and accreditations that have not yet expired count. Tick it to count expired ones too.</li>
+          <li>Every column is sortable (rows sort within each theatre), and the table exports to CSV, Excel or PDF with the theatre subtotals and grand total included.</li>
+        </ul>
+      </>
+    ),
+  },
   "reports-renewal-forecast": {
     title: "Renewal Forecast",
     content: (

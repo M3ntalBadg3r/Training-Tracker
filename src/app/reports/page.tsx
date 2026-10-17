@@ -16,6 +16,7 @@ import {
   UserCheck,
   History,
   CalendarX,
+  Globe2,
 } from "lucide-react";
 
 const TILES = [
@@ -72,6 +73,12 @@ const TILES = [
     title: "Theatre / Region / Country Comparison",
     description: "Compare geographies side by side — counts, trainings per student, breakdowns by type/function/product, and trends over time",
     Icon: Scale,
+  },
+  {
+    href: "/reports/country-coverage",
+    title: "Country Coverage by Function",
+    description: "Every country in a theatre — certifications and accreditations held by function, people holding them, headcount and coverage %",
+    Icon: Globe2,
   },
   {
     href: "/reports/catalogue-health",
