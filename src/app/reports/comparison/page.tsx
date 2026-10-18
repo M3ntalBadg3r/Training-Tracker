@@ -371,8 +371,8 @@ function ComparisonPageInner() {
               <tr className="bg-gray-50 border-b">
                 <th className="px-4 py-3 text-left font-semibold cursor-pointer select-none" onClick={() => toggleSort("bucket")}>{geoLabel}{sortIndicator("bucket")}</th>
                 {numHeader("headcount", "Headcount")}
-                {numHeader("cert", "Certs")}
-                {numHeader("accred", "Accreds")}
+                {numHeader("cert", "Certifications")}
+                {numHeader("accred", "Accreditations")}
                 {numHeader("ilt", "ILTs")}
                 {numHeader("olx", "OLX")}
                 {numHeader("total", "Total")}

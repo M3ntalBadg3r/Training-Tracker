@@ -369,7 +369,7 @@ function ExpiredPageInner() {
           </select>
           <label className={CHECKBOX_LABEL_CLASS}>
             <input type="checkbox" checked={excludeRetired} onChange={(e) => setExcludeRetired(e.target.checked)} className="rounded border-gray-300" />
-            Exclude retired (legacy) certs
+            Exclude retired (legacy) certifications
           </label>
         </FilterBar.Row>
       </FilterBar>

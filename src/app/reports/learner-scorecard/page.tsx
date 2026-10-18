@@ -178,7 +178,7 @@ function LearnerScorecardPageInner() {
     { key: "total", header: "Total" },
     { key: "expiring", header: `Expiring Soon (${windowMonths}mo)` },
     { key: "lapsed", header: "Expired" },
-    { key: "gaps", header: "Cert Gaps" },
+    { key: "gaps", header: "Certification Gaps" },
     { key: "lastDate", header: "Last Achievement" },
   ];
 
@@ -249,7 +249,7 @@ function LearnerScorecardPageInner() {
         cards={[
           { label: "Learners", value: kpis.learners, icon: Users, tone: "blue", hint: `${kpis.zero.toLocaleString()} with no achievements` },
           { label: includeExpired ? "Total Achievements" : "Active Achievements", value: kpis.achievements, icon: Award, tone: "emerald" },
-          { label: "Learners with Cert Gaps", value: kpis.withGaps, icon: AlertTriangle, tone: "amber" },
+          { label: "Learners with Certification Gaps", value: kpis.withGaps, icon: AlertTriangle, tone: "amber" },
           { label: `Expiring Soon (${windowMonths}mo)`, value: kpis.withExpiring, icon: Clock, tone: "red" },
         ]}
       />
@@ -287,8 +287,8 @@ function LearnerScorecardPageInner() {
                 <th className="px-4 py-3 text-left font-semibold cursor-pointer select-none" onClick={() => toggleSort("fullName")}>Name{sortIndicator("fullName")}</th>
                 <th className="px-4 py-3 text-left font-semibold">Theatre</th>
                 <th className="px-4 py-3 text-left font-semibold">Country</th>
-                {numHeader("cert", "Certs")}
-                {numHeader("accred", "Accreds")}
+                {numHeader("cert", "Certifications")}
+                {numHeader("accred", "Accreditations")}
                 {numHeader("ilt", "ILTs")}
                 {numHeader("olx", "OLX")}
                 {numHeader("total", "Total")}

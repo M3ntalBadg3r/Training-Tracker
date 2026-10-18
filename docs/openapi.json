@@ -1300,7 +1300,7 @@
                                         "string",
                                         "null"
                                       ],
-                                      "description": "Optional display name for the requirement (e.g. \"4 per target country — any sales cert\"). Display only; null when unnamed."
+                                      "description": "Optional display name for the requirement (e.g. \"4 per target country — any sales certification\"). Display only; null when unnamed."
                                     },
                                     "quantityRequired": {
                                       "type": "integer"
@@ -1481,7 +1481,7 @@
                                         "string",
                                         "null"
                                       ],
-                                      "description": "Optional display name for the requirement (e.g. \"4 per target country — any sales cert\"). Display only; null when unnamed."
+                                      "description": "Optional display name for the requirement (e.g. \"4 per target country — any sales certification\"). Display only; null when unnamed."
                                     },
                                     "quantityRequired": {
                                       "type": "integer"
@@ -1890,7 +1890,7 @@
                                             "string",
                                             "null"
                                           ],
-                                          "description": "Optional display name for the requirement (e.g. \"4 per target country — any sales cert\"). Display only; null when unnamed."
+                                          "description": "Optional display name for the requirement (e.g. \"4 per target country — any sales certification\"). Display only; null when unnamed."
                                         },
                                         "quantityRequired": {
                                           "type": "integer"
@@ -2097,7 +2097,7 @@
                                       "string",
                                       "null"
                                     ],
-                                    "description": "Optional display name for the requirement (e.g. \"4 per target country — any sales cert\"). Display only; null when unnamed."
+                                    "description": "Optional display name for the requirement (e.g. \"4 per target country — any sales certification\"). Display only; null when unnamed."
                                   },
                                   "quantityRequired": {
                                     "type": "integer"
@@ -2735,7 +2735,7 @@
                                               "string",
                                               "null"
                                             ],
-                                            "description": "Optional display name for the requirement (e.g. \"4 per target country — any sales cert\"). Display only; null when unnamed."
+                                            "description": "Optional display name for the requirement (e.g. \"4 per target country — any sales certification\"). Display only; null when unnamed."
                                           },
                                           "required": {
                                             "type": "integer"
@@ -2987,7 +2987,7 @@
                                   "string",
                                   "null"
                                 ],
-                                "description": "Optional display name for the requirement (e.g. \"4 per target country — any sales cert\"). Display only; null when unnamed."
+                                "description": "Optional display name for the requirement (e.g. \"4 per target country — any sales certification\"). Display only; null when unnamed."
                               },
                               "aggregation": {
                                 "type": "string",

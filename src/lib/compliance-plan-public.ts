@@ -55,7 +55,7 @@ import type { CountrySetMinimumMeta, TargetCountriesMeta } from "@/lib/program-l
  *
  * Re-audited for requirement names: `PlanRequirement` and `PlanRiskImpact`
  * gained `label`, the optional display name a SuperAdmin gives a program
- * requirement (e.g. "4 per target country — any sales cert"). Program
+ * requirement (e.g. "4 per target country — any sales certification"). Program
  * definitions are global registry data authored in Admin › Program Data, so it
  * is catalogue text like `cert`, not a person identifier.
  *

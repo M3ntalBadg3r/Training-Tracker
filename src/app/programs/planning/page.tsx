@@ -815,7 +815,7 @@ function tierPlanLine(tierPlan: NonNullable<PlanTargetResult["tierPlan"]>): stri
       ? ` · ${tierPlan.gateShortfall} short on the requirements every level needs`
       : "") +
     (tierPlan.deliveryCertShortfall > 0
-      ? ` · ${tierPlan.deliveryCertShortfall} delivery-cert people short`
+      ? ` · ${tierPlan.deliveryCertShortfall} delivery-certification people short`
       : "")
   );
 }
@@ -945,7 +945,7 @@ function buildRenewalSection(renewals: PlanRenewalRow[], windowMonths: number): 
     columns: [
       { key: "Name", header: "Name" }, { key: "Email", header: "Email" },
       { key: "Country", header: "Country" }, { key: "Theatre", header: "Theatre" },
-      { key: "Cert", header: "Cert" }, { key: "Scope", header: "Scope" },
+      { key: "Cert", header: "Certification" }, { key: "Scope", header: "Scope" },
       // The screen groups these rows and the PDF draws them as two cards; the
       // flat builders are the machine-readable rectangle, so here it is a column.
       { key: "OnPath", header: "On recommended path" },
@@ -1461,7 +1461,7 @@ function buildRenewalPdfSection(
       { key: "Name", header: "Name", width: 24 },
       { key: "Country", header: "Country", width: 16 },
       { key: "Theatre", header: "Theatre", width: 14 },
-      { key: "Cert", header: "Cert", width: 30 },
+      { key: "Cert", header: "Certification", width: 30 },
       { key: "Scope", header: "Scope", width: 16 },
     ],
     rows: [],
@@ -2450,7 +2450,7 @@ function CandidateTable({
                 <th className="py-2 pr-3 cursor-pointer" onClick={() => toggleSort("theatre")}>Theatre{sortIndicator("theatre")}</th>
                 <th className="py-2 pr-3 cursor-pointer" onClick={() => toggleSort("topTier")}>Best move{sortIndicator("topTier")}</th>
                 <th className="py-2 pr-3 cursor-pointer" onClick={() => toggleSort("specialisation")}>Specialisation{sortIndicator("specialisation")}</th>
-                <th className="py-2 pr-3 cursor-pointer" onClick={() => toggleSort("training")} title="ILT/OLX (or legacy cert) they already hold that gives them a head-start">Relevant training held{sortIndicator("training")}</th>
+                <th className="py-2 pr-3 cursor-pointer" onClick={() => toggleSort("training")} title="ILT/OLX (or legacy certification) they already hold that gives them a head-start">Relevant training held{sortIndicator("training")}</th>
                 <th className="py-2 pr-3 cursor-pointer" onClick={() => toggleSort("closesCount")}>{countLabel}{sortIndicator("closesCount")}</th>
                 <th className="py-2"></th>
               </tr>
@@ -2589,7 +2589,7 @@ function RenewalTable({
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs text-gray-500 border-b border-gray-200">
-              <th className="py-2 pr-3">Name</th><th className="py-2 pr-3">Country</th><th className="py-2 pr-3">Theatre</th><th className="py-2 pr-3">Cert</th><th className="py-2">Scope</th>
+              <th className="py-2 pr-3">Name</th><th className="py-2 pr-3">Country</th><th className="py-2 pr-3">Theatre</th><th className="py-2 pr-3">Certification</th><th className="py-2">Scope</th>
             </tr>
           </thead>
           {groups.map((g) => (

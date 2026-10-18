@@ -515,7 +515,7 @@ export default function ProgramRequirementsPage() {
           )}
           {deploymentMode === "perAchievedSpecialisation" && (
             <p className="mt-3 text-xs text-gray-500">
-              In this mode, add each specialisation&apos;s deployment certs as requirements with purpose
+              In this mode, add each specialisation&apos;s deployment certifications as requirements with purpose
               &ldquo;Deployment&rdquo; below.
             </p>
           )}
