@@ -12,6 +12,8 @@ interface ProgramInfo {
   levels: string[];
   hasMinimumPerTheatre: boolean;
   isTiered?: boolean;
+  /** Has TargetCountries rows: its By Theatre view also counts each partner's target countries. */
+  hasTargetCountries?: boolean;
 }
 
 function describe(p: ProgramInfo): string {

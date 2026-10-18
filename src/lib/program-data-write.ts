@@ -3,19 +3,26 @@
  * (POST /api/admin/program-data and PUT /api/admin/program-data/[id]).
  *
  * A requirement belongs to a specialisation (specialisationId) and/or a tier
- * (tierId) — at least one must be set. Specialisation-only rows carry a
+ * (tierId). On a **tiered** program a row may carry neither: that is a
+ * **program-wide gate** (`isProgramWideRow`), required by every tier in every
+ * deployment mode, and always written with purpose "qualification". On a
+ * non-tiered program a row needs at least one of the two. Specialisation-only rows carry a
  * `purpose` ("qualification" earns the specialisation, "deployment" is used by
  * tiers in "perAchievedSpecialisation" mode). Tier rows are always deployment;
  * a tier row may ALSO carry a specialisationId (a "perTierPerSpecialisation"
  * deployment requirement: that tier's deployment certs for that specialisation).
  *
- * A multi-country level (Region, CountrySet) carries a count mode
+ * A multi-country level (Region, CountrySet, TargetCountries) carries a count mode
  * (`aggregation`): "total" pools distinct holders across the area's countries,
  * "eachCountry" requires every country in the area to reach the quantity on its
  * own. Every other level is always "total" — an explicit "eachCountry" there is
  * a 400 rather than silently dropped, because the author asked for a rule the
  * level cannot express. `minimumPerTheatre` only means anything at Global level
  * and is nulled elsewhere (silently: the engine never reads it there).
+ *
+ * TargetCountries rows are counted in a program's By Theatre view, over the
+ * partner's target countries inside the theatre being viewed. Any program may
+ * carry rows at any level.
  */
 import prisma from "@/lib/prisma";
 import type { ProgramDataRow } from "@/types";
@@ -30,11 +37,34 @@ import {
   type ReqLevel,
 } from "@/lib/program-levels";
 
+/** The 400 text for a row with neither a specialisation nor a tier on a non-tiered program. */
+export const PROGRAM_WIDE_NOT_TIERED_ERROR =
+  "A requirement needs a specialisation or a tier, unless the program is tiered (then it can apply at every level)";
+
 export { REQ_LEVELS };
 
 /** Body cap for a single requirement write — one row plus its alternatives,
  *  far below the bulk-import default `readJsonBody` applies. */
 export const REQUIREMENT_BODY_MAX_BYTES = 256 * 1024;
+
+/** Longest optional requirement name (`ProgramData.label`) accepted on write. */
+export const MAX_REQUIREMENT_LABEL_LENGTH = 120;
+export const REQUIREMENT_LABEL_LENGTH_ERROR = `Requirement name must be ${MAX_REQUIREMENT_LABEL_LENGTH} characters or fewer`;
+
+/**
+ * Parse an optional requirement name (`ProgramData.label`): absent, null or
+ * blank is "no name" (null); a string is trimmed and must fit the length cap;
+ * anything else is rejected rather than coerced. Shared by the single-row
+ * write routes and the import so both accept exactly the same values.
+ */
+export function parseRequirementLabel(raw: unknown): { ok: true; value: string | null } | { ok: false; error: string } {
+  if (raw == null) return { ok: true, value: null };
+  if (typeof raw !== "string") return { ok: false, error: "Requirement name must be text" };
+  const value = raw.trim();
+  if (value === "") return { ok: true, value: null };
+  if (value.length > MAX_REQUIREMENT_LABEL_LENGTH) return { ok: false, error: REQUIREMENT_LABEL_LENGTH_ERROR };
+  return { ok: true, value };
+}
 
 export const REQ_TRAINING_TYPES = ["Certification", "Accreditation", "InstructorLedTraining"] as const;
 export const REQ_PURPOSES = ["qualification", "deployment"] as const;
@@ -48,6 +78,7 @@ export interface ValidatedRequirement {
   aggregation: Aggregation;
   trainingType: string | null;
   trainingTitle: string | null;
+  label: string | null;
   quantityRequired: number;
   minimumPerTheatre: number | null;
   altData: { trainingType: string; trainingTitle: string }[];
@@ -64,12 +95,27 @@ export async function validateRequirementBody(body: Record<string, unknown>): Pr
   const programName = typeof body.programName === "string" ? body.programName.trim() : "";
   if (!programName) return err("Program name is required");
 
+  const label = parseRequirementLabel(body.label);
+  if (!label.ok) return err(label.error);
+
   const specialisationId = body.specialisationId == null ? null : Number(body.specialisationId);
   const tierId = body.tierId == null ? null : Number(body.tierId);
-  const hasSpec = specialisationId != null && !Number.isNaN(specialisationId);
-  const hasTier = tierId != null && !Number.isNaN(tierId);
-  if (!hasSpec && !hasTier) {
-    return err("Requirement must belong to a specialisation or a tier");
+  if (specialisationId != null && !Number.isInteger(specialisationId)) return err("Invalid specialisation");
+  if (tierId != null && !Number.isInteger(tierId)) return err("Invalid tier");
+  const hasSpec = specialisationId != null;
+  const hasTier = tierId != null;
+
+  // The program's own setting decides whether a row with neither a
+  // specialisation nor a tier is allowed (tiered programs only). A program that
+  // does not exist yet is created by the POST as a plain, non-tiered program,
+  // so it gets the ordinary rules.
+  const program = await prisma.program.findUnique({
+    where: { name: programName },
+    select: { isTiered: true },
+  });
+  const isProgramWide = !hasSpec && !hasTier;
+  if (isProgramWide && !program?.isTiered) {
+    return err(PROGRAM_WIDE_NOT_TIERED_ERROR);
   }
 
   const level = body.level;
@@ -86,7 +132,7 @@ export async function validateRequirementBody(body: Record<string, unknown>): Pr
     }
     if (aggregationRaw === "eachCountry" && !isMultiCountryLevel(level)) {
       return err(
-        `The "In each country" count mode is only valid for Region or Country Set requirements, not ${LEVEL_LABELS[level]}`,
+        `The "In each country" count mode is only valid for Region, Country Set or Target countries requirements, not ${LEVEL_LABELS[level]}`,
       );
     }
   }
@@ -118,11 +164,12 @@ export async function validateRequirementBody(body: Record<string, unknown>): Pr
   }
 
   // Purpose: tier rows are always deployment; specialisation rows default to
-  // qualification unless explicitly a deployment requirement.
+  // qualification unless explicitly a deployment requirement; a program-wide
+  // gate is always qualification (it gates every tier, whatever the mode).
   let purpose = "qualification";
   if (hasTier) {
     purpose = "deployment";
-  } else if (body.purpose === "deployment") {
+  } else if (hasSpec && body.purpose === "deployment") {
     purpose = "deployment";
   }
 
@@ -166,6 +213,7 @@ export async function validateRequirementBody(body: Record<string, unknown>): Pr
       aggregation,
       trainingType: hasTraining ? trainingType : null,
       trainingTitle: hasTraining ? trainingTitleRaw : null,
+      label: label.value,
       quantityRequired,
       minimumPerTheatre,
       altData,
@@ -184,6 +232,7 @@ export interface ProgramDataRecord {
   aggregation: string;
   trainingType: string | null;
   trainingTitle: string | null;
+  label: string | null;
   quantityRequired: number;
   minimumPerTheatre: number | null;
   specialisation: { name: string } | null;
@@ -217,6 +266,7 @@ export function serializeProgramDataRow(record: ProgramDataRecord): ProgramDataR
     trainingType: record.trainingType ?? null,
     trainingTitle: record.trainingTitle ?? null,
     trainingFullTitle: record.trainingData?.fullTitle ?? "—",
+    label: record.label ?? null,
     quantityRequired: record.quantityRequired,
     minimumPerTheatre: record.minimumPerTheatre ?? null,
     alternatives: record.alternatives.map((a) => ({
@@ -225,4 +275,64 @@ export function serializeProgramDataRow(record: ProgramDataRecord): ProgramDataR
       trainingFullTitle: a.trainingData?.fullTitle ?? "—",
     })),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Program-level default minimums (shared by the program POST and PATCH routes,
+// the program-data import and the partner-settings routes).
+// ---------------------------------------------------------------------------
+
+/** Upper bound for a minimum number of countries — far above any real program. */
+export const MAX_MINIMUM_COUNTRIES = 1000;
+
+/**
+ * Parse a minimum-countries value strictly: a whole number 1–1000 given as a
+ * JSON number or a digit-only string. `null` / `""` mean "no minimum". Anything
+ * else (fractions, negatives, "6 countries", `true`) is rejected rather than
+ * coerced — `Number("")` must never become a minimum of 0.
+ */
+export function parseMinimumCountries(raw: unknown): { ok: true; value: number | null } | { ok: false } {
+  if (raw === null || raw === undefined) return { ok: true, value: null };
+  if (typeof raw === "string" && raw.trim() === "") return { ok: true, value: null };
+  let n: number;
+  if (typeof raw === "number") n = raw;
+  else if (typeof raw === "string" && /^\d+$/.test(raw.trim())) n = Number(raw.trim());
+  else return { ok: false };
+  if (!Number.isSafeInteger(n) || n < 1 || n > MAX_MINIMUM_COUNTRIES) return { ok: false };
+  return { ok: true, value: n };
+}
+
+/** The two per-view minimums, and the label each is known by in messages. */
+export const MINIMUM_FIELDS = {
+  countrySetMinimumCountries: "Minimum countries — By Country Set view",
+  targetMinimumCountries: "Minimum target countries — By Theatre view",
+} as const;
+export type MinimumField = keyof typeof MINIMUM_FIELDS;
+
+export interface ProgramMinimumsInput {
+  /** `undefined` = key absent (leave alone); `null` = clear (no default). */
+  countrySetMinimumCountries: number | null | undefined;
+  /** `undefined` = key absent (leave alone); `null` = clear (no default). */
+  targetMinimumCountries: number | null | undefined;
+}
+
+/**
+ * Read the two per-view default minimums from a program POST/PATCH body. Each
+ * key is tri-state: absent = `undefined` (leave the stored value alone);
+ * `null` or `""` = clear; otherwise a whole number 1–1000, parsed strictly.
+ */
+export function parseProgramMinimums(
+  body: Record<string, unknown>
+): { ok: true; value: ProgramMinimumsInput } | { ok: false; error: string } {
+  const has = (k: string) => Object.prototype.hasOwnProperty.call(body, k);
+  const value: ProgramMinimumsInput = { countrySetMinimumCountries: undefined, targetMinimumCountries: undefined };
+  for (const key of Object.keys(MINIMUM_FIELDS) as MinimumField[]) {
+    if (!has(key)) continue;
+    const parsed = parseMinimumCountries(body[key]);
+    if (!parsed.ok) {
+      return { ok: false, error: `${MINIMUM_FIELDS[key]}: must be a whole number from 1 to ${MAX_MINIMUM_COUNTRIES}, or blank` };
+    }
+    value[key] = parsed.value;
+  }
+  return { ok: true, value };
 }

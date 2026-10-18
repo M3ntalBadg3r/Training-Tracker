@@ -2,19 +2,27 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
+import Link from "next/link";
 import PageHeader from "@/components/layout/PageHeader";
 import Modal from "@/components/ui/Modal";
 import RequirementModal, { RequirementScope } from "../RequirementModal";
 import TierModal from "../TierModal";
+import MinimumCountriesFields, {
+  EMPTY_MINIMUMS,
+  minimumsBody,
+  minimumsFromProgram,
+  type MinimumCountriesValue,
+} from "../MinimumCountriesFields";
 import { ProgramDataRow, ProgramTierRow, SpecialisationRow } from "@/types";
 import { trainingTypeLabel } from "@/lib/utils";
-import { Plus, Trash2, Pencil, ChevronUp, ChevronDown, Layers } from "lucide-react";
+import { Plus, Trash2, Pencil, ChevronUp, ChevronDown, Layers, SlidersHorizontal, Users, Save } from "lucide-react";
 import {
   AGGREGATIONS,
   AGGREGATION_SHORT_LABELS,
   LEVEL_LABELS,
   REQ_LEVELS,
   isMultiCountryLevel,
+  isProgramWideRow,
   isReqLevel,
   normaliseAggregation,
 } from "@/lib/program-levels";
@@ -22,6 +30,8 @@ import {
 const TRAINING_TYPES = ["Certification", "Accreditation", "InstructorLedTraining"];
 
 const levelLabel = (level: string) => (isReqLevel(level) ? LEVEL_LABELS[level] : level);
+/** Target countries rows spelled out where a row is described in a sentence. */
+const TARGET_COUNTRIES_LONG_LABEL = "Target countries in the viewed theatre";
 const levelRank = (level: string) => (isReqLevel(level) ? REQ_LEVELS.indexOf(level) : REQ_LEVELS.length);
 
 /** Filter key for the Count Mode column: the row's count mode on a
@@ -59,6 +69,12 @@ export default function ProgramRequirementsPage() {
   const [isTiered, setIsTiered] = useState(false);
   const [deploymentMode, setDeploymentMode] = useState("flat");
   const [loading, setLoading] = useState(true);
+
+  // The program's default minimum-countries settings (editable form).
+  const [minimumsForm, setMinimumsForm] = useState<MinimumCountriesValue>(EMPTY_MINIMUMS);
+  const [minimumsSaving, setMinimumsSaving] = useState(false);
+  const [minimumsError, setMinimumsError] = useState("");
+  const [minimumsSaved, setMinimumsSaved] = useState(false);
 
   // Filters
   const [filterSpec, setFilterSpec] = useState("");
@@ -107,7 +123,15 @@ export default function ProgramRequirementsPage() {
     fetch("/api/admin/program-data/program")
       .then((res) =>
         res.ok
-          ? (res.json() as Promise<{ name: string; isTiered: boolean; deploymentMode: string }[]>)
+          ? (res.json() as Promise<
+              {
+                name: string;
+                isTiered: boolean;
+                deploymentMode: string;
+                countrySetMinimumCountries: number | null;
+                targetMinimumCountries: number | null;
+              }[]
+            >)
           : null
       )
       .then((list) => {
@@ -115,6 +139,7 @@ export default function ProgramRequirementsPage() {
         if (me) {
           setIsTiered(me.isTiered);
           setDeploymentMode(me.deploymentMode || "flat");
+          setMinimumsForm(minimumsFromProgram(me));
         }
       })
       .catch(() => { /* ignore */ });
@@ -144,6 +169,30 @@ export default function ProgramRequirementsPage() {
     });
   };
 
+  const saveMinimums = async () => {
+    setMinimumsError("");
+    setMinimumsSaved(false);
+    setMinimumsSaving(true);
+    try {
+      const res = await fetch(`/api/admin/program-data/program/${encodeURIComponent(programName)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(minimumsBody(minimumsForm)),
+      });
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setMinimumsError(typeof result.error === "string" ? result.error : "Could not save the settings");
+        return;
+      }
+      setMinimumsSaved(true);
+      fetchProgram();
+    } catch {
+      setMinimumsError("Could not save the settings");
+    } finally {
+      setMinimumsSaving(false);
+    }
+  };
+
   const toggleSort = (col: string) => {
     if (sortCol === col) {
       setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -162,6 +211,8 @@ export default function ProgramRequirementsPage() {
   // tier-scoped rows — including per-tier-per-specialisation deployment rows
   // that carry both a tier and a specialisation — are shown under their tier.
   const specRows = useMemo(() => rows.filter((r) => r.specialisationId != null && r.tierId == null), [rows]);
+  // Program-wide gates: neither a specialisation nor a tier (tiered programs only).
+  const gateRows = useMemo(() => rows.filter((r) => isProgramWideRow(r)), [rows]);
   const tierReqsByTier = useMemo(() => {
     const map = new Map<number, ProgramDataRow[]>();
     for (const r of rows) {
@@ -210,6 +261,7 @@ export default function ProgramRequirementsPage() {
   }, [filteredRows, sortCol, sortDir]);
 
   const openAddSpec = () => { setEditTarget(null); setReqScope({ kind: "specialisation" }); setShowRequirement(true); };
+  const openAddGate = () => { setEditTarget(null); setReqScope({ kind: "programWide" }); setShowRequirement(true); };
   const openAddTierReq = (tier: ProgramTierRow) => {
     setEditTarget(null);
     setReqScope({ kind: "tier", tierId: tier.id, tierName: tier.name });
@@ -219,6 +271,8 @@ export default function ProgramRequirementsPage() {
     setEditTarget(row);
     if (row.tierId != null) {
       setReqScope({ kind: "tier", tierId: row.tierId, tierName: row.tierName ?? "Tier" });
+    } else if (isProgramWideRow(row)) {
+      setReqScope({ kind: "programWide" });
     } else {
       setReqScope({ kind: "specialisation" });
     }
@@ -259,9 +313,104 @@ export default function ProgramRequirementsPage() {
     );
   }
 
+  const describeRow = (r: ProgramDataRow) => (
+    <>
+      <span className="text-gray-500">
+        {r.level === "TargetCountries" ? TARGET_COUNTRIES_LONG_LABEL : levelLabel(r.level)}
+        {isMultiCountryLevel(r.level) && ` (${countModeLabel(r).toLowerCase()})`}
+        {" · "}
+      </span>
+      {r.label ? (
+        <>
+          <span className="font-medium">{r.label}</span>
+          <span className="text-xs text-gray-500">
+            {" · "}
+            {r.quantityRequired}× {r.trainingFullTitle || "—"}
+            {r.alternatives.length > 0 && <> or {r.alternatives.map((a) => a.trainingFullTitle).join(", ")}</>}
+          </span>
+        </>
+      ) : (
+        <>
+          {r.quantityRequired}× {r.trainingFullTitle || "—"}
+          {r.alternatives.length > 0 && (
+            <span className="text-xs text-gray-500"> or {r.alternatives.map((a) => a.trainingFullTitle).join(", ")}</span>
+          )}
+        </>
+      )}
+    </>
+  );
+
   return (
     <div>
       <PageHeader title={programName} showBack helpSlug="admin-program-data" />
+
+      <section className="mb-6 bg-white rounded-lg border border-gray-200 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+          <h2 className="flex items-center gap-2 text-base font-semibold text-gray-800">
+            <SlidersHorizontal size={18} /> Minimum countries
+          </h2>
+          <Link
+            href={`/admin/program-partners?q=${encodeURIComponent(programName)}`}
+            className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800"
+          >
+            <Users size={15} /> Partner settings
+          </Link>
+        </div>
+        <div className="max-w-md">
+          <MinimumCountriesFields
+            value={minimumsForm}
+            onChange={(v) => { setMinimumsForm(v); setMinimumsSaved(false); }}
+            idPrefix="program-settings"
+          />
+        </div>
+        {minimumsError && <div className="mt-3 p-2 bg-red-50 text-red-700 rounded text-sm">{minimumsError}</div>}
+        <div className="mt-3 flex items-center gap-3">
+          <button
+            onClick={saveMinimums}
+            disabled={minimumsSaving}
+            className="flex items-center gap-1 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+          >
+            <Save size={15} /> {minimumsSaving ? "Saving…" : "Save minimums"}
+          </button>
+          {minimumsSaved && <span className="text-sm text-green-700">Saved.</span>}
+        </div>
+        <p className="mt-3 text-xs text-gray-500">
+          These are the program defaults. Each partner&apos;s own minimums, its Country Set for the By Country Set
+          view and its target Country Set for the By Theatre view are set on the Partner Specific Program Settings page.
+        </p>
+      </section>
+
+      {isTiered && (
+        <section className="mb-6 bg-white rounded-lg border border-gray-200 p-4">
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-base font-semibold text-gray-800">Required at every level</h2>
+            <button
+              onClick={openAddGate}
+              className="flex items-center gap-2 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              <Plus size={16} /> Add
+            </button>
+          </div>
+          <p className="mb-3 text-xs text-gray-500">
+            Every tier needs these, whichever specialisations are achieved.
+          </p>
+          {gateRows.length === 0 ? (
+            <p className="text-sm text-gray-500">None.</p>
+          ) : (
+            <ul className="space-y-1">
+              {gateRows.map((r) => (
+                <li key={r.id} className="flex items-center justify-between text-sm">
+                  <span>{describeRow(r)}</span>
+                  <span className="flex gap-2">
+                    <button onClick={() => openEdit(r)} className="px-2 py-0.5 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200">Edit</button>
+                    <button onClick={() => { setDeleteTarget(r); setDeleteError(""); }} className="px-2 py-0.5 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200"><Trash2 size={12} /></button>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
 
       {isTiered && (
         <section className="mb-6 bg-white rounded-lg border border-gray-200 p-4">
@@ -342,15 +491,7 @@ export default function ProgramRequirementsPage() {
                                   {r.specialisationName && (
                                     <span className="font-medium text-gray-700">{r.specialisationName}: </span>
                                   )}
-                                  <span className="text-gray-500">
-                                    {levelLabel(r.level)}
-                                    {isMultiCountryLevel(r.level) && ` (${countModeLabel(r).toLowerCase()})`}
-                                    {" · "}
-                                  </span>
-                                  {r.quantityRequired}× {r.trainingFullTitle || "—"}
-                                  {r.alternatives.length > 0 && (
-                                    <span className="text-xs text-gray-500"> or {r.alternatives.map((a) => a.trainingFullTitle).join(", ")}</span>
-                                  )}
+                                  {describeRow(r)}
                                 </span>
                                 <span className="flex gap-2">
                                   <button onClick={() => openEdit(r)} className="px-2 py-0.5 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200">Edit</button>
@@ -374,7 +515,7 @@ export default function ProgramRequirementsPage() {
           )}
           {deploymentMode === "perAchievedSpecialisation" && (
             <p className="mt-3 text-xs text-gray-500">
-              In this mode, add each specialisation&apos;s deployment certs as requirements with purpose
+              In this mode, add each specialisation&apos;s deployment certifications as requirements with purpose
               &ldquo;Deployment&rdquo; below.
             </p>
           )}
@@ -483,16 +624,22 @@ export default function ProgramRequirementsPage() {
                     {isTiered && (
                       <td className="px-4 py-3">{PURPOSE_LABELS[row.purpose] || row.purpose}</td>
                     )}
-                    <td className="px-4 py-3">{levelLabel(row.level)}</td>
+                    <td className="px-4 py-3">
+                      {levelLabel(row.level)}
+                      {row.level === "TargetCountries" && (
+                        <div className="text-xs text-gray-500 mt-0.5">In the viewed theatre (By Theatre view)</div>
+                      )}
+                    </td>
                     <td
                       className="px-4 py-3"
-                      title={isMultiCountryLevel(row.level) ? undefined : "Count mode applies only to Region and Country Set requirements"}
+                      title={isMultiCountryLevel(row.level) ? undefined : "Count mode applies only to Region, Country Set and Target countries requirements"}
                     >
                       {countModeLabel(row)}
                     </td>
                     <td className="px-4 py-3">{row.trainingType ? trainingTypeLabel(row.trainingType) : "—"}</td>
                     <td className="px-4 py-3">
-                      {row.trainingFullTitle || "—"}
+                      {row.label && <div className="font-medium">{row.label}</div>}
+                      <div className={row.label ? "text-xs text-gray-500" : undefined}>{row.trainingFullTitle || "—"}</div>
                       {row.alternatives && row.alternatives.length > 0 && (
                         <div className="text-xs text-gray-500 mt-0.5">
                           or {row.alternatives.map((a) => a.trainingFullTitle).join(", ")}
@@ -540,6 +687,7 @@ export default function ProgramRequirementsPage() {
         scope={reqScope}
         allowPurpose={allowPurpose}
         tierRequiresSpecialisation={tierRequiresSpecialisation}
+        isTiered={isTiered}
       />
       )}
 
@@ -563,7 +711,11 @@ export default function ProgramRequirementsPage() {
             <p className="text-sm mb-4">
               Are you sure you want to delete the requirement for{" "}
               <strong>{deleteTarget.trainingFullTitle || "this global requirement"}</strong> under{" "}
-              <strong>{deleteTarget.specialisationName ?? deleteTarget.tierName ?? "this program"}</strong>?
+              <strong>
+                {deleteTarget.specialisationName ??
+                  deleteTarget.tierName ??
+                  (isProgramWideRow(deleteTarget) ? "every level of this program" : "this program")}
+              </strong>?
             </p>
             <div className="flex justify-end gap-2">
               <button onClick={() => setDeleteTarget(null)} className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>

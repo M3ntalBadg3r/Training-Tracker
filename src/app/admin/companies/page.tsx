@@ -1,23 +1,124 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import PageHeader from "@/components/layout/PageHeader";
 import Modal from "@/components/ui/Modal";
-import { Plus, Pencil, Trash2, Building2 } from "lucide-react";
+import LoadingState from "@/components/ui/LoadingState";
+import SearchInput from "@/components/ui/FormControls";
+import Pagination from "@/components/data-table/Pagination";
+import { useCompanyScope } from "@/components/company/CompanyScopeProvider";
+import { Plus, Pencil, Trash2, Building2, ChevronDown, ChevronUp } from "lucide-react";
 import { useFetchJson } from "@/hooks/useFetchJson";
+import { useDebounce } from "@/hooks/useDebounce";
+import {
+  COMPANY_PAGE_SIZES,
+  buildCompanyListParams,
+  cleanCompanySearch,
+  parseCompanyListQuery,
+  type CompanyListQuery,
+  type CompanyListResponse,
+  type CompanyListRow,
+  type CompanySortKey,
+} from "@/lib/companies-list-params";
 
-interface CompanyRow {
-  id: number;
-  name: string;
-  studentCount: number;
-  createdAt: string;
-}
+type CompanyRow = CompanyListRow;
 
-export default function CompaniesPage() {
+/**
+ * The company list is searched, sorted and paged on the server
+ * (`GET /api/admin/companies`, `lib/companies-list.ts`), so the browser only
+ * ever holds one page of rows — an install may carry tens of thousands of
+ * companies. The view (`q`/`sort`/`sortDir`/`page`/`size`) is mirrored to the
+ * URL, built and parsed by the shared `lib/companies-list-params.ts` so the
+ * address bar and the request cannot drift.
+ */
+function CompaniesPageInner() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const companyScope = useCompanyScope();
+
+  // Seed every piece of view state from the URL once, on mount. The parser
+  // re-validates each value (allow-listed sort keys, fixed page sizes,
+  // positive page, capped search text).
+  const [seed] = useState(() => parseCompanyListQuery(searchParams));
+  const [search, setSearch] = useState(seed.q);
+  const debouncedSearch = useDebounce(search, 300);
+  const [sort, setSort] = useState<CompanySortKey>(seed.sort);
+  const [sortDir, setSortDir] = useState<"asc" | "desc">(seed.sortDir);
+  const [page, setPage] = useState(seed.page);
+  const [pageSize, setPageSize] = useState(seed.pageSize);
+
+  const viewQuery = useMemo<CompanyListQuery>(
+    () => ({ q: cleanCompanySearch(debouncedSearch), sort, sortDir, page, pageSize }),
+    [debouncedSearch, sort, sortDir, page, pageSize]
+  );
+
+  // Reset to page 1 when the search or the sort changes — but not for the
+  // seeded view, so a URL-supplied page survives back-navigation. The last key
+  // starts at the seed's own key, which is the mount guard (a didMountRef):
+  // `useDebounce` returns its initial value immediately, so the first render's
+  // key equals it. Done while rendering ("adjust state while rendering")
+  // rather than in an effect, so the request for the new search never goes out
+  // with the old page number first.
+  const resetKey = JSON.stringify([cleanCompanySearch(debouncedSearch), sort, sortDir]);
+  const [lastResetKey, setLastResetKey] = useState(() =>
+    JSON.stringify([seed.q, seed.sort, seed.sortDir])
+  );
+  if (resetKey !== lastResetKey) {
+    setLastResetKey(resetKey);
+    if (page !== 1) setPage(1);
+  }
+
+  // Mirror the view to the URL. The search box's own text is written (not the
+  // debounced copy) so the address bar keeps up with typing.
+  useEffect(() => {
+    const qs = buildCompanyListParams({ ...viewQuery, q: cleanCompanySearch(search) }).toString();
+    if (qs !== searchParams.toString()) {
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    }
+  }, [viewQuery, search, searchParams, pathname, router]);
+
+  const listQs = buildCompanyListParams(viewQuery).toString();
   // `reload` is aliased as fetchCompanies so mutation handlers can refresh the
-  // list; the hook derives `loading` without a setState-in-effect.
-  const { data: companiesData, loading, reload: fetchCompanies } = useFetchJson<CompanyRow[]>("/api/admin/companies");
-  const companies = companiesData ?? [];
+  // current page; the hook derives `loading` without a setState-in-effect.
+  const {
+    data: listData,
+    loading,
+    error: listError,
+    reload: fetchCompanies,
+  } = useFetchJson<CompanyListResponse>(`/api/admin/companies${listQs ? `?${listQs}` : ""}`);
+  const companies = listData?.rows ?? [];
+  const total = listData?.total ?? 0;
+
+  // The server clamps a page past the end (a stale link, or a delete that
+  // emptied the last page) to the last page; adopt that so the pager and the
+  // URL agree with the table. "Adjust state while rendering", not an effect.
+  if (listData && !loading && !listError && listData.page !== page) {
+    setPage(listData.page);
+  }
+
+  // After a mutation, refresh this page AND the shared per-session company
+  // list (`/api/companies` via CompanyScopeProvider) — the header switcher and
+  // the Users / API Keys company pickers read that list, so without this a
+  // created, renamed or deleted company would be stale there until a reload.
+  const afterMutation = () => {
+    fetchCompanies();
+    void companyScope.refresh();
+  };
+
+  const handleSort = (key: CompanySortKey) => {
+    if (sort === key) {
+      setSortDir(sortDir === "asc" ? "desc" : "asc");
+    } else {
+      setSort(key);
+      // A count reads most usefully largest-first; a name A–Z.
+      setSortDir(key === "studentCount" ? "desc" : "asc");
+    }
+  };
+
+  const sortIndicator = (key: CompanySortKey) =>
+    sort === key ? (sortDir === "asc" ? <ChevronUp size={14} /> : <ChevronDown size={14} />) : null;
 
   const [showAdd, setShowAdd] = useState(false);
   const [addName, setAddName] = useState("");
@@ -44,7 +145,7 @@ export default function CompaniesPage() {
     }
     setShowAdd(false);
     setAddName("");
-    fetchCompanies();
+    afterMutation();
   };
 
   const handleEdit = async () => {
@@ -61,7 +162,7 @@ export default function CompaniesPage() {
       return;
     }
     setEditCompany(null);
-    fetchCompanies();
+    afterMutation();
   };
 
   const handleDelete = async () => {
@@ -76,16 +177,14 @@ export default function CompaniesPage() {
       return;
     }
     setDeleteCompany(null);
-    fetchCompanies();
+    afterMutation();
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-gray-500">Loading companies...</div>
-      </div>
-    );
+  if (!listData && loading) {
+    return <LoadingState label="Loading companies…" />;
   }
+
+  const searching = cleanCompanySearch(debouncedSearch) !== "";
 
   return (
     <div>
@@ -107,63 +206,107 @@ export default function CompaniesPage() {
         }
       />
 
-      <div className="bg-white rounded-lg border border-gray-200 overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="bg-gray-50 border-b border-gray-200">
-              <th className="px-4 py-3 text-left font-semibold text-gray-700">Name</th>
-              <th className="px-4 py-3 text-left font-semibold text-gray-700">Students</th>
-              <th className="px-4 py-3 text-left font-semibold text-gray-700">Created</th>
-              <th className="px-4 py-3 text-left font-semibold text-gray-700">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {companies.length === 0 && (
-              <tr>
-                <td colSpan={4} className="px-4 py-8 text-center text-gray-500">
-                  No companies yet.
-                </td>
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <SearchInput
+            value={search}
+            onChange={setSearch}
+            placeholder="Search companies..."
+            className="flex-1 max-w-md"
+          />
+        </div>
+
+        <div className="bg-white rounded-lg border border-gray-200 overflow-x-auto">
+          <table className={`w-full text-sm transition-opacity ${loading ? "opacity-60" : ""}`}>
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-200">
+                <th className="px-4 py-3 text-left font-semibold text-gray-700">
+                  <button
+                    onClick={() => handleSort("name")}
+                    className="flex items-center gap-1 font-semibold text-gray-700 hover:text-gray-900"
+                  >
+                    Name
+                    {sortIndicator("name")}
+                  </button>
+                </th>
+                <th className="px-4 py-3 text-left font-semibold text-gray-700">
+                  <button
+                    onClick={() => handleSort("studentCount")}
+                    className="flex items-center gap-1 font-semibold text-gray-700 hover:text-gray-900"
+                  >
+                    Students
+                    {sortIndicator("studentCount")}
+                  </button>
+                </th>
+                <th className="px-4 py-3 text-left font-semibold text-gray-700">Created</th>
+                <th className="px-4 py-3 text-left font-semibold text-gray-700">Actions</th>
               </tr>
-            )}
-            {companies.map((c) => (
-              <tr key={c.id} className="border-b border-gray-100 hover:bg-gray-50">
-                <td className="px-4 py-3 text-gray-700 font-medium flex items-center gap-2">
-                  <Building2 size={14} className="text-gray-400" />
-                  {c.name}
-                </td>
-                <td className="px-4 py-3 text-gray-700">{c.studentCount}</td>
-                <td className="px-4 py-3 text-gray-500 text-xs">
-                  {new Date(c.createdAt).toLocaleDateString()}
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex gap-1">
-                    <button
-                      onClick={() => {
-                        setEditCompany(c);
-                        setEditName(c.name);
-                        setEditError("");
-                      }}
-                      className="p-1.5 text-blue-600 hover:bg-blue-50 rounded"
-                      title="Rename"
-                    >
-                      <Pencil size={14} />
-                    </button>
-                    <button
-                      onClick={() => {
-                        setDeleteCompany(c);
-                        setDeleteError("");
-                      }}
-                      className="p-1.5 text-red-600 hover:bg-red-50 rounded"
-                      title="Delete"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {companies.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="px-4 py-8 text-center text-gray-500">
+                    {listError
+                      ? "Failed to load companies."
+                      : searching
+                        ? "No companies match your search."
+                        : "No companies yet."}
+                  </td>
+                </tr>
+              )}
+              {companies.map((c) => (
+                <tr key={c.id} className="border-b border-gray-100 hover:bg-gray-50">
+                  <td className="px-4 py-3 text-gray-700 font-medium flex items-center gap-2">
+                    <Building2 size={14} className="text-gray-400" />
+                    {c.name}
+                  </td>
+                  <td className="px-4 py-3 text-gray-700">{c.studentCount}</td>
+                  <td className="px-4 py-3 text-gray-500 text-xs">
+                    {new Date(c.createdAt).toLocaleDateString()}
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex gap-1">
+                      <button
+                        onClick={() => {
+                          setEditCompany(c);
+                          setEditName(c.name);
+                          setEditError("");
+                        }}
+                        className="p-1.5 text-blue-600 hover:bg-blue-50 rounded"
+                        title="Rename"
+                      >
+                        <Pencil size={14} />
+                      </button>
+                      <button
+                        onClick={() => {
+                          setDeleteCompany(c);
+                          setDeleteError("");
+                        }}
+                        className="p-1.5 text-red-600 hover:bg-red-50 rounded"
+                        title="Delete"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <Pagination
+          page={page}
+          pageSize={pageSize}
+          total={total}
+          pageSizeOptions={[...COMPANY_PAGE_SIZES]}
+          onPageChange={setPage}
+          onPageSizeChange={(size) => {
+            setPageSize(size);
+            setPage(1);
+          }}
+          itemLabel="companies"
+        />
       </div>
 
       <Modal
@@ -242,5 +385,13 @@ export default function CompaniesPage() {
         )}
       </Modal>
     </div>
+  );
+}
+
+export default function CompaniesPage() {
+  return (
+    <Suspense fallback={<LoadingState label="Loading companies…" />}>
+      <CompaniesPageInner />
+    </Suspense>
   );
 }

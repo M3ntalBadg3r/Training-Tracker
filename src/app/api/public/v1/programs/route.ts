@@ -6,10 +6,14 @@ import { authorizePublicRequest } from "@/lib/public-api";
  * GET /api/public/v1/programs — read-only list of the configured partner
  * programs, plus the shape each one needs so consumers know how to query the
  * per-program compliance endpoint:
- *  - `levels`: which compliance levels (Country/Theatre/Global) are configured
+ *  - `levels`: which requirement levels (Country/Region/CountrySet/
+ *    TargetCountries/Theatre/Global) are configured
  *  - `hasMinimumPerTheatre`: whether any requirement enforces a per-theatre
  *    minimum (drives the per-theatre breakdown on the Global level)
  *  - `isTiered`: whether the program has a tier ladder
+ *  - `hasTargetCountries`: whether the program has TargetCountries rows, so its
+ *    `level=theatre` view also counts each partner's target countries inside
+ *    the theatre (and needs the request narrowed to exactly one company)
  *
  * This list is deliberately NOT company-scoped, unlike every other endpoint on
  * this surface. Reviewed and kept, on this evidence:
@@ -21,8 +25,8 @@ import { authorizePublicRequest } from "@/lib/public-api";
  *    because offerings are tenant data. When something here is meant to be
  *    per-tenant, the schema says so.
  *  - Nothing per-company leaves this handler. The response is four fields per
- *    program — the program name, its configured levels, and two booleans — all
- *    read from the registry tables above. No student, completion, count,
+ *    program — the program name, its configured levels and four booleans —
+ *    all read from the registry tables above. No student, completion, count,
  *    attainment or company value is read, derived or returned, so no key can
  *    learn anything about another key's companies from it. The compliance
  *    numbers that ARE tenant data live at `/api/public/v1/programs/{name}`,
@@ -78,6 +82,10 @@ export async function GET(request: NextRequest) {
       levels: [...info.levels],
       hasMinimumPerTheatre: info.hasMinimumPerTheatre,
       isTiered: isTieredByName.get(name) === true,
+      // A program with TargetCountries rows judges its By Theatre view over
+      // the theatre AND each partner's target countries inside it, which
+      // needs exactly one company; the dashboard reads this to know.
+      hasTargetCountries: info.levels.has("TargetCountries"),
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
 

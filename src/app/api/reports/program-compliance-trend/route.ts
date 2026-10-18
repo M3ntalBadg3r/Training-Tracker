@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
   const allowed = await getAuthorizedCompanyIds(auth.sub, auth.role);
   const companyFilter = resolveCompanyFilter(allowed, request.nextUrl.searchParams.get("companyId"));
   if (companyFilter !== null && companyFilter.length === 0) {
-    return NextResponse.json({ snapshots: [], programs: [], specialisations: [], scopeLabel: TREND_DEFAULT_SCOPE_LABEL });
+    return NextResponse.json({ snapshots: [], programs: [], specialisations: [], scopeLabel: TREND_DEFAULT_SCOPE_LABEL, unsupportedPrograms: [], partialPrograms: [] });
   }
 
   const programFilter = request.nextUrl.searchParams.get("program");

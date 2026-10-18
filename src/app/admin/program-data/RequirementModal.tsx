@@ -13,6 +13,7 @@ import {
   isMultiCountryLevel,
   normaliseAggregation,
   type Aggregation,
+  type ReqLevel,
 } from "@/lib/program-levels";
 
 const TRAINING_TYPES = ["Certification", "Accreditation", "InstructorLedTraining"];
@@ -37,7 +38,7 @@ interface FormState {
   specialisationId: number;
   purpose: string;
   level: string;
-  /** Count mode — only meaningful for Region / Country Set; "total" otherwise. */
+  /** Count mode — only meaningful for Region / Country Set / Target countries; "total" otherwise. */
   aggregation: Aggregation;
   trainingType: string;
   trainingTitle: string;
@@ -46,7 +47,13 @@ interface FormState {
   trainingFullTitle: string;
   quantityRequired: number;
   minimumPerTheatre: number | null;
+  /** Optional display name for the rule; blank = none. */
+  label: string;
 }
+
+/** Restates `MAX_REQUIREMENT_LABEL_LENGTH` (lib/program-data-write.ts, which
+ *  imports Prisma and so cannot be bundled here); the server enforces it. */
+const MAX_LABEL_LENGTH = 120;
 
 const EMPTY_FORM: FormState = {
   specialisationId: 0,
@@ -58,14 +65,18 @@ const EMPTY_FORM: FormState = {
   trainingFullTitle: "",
   quantityRequired: 1,
   minimumPerTheatre: null,
+  label: "",
 };
 
 /**
- * A requirement belongs to either a specialisation or a tier. Tier scope fixes
- * the tier (shown read-only) and always writes a deployment requirement.
+ * A requirement belongs to a specialisation, a tier, or — on a tiered program —
+ * neither ("programWide": a gate every tier requires, always a qualification
+ * requirement). Tier scope fixes the tier (shown read-only) and always writes a
+ * deployment requirement.
  */
 export type RequirementScope =
   | { kind: "specialisation" }
+  | { kind: "programWide" }
   | { kind: "tier"; tierId: number; tierName: string };
 
 interface Props {
@@ -93,6 +104,11 @@ interface Props {
    * specialisation picker and send its id alongside the tierId.
    */
   tierRequiresSpecialisation?: boolean;
+  /**
+   * The program is tiered: in add mode the specialisation scope offers a
+   * "Required at every level" choice (a program-wide gate).
+   */
+  isTiered?: boolean;
 }
 
 /**
@@ -111,9 +127,15 @@ export default function RequirementModal({
   scope = { kind: "specialisation" },
   allowPurpose = false,
   tierRequiresSpecialisation = false,
+  isTiered = false,
 }: Props) {
   const isEdit = initial !== null;
   const isTierScope = scope.kind === "tier";
+  // In add mode on a tiered program the author may switch a specialisation
+  // requirement to a program-wide gate and back; an existing row keeps its kind.
+  const [programWide, setProgramWide] = useState(() => scope.kind === "programWide");
+  const canChooseProgramWide = !isEdit && isTiered && scope.kind !== "tier";
+  const levelOptions: readonly ReqLevel[] = REQ_LEVELS;
 
   // Seeded from `initial` at mount. The caller mounts this modal only while it
   // is open and keys it on the row being edited, so mounting *is* opening —
@@ -130,6 +152,7 @@ export default function RequirementModal({
           trainingFullTitle: initial.trainingFullTitle ?? "",
           quantityRequired: initial.quantityRequired,
           minimumPerTheatre: initial.minimumPerTheatre ?? null,
+          label: initial.label ?? "",
         }
       : EMPTY_FORM
   );
@@ -190,6 +213,14 @@ export default function RequirementModal({
       setFormError("Please select a specialisation for this deployment requirement");
       return;
     }
+    if (!isTierScope && !programWide && !form.specialisationId) {
+      setFormError("Please select a specialisation");
+      return;
+    }
+    if (!form.level) {
+      setFormError("Please select a level");
+      return;
+    }
     setSaving(true);
     try {
       const payload = {
@@ -200,7 +231,9 @@ export default function RequirementModal({
               purpose: "deployment",
               ...(tierRequiresSpecialisation ? { specialisationId: form.specialisationId } : {}),
             }
-          : { specialisationId: form.specialisationId, purpose: allowPurpose ? form.purpose : "qualification" }),
+          : programWide
+            ? { specialisationId: null, tierId: null, purpose: "qualification" }
+            : { specialisationId: form.specialisationId, purpose: allowPurpose ? form.purpose : "qualification" }),
         level: form.level,
         aggregation: normaliseAggregation(form.level, form.aggregation),
         trainingType: noTraining ? null : form.trainingType,
@@ -209,6 +242,8 @@ export default function RequirementModal({
         // Only Global requirements carry a per-theatre minimum.
         minimumPerTheatre: noTraining || form.level !== "Global" ? null : (form.minimumPerTheatre ?? null),
         alternatives: showAlts ? alternatives.filter((a) => a.trainingTitle) : [],
+        // Always sent: the PUT replaces the row, so leaving it out would clear it.
+        label: form.label.trim() || null,
       };
       const url = isEdit ? `/api/admin/program-data/${initial!.id}` : "/api/admin/program-data";
       const method = isEdit ? "PUT" : "POST";
@@ -295,6 +330,47 @@ export default function RequirementModal({
             </>
           ) : (
             <>
+              {canChooseProgramWide && (
+                <fieldset>
+                  <legend className="block text-sm font-medium mb-1">Applies to</legend>
+                  <div className="space-y-2">
+                    <label className="flex items-start gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="req-applies-to"
+                        checked={!programWide}
+                        onChange={() => setProgramWide(false)}
+                        className="w-4 h-4 mt-0.5"
+                      />
+                      <span className="text-sm">A specialisation</span>
+                    </label>
+                    <label className="flex items-start gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="req-applies-to"
+                        checked={programWide}
+                        onChange={() => setProgramWide(true)}
+                        className="w-4 h-4 mt-0.5"
+                      />
+                      <span className="text-sm">
+                        Required at every level
+                        <span className="block text-xs text-gray-500">
+                          Every tier needs this, whichever specialisations are achieved.
+                        </span>
+                      </span>
+                    </label>
+                  </div>
+                </fieldset>
+              )}
+              {programWide && !canChooseProgramWide && (
+                <div>
+                  <label className="block text-sm font-medium mb-1">Applies to</label>
+                  <div className="px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-sm text-gray-700">
+                    Required at every level
+                  </div>
+                </div>
+              )}
+              {!programWide && (
               <div>
                 <label className="block text-sm font-medium mb-1">Specialisation</label>
                 <div className="flex gap-2">
@@ -315,7 +391,8 @@ export default function RequirementModal({
                   </button>
                 </div>
               </div>
-              {allowPurpose && (
+              )}
+              {allowPurpose && !programWide && (
                 <div>
                   <label className="block text-sm font-medium mb-1">Purpose</label>
                   <select
@@ -355,13 +432,22 @@ export default function RequirementModal({
               className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
             >
               <option value="">Select level...</option>
-              {REQ_LEVELS.map((l) => <option key={l} value={l}>{LEVEL_LABELS[l]}</option>)}
+              {levelOptions.map((l) => (
+                <option key={l} value={l}>
+                  {LEVEL_LABELS[l]}
+                </option>
+              ))}
             </select>
             {form.level === "Region" && (
               <p className="mt-1 text-xs text-gray-500">Applies to whichever region is being viewed.</p>
             )}
             {form.level === "CountrySet" && (
               <p className="mt-1 text-xs text-gray-500">Applies to whichever country set is being viewed.</p>
+            )}
+            {form.level === "TargetCountries" && (
+              <p className="mt-1 text-xs text-gray-500">
+                The partner&apos;s target countries inside the viewed theatre (By Theatre view).
+              </p>
             )}
           </div>
           {isMultiCountryLevel(form.level) && (
@@ -540,6 +626,23 @@ export default function RequirementModal({
                   : isMultiCountryLevel(form.level)
                     ? "Number of people with this training needed across the whole area."
                     : "Number of people with this training needed."}
+            </p>
+          </div>
+          <div>
+            <label htmlFor="req-label" className="block text-sm font-medium mb-1">
+              Name <span className="font-normal text-gray-400">(optional)</span>
+            </label>
+            <input
+              id="req-label"
+              type="text"
+              maxLength={MAX_LABEL_LENGTH}
+              value={form.label}
+              onChange={(e) => setForm((f) => ({ ...f, label: e.target.value }))}
+              placeholder="e.g. 4 per target country — any sales certification"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
+            />
+            <p className="mt-1 text-xs text-gray-500">
+              Shown as the requirement&apos;s title instead of its training list. It does not change how the requirement is counted.
             </p>
           </div>
           <div className="flex justify-end gap-2 pt-2">

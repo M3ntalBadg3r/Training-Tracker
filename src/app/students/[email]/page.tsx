@@ -10,6 +10,7 @@ import Badge from "@/components/ui/Badge";
 import Modal from "@/components/ui/Modal";
 import { useRegionData } from "@/hooks/useRegionData";
 import { useCompanyScope } from "@/components/company/CompanyScopeProvider";
+import CompanyPicker from "@/components/company/CompanyPicker";
 import {
   ColumnDef,
   CountryOption,
@@ -186,8 +187,15 @@ export default function StudentRecordPage({
 
   useEffect(() => {
     fetch(`/api/students/${encodeURIComponent(email)}`)
-      .then((res) => res.json())
+      // A 404 (unknown or out-of-scope email) answers `{error}`; storing that
+      // as the student crashed the render on `student.trainings`, so the page
+      // never reached its own not-found state below.
+      .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
+        if (!data) {
+          setLoading(false);
+          return;
+        }
         setStudent(data);
         setEditForm({
           fullName: data.fullName,
@@ -683,19 +691,14 @@ export default function StudentRecordPage({
                   <label className="block text-sm font-medium text-gray-600 mb-1">
                     Company
                   </label>
-                  <select
-                    value={editForm.companyId || ""}
-                    onChange={(e) =>
-                      setEditForm((f) => ({ ...f, companyId: Number(e.target.value) }))
-                    }
-                    className="border border-gray-300 rounded-lg px-3 py-2 w-full bg-white"
-                  >
-                    {companyOptions.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
+                  <CompanyPicker
+                    options={companyOptions}
+                    value={editForm.companyId || null}
+                    onChange={(next) => {
+                      if (typeof next === "number") setEditForm((f) => ({ ...f, companyId: next }));
+                    }}
+                    aria-label="Company"
+                  />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div>

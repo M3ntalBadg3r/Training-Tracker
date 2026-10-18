@@ -1,24 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { computeExpiryDate, titleCaseName, deriveNameFromEmail } from "@/lib/utils";
+import { titleCaseName, deriveNameFromEmail } from "@/lib/utils";
 import { requireAuth, handleAuthError } from "@/lib/auth";
 import { canAccessCompany, getAuthorizedCompanyIds, isSuperAdmin } from "@/lib/company-scope";
 import { recomputeParentsForMany } from "@/lib/olx";
-import { detectFormat, isDateFormat, parseDateWith, type DateFormat } from "@/lib/date-format";
+import { detectFormat, isDateFormat, type DateFormat } from "@/lib/date-format";
 import { getSystemDateFormat } from "@/lib/system-settings";
-import { ensureDefaultProductTypeId } from "@/lib/product-types";
 import { invalidateReportCache } from "@/lib/report-cache";
 import { readJsonBody } from "@/lib/request-body";
-
-interface ImportRow {
-  fullName: string;
-  email: string;
-  theatre: string;
-  country: string;
-  title: string;
-  completedDate: string;
-  company: string;
-}
+import {
+  runStudentImport,
+  stampImportMetadata,
+  type ImportRow,
+  type ImportSummary,
+} from "@/lib/student-import";
 
 export async function POST(request: NextRequest) {
   let auth;
@@ -135,15 +130,7 @@ export async function POST(request: NextRequest) {
     defaultCompany = found;
   }
 
-  // Cache loaded/created companies by lowercased name
-  const companyCache = new Map<string, { id: number; name: string }>();
-  if (defaultCompany) companyCache.set(defaultCompany.name.toLowerCase(), defaultCompany);
-
-  // Cache RegionData lookups by country (case-sensitive, mirroring the column).
-  // Keeps the per-row lookup cheap and lets us record auto-created entries once.
-  const regionCache = new Map<string, { country: string; region: string; theatre: string | null }>();
-
-  const summary = {
+  const summary: ImportSummary = {
     studentsCreated: 0,
     studentsUpdated: 0,
     trainingsCreated: 0,
@@ -170,11 +157,6 @@ export async function POST(request: NextRequest) {
       `${scope} fit both DD/MM/YYYY and MM/DD/YYYY — parsed as ${effectiveFormat} (the ${overrideFormat ? "override for this import" : "system default"}).`
     );
   }
-
-  // Track (email, trainingTitle) pairs for OLX parent recomputation after
-  // the loop. We can't know yet which titles are sub-items; we'll filter at
-  // recompute time using the join table.
-  const recomputePairs: { email: string; subItemTrainingTitle: string }[] = [];
 
   // Map rows using column mapping
   const mappedRows: ImportRow[] = rows.map((row) => {
@@ -211,234 +193,17 @@ export async function POST(request: NextRequest) {
     };
   });
 
-  // Resolved lazily on first auto-create of a training row (see below).
-  let cachedDefaultProductTypeId: number | undefined;
-
-  // Distinct companies touched by this import — used to stamp per-company
-  // "last imported" timestamps alongside the global one.
-  const touchedCompanies = new Set<number>();
-
-  for (let i = 0; i < mappedRows.length; i++) {
-    const row = mappedRows[i];
-    const rowNum = i + 2;
-
-    if (!row.email) {
-      summary.errors.push(`Row ${rowNum}: Missing email address`);
-      continue;
-    }
-    if (!row.fullName) {
-      summary.errors.push(`Row ${rowNum}: Missing full name for ${row.email}`);
-      continue;
-    }
-    if (!row.title) {
-      summary.errors.push(`Row ${rowNum}: Missing training title for ${row.email}`);
-      continue;
-    }
-    if (!row.completedDate) {
-      summary.errors.push(`Row ${rowNum}: Missing completed date for ${row.email}`);
-      continue;
-    }
-
-    const completedDate = parseDateWith(row.completedDate, effectiveFormat);
-    if (!completedDate) {
-      summary.errors.push(
-        `Row ${rowNum}: Invalid date "${row.completedDate}" — expected ${effectiveFormat} for ${row.email}`
-      );
-      continue;
-    }
-
-    // ─── Resolve the company for this row ────────────────────────────────────
-    let rowCompany: { id: number; name: string } | null = null;
-    const rowCompanyName = row.company.trim();
-
-    if (rowCompanyName) {
-      const cached = companyCache.get(rowCompanyName.toLowerCase());
-      if (cached) {
-        rowCompany = cached;
-      } else {
-        const found = await prisma.company.findUnique({
-          where: { name: rowCompanyName },
-          select: { id: true, name: true },
-        });
-        if (found) {
-          rowCompany = found;
-          companyCache.set(found.name.toLowerCase(), found);
-        } else if (callerIsSuperAdmin) {
-          // SuperAdmin: auto-create unknown companies on the fly.
-          const created = await prisma.company.create({
-            data: { name: rowCompanyName },
-            select: { id: true, name: true },
-          });
-          rowCompany = created;
-          companyCache.set(created.name.toLowerCase(), created);
-          summary.companiesCreated++;
-        } else {
-          summary.errors.push(
-            `Row ${rowNum}: Company "${rowCompanyName}" does not exist. Ask a SuperAdmin to create it.`
-          );
-          continue;
-        }
-      }
-    } else if (defaultCompany) {
-      rowCompany = defaultCompany;
-    } else {
-      summary.errors.push(`Row ${rowNum}: No company specified and no default company selected`);
-      continue;
-    }
-
-    // Caller must have access to the company they're importing into.
-    if (allowedCompanyIds !== null && !allowedCompanyIds.includes(rowCompany.id)) {
-      summary.errors.push(`Row ${rowNum}: Out of scope — you do not have access to "${rowCompany.name}".`);
-      continue;
-    }
-
-    try {
-      // ─── Resolve theatre via RegionData (source of truth) ──────────────────
-      // - Country known with theatre set: warn if the row's theatre differs,
-      //   then use the RegionData theatre.
-      // - Country known with no theatre: keep row's theatre, warn so the
-      //   SuperAdmin populates RegionData.
-      // - Country unknown: auto-create RegionData with NO region (an empty
-      //   string, the first-class "not defined yet" state — this used to store
-      //   the literal "Unknown", which then showed up as a region name in every
-      //   table, dropdown and export), keep row's theatre, warn.
-      const csvTheatre = (row.theatre || "").trim();
-      let resolvedTheatre = csvTheatre;
-      if (row.country) {
-        let rd = regionCache.get(row.country);
-        if (!rd) {
-          const found = await prisma.regionData.findUnique({ where: { country: row.country } });
-          if (found) {
-            rd = { country: found.country, region: found.region, theatre: found.theatre };
-          } else {
-            const created = await prisma.regionData.create({
-              data: { country: row.country, region: "", theatre: csvTheatre || null },
-            });
-            rd = { country: created.country, region: created.region, theatre: created.theatre };
-            summary.errors.push(
-              `Row ${rowNum}: Country "${row.country}" was not in Region Data; created with no region${
-                csvTheatre ? ` and theatre "${csvTheatre}"` : " and no theatre"
-              }. Ask a SuperAdmin to verify.`
-            );
-          }
-          regionCache.set(row.country, rd);
-        }
-        if (rd.theatre) {
-          if (csvTheatre && csvTheatre !== rd.theatre) {
-            summary.errors.push(
-              `Row ${rowNum}: Theatre "${csvTheatre}" for country "${row.country}" overridden to "${rd.theatre}" (per Region Data).`
-            );
-          }
-          resolvedTheatre = rd.theatre;
-        } else if (csvTheatre) {
-          // RegionData exists but no theatre yet — surface as a warning the
-          // first time we see this country.
-          // (Multiple rows for the same country will only warn once because of
-          // the regionCache; we add the warning lazily here on every row to
-          // keep the per-row context clear.)
-          summary.errors.push(
-            `Row ${rowNum}: Country "${row.country}" has no theatre in Region Data; using imported theatre "${csvTheatre}".`
-          );
-        }
-      }
-
-      // Upsert student
-      const existingStudent = await prisma.student.findUnique({
-        where: { email: row.email },
-      });
-
-      let studentCompanyId = rowCompany.id;
-
-      if (existingStudent) {
-        // If the existing student's company is outside the caller's scope, reject.
-        if (allowedCompanyIds !== null && !allowedCompanyIds.includes(existingStudent.companyId)) {
-          summary.errors.push(
-            `Row ${rowNum}: Out of scope — student ${row.email} belongs to a company you cannot access.`
-          );
-          continue;
-        }
-
-        // Warn if the row's company differs from the existing assignment.
-        if (existingStudent.companyId !== rowCompany.id) {
-          summary.companyConflicts++;
-          summary.errors.push(
-            `Row ${rowNum}: ${row.email} is already assigned to a different company; the row's company "${rowCompany.name}" was ignored. Reassign manually if required.`
-          );
-        }
-        studentCompanyId = existingStudent.companyId;
-        summary.studentsUpdated++;
-      } else {
-        await prisma.student.create({
-          data: {
-            email: row.email,
-            fullName: row.fullName,
-            theatre: resolvedTheatre,
-            country: row.country,
-            companyId: studentCompanyId,
-          },
-        });
-        summary.studentsCreated++;
-      }
-
-      touchedCompanies.add(studentCompanyId);
-
-      const trainingExists = await prisma.trainingData.findUnique({
-        where: { trainingTitle: row.title },
-      });
-
-      if (!trainingExists) {
-        if (cachedDefaultProductTypeId === undefined) {
-          cachedDefaultProductTypeId = await ensureDefaultProductTypeId();
-        }
-        // trainingType/productTypeId/function are PLACEHOLDERS, not guesses to
-        // be trusted: the columns are NOT NULL so a value must be written, but
-        // nobody has chosen one. `isIncomplete: true` is what marks them as
-        // unsupplied — /admin/training-data renders those three as "Not set" in
-        // its amber table and refuses to clear the flag until an admin picks
-        // real values. Don't surface these anywhere as if they were curated.
-        await prisma.trainingData.upsert({
-          where: { trainingTitle: row.title },
-          update: {},
-          create: {
-            trainingTitle: row.title,
-            fullTitle: row.title,
-            trainingType: "Certification",
-            productTypeId: cachedDefaultProductTypeId,
-            function: "Sales",
-            isIncomplete: true,
-          },
-        });
-        summary.trainingsAutoCreated++;
-      }
-
-      const expiryDate = computeExpiryDate(completedDate);
-      const existingTraining = await prisma.trainingTaken.findFirst({
-        where: { email: row.email, trainingTitle: row.title, completedDate: completedDate },
-      });
-
-      if (existingTraining) {
-        summary.trainingsSkipped++;
-        continue;
-      }
-
-      await prisma.trainingTaken.create({
-        data: {
-          email: row.email,
-          trainingTitle: row.title,
-          completedDate: completedDate,
-          expiryDate: expiryDate,
-        },
-      });
-      summary.trainingsCreated++;
-      recomputePairs.push({ email: row.email, subItemTrainingTitle: row.title });
-    } catch (error) {
-      console.error(`Import row ${rowNum} error:`, error);
-      const safeMessage = error instanceof Error && error.message.includes("Unique constraint")
-        ? "Duplicate entry"
-        : "Failed to process";
-      summary.errors.push(`Row ${rowNum}: ${safeMessage}`);
-    }
-  }
+  // The write phase is batched (see lib/student-import.ts): per-row rules,
+  // messages and counters are unchanged, but the round trips scale with
+  // rows / batch size rather than with rows.
+  const { recomputePairs, touchedCompanies } = await runStudentImport({
+    rows: mappedRows,
+    effectiveFormat,
+    defaultCompany,
+    allowedCompanyIds,
+    callerIsSuperAdmin,
+    summary,
+  });
 
   // Materialise parent OLX TrainingTaken rows for any imported sub-items
   // that just completed their sibling set for a student.
@@ -451,21 +216,10 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  const importedAt = new Date();
-  await prisma.importMetadata.upsert({
-    where: { key: "students" },
-    update: { timestamp: importedAt },
-    create: { key: "students", timestamp: importedAt },
-  });
-  // Per-company stamps so the Students page can show the last import for the
-  // currently selected company (blank when that company has never imported).
-  for (const cid of touchedCompanies) {
-    await prisma.importMetadata.upsert({
-      where: { key: `students:${cid}` },
-      update: { timestamp: importedAt },
-      create: { key: `students:${cid}`, timestamp: importedAt },
-    });
-  }
+  // Global stamp plus per-company stamps, so the Students page can show the
+  // last import for the currently selected company (blank when that company
+  // has never imported).
+  await stampImportMetadata(touchedCompanies, new Date());
 
   invalidateReportCache();
   return NextResponse.json(summary);

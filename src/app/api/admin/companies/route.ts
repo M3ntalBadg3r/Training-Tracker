@@ -1,8 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { handleAuthError, requireSuperAdmin } from "@/lib/auth";
+import { listCompanies } from "@/lib/companies-list";
+import { parseCompanyListQuery } from "@/lib/companies-list-params";
 
-// GET: list all companies (SuperAdmin only)
+/**
+ * GET: one page of the company list (SuperAdmin only).
+ *
+ * Search (`q`, name contains, case-insensitive), sort (`name` |
+ * `studentCount`, with `sortDir`) and paging (`page`, `size` from a fixed set,
+ * a page past the end clamped to the last) all run in SQL
+ * (`lib/companies-list.ts`); every parameter is parsed and re-validated by
+ * `lib/companies-list-params.ts`, the module the page uses to build the same
+ * query string. Responds `{ rows: [{id, name, studentCount, createdAt}],
+ * total, page, pageSize }`.
+ *
+ * This is the admin table's endpoint only. Pickers that need every company
+ * (the header switcher, the Users / API Keys forms) read the shared
+ * per-session list from `/api/companies` via `CompanyScopeProvider` instead.
+ */
 export async function GET(request: NextRequest) {
   try {
     await requireSuperAdmin(request);
@@ -10,21 +26,13 @@ export async function GET(request: NextRequest) {
     return handleAuthError(error);
   }
 
-  const companies = await prisma.company.findMany({
-    orderBy: { name: "asc" },
-    include: {
-      _count: { select: { students: true } },
-    },
-  });
-
-  return NextResponse.json(
-    companies.map((c) => ({
-      id: c.id,
-      name: c.name,
-      studentCount: c._count.students,
-      createdAt: c.createdAt,
-    }))
-  );
+  try {
+    const query = parseCompanyListQuery(request.nextUrl.searchParams);
+    return NextResponse.json(await listCompanies(query));
+  } catch (error) {
+    console.warn("[admin/companies] list failed", error);
+    return NextResponse.json({ error: "Failed to load companies" }, { status: 500 });
+  }
 }
 
 // POST: create a new company (SuperAdmin only)

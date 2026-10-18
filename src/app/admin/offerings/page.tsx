@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import { useCompanyScope, withCompany } from "@/components/company/CompanyScopeProvider";
+import CompanyPicker from "@/components/company/CompanyPicker";
 import { notifyOfferingsChanged } from "@/lib/nav-refresh";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
@@ -505,16 +506,14 @@ export default function OfferingsAdminPage() {
           {newError && <div className="p-2 bg-red-50 text-red-700 rounded text-sm">{newError}</div>}
           <div>
             <label className="block text-sm font-medium mb-1">Company</label>
-            <select
-              value={newCompanyId === "" ? "" : String(newCompanyId)}
-              onChange={(e) => setNewCompanyId(e.target.value === "" ? "" : Number(e.target.value))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
-            >
-              <option value="">-- Select a company --</option>
-              {companies.map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </select>
+            <CompanyPicker
+              options={companies}
+              value={newCompanyId === "" ? null : newCompanyId}
+              onChange={(next) => setNewCompanyId(typeof next === "number" ? next : "")}
+              clearable
+              placeholder="-- Select a company --"
+              aria-label="Company"
+            />
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">Offering Name</label>
@@ -585,16 +584,14 @@ export default function OfferingsAdminPage() {
             <p className="text-sm text-gray-600">Upload a CSV or Excel file. Existing requirements for any offering named in the file are replaced. Offerings are imported into the selected company.</p>
             <div>
               <label className="block text-sm font-medium mb-1">Company</label>
-              <select
-                value={importCompanyId === "" ? "" : String(importCompanyId)}
-                onChange={(e) => setImportCompanyId(e.target.value === "" ? "" : Number(e.target.value))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
-              >
-                <option value="">-- Select a company --</option>
-                {companies.map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
+              <CompanyPicker
+                options={companies}
+                value={importCompanyId === "" ? null : importCompanyId}
+                onChange={(next) => setImportCompanyId(typeof next === "number" ? next : "")}
+                clearable
+                placeholder="-- Select a company --"
+                aria-label="Company"
+              />
             </div>
             <button onClick={downloadTemplate} className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800">
               <FileDown size={16} /> Download template

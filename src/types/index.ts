@@ -137,6 +137,14 @@ export interface ProgramSummaryRow {
   isTiered: boolean;
   deploymentMode: string;
   tierCount: number;
+  /** Registry id — null only for a legacy program with requirement rows but no Program row. */
+  id: number | null;
+  /** By Country Set view: the minimum number of countries a partner's set must hold, for a partner with no setting of its own. */
+  countrySetMinimumCountries: number | null;
+  /** By Theatre view: the minimum number of target countries, for a partner with no setting of its own. */
+  targetMinimumCountries: number | null;
+  /** Program-wide gates: rows with neither a specialisation nor a tier (tiered programs only). */
+  programWideCount: number;
 }
 
 export interface ProgramTierRow {
@@ -162,6 +170,8 @@ export interface ProgramDataRow {
   trainingType: string | null;
   trainingTitle: string | null;
   trainingFullTitle: string | null;
+  /** Optional display name for the rule; shown instead of the training list. */
+  label: string | null;
   quantityRequired: number;
   minimumPerTheatre: number | null;
   alternatives: ProgramDataAlternativeRow[];

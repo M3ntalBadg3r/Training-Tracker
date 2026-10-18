@@ -7,7 +7,8 @@ export interface PlanningOption {
   isTiered: boolean;
   /**
    * The requirement levels this program's rows are authored at — any of
-   * Country, Region, CountrySet, Theatre and Global, in that order. A planning
+   * Country, Region, CountrySet, TargetCountries, Theatre and Global, in that
+   * order (`REQ_LEVELS`). A planning
    * scope is only worth offering when some program carries its level
    * (`scopeLevelOffered`), because each scope plans against its own level's
    * rows and nothing else.
@@ -15,6 +16,13 @@ export interface PlanningOption {
   levels: string[];
   tiers: string[];
   specialisations: string[];
+  /**
+   * The program has TargetCountries rows, so a theatre plan of it also counts
+   * those rows over the partner's target countries in the theatre (and needs
+   * exactly one company). Registry data like the rest of this record — derived
+   * from `levels`, carried separately so a caller need not know the level name.
+   */
+  hasTargetCountries: boolean;
 }
 
 /**
@@ -60,6 +68,7 @@ export async function buildPlanningOptions(): Promise<PlanningOption[]> {
       levels,
       tiers: tierNames,
       specialisations,
+      hasTargetCountries: present.has("TargetCountries"),
     });
   }
   return result;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import PageHeader from "@/components/layout/PageHeader";
 import Modal from "@/components/ui/Modal";
 import { Plus, Pencil, Trash2, KeyRound, ShieldOff, Unlock, Power, PowerOff } from "lucide-react";
@@ -8,6 +8,8 @@ import { useDateFormat } from "@/components/date-format/DateFormatProvider";
 import FailedAttemptsPanel from "@/components/admin/FailedAttemptsPanel";
 import { useFetchJson } from "@/hooks/useFetchJson";
 import { useAuth } from "@/components/auth/AuthProvider";
+import CompanyMultiPicker from "@/components/company/CompanyMultiPicker";
+import { useCompanyScope } from "@/components/company/CompanyScopeProvider";
 
 interface CompanyOption {
   id: number;
@@ -58,11 +60,12 @@ export default function UserManagementPage() {
   // the hook derives `loading` without a setState-in-effect.
   const { data: usersData, loading, reload: fetchUsers } = useFetchJson<UserRow[]>("/api/admin/users");
   const users = usersData ?? [];
-  const { data: companiesData } = useFetchJson<CompanyOption[]>("/api/admin/companies");
-  const companies = useMemo<CompanyOption[]>(
-    () => (companiesData ?? []).map((c) => ({ id: c.id, name: c.name })),
-    [companiesData]
-  );
+  // The company picker options come from the shared per-session list
+  // (`/api/companies` via CompanyScopeProvider), which returns every company
+  // for a SuperAdmin — and this page is SuperAdmin-only. `/api/admin/companies`
+  // is the paged admin table, not a picker source.
+  const companyScope = useCompanyScope();
+  const companies = companyScope.companies;
 
   const [showAdd, setShowAdd] = useState(false);
   const [addForm, setAddForm] = useState({
@@ -254,15 +257,7 @@ export default function UserManagementPage() {
     return `Disabled${who}${when}${why}`;
   };
 
-  const toggleCompanyId = (
-    list: number[],
-    id: number,
-    setter: (arr: number[]) => void
-  ) => {
-    setter(list.includes(id) ? list.filter((c) => c !== id) : [...list, id]);
-  };
-
-  if (loading) {
+  if (loading || companyScope.loading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-gray-500">Loading users...</div>
@@ -517,12 +512,12 @@ export default function UserManagementPage() {
             </select>
           </div>
           {addForm.role !== "SuperAdmin" && (
-            <CompanyPicker
-              companies={companies}
-              selected={addForm.companyIds}
-              onToggle={(id) =>
-                toggleCompanyId(addForm.companyIds, id, (arr) => setAddForm((f) => ({ ...f, companyIds: arr })))
-              }
+            <CompanyMultiPicker
+              options={companies}
+              value={addForm.companyIds}
+              onChange={(next) => setAddForm((f) => ({ ...f, companyIds: next }))}
+              emptyMessage="No companies exist. Create one in Admin → Companies."
+              helpText="The user will only be able to view data for the selected companies. Leave empty for no access."
             />
           )}
           <label className="flex items-center gap-2 text-sm">
@@ -573,12 +568,12 @@ export default function UserManagementPage() {
             </select>
           </div>
           {editForm.role !== "SuperAdmin" && (
-            <CompanyPicker
-              companies={companies}
-              selected={editForm.companyIds}
-              onToggle={(id) =>
-                toggleCompanyId(editForm.companyIds, id, (arr) => setEditForm((f) => ({ ...f, companyIds: arr })))
-              }
+            <CompanyMultiPicker
+              options={companies}
+              value={editForm.companyIds}
+              onChange={(next) => setEditForm((f) => ({ ...f, companyIds: next }))}
+              emptyMessage="No companies exist. Create one in Admin → Companies."
+              helpText="The user will only be able to view data for the selected companies. Leave empty for no access."
             />
           )}
           <div>
@@ -781,41 +776,6 @@ export default function UserManagementPage() {
           <div className="mt-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2">{deleteError}</div>
         )}
       </Modal>
-    </div>
-  );
-}
-
-function CompanyPicker({
-  companies,
-  selected,
-  onToggle,
-}: {
-  companies: CompanyOption[];
-  selected: number[];
-  onToggle: (id: number) => void;
-}) {
-  return (
-    <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1">Companies</label>
-      {companies.length === 0 ? (
-        <p className="text-xs text-gray-500">No companies exist. Create one in Admin → Companies.</p>
-      ) : (
-        <div className="border border-gray-300 rounded-lg p-2 max-h-40 overflow-y-auto space-y-1">
-          {companies.map((c) => (
-            <label key={c.id} className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={selected.includes(c.id)}
-                onChange={() => onToggle(c.id)}
-              />
-              {c.name}
-            </label>
-          ))}
-        </div>
-      )}
-      <p className="text-xs text-gray-400 mt-1">
-        The user will only be able to view data for the selected companies. Leave empty for no access.
-      </p>
     </div>
   );
 }

@@ -33,20 +33,25 @@ model Student {
   @@index([companyId])
   @@index([country])
   @@index([theatre])
+  // The server-paged student list (`lib/students-list.ts`) orders by
+  // full_name with an email tiebreak, unscoped or within one company.
+  @@index([fullName, email])
+  @@index([companyId, fullName, email])
   @@map("students")
 }
 
 model Company {
-  id               Int               @id @default(autoincrement())
-  name             String            @unique
-  createdAt        DateTime          @default(now()) @map("created_at")
-  updatedAt        DateTime          @updatedAt @map("updated_at")
+  id               Int                     @id @default(autoincrement())
+  name             String                  @unique
+  createdAt        DateTime                @default(now()) @map("created_at")
+  updatedAt        DateTime                @updatedAt @map("updated_at")
   students         Student[]
   users            UserCompany[]
   scheduledExports ScheduledExport[]
   apiKeys          ApiKeyCompany[]
   offerings        Offering[]
   countrySets      CountrySet[]
+  programSettings  ProgramCompanySetting[]
 
   @@map("companies")
 }
@@ -189,6 +194,11 @@ enum ProgramLevel {
   /// A requirement set for "a country set" generically — it applies to
   /// whichever CountrySet is viewed, over that set's member countries.
   CountrySet
+  /// A requirement over "the partner's target countries inside the viewed
+  /// theatre" — evaluated in the Theatre view alongside the Theatre rows, over
+  /// the partner's Theatre-view Country Set ∩ that theatre. Carries a count mode
+  /// like Region/CountrySet. See lib/program-target-countries.ts.
+  TargetCountries
   Theatre
   Global
 }
@@ -208,8 +218,12 @@ model CountrySet {
   updatedAt   DateTime @updatedAt @map("updated_at")
 
   // Cascade: a set only describes its company's geography.
-  company Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  members CountrySetMember[]
+  company                   Company                 @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  members                   CountrySetMember[]
+  // Partner settings naming this set for a program's Country Set view, or as
+  // its target countries for the Theatre view.
+  programCountrySetSettings ProgramCompanySetting[] @relation("ProgramSettingCountrySet")
+  programTargetSettings     ProgramCompanySetting[] @relation("ProgramSettingTargetSet")
 
   @@unique([companyId, name])
   @@index([companyId])
@@ -232,22 +246,64 @@ model CountrySetMember {
 }
 
 model Program {
-  id             Int      @id @default(autoincrement())
-  name           String   @unique
+  id                         Int      @id @default(autoincrement())
+  name                       String   @unique
   // Tiered programs unlock ordered tiers (A/B/C…) based on how many
   // specialisations a partner has achieved. Non-tiered programs behave exactly
   // as before (isTiered = false).
-  isTiered       Boolean  @default(false) @map("is_tiered")
+  isTiered                   Boolean  @default(false) @map("is_tiered")
   // How a tier's Deployment cert requirements are sourced when isTiered:
   //  "flat"                    → the tier lists its own deployment requirements.
   //  "perAchievedSpecialisation" → each achieved specialisation's own deployment
   //                                requirements must be met.
-  deploymentMode String   @default("flat") @map("deployment_mode")
-  createdAt      DateTime @default(now()) @map("created_at")
+  deploymentMode             String   @default("flat") @map("deployment_mode")
+  // Default minimum number of countries a partner must have for each view to
+  // reach any tier, used when the partner has no ProgramCompanySetting value
+  // of its own. Null = no default (and, with no partner value, no check).
+  //  - countrySetMinimumCountries: members of the Country Set viewed in the
+  //    By Country Set view.
+  //  - targetMinimumCountries: the partner's target countries inside the
+  //    theatre viewed in the By Theatre view (TargetCountries rows).
+  countrySetMinimumCountries Int?     @map("country_set_minimum_countries")
+  targetMinimumCountries     Int?     @map("target_minimum_countries")
+  createdAt                  DateTime @default(now()) @map("created_at")
 
-  tiers ProgramTier[]
+  tiers           ProgramTier[]
+  companySettings ProgramCompanySetting[]
 
   @@map("programs")
+}
+
+/// A partner's (Company's) own terms for one program — tenant data hanging off
+/// a global program, the same shape as CountrySet. Keyed on Program.id (not
+/// the name) so a rename carries it along. One row per (program, company),
+/// holding separate terms for the By Country Set and By Theatre views.
+model ProgramCompanySetting {
+  id                         Int      @id @default(autoincrement())
+  programId                  Int      @map("program_id")
+  companyId                  Int      @map("company_id")
+  // By Country Set view: the partner's minimum number of countries in its set
+  // (null falls back to Program.countrySetMinimumCountries; both null = no
+  // check), and which of its Country Sets the view opens on. CHECK >= 1.
+  countrySetMinimumCountries Int?     @map("country_set_minimum_countries")
+  countrySetId               Int?     @map("country_set_id")
+  // By Theatre view: the partner's minimum number of target countries inside
+  // the viewed theatre (null falls back to Program.targetMinimumCountries), and
+  // which of its Country Sets lists its target countries. CHECK >= 1.
+  targetMinimumCountries     Int?     @map("target_minimum_countries")
+  targetCountrySetId         Int?     @map("target_country_set_id")
+  createdAt                  DateTime @default(now()) @map("created_at")
+  updatedAt                  DateTime @updatedAt @map("updated_at")
+
+  program          Program     @relation(fields: [programId], references: [id], onDelete: Cascade)
+  company          Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  // Both sets must belong to the same company (enforced in application code).
+  countrySet       CountrySet? @relation("ProgramSettingCountrySet", fields: [countrySetId], references: [id], onDelete: SetNull)
+  targetCountrySet CountrySet? @relation("ProgramSettingTargetSet", fields: [targetCountrySetId], references: [id], onDelete: SetNull)
+
+  @@unique([programId, companyId])
+  @@index([companyId])
+  @@map("program_company_settings")
 }
 
 model ProgramTier {
@@ -282,9 +338,10 @@ model Specialisation {
 model ProgramData {
   id                Int           @id @default(autoincrement())
   programName       String        @map("program_name")
-  // A requirement belongs to EITHER a specialisation (specialisationId) OR a
-  // tier (tierId) — exactly one is set, enforced in application code. Existing
-  // rows all carry a specialisationId, so making it nullable is backward safe.
+  // A requirement belongs to a specialisation (specialisationId), a tier
+  // (tierId), or both (a "perTierPerSpecialisation" deployment row). A row with
+  // NEITHER is a program-wide gate: every tier of a tiered program requires it
+  // (lib/program-levels.ts:isProgramWideRow). Enforced in application code.
   specialisationId  Int?          @map("specialisation_id")
   tierId            Int?          @map("tier_id")
   // "qualification" → counts toward achieving the specialisation.
@@ -293,16 +350,22 @@ model ProgramData {
   // Tier-scoped rows (tierId set) are always deployment requirements.
   purpose           String        @default("qualification")
   level             ProgramLevel
-  // How a multi-country level (Region / CountrySet) counts this requirement:
+  // How a multi-country level (Region / CountrySet / TargetCountries) counts
+  // this requirement:
   //  "total"       → pooled distinct holders across every country in the area.
   //  "eachCountry" → every country in the area must individually reach
   //                  quantityRequired.
   // Always "total" for Country/Theatre/Global — two CHECK constraints enforce
-  // the value set and that rule (migration 20260930000001_country_sets), and
+  // the value set and that rule (migrations 20260930000001_country_sets and
+  // 20261016000001_target_countries), and
   // lib/program-levels.ts:normaliseAggregation applies it on every write path.
   aggregation       String        @default("total")
   trainingType      TrainingType? @map("training_type")
   trainingTitle     String?       @map("training_title")
+  // Optional display name for the rule, e.g. "4 per target country — any
+  // sales cert". Shown as the row's title instead of the training and its
+  // alternatives; display only, never part of how the row is counted.
+  label             String?
   quantityRequired  Int           @map("quantity_required")
   minimumPerTheatre Int?          @map("minimum_per_theatre")
   createdAt         DateTime      @default(now()) @map("created_at")

@@ -1,8 +1,12 @@
 import type {
   CompliancePlanResult,
+  PlanBlocker,
+  PlanRequirement,
   PlanRiskImpact,
+  PlanSpecialisation,
   PlanTargetResult,
 } from "@/lib/compliance-plan";
+import type { CountrySetMinimumMeta, TargetCountriesMeta } from "@/lib/program-levels";
 
 /**
  * The aggregates-only view of a compliance plan, for the read-only public API.
@@ -48,6 +52,38 @@ import type {
  * A per-country instance's `scopeLabel` is a country name for the same reason.
  * (`PlanCandidateClose.scopeLabel` becomes a country too, but closes live only
  * under `candidates`/`eligible`, which never reach this surface.)
+ *
+ * Re-audited for requirement names: `PlanRequirement` and `PlanRiskImpact`
+ * gained `label`, the optional display name a SuperAdmin gives a program
+ * requirement (e.g. "4 per target country — any sales certification"). Program
+ * definitions are global registry data authored in Admin › Program Data, so it
+ * is catalogue text like `cert`, not a person identifier.
+ *
+ * Re-audited for program-wide requirements: `PlanTargetResult` gained
+ * `blockers` and `tierPlan.gateShortfall` (an integer); `PlanSpecialisation`
+ * gained `kind` (an enum).
+ *
+ * Re-audited again for target countries and per-view minimums, which replaced
+ * an earlier single-view mode (its target-level meta and its `skippedTargets`
+ * list are gone — every program is now plannable at every scope, so nothing is
+ * ever skipped). `PlanTargetResult` now carries `targetCountries` (a
+ * `TargetCountriesMeta`: the viewed theatre, the target Country Set's name,
+ * the in-theatre and out-of-theatre country names, the minimum, its source and
+ * whether it is met) on a theatre plan of a program with TargetCountries rows,
+ * and `countrySetMinimum` (a `CountrySetMinimumMeta`: the set's name, its
+ * member country names, the minimum, its source and whether it is met) on a
+ * Country Set plan. `PlanBlocker` is a kind, a view enum, a theatre or set
+ * name, two integers and a source enum. `PlanRequirement` and `PlanRiskImpact`
+ * carry `population` (an enum). Counts, geography names and set names of the
+ * key's own single company (both views are refused for any other scope) — no
+ * person identifier. A target's `headline` may lead with `blockerText`, which
+ * interpolates only integers and that theatre or set name. The by-reference
+ * pass-through stands.
+ *
+ * Because those nested types pass through by reference, a field added to any
+ * of them would reach partners unreviewed. The second block of assertions at
+ * the bottom of this file classifies every field of every nested type, so such
+ * an addition fails typecheck here and forces exactly that re-audit.
  */
 export interface PublicCompliancePlan {
   scopeLabel: string;
@@ -140,3 +176,49 @@ type _PublicShapeMatchesClassification =
     : never;
 const _publicShapeIsCorrect: _PublicShapeMatchesClassification = true;
 void _publicShapeIsCorrect;
+
+// ── The nested types, held to the same discipline ───────────────────────────
+// `targets` and `riskImpacts` are passed through BY REFERENCE, so every field
+// of the types below reaches the public API. Each list here is the audited set:
+// a field added to one of these types without being added here fails typecheck,
+// which is the prompt to check it carries no person identifier (and, if one
+// ever does, to project that type here instead of passing it through).
+type AuditedTargetField =
+  | "program" | "mode" | "isTiered" | "tierName" | "headline" | "tierPlan"
+  | "specialisations" | "peopleMoves" | "easyWins" | "netNew" | "targetCountries"
+  | "countrySetMinimum" | "blockers";
+type AuditedSpecialisationField =
+  | "name" | "achieved" | "projectedAchieved" | "cost" | "easyWins" | "requirements"
+  | "chosen" | "alternative" | "marginalCost" | "kind";
+type AuditedRequirementField =
+  | "instanceId" | "requirementKey" | "specialisation" | "tierName" | "purpose" | "nativeLevel"
+  | "aggregation" | "country" | "scopeLabel" | "population" | "cert" | "label" | "required" | "attained"
+  | "projectedAttained" | "shortfall" | "projectedShortfall" | "renewalPool" | "easyWinPool"
+  | "lapsedPool" | "legacyPool" | "netNew" | "sharedWith" | "expiringSoon";
+type AuditedRiskImpactField =
+  | "program" | "specialisation" | "tierName" | "cert" | "label" | "aggregation" | "country" | "scopeLabel"
+  | "population" | "required" | "attained" | "projectedAttained" | "onPath";
+type AuditedTierPlanField =
+  | "specialisationsRequired" | "alreadyAchieved" | "needed" | "deliveryCertShortfall" | "gateShortfall";
+type AuditedBlockerField = "kind" | "view" | "areaName" | "required" | "counted" | "source";
+type AuditedTargetCountriesMetaField =
+  | "theatre" | "countrySet" | "targetCountries" | "outOfTheatreCountries"
+  | "minimumCountries" | "minimumCountriesSource" | "minimumMet";
+type AuditedCountrySetMinimumMetaField =
+  | "countrySet" | "countries" | "minimumCountries" | "minimumCountriesSource" | "minimumMet";
+
+/** `true` only when `T`'s keys are exactly `K` — both directions, like the pair above. */
+type KeysExactly<T, K extends PropertyKey> =
+  [Exclude<keyof T, K>] extends [never] ? ([Exclude<K, keyof T>] extends [never] ? true : never) : never;
+
+const _nestedFieldsAreAudited: [
+  KeysExactly<PlanTargetResult, AuditedTargetField>,
+  KeysExactly<PlanSpecialisation, AuditedSpecialisationField>,
+  KeysExactly<PlanRequirement, AuditedRequirementField>,
+  KeysExactly<PlanRiskImpact, AuditedRiskImpactField>,
+  KeysExactly<NonNullable<PlanTargetResult["tierPlan"]>, AuditedTierPlanField>,
+  KeysExactly<PlanBlocker, AuditedBlockerField>,
+  KeysExactly<TargetCountriesMeta, AuditedTargetCountriesMetaField>,
+  KeysExactly<CountrySetMinimumMeta, AuditedCountrySetMinimumMetaField>,
+] = [true, true, true, true, true, true, true, true];
+void _nestedFieldsAreAudited;

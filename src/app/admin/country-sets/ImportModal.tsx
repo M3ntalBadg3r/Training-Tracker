@@ -7,6 +7,7 @@ import { AlertCircle, CheckCircle, Download, FileSpreadsheet, Upload } from "luc
 import Modal from "@/components/ui/Modal";
 import Button from "@/components/ui/Button";
 import { SELECT_CLASS } from "@/components/ui/FormControls";
+import CompanyPicker from "@/components/company/CompanyPicker";
 import { checkImportFile } from "@/lib/import-file";
 
 /**
@@ -335,23 +336,19 @@ export default function ImportCountrySetsModal({
                 {mapping.company ? "Default company" : "Company"}
                 {!mapping.company && <span className="text-red-500 ml-1">*</span>}
               </label>
-              <select
+              <CompanyPicker
                 id="import-default-company"
-                value={companyId === "" ? "" : String(companyId)}
-                onChange={(e) => {
-                  setCompanyId(e.target.value === "" ? "" : Number(e.target.value));
+                options={companies}
+                value={companyId === "" ? null : companyId}
+                onChange={(next) => {
+                  setCompanyId(typeof next === "number" ? next : "");
                   setStep("mapping");
                   setResult(null);
                 }}
-                className={`${SELECT_CLASS} flex-1 min-w-0`}
-              >
-                <option value="">-- Select a company --</option>
-                {companies.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
+                clearable
+                placeholder="-- Select a company --"
+                className="flex-1 min-w-0"
+              />
             </div>
             <p className="text-xs text-gray-500">
               {mapping.company

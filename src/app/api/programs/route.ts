@@ -6,12 +6,15 @@ import { requireAuth, handleAuthError } from "@/lib/auth";
  * Lists the distinct partner programs configured in ProgramData, plus the
  * shape each one needs so the UI can auto-adapt:
  *  - `levels`: which stored requirement levels (Country / Region / CountrySet /
- *    Theatre / Global) the program's rows carry. These are the raw
- *    `ProgramLevel` values and each maps one-to-one onto a dashboard view
- *    (`program-levels.ts:scopeLevelOffered`) — "By Region" is offered only when
+ *    TargetCountries / Theatre / Global) the program's rows carry. These are
+ *    the raw `ProgramLevel` values; `program-levels.ts:scopeLevelOffered` maps
+ *    them onto dashboard views (By Theatre reads Theatre + TargetCountries) — "By Region" is offered only when
  *    Region rows exist; it is no longer derived from the Country rows.
  *  - `hasMinimumPerTheatre`: whether any requirement enforces a per-theatre
  *    minimum (drives the per-theatre breakdown on the Global level)
+ *  - `hasTargetCountries`: the program has TargetCountries rows, so its By
+ *    Theatre view also counts each partner's target countries inside the
+ *    viewed theatre (`program-target-countries.ts`)
  *
  * This single endpoint feeds the programs index page and the sidebar submenu,
  * replacing the two previously-hardcoded per-program entries.
@@ -61,6 +64,10 @@ export async function GET(request: NextRequest) {
       levels: [...info.levels],
       hasMinimumPerTheatre: info.hasMinimumPerTheatre,
       isTiered: isTieredByName.get(name) === true,
+      // A program with TargetCountries rows judges its By Theatre view over
+      // the theatre AND each partner's target countries inside it, which
+      // needs exactly one company; the dashboard reads this to know.
+      hasTargetCountries: info.levels.has("TargetCountries"),
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
 

@@ -9,18 +9,22 @@
  * to be restated in three admin files plus two write paths. Anything added
  * here must keep it import-free (the same rule as `roles.ts` / `csp.ts`).
  *
- * Scope → requirement level is one-to-one: each view plans and reports against
- * only its own level's requirements. "By Region" used to be derived from the
- * Country-level rows pooled across the region; it now reads Region rows only.
+ * Each view plans and reports against only its own levels' requirements.
+ * Every view reads exactly one level except **By Theatre**, which reads its
+ * Theatre rows over the theatre AND its TargetCountries rows over the partner's
+ * target countries inside that theatre (`SCOPE_REQ_LEVELS`). "By Region" used to
+ * be derived from the Country-level rows pooled across the region; it now reads
+ * Region rows only.
  */
 
-export const REQ_LEVELS = ["Country", "Region", "CountrySet", "Theatre", "Global"] as const;
+export const REQ_LEVELS = ["Country", "Region", "CountrySet", "TargetCountries", "Theatre", "Global"] as const;
 export type ReqLevel = (typeof REQ_LEVELS)[number];
 
 export const LEVEL_LABELS: Record<ReqLevel, string> = {
   Country: "Country",
   Region: "Region",
   CountrySet: "Country Set",
+  TargetCountries: "Target countries",
   Theatre: "Theatre",
   Global: "Global",
 };
@@ -30,8 +34,8 @@ export function isReqLevel(v: unknown): v is ReqLevel {
 }
 
 /** A level whose population spans several countries, so it carries a count mode. */
-export function isMultiCountryLevel(level: string): level is "Region" | "CountrySet" {
-  return level === "Region" || level === "CountrySet";
+export function isMultiCountryLevel(level: string): level is "Region" | "CountrySet" | "TargetCountries" {
+  return level === "Region" || level === "CountrySet" || level === "TargetCountries";
 }
 
 export const AGGREGATIONS = ["total", "eachCountry"] as const;
@@ -70,6 +74,11 @@ export function parseScopeLevel(v: string | null | undefined): ScopeLevel | null
   return typeof v === "string" && (SCOPE_LEVELS as readonly string[]).includes(v) ? (v as ScopeLevel) : null;
 }
 
+/**
+ * A view's **primary** requirement level. One-to-one, so it stays usable as a
+ * label/lookup key; the full set of levels a view evaluates is
+ * `SCOPE_REQ_LEVELS` (only By Theatre reads two).
+ */
 export const SCOPE_TO_REQ_LEVEL: Record<ScopeLevel, ReqLevel> = {
   global: "Global",
   theatre: "Theatre",
@@ -94,9 +103,18 @@ export const SCOPE_VALUE_NOUN: Record<Exclude<ScopeLevel, "global">, string> = {
   country: "country",
 };
 
+/** Every requirement level a view evaluates. */
+export const SCOPE_REQ_LEVELS: Record<ScopeLevel, readonly ReqLevel[]> = {
+  global: ["Global"],
+  theatre: ["Theatre", "TargetCountries"],
+  region: ["Region"],
+  countrySet: ["CountrySet"],
+  country: ["Country"],
+};
+
 /** Whether a program whose rows carry `levels` offers the given view scope. */
 export function scopeLevelOffered(level: ScopeLevel, levels: readonly string[]): boolean {
-  return levels.includes(SCOPE_TO_REQ_LEVEL[level]);
+  return SCOPE_REQ_LEVELS[level].some((l) => levels.includes(l));
 }
 
 /** One country's figure for an "each country" requirement. */
@@ -104,4 +122,104 @@ export interface CountryBreakdownRow {
   country: string;
   count: number;
   compliant: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Target countries and per-view minimums (see lib/program-target-countries.ts
+// for the server half).
+//
+// A program's By Theatre view evaluates TWO populations together: its Theatre
+// rows over the viewed theatre, and its TargetCountries rows over the partner's
+// target countries — the members of the partner's Theatre-view Country Set
+// that lie inside that theatre. Its By Country Set view checks how many
+// countries the viewed set holds against a minimum. Both minimums are per view
+// and per partner (ProgramCompanySetting), falling back to the program default.
+// ---------------------------------------------------------------------------
+
+/**
+ * Which population a By Theatre view counts a row over: Theatre rows over the
+ * theatre, TargetCountries rows over the partner's target countries in it.
+ * `null` for any other level — such rows are not part of a Theatre view.
+ */
+export type PopulationKind = "theatre" | "targetCountries";
+
+export function theatreViewPopulationOf(level: string): PopulationKind | null {
+  if (level === "Theatre") return "theatre";
+  if (level === "TargetCountries") return "targetCountries";
+  return null;
+}
+
+/**
+ * The `populationLabel` of a target-countries population when the partner has
+ * no target set to name. Display helpers recognise it so a row reads "Counted
+ * over target countries (no target set configured)" rather than repeating the
+ * population kind as if it were a set's name.
+ */
+export const NO_TARGET_SET_LABEL = "no target set configured";
+
+/** Validate a user-editable population value (roster `?population=`). */
+export function parsePopulationKind(v: string | null | undefined): PopulationKind | null {
+  return v === "theatre" || v === "targetCountries" ? v : null;
+}
+
+/**
+ * A requirement row with neither a specialisation nor a tier is a
+ * **program-wide gate**: every tier of a tiered program requires it, in every
+ * deployment mode. Only valid on a tiered program (enforced on write).
+ */
+export function isProgramWideRow(row: {
+  specialisationId?: number | null;
+  tierId?: number | null;
+}): boolean {
+  return row.specialisationId == null && row.tierId == null;
+}
+
+/** Whose rule supplied a minimum number of countries. */
+export type MinimumCountriesSource = "partner" | "default" | "none";
+
+/** The two views that carry a minimum number of countries. */
+export type MinimumView = "countrySet" | "theatre";
+
+/**
+ * The target-countries header of a By Theatre view of a program that has
+ * TargetCountries rows. `targetCountries` are the set's members INSIDE the
+ * viewed theatre — the population TargetCountries rows are counted over and
+ * the only countries that count toward the minimum. `outOfTheatreCountries`
+ * are members outside it, listed so the page can say so rather than drop them
+ * silently.
+ */
+export interface TargetCountriesMeta {
+  theatre: string;
+  /** The Country Set the targets come from; null when the partner has none to show. */
+  countrySet: string | null;
+  targetCountries: string[];
+  outOfTheatreCountries: string[];
+  minimumCountries: number | null;
+  minimumCountriesSource: MinimumCountriesSource;
+  /** `minimumCountries === null || targetCountries.length >= minimumCountries`. */
+  minimumMet: boolean;
+}
+
+/** The minimum-countries header of a By Country Set view. */
+export interface CountrySetMinimumMeta {
+  /** The Country Set the view is over; null when none is chosen or configured. */
+  countrySet: string | null;
+  countries: string[];
+  minimumCountries: number | null;
+  minimumCountriesSource: MinimumCountriesSource;
+  /** `minimumCountries === null || countries.length >= minimumCountries`. */
+  minimumMet: boolean;
+}
+
+/** The wire shape of a minimum-countries gate on a tier block. */
+export interface MinimumCountriesGate {
+  /** Which view's minimum this is. */
+  view: MinimumView;
+  /** The effective minimum (null = no minimum applies, and the gate is met). */
+  required: number | null;
+  /** Countries counted: the set's members (Country Set view) or the target countries inside the theatre (Theatre view). */
+  counted: number;
+  met: boolean;
+  /** Whose rule the minimum came from: the partner's own, the program default, or none. */
+  source: MinimumCountriesSource;
 }

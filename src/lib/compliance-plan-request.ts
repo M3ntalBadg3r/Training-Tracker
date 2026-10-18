@@ -24,7 +24,12 @@ export interface ParsedPlanRequest {
   level: ScopeLevel;
   country: string;
   region: string;
-  /** Country Set name, read when `level` is "countrySet". */
+  /**
+   * Country Set name. At `level=countrySet` the set planned over (blank = each
+   * program's partner Country Set-view set); at `level=theatre` the target set
+   * for programs with TargetCountries rows (blank = each program's partner
+   * Theatre-view set).
+   */
   countrySet: string;
   theatre: string;
   renewalWindowMonths: number;
@@ -88,6 +93,16 @@ export function planCacheKeyParts(req: ParsedPlanRequest): string {
   // Every free-text fragment is percent-encoded so a literal "|" in a country,
   // region, set or theatre name cannot shift the key's fields and cross two
   // views onto one entry.
+  //
+  // `countrySet` is in the key at EVERY level, deliberately, because it is
+  // result-affecting at two of them: the set planned over at `countrySet`, and
+  // the target set at `theatre` (for programs with TargetCountries rows). A
+  // theatre plan with and without a target set are therefore two entries, as
+  // are a named and a blank set. A BLANK set means each program's configured
+  // set for the partner, which reads `ProgramCompanySetting` — per-company (the
+  // company scope is in every caller's key) and flushed by the cache-wide
+  // invalidation its writes perform — so blank needs no fragment of its own
+  // beyond the empty field it already occupies.
   return [
     encodeURIComponent(req.rawTargets),
     req.level,

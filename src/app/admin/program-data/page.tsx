@@ -24,6 +24,11 @@ import { exportToCsv, exportToExcel, exportToPdf } from "@/lib/export";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import { checkImportFile } from "@/lib/import-file";
+import MinimumCountriesFields, {
+  EMPTY_MINIMUMS,
+  minimumsBody,
+  type MinimumCountriesValue,
+} from "./MinimumCountriesFields";
 import {
   AGGREGATION_SHORT_LABELS,
   LEVEL_LABELS,
@@ -33,6 +38,10 @@ import {
 } from "@/lib/program-levels";
 
 const levelLabel = (level: string) => (isReqLevel(level) ? LEVEL_LABELS[level] : level);
+
+/** Export cell for the Level column. Title case, matching "Country Set", and
+ *  the spelling the import template documents; the import accepts any case. */
+const levelExport = (level: string) => (level === "TargetCountries" ? "Target Countries" : levelLabel(level));
 
 /** Export cell for the Count Mode column: blank where a count mode does not
  *  apply (single-country levels), else "Total" / "Each country" — the same
@@ -57,6 +66,7 @@ export default function ProgramDataPage() {
   const [newName, setNewName] = useState("");
   const [newIsTiered, setNewIsTiered] = useState(false);
   const [newDeploymentMode, setNewDeploymentMode] = useState("flat");
+  const [newMinimums, setNewMinimums] = useState<MinimumCountriesValue>(EMPTY_MINIMUMS);
   const [newError, setNewError] = useState("");
   const [renameTarget, setRenameTarget] = useState<ProgramSummaryRow | null>(null);
   const [renameValue, setRenameValue] = useState("");
@@ -81,6 +91,14 @@ export default function ProgramDataPage() {
     deploymentMode?: string;
     tierSortOrder?: string | number | null;
     tierSpecialisationsRequired?: string | number | null;
+    countrySetMinimumCountries?: string | number | null;
+    targetMinimumCountries?: string | number | null;
+    label?: string;
+    // Columns of files exported before the Target countries level; the server
+    // reads Default Minimum Countries as Target Minimum Countries and converts
+    // a program with an Anchor Theatre (see the import route).
+    anchorTheatre?: string | null;
+    defaultMinimumCountries?: string | number | null;
   }
   interface ImportResult {
     created: number;
@@ -149,7 +167,12 @@ export default function ProgramDataPage() {
     const res = await fetch("/api/admin/program-data/program", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: trimmed, isTiered: newIsTiered, deploymentMode: newDeploymentMode }),
+      body: JSON.stringify({
+        name: trimmed,
+        isTiered: newIsTiered,
+        deploymentMode: newDeploymentMode,
+        ...minimumsBody(newMinimums),
+      }),
     });
     if (!res.ok) {
       const result = await res.json().catch(() => ({}));
@@ -160,6 +183,7 @@ export default function ProgramDataPage() {
     setNewName("");
     setNewIsTiered(false);
     setNewDeploymentMode("flat");
+    setNewMinimums(EMPTY_MINIMUMS);
     router.push(`/admin/program-data/${encodeURIComponent(trimmed)}`);
   };
 
@@ -212,6 +236,12 @@ export default function ProgramDataPage() {
     if (p.isTiered) {
       parts.push(`tiered · ${p.tierCount} tier${p.tierCount === 1 ? "" : "s"}`);
     }
+    if (p.countrySetMinimumCountries != null) {
+      parts.push(`Country Set view minimum ${p.countrySetMinimumCountries}`);
+    }
+    if (p.targetMinimumCountries != null) {
+      parts.push(`Theatre view minimum ${p.targetMinimumCountries} target ${p.targetMinimumCountries === 1 ? "country" : "countries"}`);
+    }
     return parts.join(" · ");
   };
 
@@ -221,6 +251,10 @@ export default function ProgramDataPage() {
   // row, and each tier carries its ladder Order + Specialisations Required. Tiers
   // that have no requirement rows (e.g. in "per achieved specialisation" mode) are
   // emitted as blank "tier-definition" rows so they survive the round-trip too.
+  // The program's two default minimums (Country Set Minimum Countries, Target
+  // Minimum Countries) ride on every row the same way and are appended at the
+  // end, so existing column positions hold. A program-wide gate is a row with a blank
+  // Specialisation AND a blank Tier.
   const exportColumns = [
     { key: "programName" as const, header: "Program Name" },
     { key: "specialisationName" as const, header: "Specialisation" },
@@ -236,6 +270,10 @@ export default function ProgramDataPage() {
     { key: "deploymentMode" as const, header: "Deployment Handling" },
     { key: "tierOrder" as const, header: "Tier Order" },
     { key: "tierSpecialisationsRequired" as const, header: "Tier Specialisations Required" },
+    { key: "countrySetMinimumCountries" as const, header: "Country Set Minimum Countries" },
+    { key: "targetMinimumCountries" as const, header: "Target Minimum Countries" },
+    // Optional display name for the rule. Appended last for the same reason.
+    { key: "label" as const, header: "Requirement Name" },
   ];
 
   interface ExportRow {
@@ -253,8 +291,19 @@ export default function ProgramDataPage() {
     deploymentMode: string;
     tierOrder: string | number;
     tierSpecialisationsRequired: string | number;
+    countrySetMinimumCountries: string | number;
+    targetMinimumCountries: string | number;
+    label: string;
   }
 
+  const programByName = new Map(programs.map((p) => [p.name, p]));
+  const minimumCells = (programName: string) => {
+    const p = programByName.get(programName);
+    return {
+      countrySetMinimumCountries: p?.countrySetMinimumCountries ?? "",
+      targetMinimumCountries: p?.targetMinimumCountries ?? "",
+    };
+  };
   const deploymentModeByProgram = new Map(programs.map((p) => [p.name, p.deploymentMode]));
   const tierById = new Map(allTiers.map((t) => [t.id, t]));
   const usedTierIds = new Set(allRows.map((r) => r.tierId).filter((id): id is number => id != null));
@@ -269,7 +318,7 @@ export default function ProgramDataPage() {
       specialisationName: r.specialisationName ?? "",
       tierName: r.tierName ?? "",
       purpose: r.purpose,
-      level: levelLabel(r.level),
+      level: levelExport(r.level),
       aggregation: countModeExport(r),
       trainingType: r.trainingType ? trainingTypeLabel(r.trainingType) : "—",
       trainingFullTitle: r.trainingFullTitle || "—",
@@ -279,6 +328,8 @@ export default function ProgramDataPage() {
       deploymentMode: deploymentModeByProgram.get(r.programName) ?? "",
       tierOrder: tier ? tier.sortOrder : "",
       tierSpecialisationsRequired: tier ? tier.specialisationsRequired : "",
+      ...minimumCells(r.programName),
+      label: r.label ?? "",
     };
   });
 
@@ -300,9 +351,44 @@ export default function ProgramDataPage() {
       deploymentMode: deploymentModeByProgram.get(t.programName) ?? "",
       tierOrder: t.sortOrder,
       tierSpecialisationsRequired: t.specialisationsRequired,
+      ...minimumCells(t.programName),
+      label: "",
     }));
 
-  const exportData: ExportRow[] = [...requirementExportRows, ...emptyTierExportRows].sort(
+  // A program with default minimums but no requirement rows and no tiers would
+  // otherwise vanish from the file along with them: give it one blank row
+  // naming only the program and its settings (the import registers it, nothing
+  // else).
+  const exportedPrograms = new Set([
+    ...requirementExportRows.map((r) => r.programName),
+    ...emptyTierExportRows.map((r) => r.programName),
+  ]);
+  const settingsOnlyExportRows: ExportRow[] = programs
+    .filter(
+      (p) =>
+        (p.countrySetMinimumCountries != null || p.targetMinimumCountries != null) &&
+        !exportedPrograms.has(p.name)
+    )
+    .map((p) => ({
+      programName: p.name,
+      specialisationName: "",
+      tierName: "",
+      purpose: "",
+      level: "",
+      aggregation: "",
+      trainingType: "",
+      trainingFullTitle: "",
+      quantityRequired: "",
+      minimumPerTheatre: "",
+      alternatives: "",
+      deploymentMode: p.deploymentMode ?? "",
+      tierOrder: "",
+      tierSpecialisationsRequired: "",
+      ...minimumCells(p.name),
+      label: "",
+    }));
+
+  const exportData: ExportRow[] = [...requirementExportRows, ...emptyTierExportRows, ...settingsOnlyExportRows].sort(
     (a, b) =>
       a.programName.localeCompare(b.programName) ||
       a.specialisationName.localeCompare(b.specialisationName) ||
@@ -338,6 +424,7 @@ export default function ProgramDataPage() {
     quantityrequired: "quantityRequired",
     required: "quantityRequired",
     minimumperthe: "minimumPerTheatre",
+    minimumpertheatre: "minimumPerTheatre",
     minpertheatre: "minimumPerTheatre",
     mintheatre: "minimumPerTheatre",
     minimum: "minimumPerTheatre",
@@ -355,6 +442,20 @@ export default function ProgramDataPage() {
     tierspecialisationsrequired: "tierSpecialisationsRequired",
     specialisationsrequired: "tierSpecialisationsRequired",
     specsrequired: "tierSpecialisationsRequired",
+    countrysetminimumcountries: "countrySetMinimumCountries",
+    countrysetminimum: "countrySetMinimumCountries",
+    targetminimumcountries: "targetMinimumCountries",
+    requirementname: "label",
+    label: "label",
+    displayname: "label",
+    targetminimum: "targetMinimumCountries",
+    minimumtargetcountries: "targetMinimumCountries",
+    // Older files: read for compatibility (see ImportRow).
+    anchortheatre: "anchorTheatre",
+    anchor: "anchorTheatre",
+    defaultminimumcountries: "defaultMinimumCountries",
+    defaultminimumtargetcountries: "defaultMinimumCountries",
+    minimumcountries: "defaultMinimumCountries",
   };
 
   const normaliseHeader = (h: string) => h.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -498,6 +599,9 @@ export default function ProgramDataPage() {
         "Deployment Handling": "",
         "Tier Order": "",
         "Tier Specialisations Required": "",
+        "Country Set Minimum Countries": "",
+        "Target Minimum Countries": "",
+        "Requirement Name": "",
       },
       {
         "Program Name": "Example Program",
@@ -514,6 +618,9 @@ export default function ProgramDataPage() {
         "Deployment Handling": "",
         "Tier Order": "",
         "Tier Specialisations Required": "",
+        "Country Set Minimum Countries": "",
+        "Target Minimum Countries": "",
+        "Requirement Name": "",
       },
       {
         // Country Set, each country: every country in the set being viewed
@@ -532,6 +639,9 @@ export default function ProgramDataPage() {
         "Deployment Handling": "",
         "Tier Order": "",
         "Tier Specialisations Required": "",
+        "Country Set Minimum Countries": "",
+        "Target Minimum Countries": "",
+        "Requirement Name": "",
       },
       {
         // Region, total: 2 holders pooled across the whole region being viewed.
@@ -549,6 +659,9 @@ export default function ProgramDataPage() {
         "Deployment Handling": "",
         "Tier Order": "",
         "Tier Specialisations Required": "",
+        "Country Set Minimum Countries": "",
+        "Target Minimum Countries": "",
+        "Requirement Name": "",
       },
       {
         "Program Name": "Example Tiered Program",
@@ -565,6 +678,54 @@ export default function ProgramDataPage() {
         "Deployment Handling": "flat",
         "Tier Order": 1,
         "Tier Specialisations Required": 1,
+        "Country Set Minimum Countries": "",
+        "Target Minimum Countries": "",
+        "Requirement Name": "",
+      },
+      {
+        // Blank Specialisation AND blank Tier on a tiered program: required at
+        // every level (a program-wide gate every tier needs).
+        "Program Name": "Example Tiered Program",
+        "Specialisation": "",
+        "Tier": "",
+        "Purpose": "qualification",
+        "Level": "Theatre",
+        "Count Mode": "",
+        "Training Type": "Certification",
+        "Training": "Cert A",
+        "Quantity Required": 15,
+        "Minimum per Theatre": "",
+        "Alternatives": "Cert B",
+        "Deployment Handling": "flat",
+        "Tier Order": "",
+        "Tier Specialisations Required": "",
+        "Country Set Minimum Countries": "",
+        "Target Minimum Countries": "",
+        "Requirement Name": "",
+      },
+      {
+        // Target countries, each country: in the By Theatre view, every one of
+        // the partner's target countries inside the viewed theatre needs 4
+        // holders of its own. The program defaults ride on every row: a Country
+        // Set view minimum of 3 countries and a Theatre view minimum of 6
+        // target countries.
+        "Program Name": "Example Tiered Program",
+        "Specialisation": "",
+        "Tier": "",
+        "Purpose": "qualification",
+        "Level": "Target Countries",
+        "Count Mode": "Each country",
+        "Training Type": "Certification",
+        "Training": "Cert A",
+        "Quantity Required": 4,
+        "Minimum per Theatre": "",
+        "Alternatives": "",
+        "Deployment Handling": "flat",
+        "Tier Order": "",
+        "Tier Specialisations Required": "",
+        "Country Set Minimum Countries": 3,
+        "Target Minimum Countries": 6,
+        "Requirement Name": "",
       },
     ];
     const templateCols = [
@@ -582,6 +743,9 @@ export default function ProgramDataPage() {
       { key: "Deployment Handling", header: "Deployment Handling" },
       { key: "Tier Order", header: "Tier Order" },
       { key: "Tier Specialisations Required", header: "Tier Specialisations Required" },
+      { key: "Country Set Minimum Countries", header: "Country Set Minimum Countries" },
+      { key: "Target Minimum Countries", header: "Target Minimum Countries" },
+      { key: "Requirement Name", header: "Requirement Name" },
     ];
     exportToCsv(templateData as never[], templateCols as never[], "program-data-import-template");
   };
@@ -664,7 +828,7 @@ export default function ProgramDataPage() {
             )}
           </div>
           <button
-            onClick={() => { setShowNew(true); setNewName(""); setNewError(""); }}
+            onClick={() => { setShowNew(true); setNewName(""); setNewError(""); setNewMinimums(EMPTY_MINIMUMS); }}
             className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
           >
             <Plus size={16} /> New Program
@@ -759,6 +923,7 @@ export default function ProgramDataPage() {
               <p className="mt-1 text-xs text-gray-500">You can change this later on the program&apos;s page.</p>
             </div>
           )}
+          <MinimumCountriesFields value={newMinimums} onChange={setNewMinimums} idPrefix="new-program" />
           <div className="flex justify-end gap-2 pt-2">
             <button onClick={() => setShowNew(false)} className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
             <button onClick={handleNewProgram} className="flex items-center gap-1 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">
@@ -874,9 +1039,12 @@ export default function ProgramDataPage() {
               </div>
             )}
             <div className="pt-1 text-xs text-gray-500 space-y-1">
-              <p><strong>Expected columns:</strong> Program Name, Specialisation, Tier, Purpose, Level, Count Mode, Training Type, Training, Quantity Required, Minimum per Theatre, Alternatives, Deployment Handling, Tier Order, Tier Specialisations Required</p>
-              <p>Level is Country, Region, Country Set, Theatre or Global. For Region and Country Set rows, Count Mode is &ldquo;Total&rdquo; (holders pooled across the area) or &ldquo;Each country&rdquo; (every country must meet the quantity); blank means Total. Other levels leave it blank.</p>
+              <p><strong>Expected columns:</strong> Program Name, Specialisation, Tier, Purpose, Level, Count Mode, Training Type, Training, Quantity Required, Minimum per Theatre, Alternatives, Deployment Handling, Tier Order, Tier Specialisations Required, Country Set Minimum Countries, Target Minimum Countries</p>
+              <p>Level is Country, Region, Country Set, Target Countries, Theatre or Global. Target Countries rows count in the By Theatre view, over each partner&apos;s target countries inside the theatre being viewed. For Region, Country Set and Target Countries rows, Count Mode is &ldquo;Total&rdquo; (holders pooled across the area) or &ldquo;Each country&rdquo; (every country must meet the quantity); blank means Total. Other levels leave it blank.</p>
               <p>Training Type and Training are optional for Global-level rows with no specific training (these count compliant theatres). Minimum per Theatre applies to Global rows only.</p>
+              <p>On a tiered program, a row with a Level but no Specialisation and no Tier is required at every level (every tier needs it).</p>
+              <p>Country Set Minimum Countries and Target Minimum Countries are the program&apos;s default minimum number of countries for the By Country Set view and of target countries for the By Theatre view (1–1000). A blank cell in either keeps the program&apos;s current setting.</p>
+              <p>Files from earlier versions still import: a Default Minimum Countries column is read as Target Minimum Countries, and an Anchor Theatre column is ignored with a warning — that program&apos;s Country Set rows import as Target Countries rows.</p>
               <p>Programs, tiers, and specialisations are auto-created if they don&apos;t already exist.</p>
               <p><strong>Importing replaces</strong> the existing requirements of every program named in the file — it does not merge or add to them.</p>
             </div>
@@ -909,6 +1077,7 @@ export default function ProgramDataPage() {
                     <th className="px-2 py-2 text-left font-medium text-gray-600">Count Mode</th>
                     <th className="px-2 py-2 text-left font-medium text-gray-600">Type</th>
                     <th className="px-2 py-2 text-left font-medium text-gray-600">Training</th>
+                    <th className="px-2 py-2 text-left font-medium text-gray-600">Name</th>
                     <th className="px-2 py-2 text-left font-medium text-gray-600">Qty</th>
                     <th className="px-2 py-2 text-left font-medium text-gray-600">Min/Theatre</th>
                   </tr>
@@ -928,6 +1097,7 @@ export default function ProgramDataPage() {
                         <td className="px-2 py-1.5">{row.aggregation ? String(row.aggregation) : "—"}</td>
                         <td className="px-2 py-1.5">{row.trainingType || "—"}</td>
                         <td className="px-2 py-1.5 max-w-[160px] truncate">{row.trainingFullTitle || "—"}</td>
+                        <td className="px-2 py-1.5 max-w-[160px] truncate">{row.label || "—"}</td>
                         <td className="px-2 py-1.5">{String(row.quantityRequired ?? "—")}</td>
                         <td className="px-2 py-1.5">{row.minimumPerTheatre != null && row.minimumPerTheatre !== "" ? String(row.minimumPerTheatre) : "—"}</td>
                       </tr>
@@ -935,7 +1105,7 @@ export default function ProgramDataPage() {
                   })}
                   {importRows.length > 10 && (
                     <tr className="border-t border-gray-100 bg-gray-50">
-                      <td colSpan={9} className="px-2 py-2 text-center text-gray-400 text-xs">
+                      <td colSpan={10} className="px-2 py-2 text-center text-gray-400 text-xs">
                         … and {importRows.length - 10} more rows
                       </td>
                     </tr>

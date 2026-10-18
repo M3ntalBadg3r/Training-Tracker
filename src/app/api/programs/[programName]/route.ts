@@ -3,7 +3,7 @@ import { requireAuth, handleAuthError } from "@/lib/auth";
 import { getAuthorizedCompanyIds, resolveCompanyFilter } from "@/lib/company-scope";
 import { buildProgramReport, getProgramStudents } from "@/lib/program-report";
 import { cachedReport, scopeKey } from "@/lib/report-cache";
-import { COUNTRY_SET_SCOPE_ERROR, singleCompanyId } from "@/lib/country-sets";
+import { checkProgramViewRequest } from "@/lib/program-view-guard";
 
 /**
  * Unified, data-driven program compliance endpoint. The program is identified
@@ -17,6 +17,13 @@ import { COUNTRY_SET_SCOPE_ERROR, singleCompanyId } from "@/lib/country-sets";
  *  - The Global level supports both "count the compliant theatres" semantics
  *    (for a row naming no training) and per-title global holder counts with an
  *    optional per-theatre minimum.
+ *
+ * A program with **TargetCountries** rows judges its By Theatre view
+ * (`level=theatre&theatre=`, optional `countrySet=` naming the target set) over
+ * two populations — its Theatre rows over the theatre and its TargetCountries
+ * rows over the partner's target countries inside it, with the partner's
+ * minimum. By Country Set (`level=countrySet`, `countrySet=` optional, blank =
+ * the partner's configured set) carries the partner's Country Set minimum.
  *
  * A `meta` block reports the configured levels and whether any requirement uses
  * a per-theatre minimum, so the client can render the right sections.
@@ -71,15 +78,26 @@ export async function GET(
 
   // A Country Set is per-company tenant data: its name resolves only within one
   // company, and two companies may each own a same-named set over different
-  // countries. A countrySet report or roster whose scope is not exactly one
-  // company (a SuperAdmin under "All companies", or an Admin holding several)
-  // is therefore refused rather than answered — the helpers would fail closed to
-  // an empty area, which reads as an honest "nothing here" and is not one. The
-  // page always sends a single company (it is company-gated), so only a
-  // hand-built request reaches this. Applies to both modes below.
-  if (level === "countrySet" && singleCompanyId(companyFilter) === null) {
-    return NextResponse.json({ error: COUNTRY_SET_SCOPE_ERROR }, { status: 400 });
+  // countries. A countrySet report or roster — and a theatre one on a program
+  // with TargetCountries rows, which resolves the partner's target set and
+  // minimum — whose scope is not exactly one company (a SuperAdmin under "All
+  // companies", or an Admin holding several) is therefore refused rather than
+  // answered: the helpers would fail closed to an empty area, which reads as an
+  // honest "nothing here" and is not one. The page always sends a single
+  // company (it is company-gated), so only a hand-built request reaches this. A
+  // roster on such a Theatre view must name the row's population. All of this
+  // lives in `lib/program-view-guard.ts`, shared with the public route.
+  const checked = await checkProgramViewRequest({
+    programName,
+    level,
+    companyIds: companyFilter,
+    studentsMode: studentsMode && trainingTitleParam !== "",
+    population: request.nextUrl.searchParams.get("population"),
+  });
+  if ("error" in checked) {
+    return NextResponse.json({ error: checked.error }, { status: 400 });
   }
+  const population = checked.population;
 
   // Optional forward-looking projection: recompute compliance as it will stand
   // `horizonMonths` from now, so upcoming certificate expiries surface before
@@ -101,10 +119,11 @@ export async function GET(
     // and scope are different people.
     const mode = trainedNotCertified ? "tnc" : "holders";
     const result = await cachedReport(
-      `program-students|${progKey}|${scope}|${level}|${country}|${region}|${setKey}|${theatre}|${mode}|${encodeURIComponent(trainingTitleParam)}`,
+      `program-students|${progKey}|${scope}|${level}|${country}|${region}|${setKey}|${theatre}|${population ?? ""}|${mode}|${encodeURIComponent(trainingTitleParam)}`,
       () =>
         getProgramStudents({
-          trainingTitles: titles, level, country, region, countrySet, theatre, companyIds: companyFilter, trainedNotCertified,
+          trainingTitles: titles, level, programName, population, country, region, countrySet, theatre,
+          companyIds: companyFilter, trainedNotCertified,
         }),
     );
     return NextResponse.json(result, { headers: { "Cache-Control": "private, max-age=30" } });

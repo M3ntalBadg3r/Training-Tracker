@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authorizePublicRequest } from "@/lib/public-api";
 import { cachedReport, scopeKey } from "@/lib/report-cache";
-import { computeCompliancePlan } from "@/lib/compliance-plan";
+import { computeCompliancePlan, planRequiresSingleCompany } from "@/lib/compliance-plan";
 import { toPublicCompliancePlan } from "@/lib/compliance-plan-public";
 import {
   parsePlanRequest,
@@ -9,7 +9,7 @@ import {
   emptyCompliancePlan,
 } from "@/lib/compliance-plan-request";
 import { buildPlanningOptions } from "@/lib/planning-options";
-import { COUNTRY_SET_SCOPE_ERROR, listCountrySetNames, singleCompanyId } from "@/lib/country-sets";
+import { listCountrySetNames, singleCompanyId } from "@/lib/country-sets";
 
 /**
  * GET /api/public/v1/programs/planning — read-only Compliance Planning, the
@@ -30,7 +30,7 @@ import { COUNTRY_SET_SCOPE_ERROR, listCountrySetNames, singleCompanyId } from "@
  *
  * Two modes, mirroring the internal route:
  *  - `?options=true` → per-program selector metadata (name, isTiered, levels,
- *    tier names, specialisation names) so a caller can build a `targets` array,
+ *    tier names, specialisation names, `targetCountries`) so a caller can build a `targets` array,
  *    plus `countrySets` — the names `level=countrySet&countrySet=` accepts: the
  *    scoped company's own sets, empty unless the request is narrowed to exactly
  *    one company (a Country Set belongs to one company).
@@ -42,8 +42,13 @@ import { COUNTRY_SET_SCOPE_ERROR, listCountrySetNames, singleCompanyId } from "@
  *  - `targets`  URL-encoded JSON array:
  *      [{ program, mode: "tier"|"specialisations"|"all", tier?, specialisations?[] }]
  *  - `level`    global (default) | theatre | region | countrySet | country
- *  - `country` / `region` / `countrySet` / `theatre`  the selector for the chosen level
- *    (`level=countrySet` needs the request narrowed to exactly one company, else 400)
+ *  - `country` / `region` / `countrySet` / `theatre`  the selector for the chosen level.
+ *    `level=countrySet` needs the request narrowed to exactly one company, else
+ *    400; `countrySet` there is optional and defaults to each program's
+ *    configured Country Set-view set. At `level=theatre`, `countrySet` names
+ *    the target set for programs with TargetCountries rows (blank = each
+ *    program's configured Theatre-view set), and the request needs exactly one
+ *    company only when some requested program has such rows.
  *  - `renewalWindowMonths`  0 | 1 | 3 | 6 | 12 (default 3; 0 = no overlay)
  *  - `planForWindow`  true to size gaps from the projected end-of-window count
  *  - `companyId`  narrow to one of the key's companies (consumed by the guard)
@@ -85,7 +90,9 @@ export async function GET(request: NextRequest) {
     const options = await cachedReport(
       // "-v2": the value became `{programs, countrySets}`; see the internal route.
       // "-v3": the value now carries company-scoped set names.
-      `public-compliance-planning-options-v3|${scope}`,
+      // "-v4": each program carried a per-program field since retired.
+      // "-v5": that field became `targetCountries: boolean`.
+      `public-compliance-planning-options-v5|${scope}`,
       async () => {
         const [programs, countrySets] = await Promise.all([buildPlanningOptions(), listCountrySetNames(ctx.companyIds)]);
         return { programs, countrySets };
@@ -109,9 +116,14 @@ export async function GET(request: NextRequest) {
   // A Country Set name resolves only within one company, so a countrySet plan
   // needs the request narrowed to exactly one company; otherwise 400 rather than
   // a plan over an empty area that reads as an honest zero. The rule depends
-  // only on the key's own grant, so naming it discloses nothing.
-  if (req.level === "countrySet" && singleCompanyId(ctx.companyIds) === null) {
-    return NextResponse.json({ error: COUNTRY_SET_SCOPE_ERROR }, { status: 400 });
+  // only on the key's own grant (and on which programs exist, which the
+  // options mode already lists), so naming it discloses nothing. A theatre
+  // plan of a program with TargetCountries rows is the same rule: its target
+  // countries are the partner's Country Set (`planRequiresSingleCompany`,
+  // shared with the internal route).
+  const scopeError = singleCompanyId(ctx.companyIds) === null ? await planRequiresSingleCompany(req) : null;
+  if (scopeError !== null) {
+    return NextResponse.json({ error: scopeError }, { status: 400 });
   }
   if (req.targets.length === 0) {
     return NextResponse.json(toPublicCompliancePlan(emptyCompliancePlan(req.renewalWindowMonths)));

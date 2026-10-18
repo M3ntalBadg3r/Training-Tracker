@@ -1,12 +1,14 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import PageHeader from "@/components/layout/PageHeader";
 import Modal from "@/components/ui/Modal";
 import { Plus, Trash2, Pencil, Ban, Power, Copy, Check, ShieldCheck, ShieldOff } from "lucide-react";
 import { useDateFormat } from "@/components/date-format/DateFormatProvider";
 import FailedAttemptsPanel from "@/components/admin/FailedAttemptsPanel";
 import { useFetchJson } from "@/hooks/useFetchJson";
+import CompanyMultiPicker from "@/components/company/CompanyMultiPicker";
+import { useCompanyScope } from "@/components/company/CompanyScopeProvider";
 
 interface CompanyOption {
   id: number;
@@ -44,11 +46,12 @@ export default function ApiKeysPage() {
   // the hook derives `loading` without a setState-in-effect.
   const { data: keysData, loading, reload: fetchKeys } = useFetchJson<ApiKeyRow[]>("/api/admin/api-keys");
   const keys = keysData ?? [];
-  const { data: companiesData } = useFetchJson<CompanyOption[]>("/api/admin/companies");
-  const companies = useMemo<CompanyOption[]>(
-    () => (companiesData ?? []).map((c) => ({ id: c.id, name: c.name })),
-    [companiesData]
-  );
+  // The company picker options come from the shared per-session list
+  // (`/api/companies` via CompanyScopeProvider), which returns every company
+  // for a SuperAdmin — and this page is SuperAdmin-only. `/api/admin/companies`
+  // is the paged admin table, not a picker source.
+  const companyScope = useCompanyScope();
+  const companies = companyScope.companies;
   // The global on/off switch for the whole public API, independent of any key.
   const {
     data: settings,
@@ -178,7 +181,7 @@ export default function ApiKeysPage() {
     }
   };
 
-  if (loading || settingsLoading) {
+  if (loading || settingsLoading || companyScope.loading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-gray-500">Loading API keys...</div>
@@ -387,15 +390,12 @@ export default function ApiKeysPage() {
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
             />
           </div>
-          <CompanyPicker
-            companies={companies}
-            selected={addForm.companyIds}
-            onToggle={(id) =>
-              setAddForm((f) => ({
-                ...f,
-                companyIds: f.companyIds.includes(id) ? f.companyIds.filter((c) => c !== id) : [...f.companyIds, id],
-              }))
-            }
+          <CompanyMultiPicker
+            options={companies}
+            value={addForm.companyIds}
+            onChange={(next) => setAddForm((f) => ({ ...f, companyIds: next }))}
+            emptyMessage="No companies exist. Create one in Admin → Companies."
+            helpText="The key can only read data for the selected companies."
           />
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Expiry (optional)</label>
@@ -461,15 +461,12 @@ export default function ApiKeysPage() {
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
             />
           </div>
-          <CompanyPicker
-            companies={companies}
-            selected={editForm.companyIds}
-            onToggle={(id) =>
-              setEditForm((f) => ({
-                ...f,
-                companyIds: f.companyIds.includes(id) ? f.companyIds.filter((c) => c !== id) : [...f.companyIds, id],
-              }))
-            }
+          <CompanyMultiPicker
+            options={companies}
+            value={editForm.companyIds}
+            onChange={(next) => setEditForm((f) => ({ ...f, companyIds: next }))}
+            emptyMessage="No companies exist. Create one in Admin → Companies."
+            helpText="The key can only read data for the selected companies."
           />
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Expiry (optional)</label>
@@ -542,35 +539,6 @@ export default function ApiKeysPage() {
           lose access. This cannot be undone.
         </p>
       </Modal>
-    </div>
-  );
-}
-
-function CompanyPicker({
-  companies,
-  selected,
-  onToggle,
-}: {
-  companies: CompanyOption[];
-  selected: number[];
-  onToggle: (id: number) => void;
-}) {
-  return (
-    <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1">Companies</label>
-      {companies.length === 0 ? (
-        <p className="text-xs text-gray-500">No companies exist. Create one in Admin → Companies.</p>
-      ) : (
-        <div className="border border-gray-300 rounded-lg p-2 max-h-40 overflow-y-auto space-y-1">
-          {companies.map((c) => (
-            <label key={c.id} className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={selected.includes(c.id)} onChange={() => onToggle(c.id)} />
-              {c.name}
-            </label>
-          ))}
-        </div>
-      )}
-      <p className="text-xs text-gray-400 mt-1">The key can only read data for the selected companies.</p>
     </div>
   );
 }

@@ -163,12 +163,24 @@ const helpSections: Record<string, HelpSection> = {
       <>
         <p>
           View all students in a table with columns: Full Name, Email, Theatre,
-          Region, and Country.
+          Region, and Country (plus Company under <strong>All companies</strong>).
+        </p>
+        <p>
+          The list is searched, filtered, sorted and paged on the server, so
+          search and the column filters always run across{" "}
+          <strong>every</strong>{" "}student in scope, not just the page on
+          screen. Use the search box to find someone by Full Name or Email
+          &mdash; those two columns have no filter dropdown of their own. The
+          Theatre, Region, Country and Company dropdowns list the values present
+          among your students; the Company filter is not offered when more than
+          500 companies are in scope, so pick the company in the header switcher
+          instead. Changing the search, a filter or the sort returns you to
+          page 1.
         </p>
         <p>
           Click <strong>View</strong>{" "}on any row to open the student&apos;s
-          detailed record. Your search, column filters, and sort order are kept
-          in the page URL, so opening a student and pressing <strong>Back</strong>{" "}
+          detailed record. Your search, column filters, sort order and page are
+          kept in the page URL, so opening a student and pressing <strong>Back</strong>{" "}
           restores the list exactly as you left it.
         </p>
         <p>
@@ -184,7 +196,9 @@ const helpSections: Record<string, HelpSection> = {
           auto-derived from the country&apos;s entry in Region Data and shown
           read-only. The dropdown only lists countries that have a theatre
           assigned. To add a new country, ask a SuperAdmin to create it on the{" "}
-          <strong>Region Data</strong> page first.
+          <strong>Region Data</strong> page first. The Company field is
+          type-to-search: start typing part of the company&apos;s name and pick
+          it from the matches.
         </p>
       </>
     ),
@@ -546,7 +560,7 @@ const helpSections: Record<string, HelpSection> = {
     content: (
       <>
         <p>
-          The Reports section contains nine report pages, each accessible from
+          The Reports section contains thirteen report pages, each accessible from
           the sidebar or the Reports landing page. Dashboard chart cards link
           directly to the relevant report. Every report exports as CSV, Excel,
           or PDF, and a PDF export can include the report&rsquo;s metric cards
@@ -569,16 +583,19 @@ const helpSections: Record<string, HelpSection> = {
         </ul>
 
         <h3>By Product Type</h3>
-        <p>Stacked bar of Cert/Accred/ILT per product, plus an active-vs-expired donut. Tick <strong>Count people, not records (active holders)</strong> to switch the chart and KPI cards from raw record counts to the number of distinct people who currently hold an active cert/training — so a learner holding several certs in one product type counts once per type instead of inflating the totals.</p>
+        <p>Stacked bar of Certification/Accreditation/ILT per product, plus an active-vs-expired donut. Tick <strong>Count people, not records (active holders)</strong> to switch the chart and KPI cards from raw record counts to the number of distinct people who currently hold an active certification/training — so a learner holding several certifications in one product type counts once per type instead of inflating the totals.</p>
 
         <h3>By Function</h3>
-        <p>Stacked bar of Cert/Accred/ILT per function (Sales, Pre-Sales, Deployments), plus an active-vs-expired donut. Tick <strong>Count people, not records (active holders)</strong>{" "}to switch the chart and KPI cards from raw record counts to the number of distinct active holders, so multiple certs held by the same person don&rsquo;t skew the figures.</p>
+        <p>Stacked bar of Certification/Accreditation/ILT per function (Sales, Pre-Sales, Deployments), plus an active-vs-expired donut. Tick <strong>Count people, not records (active holders)</strong>{" "}to switch the chart and KPI cards from raw record counts to the number of distinct active holders, so multiple certifications held by the same person don&rsquo;t skew the figures.</p>
+
+        <h3>Country Coverage by Function</h3>
+        <p>Every country in the chosen theatre (or region), with the certifications and accreditations held there split by function, how many people hold them, the headcount and the coverage %. See the report&rsquo;s own help for the details.</p>
 
         <h3>Expiring Soon</h3>
         <p>Horizon bar showing records expiring within 1/3/6/12 months, plus a theatre × month stacked bar showing where the cliff falls.</p>
 
         <h3>Currently Expired</h3>
-        <p>Every certification &amp; training whose latest completion has <em>already</em>{" "}lapsed (the inverse of Expiring Soon). Records are bucketed by how long ago they expired (≤1 month, 1–3, 3–6, 6–12, &gt; 12 months) with a stacked bar by training type and an &ldquo;Expired by Theatre&rdquo; chart. The <strong>Lapsed</strong> dropdown narrows the report to a recent window — <strong>Lapsed Any Time</strong> (the default) or lapsed within the last <strong>3 / 6 / 12 months</strong>{" "}— scoping the charts, KPI cards, subtotals, table and exports together; its edges line up with the chart bands, so at 3 months the &ldquo;1–3 months&rdquo; band is the last populated one and the bands sum to the total. Choosing a window that excludes a band you had clicked clears that band filter instead of showing an empty report. Click a band to filter the table; group by theatre/region/country, search, and export to CSV/Excel/PDF. Retired (legacy) certs are shown by default — tick <strong>Exclude retired (legacy) certs</strong> to hide them. The detail table is <strong>paginated</strong> — use the page controls beneath it to page through results; charts, KPI cards and exports always cover the full filtered set. Also available as a scheduled export.</p>
+        <p>Every certification &amp; training whose latest completion has <em>already</em>{" "}lapsed (the inverse of Expiring Soon). Records are bucketed by how long ago they expired (≤1 month, 1–3, 3–6, 6–12, &gt; 12 months) with a stacked bar by training type and an &ldquo;Expired by Theatre&rdquo; chart. The <strong>Lapsed</strong> dropdown narrows the report to a recent window — <strong>Lapsed Any Time</strong> (the default) or lapsed within the last <strong>3 / 6 / 12 months</strong>{" "}— scoping the charts, KPI cards, subtotals, table and exports together; its edges line up with the chart bands, so at 3 months the &ldquo;1–3 months&rdquo; band is the last populated one and the bands sum to the total. Choosing a window that excludes a band you had clicked clears that band filter instead of showing an empty report. Click a band to filter the table; group by theatre/region/country, search, and export to CSV/Excel/PDF. Retired (legacy) certifications are shown by default — tick <strong>Exclude retired (legacy) certifications</strong> to hide them. The detail table is <strong>paginated</strong> — use the page controls beneath it to page through results; charts, KPI cards and exports always cover the full filtered set. Also available as a scheduled export.</p>
 
         <h3>Achievement Over Time</h3>
         <p>Area chart of completions with a dashed prior-period comparison line, beside a top-10 bar chart of trainings by completion count (coloured by product type). Pick a preset time range (12, 6, 3, or 1 month) or a custom date range; the chart automatically buckets by day, week, or month based on the window. Click a point to filter the table to that bucket. Type/theatre/function/region/product filters update the chart as well as the table.</p>
@@ -587,7 +604,7 @@ const helpSections: Record<string, HelpSection> = {
         <p>Gap funnel by product (ILT completed → ILT still active) plus the top theatres/regions/countries with gaps. When a training can lead to more than one certification, the options are treated as alternatives (OR): a student is only flagged if they hold none of them, and the &ldquo;Certification Not Obtained&rdquo; column lists every option joined with &ldquo;or&rdquo;.</p>
 
         <h3>Legacy Replacement Gap</h3>
-        <p>Learners who hold a <strong>legacy</strong>{" "}Certification/Accreditation but haven&rsquo;t taken its <strong>replacement</strong>{" "}(configured in Admin &gt; Training Data). Multiple replacements are alternatives — holding any one clears the learner. The expiry-horizon chart and the Already Expired / ≤ 1 / 3 / 6 / 12-month window filter key on the learner&rsquo;s legacy training expiry, so you can chase the most urgent migrations first. Two toggles tailor the view: <strong>Include legacy with no replacement</strong> (show holders of a retired cert with no successor) and <strong>Replacement must be active</strong> (when off, a previously-held but now-expired replacement also counts as satisfied).</p>
+        <p>Learners who hold a <strong>legacy</strong>{" "}Certification/Accreditation but haven&rsquo;t taken its <strong>replacement</strong>{" "}(configured in Admin &gt; Training Data). Multiple replacements are alternatives — holding any one clears the learner. The expiry-horizon chart and the Already Expired / ≤ 1 / 3 / 6 / 12-month window filter key on the learner&rsquo;s legacy training expiry, so you can chase the most urgent migrations first. Two toggles tailor the view: <strong>Include legacy with no replacement</strong> (show holders of a retired certification with no successor) and <strong>Replacement must be active</strong> (when off, a previously-held but now-expired replacement also counts as satisfied).</p>
 
         <h3>Theatre / Region / Country Comparison</h3>
         <p>
@@ -698,7 +715,7 @@ const helpSections: Record<string, HelpSection> = {
         <ul>
           <li><strong>Lapse age</strong> — records are bucketed by how long ago they expired: up to 1 month, 1&ndash;3, 3&ndash;6, 6&ndash;12, and over 12 months.</li>
           <li><strong>Lapsed</strong> — narrows the report to recent lapses. Its edges line up exactly with the chart bands, so at 3 months the 1&ndash;3 band is the last populated one and the bands still sum to the total.</li>
-          <li><strong>Exclude retired (legacy) certs</strong> — hides records for trainings marked legacy, which are expected to lapse because they have been superseded. See <strong>Legacy Replacement Gap</strong> for those.</li>
+          <li><strong>Exclude retired (legacy) certifications</strong> — hides records for trainings marked legacy, which are expected to lapse because they have been superseded. See <strong>Legacy Replacement Gap</strong> for those.</li>
         </ul>
       </>
     ),
@@ -793,7 +810,7 @@ const helpSections: Record<string, HelpSection> = {
           under-trained learners.
         </p>
         <ul>
-          <li><strong>Certs / Accreds / ILTs / OLX</strong> — counts per learner. Active completions only by default; tick <strong>Include expired in counts</strong> to count expired ones too.</li>
+          <li><strong>Certifications / Accreditations / ILTs / OLX</strong> — counts per learner. Active completions only by default; tick <strong>Include expired in counts</strong> to count expired ones too.</li>
           <li><strong>Total</strong> — sum of the four count columns; also drives the Top Achievers leaderboard.</li>
           <li><strong>Expiring Soon</strong> — active Certifications/Accreditations whose expiry falls within the selected window (1/3/6 months); always looks forward from today.</li>
           <li><strong>Expired</strong>{" "}— the learner&apos;s expired achievements.</li>
@@ -838,14 +855,38 @@ const helpSections: Record<string, HelpSection> = {
           <li>For each month-end, the report re-runs the same OR-logic union of primary + alternative trainings used by the live program dashboards, counting only trainings that were <strong>completed by that month and still valid</strong> (not yet expired). This makes each point a true snapshot of that moment — historical lines reflect how compliance actually built up over time.</li>
           <li><strong>Solid lines</strong> are history; <strong>dashed lines</strong>{" "}(after the &quot;Forecast →&quot; marker) project the next 12 months. The forecast assumes <strong>no new completions</strong>{" "}and simply shows compliance decaying as today&apos;s active certifications reach their expiry date — an &quot;if nothing changes&quot; view that surfaces upcoming renewal gaps.</li>
           <li>The <strong>Forecast 12-mo Δ</strong> KPI shows the projected change (in percentage points) from now to 12 months out — a negative value flags certifications due to lapse.</li>
-          <li>Narrow the view with the <strong>Theatre / Region / Country</strong>{" "}filters (the &quot;Showing&quot; caption states the active scope); the report is also scoped to the company selected in the header. The program dropdown lists every program found in Program Data.</li>
+          <li>Narrow the view with the <strong>Theatre / Region / Country</strong>{" "}filters (the &quot;Showing&quot; caption states the active scope); the report is also scoped to the company selected in the header. The program dropdown lists every program found in Program Data except those with Target countries requirements.</li>
           <li>This report is also available over the <strong>public API</strong>{" "}at <code>/api/public/v1/reports/program-compliance-trend</code>, for a partner portal or BI tool holding an API key.</li>
           <li>The trend does not distinguish requirement levels: it counts every requirement of a program as distinct holders pooled across the chosen geography. A Region or Country Set requirement counted <em>in each country</em>{" "}is therefore shown pooled here, not country by country &mdash; use the program dashboard for the per-country view.</li>
+          <li><strong>Target countries requirements are not included.</strong>{" "}They count each partner&apos;s own target countries inside a theatre, with a per-partner minimum &mdash; which a single pooled trend cannot reproduce &mdash; so they are left out rather than shown with misleading figures. The program&apos;s other requirements are still charted. A note above the chart names the programs affected (and any with nothing else to show); use the program&apos;s own By Theatre view (with its <strong>Compliance as of</strong>{" "}projection) for those requirements.</li>
         </ul>
       </>
     ),
   },
 
+  "reports-country-coverage": {
+    title: "Country Coverage by Function",
+    content: (
+      <>
+        <p>
+          One row per country, for answering &ldquo;where in this theatre are we
+          thin?&rdquo;. Pick a theatre with the scope filter (a region or a single
+          country narrows it further); leave it on All theatres to see every
+          country grouped by theatre, with a subtotal for each.
+        </p>
+        <ul>
+          <li><strong>Every country is listed</strong>{" "}— the list comes from Region Data, so a country configured in the theatre with no students, or with nobody certified, still appears with zeros. Countries with a headcount of zero are greyed out.</li>
+          <li><strong>Held</strong>{" "}— how many certifications and/or accreditations people in the country hold, split by the training&rsquo;s function (Sales, Pre-Sales, Deployments). Someone who re-sat the same certification counts it once.</li>
+          <li><strong>People holding</strong>{" "}— distinct people holding at least one, per function and in total. A person with a Sales certification and a Pre-Sales accreditation counts once under each function but only once under <strong>Any</strong>, so the function columns can add up to more than Any.</li>
+          <li><strong>Coverage</strong>{" "}— people holding at least one ÷ the country&rsquo;s headcount. Shown as &ldquo;—&rdquo; for a country with no students.</li>
+          <li><strong>Counting</strong>{" "}— count certifications and accreditations together (the default), or either one on its own. The column headings follow your choice.</li>
+          <li><strong>Include expired (inactive)</strong>{" "}— off by default, so only certifications and accreditations that have not yet expired count. Tick it to count expired ones too.</li>
+          <li>Every column is sortable (rows sort within each theatre), and the table exports to CSV, Excel or PDF with the theatre subtotals and grand total included.</li>
+          <li><strong>Click any figure</strong>{" "}to see what is behind it — on a country&rsquo;s row, a theatre subtotal or the grand total. <strong>Headcount</strong>{" "}lists every student; a <strong>People holding</strong>{" "}figure lists each person once, with what they hold; a <strong>Held</strong>{" "}figure lists each certification or accreditation with its completion and expiry dates. The list uses the same filters as the report, so it is always as long as the figure you clicked. Click a name to open that student&rsquo;s record, and use the link at the top to return to the report as you left it. Each list is sortable, paged and exports to CSV, Excel or PDF. Figures of zero and the Coverage column are not clickable.</li>
+        </ul>
+      </>
+    ),
+  },
   "reports-renewal-forecast": {
     title: "Renewal Forecast",
     content: (
@@ -1000,6 +1041,12 @@ const helpSections: Record<string, HelpSection> = {
             <strong>Country Sets</strong>{" "}&mdash; Group a company&apos;s
             countries into custom sets that partner programs can report against.
             Each company has its own sets, managed by its Admins.
+          </li>
+          <li>
+            <strong>Partner Specific Program Settings</strong>{" "}&mdash; Each partner&apos;s own
+            terms for a program: for the By Country Set view and the By Theatre
+            view, a minimum number of countries and the Country Set to use.
+            Managed by each company&apos;s Admins.
           </li>
           <li>
             <strong>Training Data</strong>{" "}&mdash; Manage training program
@@ -1327,7 +1374,7 @@ const helpSections: Record<string, HelpSection> = {
               <td>
                 The Certification(s) an ILT or OLX parent <strong>leads to</strong>{" "}
                 &mdash; the recommended preparation before sitting the exam that
-                earns the cert (the training does not itself grant it). Set it{" "}
+                earns the certification (the training does not itself grant it). Set it{" "}
                 <strong>once for the Full Title</strong>{" "}on its detail page:
                 you pick the certification by its Full Title, and it is applied to
                 every Training Title mapped to the training. Shown without opening
@@ -1388,7 +1435,7 @@ const helpSections: Record<string, HelpSection> = {
             <strong>OLX Sub-Items</strong>{" "}up as top-level rows so you can find
             and edit them. A{" "}
             <strong>Show legacy only</strong> toggle scopes the list to retired
-            Certs/Accreds, and <strong>Show ignored only</strong>{" "}to entries
+            Certifications/Accreditations, and <strong>Show ignored only</strong>{" "}to entries
             marked as not needed. Your search, filters, legacy toggle, and sort are
             remembered when you open a training and click <strong>Back</strong>{" "}
             (they&rsquo;re kept in the page URL, so the view is bookmarkable too).
@@ -1572,7 +1619,7 @@ const helpSections: Record<string, HelpSection> = {
             <strong>Full Titles</strong>{" "}that contain a
             Certification/Accreditation then appears &mdash; select one or more.
             Multiple replacements are <strong>alternatives</strong>: holding any
-            one of them counts as having migrated. Leave it empty for a cert
+            one of them counts as having migrated. Leave it empty for a certification
             retired with no successor.
           </li>
           <li>
@@ -1583,7 +1630,7 @@ const helpSections: Record<string, HelpSection> = {
             <em>&rarr; Replaced by: &lt;names&gt;</em> subtitle (or{" "}
             <em>&rarr; No replacement defined</em>), so you can audit
             replacements at a glance. Tick <strong>Show legacy only</strong> in
-            the search bar to scope the list to retired Certs/Accreds.
+            the search bar to scope the list to retired Certifications/Accreditations.
           </li>
           <li>
             Changing the type away from Certification/Accreditation clears the
@@ -1599,7 +1646,7 @@ const helpSections: Record<string, HelpSection> = {
           </li>
           <li>
             The <strong>Legacy Replacement Gap</strong>{" "}report uses this to find
-            learners still holding a legacy cert who haven&apos;t taken the
+            learners still holding a legacy certification who haven&apos;t taken the
             replacement.
           </li>
         </ul>
@@ -1626,6 +1673,27 @@ const helpSections: Record<string, HelpSection> = {
           The default <strong>Unassigned</strong> company is created automatically
           on upgrade and holds students that existed before company support was
           added. Reassign students from there in <strong>Students &rarr; (row) &rarr; Edit</strong>.
+        </p>
+        <h3>Finding a company</h3>
+        <p>
+          The list is searched, sorted and paged on the server, so it stays
+          quick with tens of thousands of companies. Type in the search box to
+          match any part of a company&apos;s name, click the{" "}
+          <strong>Name</strong> or <strong>Students</strong> column heading to
+          sort (click again to reverse it), and use the pager below the table to
+          move between pages or change how many are shown. Changing the search
+          or the sort returns you to page 1. The search, sort and page are kept
+          in the page address, so leaving the page and pressing{" "}
+          <strong>Back</strong> brings the list back exactly as you left it.
+        </p>
+        <p>
+          Every company field &mdash; the header switcher, user and API-key
+          access lists, imports, scheduled exports, offerings, country sets and
+          the student forms &mdash; is type-to-search: type part of a
+          company&apos;s name and pick it from the matches. At most 50 matches
+          are listed at once, with a count of how many more there are, so keep
+          typing to narrow a long list. Fields that take several companies show
+          the chosen ones as removable chips above the search.
         </p>
       </>
     ),
@@ -2132,6 +2200,14 @@ const helpSections: Record<string, HelpSection> = {
               <td>Each company&apos;s Country Sets and the countries in each</td>
             </tr>
             <tr>
+              <td><code>program_company_settings.json</code></td>
+              <td>
+                Each partner&apos;s settings for a program (its By Country Set
+                minimum and set, and its By Theatre minimum and target set),
+                recorded by program, company and set name
+              </td>
+            </tr>
+            <tr>
               <td><code>users.json</code></td>
               <td>
                 User accounts. Password hashes and MFA secrets are included
@@ -2193,13 +2269,15 @@ const helpSections: Record<string, HelpSection> = {
         <p>
           A <strong>config backup</strong> contains the reference dataset only
           — product types, regions, country sets, the training catalogue, OLX
-          relationships, specialisations, programs, import aliases, and system
-          settings — and
+          relationships, specialisations, programs (including their default
+          minimum numbers of countries), partner specific program settings, import
+          aliases, and system settings — and
           excludes students and training records. Use this to clone the
           catalogue/program setup into a freshly installed instance without
           carrying any learner data across. A config backup does not include
-          companies, so its Country Sets are restored only to companies with the
-          same name on the target system &mdash; create those companies first.
+          companies, so its Country Sets and partner specific program settings are
+          restored only to companies with the same name on the target system
+          &mdash; create those companies first.
         </p>
         <p>
           Click <strong>Config Backup</strong> for the standard variant (tied
@@ -2316,6 +2394,26 @@ const helpSections: Record<string, HelpSection> = {
           Set program requirements cannot be restored onto an older version of
           the app that does not know those levels &mdash; update that system
           first.
+        </p>
+        <p>
+          <strong>Partner specific program settings</strong>{" "}(Admin &rsaquo; Partner Specific
+          Program Settings) follow the same rules. Each is matched to its program, its
+          company and both of its Country Sets by name. A full restore replaces
+          them all; a config restore replaces only those of the companies the
+          archive names. One whose company or program does not exist on this
+          system is left out rather than given to another company, and one whose
+          Country Set or target set no longer exists is kept with its minimums
+          but without that set; the result says how many of each. An archive
+          taken before partner settings existed keeps the settings already on
+          this system, except for programs the restore removed.
+        </p>
+        <p>
+          An archive written by a development build from before this release,
+          when a program could be tied to one theatre, is converted as it is
+          restored, the same way upgrading converts a database: that
+          program&apos;s Country Set requirements become Target countries
+          requirements and its minimum (and each partner&apos;s) becomes the By
+          Theatre minimum. A warning in the result says when this happened.
         </p>
         <p>
           <strong>Important:</strong> Restoring a backup{" "}
@@ -2562,33 +2660,98 @@ const helpSections: Record<string, HelpSection> = {
           Tick <strong>Tiered program</strong> when creating a program to unlock{" "}
           <strong>tiers</strong> (e.g. Tier A, B, C) that a partner reaches based on how
           many <strong>specialisations</strong>{" "}they have achieved. A specialisation is
-          achieved when all of its qualifying (Sales/Pre-Sales) cert requirements are met
+          achieved when all of its qualifying (Sales/Pre-Sales) certification requirements are met
           by enough distinct people. On a tiered program&apos;s page a <strong>Tiers</strong>{" "}
           section lets you add tiers (name, ladder order, and how many specialisations each
-          requires) and choose how <strong>Deployment</strong> cert requirements are handled:
+          requires) and choose how <strong>Deployment</strong> certification requirements are handled:
         </p>
         <ul>
-          <li><strong>Flat</strong> — each tier lists its own deployment cert requirements.</li>
+          <li><strong>Flat</strong> — each tier lists its own deployment certification requirements.</li>
           <li><strong>Per achieved specialisation</strong>{" "}— each achieved specialisation&apos;s
-            own deployment cert requirements must be met (add these as requirements with
+            own deployment certification requirements must be met (add these as requirements with
             purpose <em>Deployment</em>). The same set applies to every tier.</li>
           <li><strong>Per tier, per achieved specialisation</strong> — each tier lists its own
-            deployment cert requirements <em>for each specialisation</em>, so they scale up the
+            deployment certification requirements <em>for each specialisation</em>, so they scale up the
             ladder. When adding a tier&apos;s deployment requirement you pick which specialisation
             it applies to. The tier is reached when <em>at least the required number of</em>{" "}
             specialisations each meet all of that tier&apos;s criteria — achieved <em>and</em>{" "}all
-            of that tier&apos;s deployment certs for that specialisation (a specialisation with no
-            deployment certs for the tier counts on qualification alone). Specialisations that
+            of that tier&apos;s deployment certifications for that specialisation (a specialisation with no
+            deployment certifications for the tier counts on qualification alone). Specialisations that
             aren&apos;t fully met don&apos;t count toward the total, so they don&apos;t block the
             tier once enough others are met. For example, Tier A might need 1 specialisation and no
-            deployment certs, Tier B 2 specialisations each with 3 deployment certs, and Tier C 3
+            deployment certifications, Tier B 2 specialisations each with 3 deployment certifications, and Tier C 3
             specialisations each with 4 — so a partner with two specialisations fully deployed
-            reaches Tier B even if a third specialisation&apos;s certs aren&apos;t complete.</li>
+            reaches Tier B even if a third specialisation&apos;s certifications aren&apos;t complete.</li>
         </ul>
         <p>
           Because compliance counts <strong>distinct people</strong>, a requirement for
           &ldquo;2 of Cert A or Cert B&rdquo; needs two <em>different</em> individuals — one
-          person holding both certs still counts once.
+          person holding both certifications still counts once.
+        </p>
+
+        <h3>Required at every level</h3>
+        <p>
+          A tiered program&apos;s page has a <strong>Required at every level</strong>{" "}
+          section for requirements that apply to the whole program rather than to one
+          specialisation or tier — for example &ldquo;15 &times; Cert A across the
+          theatre&rdquo;. Every tier needs them, in every deployment mode, whichever
+          specialisations are achieved, so each is written once instead of being repeated
+          under every tier. Use its <strong>Add</strong>{" "}button, or choose{" "}
+          <strong>Applies to: Required at every level</strong>{" "}in the requirement form.
+          They are always qualification requirements, and they do not count toward
+          achieving any specialisation.
+        </p>
+        <p>
+          Give one a <strong>Name</strong>{" "}in the requirement form — for example
+          &ldquo;4 per target country &mdash; any sales certification&rdquo; — and the dashboard shows
+          that name as its title, with the training and its alternatives on a smaller line
+          beneath, which is far easier to read than a long list of alternatives. The name is
+          optional, up to 120 characters, available on every requirement, and never changes
+          how the row is counted.
+        </p>
+        <p>
+          They exist only on tiered programs: a non-tiered program refuses them, and a
+          program cannot be made non-tiered while it still has any — remove them first.
+        </p>
+
+        <h3>Target countries and minimum countries</h3>
+        <p>
+          A program can judge a partner over a whole theatre <em>and</em>{" "}over the
+          partner&apos;s own chosen countries in it (&ldquo;15 &times; Cert A across
+          EMEA&rdquo; plus &ldquo;4 &times; Cert A in each target country&rdquo;), alongside
+          its By Country, By Country Set and other views:
+        </p>
+        <ul>
+          <li>
+            <strong>Target countries</strong>{" "}is a requirement level (shown as{" "}
+            <em>In the viewed theatre (By Theatre view)</em>). Its requirements are counted in
+            the program&apos;s <strong>By Theatre</strong>{" "}view over each partner&apos;s{" "}
+            <strong>target countries</strong>: the countries in that partner&apos;s target
+            Country Set that lie inside the theatre being viewed. Any theatre can be viewed.
+            Total and In each country both work as usual.
+          </li>
+          <li>
+            In the same By Theatre view, <strong>Theatre</strong>{" "}requirements still count
+            across the whole theatre. A program with no Target countries requirements keeps
+            the By Theatre view it always had.
+          </li>
+          <li>
+            The <strong>By Country Set</strong>{" "}view counts Country Set requirements over
+            the set being viewed, which by default is the partner&apos;s own set for that view.
+          </li>
+        </ul>
+        <p>
+          The <strong>Minimum countries</strong>{" "}card on the program&apos;s page (also in
+          the New Program dialog) holds two optional defaults, each a whole number from 1 to
+          1000: <strong>Minimum countries &mdash; By Country Set view</strong>{" "}(how many
+          countries a partner&apos;s Country Set must hold) and{" "}
+          <strong>Minimum target countries &mdash; By Theatre view</strong>{" "}(how many of a
+          partner&apos;s target countries must lie inside the viewed theatre; used only when
+          the program has Target countries requirements). Below the minimum no tier is reached
+          in that view. Each partner can have their own minimums, and their own sets, on{" "}
+          <strong>Admin &rsaquo; Partner Specific Program Settings</strong>{" "}(the{" "}
+          <strong>Partner settings</strong>{" "}link on the card); a partner without their own
+          minimum uses the program&apos;s default, and with neither there is no minimum.
         </p>
 
         <h3>Fields</h3>
@@ -2610,11 +2773,11 @@ const helpSections: Record<string, HelpSection> = {
             </tr>
             <tr>
               <td><strong>Level</strong></td>
-              <td>Whether this requirement applies at Country, Region, Country Set, Theatre, or Global level. Each dashboard view reads only the requirements at its own level — see <em>Levels and count modes</em> below.</td>
+              <td>Whether this requirement applies at Country, Region, Country Set, Target countries, Theatre, or Global level. Each dashboard view reads only the requirements at its own level — see <em>Levels and count modes</em> below — except By Theatre, which reads Theatre and Target countries requirements together.</td>
             </tr>
             <tr>
               <td><strong>Count mode</strong></td>
-              <td>Region and Country Set requirements only. <strong>Total across the area</strong>{" "}counts distinct holders anywhere in the region or set; <strong>In each country</strong>{" "}requires every country in it to reach the quantity on its own. Every other level always counts in total.</td>
+              <td>Region, Country Set and Target countries requirements only. <strong>Total across the area</strong>{" "}counts distinct holders anywhere in the region, set or target countries; <strong>In each country</strong>{" "}requires every country in it to reach the quantity on its own. Every other level always counts in total.</td>
             </tr>
             <tr>
               <td><strong>Type</strong></td>
@@ -2626,7 +2789,7 @@ const helpSections: Record<string, HelpSection> = {
             </tr>
             <tr>
               <td><strong>Quantity Required</strong></td>
-              <td>For Country/Theatre: number of people needed in that country or theatre. For Region/Country Set: the number of people needed across the whole area (<em>Total</em>) or in every one of its countries (<em>In each country</em>). For Global with training: number of people globally. For Global without training: number of compliant theatres needed.</td>
+              <td>For Country/Theatre: number of people needed in that country or theatre. For Region/Country Set/Target countries: the number of people needed across the whole area (<em>Total</em>) or in every one of its countries (<em>In each country</em>). For Global with training: number of people globally. For Global without training: number of compliant theatres needed.</td>
             </tr>
             <tr>
               <td><strong>Minimum per Theatre</strong></td>
@@ -2660,10 +2823,12 @@ const helpSections: Record<string, HelpSection> = {
           viewed on the dashboard — a Region requirement is not tied to one named region.
           Country Sets are custom groups of countries that each company manages
           for itself under <strong>Admin &rsaquo; Country Sets</strong>; a Country
-          Set requirement is counted over the viewed company&apos;s own set.
+          Set requirement is counted over the viewed company&apos;s own set.{" "}
+          <strong>Target countries</strong>{" "}requirements likewise apply to whichever
+          theatre is viewed, over the partner&apos;s target countries in it.
         </p>
         <p>
-          Because both levels span several countries, each of their requirements has a{" "}
+          Because these levels span several countries, each of their requirements has a{" "}
           <strong>count mode</strong>:
         </p>
         <ul>
@@ -2713,19 +2878,40 @@ const helpSections: Record<string, HelpSection> = {
         </p>
         <p>
           Expected columns: Program Name, Specialisation, Level, Count Mode, Training Type,
-          Training, Quantity Required, Minimum per Theatre, Alternatives. Column names are
+          Training, Quantity Required, Minimum per Theatre, Alternatives, plus the optional
+          program-level <strong>Country Set Minimum Countries</strong>{" "}and{" "}
+          <strong>Target Minimum Countries</strong>{" "}columns and an optional{" "}
+          <strong>Requirement Name</strong>{" "}(the rule&apos;s name, up to 120 characters).
+          Column names are
           matched case-insensitively. Specialisations are auto-created if they don&apos;t
           exist. Training is matched by display name against the training catalog.
           Alternatives are specified as pipe-separated training names (e.g.,
           &quot;Training A|Training B&quot;).
         </p>
         <p>
-          <strong>Level</strong>{" "}accepts Country, Region, Country Set, Theatre or Global.{" "}
+          <strong>Level</strong>{" "}accepts Country, Region, Country Set, Target Countries,
+          Theatre or Global.{" "}
           <strong>Count Mode</strong>{" "}accepts <em>Total</em>{" "}or <em>Each country</em>;
           a blank cell means Total, so older files without the column import unchanged.{" "}
           <em>Each country</em>{" "}on a Country, Theatre or Global row is an error, as is an
           unrecognised value. A <strong>Minimum per Theatre</strong>{" "}on a row that is not
           Global is dropped and reported as a warning in the preview.
+        </p>
+        <p>
+          The two minimum columns take a whole number from 1 to 1000. The first value given
+          for a program wins (a different one on a later row is a warning), and a blank or
+          missing cell leaves the stored setting alone, so older files import unchanged; a
+          minimum is cleared in the editor, not by import. A row with a Level but a blank
+          Specialisation <em>and</em>{" "}a blank Tier is a{" "}
+          <strong>Required at every level</strong>{" "}requirement on a tiered program, and an
+          error on any other. The export writes all of this back out, including a settings-only
+          row for a program with minimums but no requirements yet, so it round-trips.
+        </p>
+        <p>
+          Files exported by an earlier version still import: a{" "}
+          <strong>Default Minimum Countries</strong>{" "}column is read as Target Minimum
+          Countries, and an <strong>Anchor Theatre</strong>{" "}value is ignored with a warning
+          while that program&apos;s Country Set rows are imported as Target countries rows.
         </p>
         <p>
           Use <strong>Validate</strong> to check all rows for errors before committing,
@@ -2812,6 +2998,57 @@ const helpSections: Record<string, HelpSection> = {
           Mixed selections are supported (e.g. a tier in one program plus all
           specialisations in another) in a single plan.
         </p>
+
+        <h3>Required at every level</h3>
+        <p>
+          A tiered program&apos;s <strong>Required at every level</strong>{" "}
+          requirements (set in Program Data) appear as their own block at the top of
+          the roadmap, badged <strong>Every tier</strong>. A tier target always pays
+          for them, on top of the specialisations it recommends &mdash; and a
+          specialisation that shares a certification with them is ranked on what it
+          adds beyond them &mdash; so the tier&apos;s headline includes the people
+          they need. An <strong>all requirements</strong>{" "}target includes them too.
+          A <strong>specific specialisation(s)</strong>{" "}target leaves them out,
+          since they belong to no specialisation; target a tier to see what reaching
+          a level really takes.
+        </p>
+
+        <h3>Target countries and minimum countries</h3>
+        <p>
+          Every program can be planned at every scope. Under the{" "}
+          <strong>Theatre</strong>{" "}scope, when a selected program has Target countries
+          requirements and the company has Country Sets, a{" "}
+          <strong>Target countries from</strong>{" "}picker appears. Its blank option,{" "}
+          <strong>Partner&apos;s configured set</strong>, uses each program&apos;s own target
+          set from <strong>Admin &rsaquo; Partner Specific Program Settings</strong>{" "}(and names the set used
+          once the plan loads); or pick one set for every program. Under the{" "}
+          <strong>Country Set</strong>{" "}scope a blank set likewise means each
+          program&apos;s own partner set, so a plan runs without choosing one.
+        </p>
+        <p>
+          A program with Target countries requirements is planned over two areas at once
+          under the Theatre scope: Theatre requirements across the theatre and Target
+          countries requirements over the target countries (the set&apos;s countries inside
+          that theatre). The roadmap says which each row is counted over, and a line under the
+          target&apos;s headline lists the target countries and the minimum, with a blue note
+          for any set countries outside the theatre, which do not count. A Country Set plan
+          shows the set and its minimum the same way. Someone certified in a target country
+          counts toward that country <em>and</em>{" "}the theatre-wide figure, so a per-country
+          requirement and a theatre-wide one on the same certification are not charged twice.
+        </p>
+        <p>
+          If the partner&apos;s set holds <strong>fewer countries than its minimum</strong>{" "}
+          for that view, a red <strong>blocker</strong>{" "}leads the target: &ldquo;Name N more
+          target countries in EMEA in Admin &rsaquo; Country Sets&rdquo;, or &ldquo;Add N more
+          countries to Set A&hellip;&rdquo;. No tier is reached until that is done, and no
+          amount of certifying people fixes it, so it is never counted in{" "}
+          <strong>People to certify</strong>{" "}&mdash; the requirements over the countries the
+          partner does have are still costed. The whole-page export adds a{" "}
+          <strong>Blockers</strong>{" "}section (with <strong>View</strong>{" "}and{" "}
+          <strong>Theatre / Country Set</strong>{" "}columns) when there is one, and on a plan
+          that includes a program with Target countries requirements the CSV and Excel roadmap
+          and requirements-at-risk sections end with a <strong>Population</strong>{" "}column.
+        </p>
         <p>
           Your selection — scope, programs, targets and the renewal window — is
           kept in the page address. Open someone&apos;s record from any of the
@@ -2824,24 +3061,24 @@ const helpSections: Record<string, HelpSection> = {
         <p>For each gap, candidates are ranked cheapest-first:</p>
         <ul>
           <li>
-            <strong>Renewal (expiring)</strong> — holds the required cert today,
+            <strong>Renewal (expiring)</strong> — holds the required certification today,
             but it expires inside the renewal window. Only offered when{" "}
             <strong>Plan for this window</strong> is ticked (see below).
           </li>
           <li>
             <strong>Easy win</strong> — completed an ILT/OLX that leads to the
-            required cert but never earned it; needs only the exam.
+            required certification but never earned it; needs only the exam.
           </li>
           <li>
-            <strong>Lapsed</strong> — held the cert but it expired; needs only a
+            <strong>Lapsed</strong> — held the certification but it expired; needs only a
             renewal.
           </li>
           <li>
-            <strong>Legacy upgrade</strong> — holds a legacy cert whose replacement
-            is the required cert.
+            <strong>Legacy upgrade</strong> — holds a legacy certification whose replacement
+            is the required certification.
           </li>
           <li>
-            <strong>Net-new</strong>{" "}— needs the full ILT/OLX &rarr; cert path.
+            <strong>Net-new</strong>{" "}— needs the full ILT/OLX &rarr; certification path.
             Reported as a remaining count rather than named people.
           </li>
         </ul>
@@ -2850,10 +3087,10 @@ const helpSections: Record<string, HelpSection> = {
           allocates candidates across the whole target. The{" "}
           <strong>&ldquo;Who to certify&rdquo;</strong> table lists one row per person
           with every gap they close (expand a row for detail) — so someone whose
-          single exam closes the same cert in several places appears once. Two
+          single exam closes the same certification in several places appears once. Two
           at-a-glance columns show <strong>which specialisation(s)</strong> that
           person would help fulfil and the <strong>relevant training they already
-          hold</strong>{" "}(the ILT/OLX behind an easy win, or the legacy cert behind a
+          hold</strong>{" "}(the ILT/OLX behind an easy win, or the legacy certification behind a
           legacy upgrade) — so it&apos;s obvious why they&apos;re a cheap candidate.
           Expanding a row spells each gap out in <strong>plain language</strong>{" "}—
           e.g. &ldquo;They have taken <em>Training A</em>. Passing the <em>Cert
@@ -3031,7 +3268,8 @@ const helpSections: Record<string, HelpSection> = {
           <li>
             A summary line describing how the program is configured &mdash;
             which levels it has requirements at (country, region, country set,
-            theatre, global) and whether it is <strong>tiered</strong>.
+            target countries, theatre, global) and whether it is{" "}
+            <strong>tiered</strong>.
           </li>
         </ul>
       </>
@@ -3085,6 +3323,54 @@ const helpSections: Record<string, HelpSection> = {
           link.
         </p>
 
+        <h3>Target countries in the By Theatre view</h3>
+        <p>
+          On a program with <strong>Target countries</strong>{" "}requirements, the{" "}
+          <strong>By Theatre</strong>{" "}view gains a <strong>Target countries</strong>{" "}
+          picker over the selected company&apos;s Country Sets. Its blank option,{" "}
+          <strong>Partner&apos;s configured set</strong>, uses the set named in the
+          partner&apos;s settings on <strong>Admin &rsaquo; Partner Specific Program Settings</strong>{" "}
+          (shown in brackets, or <em>none configured</em>). Any theatre can be viewed.
+        </p>
+        <ul>
+          <li>
+            <strong>Theatre</strong>{" "}requirements are counted across the theatre, and{" "}
+            <strong>Target countries</strong>{" "}requirements over the partner&apos;s{" "}
+            <strong>target countries</strong>{" "}&mdash; the set&apos;s countries that lie
+            inside that theatre. Each requirement says which it was counted over
+            (&ldquo;Counted over EMEA (theatre)&rdquo; or &ldquo;Counted over Set A (target
+            countries)&rdquo;), and its <strong>View</strong>{" "}list is drawn from that same
+            population.
+          </li>
+          <li>
+            A line above the report gives the number of target countries in the theatre,
+            which set they come from, lists them, and shows the partner&apos;s{" "}
+            <strong>minimum</strong>{" "}and whose rule it is (partner setting or program
+            default).
+          </li>
+          <li>
+            Countries in the set but <strong>outside the theatre</strong>{" "}are named in a
+            blue note: they count toward neither the minimum nor the target-country
+            requirements in this view.
+          </li>
+          <li>
+            When the partner has <strong>fewer target countries than its
+            minimum</strong>, a red <em>Minimum target countries not met</em>{" "}notice
+            appears and <strong>no tier is reached</strong>, whatever the other figures
+            say, until more countries are added to the set. Specialisations are still
+            shown as achieved or not, because the minimum is about the partner&apos;s
+            footprint rather than who holds what.
+          </li>
+        </ul>
+        <p>
+          The <strong>By Country Set</strong>{" "}view works the same way for its own
+          minimum: its set picker&apos;s blank option is the partner&apos;s configured set,
+          a line above the report gives the number of countries in the set and the minimum,
+          and a red <em>Minimum countries in the Country Set not met</em>{" "}notice appears
+          when the set holds too few. With no set configured, the page points you to{" "}
+          <strong>Admin &rsaquo; Partner Specific Program Settings</strong>.
+        </p>
+
         <h3>Tier Status</h3>
         <p>
           Shown for <strong>tiered</strong> programs, above the report and
@@ -3096,11 +3382,19 @@ const helpSections: Record<string, HelpSection> = {
           partner&apos;s <strong>highest tier achieved</strong> and progress toward
           the next one. Each tier card shows how many specialisations are achieved
           versus required (and <strong>lists which specialisations</strong>{" "}are
-          currently achieved at that scope), plus any Deployment cert requirements
+          currently achieved at that scope), plus any Deployment certification requirements
           with their distinct-holder counts (expand a requirement to see the
           per-theatre breakdown). With a &ldquo;Compliance as of&rdquo; horizon
           selected, the banner also shows the projected highest tier once expiring
-          certs drop out.
+          certifications drop out.
+        </p>
+        <p>
+          A tiered program&apos;s <strong>Required at every level</strong>{" "}
+          requirements are shown once, in their own card above the tiers, with a
+          single met / not-met badge. Every tier needs all of them in addition to its
+          own criteria, so while any is unmet each tier card says it is not
+          reachable until they are. Only those written at the level being viewed
+          are counted.
         </p>
 
         <h3>Country, Region &amp; Country Set Reports</h3>
@@ -3150,13 +3444,15 @@ const helpSections: Record<string, HelpSection> = {
         <h3>Theatre Report</h3>
         <p>
           Shown when the <strong>View</strong> level is By Theatre (available when
-          the program has theatre-level requirements). Pick a theatre to view its
-          compliance.
+          the program has Theatre or Target countries requirements). Pick a theatre
+          to view its compliance; Target countries requirements are counted over the
+          partner&apos;s target countries in it, as described above.
         </p>
 
         <h3>Trained not certified</h3>
         <p>
-          On the By Country, By Region, By Country Set and By Theatre views, each{" "}
+          On the By Country, By Region, By Country Set and By Theatre views (where
+          target countries are counted over their own population), each{" "}
           <strong>Certification</strong>{" "}requirement has a{" "}
           <strong>Trained not certified</strong>{" "}row under Attained. It counts
           the people in the same population as Attained who hold a current
@@ -3275,6 +3571,16 @@ const helpSections: Record<string, HelpSection> = {
           <strong>projected</strong>, <strong>expiring</strong>, and{" "}
           <strong>projected-compliant</strong>{" "}columns, while the PDF folds the
           same figures into its combined cells and amber shading.
+        </p>
+        <p>
+          On a By Theatre view with target countries the exports add{" "}
+          <strong>Count Mode</strong>, <strong>Countries Met</strong>,{" "}
+          <strong>Total Holders</strong>{" "}and a <strong>Population</strong>{" "}column
+          at the end (e.g. &ldquo;EMEA (theatre)&rdquo;), and the PDF also lists the
+          target set, the target countries and the minimum, notes any countries
+          outside the theatre, and shows the <strong>Required at every level</strong>{" "}
+          requirements and any unmet minimum in its Tier Status section. Every other
+          view&apos;s exports are unchanged.
         </p>
       </>
     ),
@@ -3452,6 +3758,14 @@ const helpSections: Record<string, HelpSection> = {
           view at all.
         </p>
         <p>
+          A company&apos;s sets also serve as its per-program choices on{" "}
+          <strong>Admin &rsaquo; Partner Specific Program Settings</strong>: the set a program&apos;s By
+          Country Set view opens on, and the set listing the company&apos;s{" "}
+          <strong>target countries</strong>{" "}for a program&apos;s By Theatre view (only
+          the set&apos;s countries inside the viewed theatre count there). Deleting a set a
+          partner uses keeps that partner&apos;s minimums and leaves the set empty.
+        </p>
+        <p>
           The read-only public API lists each company&apos;s sets and their
           countries at <code>GET /api/public/v1/country-sets</code>, for the
           companies the API key may read. Sets are managed only here.
@@ -3542,6 +3856,118 @@ const helpSections: Record<string, HelpSection> = {
       </>
     ),
   },
+  "program-partners": {
+    title: "Partner Specific Program Settings",
+    content: (
+      <>
+        <p>
+          <strong>Partner Specific Program Settings</strong>{" "}holds each partner&apos;s own terms for a
+          program. A program&apos;s <strong>By Country Set</strong>{" "}view counts its
+          Country Set requirements over a Country Set, and its{" "}
+          <strong>By Theatre</strong>{" "}view can count Target countries requirements over
+          the partner&apos;s <strong>target countries</strong>{" "}&mdash; the countries in a
+          Country Set that lie inside the theatre being viewed. Each view can also require a
+          minimum number of countries. This page says, per partner (company) and program:
+        </p>
+        <ul>
+          <li>
+            <strong>By Country Set view</strong>{" "}&mdash; <strong>Minimum countries</strong>{" "}
+            (how many countries the partner&apos;s Country Set must hold before{" "}
+            <em>any</em>{" "}tier is reached in that view) and <strong>Country Set</strong>{" "}
+            (which of the company&apos;s own sets that view opens on).
+          </li>
+          <li>
+            <strong>By Theatre view</strong>{" "}&mdash;{" "}
+            <strong>Minimum target countries</strong>{" "}(how many of the partner&apos;s target
+            countries must lie inside the viewed theatre before any tier is reached there) and{" "}
+            <strong>Target Country Set</strong>{" "}(the company&apos;s set that lists its target
+            countries). These apply only to programs with Target countries requirements.
+          </li>
+        </ul>
+        <p>
+          Leave a minimum blank to use the program&apos;s default for that view; if the
+          program has no default either, there is no minimum. Each view has an{" "}
+          <strong>Effective minimum</strong>{" "}column showing the number that actually
+          applies and whose rule it is &mdash; &ldquo;6 (partner)&rdquo;, &ldquo;3 (program
+          default)&rdquo; or &ldquo;No minimum&rdquo;. A country in the target set but
+          outside the viewed theatre does not count, so a set of six countries with one
+          outside the theatre counts as five there.
+        </p>
+
+        <h3>Who can edit</h3>
+        <p>
+          Partner settings belong to a company, like Country Sets: a company&apos;s Admins
+          manage that company&apos;s settings and a SuperAdmin can manage every
+          company&apos;s. The program itself and its default minimums stay with the
+          SuperAdmin in Program Data. The list follows the company switcher in the page
+          header.
+        </p>
+
+        <h3>Adding &amp; Editing</h3>
+        <p>
+          Use <strong>Add Partner Settings</strong>, pick the <strong>Company</strong>{" "}
+          and the <strong>Program</strong>{" "}(any program), then fill in either view&apos;s
+          section. Each company has at most one row per program. The set lists show only
+          that company&apos;s sets. The company and program cannot be changed afterwards;
+          delete the row and add a new one instead. If the header is showing a different
+          company, it switches to the new row&apos;s company so you can see it.
+        </p>
+        <p>
+          Deleting a Country Set that a partner uses keeps the partner&apos;s minimums and
+          leaves that set empty. Deleting the program or the company removes the
+          partner&apos;s settings with it.
+        </p>
+
+        <h3>Searching &amp; Sorting</h3>
+        <p>
+          The search box matches the program, the company and either set. Click a column
+          header to sort. The search and sort are kept in the page address, so{" "}
+          <strong>Back</strong>{" "}returns you to the same view.
+        </p>
+
+        <h3>Import &amp; Export</h3>
+        <p>
+          <strong>Export</strong>{" "}downloads the list as CSV, Excel or PDF, with the
+          columns <strong>Program</strong>, <strong>Company</strong>,{" "}
+          <strong>Country Set Minimum</strong>, <strong>Country Set</strong>,{" "}
+          <strong>Target Minimum</strong>, <strong>Target Country Set</strong>{" "}and the two
+          read-only <strong>Effective</strong>{" "}columns. <strong>Import</strong>{" "}takes a
+          CSV or Excel file with the first six of those columns, so an export can be edited
+          and imported back (the Effective columns are ignored).
+        </p>
+        <ul>
+          <li>
+            Each row sets one company&apos;s terms for one program; rows the file does not
+            name are left alone.
+          </li>
+          <li>
+            The Company cell is matched against the companies you can access; a blank one
+            uses the company picked in the dialog. Each set must be one of that
+            company&apos;s own sets.
+          </li>
+          <li>
+            A blank cell keeps the current value, and <strong>none</strong>{" "}clears it.
+          </li>
+          <li>
+            A file from an earlier version still imports: its{" "}
+            <strong>Minimum Target Countries</strong>{" "}column is read as Target Minimum and
+            its <strong>Target Country Set</strong>{" "}keeps its meaning.
+          </li>
+          <li>
+            <strong>Preview</strong>{" "}shows what will be created, updated or left
+            unchanged, and any errors &mdash; nothing is written until you click{" "}
+            <strong>Import</strong>.
+          </li>
+        </ul>
+        <p>
+          Partner settings are included in both the full and the config backups. A restore
+          matches each one to its program, company and sets by name, and leaves out (and
+          counts) any whose company or program does not exist on the system being restored
+          &mdash; it never gives a partner&apos;s terms to a different company.
+        </p>
+      </>
+    ),
+  },
   "api-keys": {
     title: "API Keys",
     content: (
@@ -3592,10 +4018,10 @@ const helpSections: Record<string, HelpSection> = {
             <tr><td><code>GET /api/public/v1/reports/&#123;type&#125;</code></td><td>Report aggregates (e.g. <code>expiring-soon</code>, <code>legacy-gap</code>, <code>learner-scorecard</code>).</td></tr>
             <tr><td><code>GET /api/public/v1/offerings</code></td><td>Offering definitions for the key&rsquo;s companies. Add <code>?country=</code> or <code>?region=</code> for Onshore/Nearshore/Offshore holder counts; <code>?name=</code> for one offering.</td></tr>
             <tr><td><code>GET /api/public/v1/country-sets</code></td><td>The Country Sets owned by the key&rsquo;s companies, each with its countries. <code>?name=</code> for one set.</td></tr>
-            <tr><td><code>GET /api/public/v1/programs</code></td><td>Partner program list (levels, per-theatre-minimum flag, tiered flag).</td></tr>
-            <tr><td><code>GET /api/public/v1/programs/&#123;name&#125;</code></td><td>Per-program compliance — <code>?level=</code> (country, region, countrySet, theatre or global) with the matching <code>?country=</code>/<code>?region=</code>/<code>?countrySet=</code>/<code>?theatre=</code>, and <code>?horizonMonths=</code>. Includes each requirement&rsquo;s count mode and, for Certification requirements, the Trained not certified figure. <code>?trainingTitle=&amp;students=true</code> returns the holder roster; add <code>&amp;trainedNotCertified=true</code> for the people behind that figure.</td></tr>
+            <tr><td><code>GET /api/public/v1/programs</code></td><td>Partner program list (levels, per-theatre-minimum flag, tiered flag, and whether the program has Target countries requirements).</td></tr>
+            <tr><td><code>GET /api/public/v1/programs/&#123;name&#125;</code></td><td>Per-program compliance — <code>?level=</code> (country, region, countrySet, theatre or global) with the matching <code>?country=</code>/<code>?region=</code>/<code>?countrySet=</code>/<code>?theatre=</code>, and <code>?horizonMonths=</code>. Includes each requirement&rsquo;s count mode and, for Certification requirements, the Trained not certified figure. <code>?trainingTitle=&amp;students=true</code> returns the holder roster; add <code>&amp;trainedNotCertified=true</code> for the people behind that figure. On a By Theatre view with target countries, the report describes the target countries and minimum, and a roster needs <code>?population=theatre</code> or <code>?population=targetCountries</code>.</td></tr>
             <tr><td><code>GET /api/public/v1/programs/planning</code></td><td>Compliance planning, <strong>aggregates only</strong> — roadmap, gaps, risk impacts and totals. <code>?options=true</code> lists the program/tier/specialisation names; <code>?targets=</code> takes a URL-encoded JSON array.</td></tr>
-            <tr><td><code>GET /api/public/v1/reports/program-compliance-trend</code></td><td>12 months of compliance history plus a 12-month forecast, per program and specialisation.</td></tr>
+            <tr><td><code>GET /api/public/v1/reports/program-compliance-trend</code></td><td>12 months of compliance history plus a 12-month forecast, per program and specialisation. Target countries requirements are left out: a program&apos;s other requirements are shown and the program named in <code>partialPrograms</code> (or in <code>unsupportedPrograms</code> when nothing else is left).</td></tr>
             <tr><td><code>GET /api/public/v1/reports/renewal-forecast</code></td><td>Projected renewals vs lapses over the next 12 months, with an at-risk-by-training breakdown.</td></tr>
           </tbody>
         </table>
