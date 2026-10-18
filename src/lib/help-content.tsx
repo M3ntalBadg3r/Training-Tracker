@@ -583,10 +583,10 @@ const helpSections: Record<string, HelpSection> = {
         </ul>
 
         <h3>By Product Type</h3>
-        <p>Stacked bar of Cert/Accred/ILT per product, plus an active-vs-expired donut. Tick <strong>Count people, not records (active holders)</strong> to switch the chart and KPI cards from raw record counts to the number of distinct people who currently hold an active cert/training — so a learner holding several certs in one product type counts once per type instead of inflating the totals.</p>
+        <p>Stacked bar of Certification/Accreditation/ILT per product, plus an active-vs-expired donut. Tick <strong>Count people, not records (active holders)</strong> to switch the chart and KPI cards from raw record counts to the number of distinct people who currently hold an active certification/training — so a learner holding several certifications in one product type counts once per type instead of inflating the totals.</p>
 
         <h3>By Function</h3>
-        <p>Stacked bar of Cert/Accred/ILT per function (Sales, Pre-Sales, Deployments), plus an active-vs-expired donut. Tick <strong>Count people, not records (active holders)</strong>{" "}to switch the chart and KPI cards from raw record counts to the number of distinct active holders, so multiple certs held by the same person don&rsquo;t skew the figures.</p>
+        <p>Stacked bar of Certification/Accreditation/ILT per function (Sales, Pre-Sales, Deployments), plus an active-vs-expired donut. Tick <strong>Count people, not records (active holders)</strong>{" "}to switch the chart and KPI cards from raw record counts to the number of distinct active holders, so multiple certifications held by the same person don&rsquo;t skew the figures.</p>
 
         <h3>Country Coverage by Function</h3>
         <p>Every country in the chosen theatre (or region), with the certifications and accreditations held there split by function, how many people hold them, the headcount and the coverage %. See the report&rsquo;s own help for the details.</p>
@@ -595,7 +595,7 @@ const helpSections: Record<string, HelpSection> = {
         <p>Horizon bar showing records expiring within 1/3/6/12 months, plus a theatre × month stacked bar showing where the cliff falls.</p>
 
         <h3>Currently Expired</h3>
-        <p>Every certification &amp; training whose latest completion has <em>already</em>{" "}lapsed (the inverse of Expiring Soon). Records are bucketed by how long ago they expired (≤1 month, 1–3, 3–6, 6–12, &gt; 12 months) with a stacked bar by training type and an &ldquo;Expired by Theatre&rdquo; chart. The <strong>Lapsed</strong> dropdown narrows the report to a recent window — <strong>Lapsed Any Time</strong> (the default) or lapsed within the last <strong>3 / 6 / 12 months</strong>{" "}— scoping the charts, KPI cards, subtotals, table and exports together; its edges line up with the chart bands, so at 3 months the &ldquo;1–3 months&rdquo; band is the last populated one and the bands sum to the total. Choosing a window that excludes a band you had clicked clears that band filter instead of showing an empty report. Click a band to filter the table; group by theatre/region/country, search, and export to CSV/Excel/PDF. Retired (legacy) certs are shown by default — tick <strong>Exclude retired (legacy) certs</strong> to hide them. The detail table is <strong>paginated</strong> — use the page controls beneath it to page through results; charts, KPI cards and exports always cover the full filtered set. Also available as a scheduled export.</p>
+        <p>Every certification &amp; training whose latest completion has <em>already</em>{" "}lapsed (the inverse of Expiring Soon). Records are bucketed by how long ago they expired (≤1 month, 1–3, 3–6, 6–12, &gt; 12 months) with a stacked bar by training type and an &ldquo;Expired by Theatre&rdquo; chart. The <strong>Lapsed</strong> dropdown narrows the report to a recent window — <strong>Lapsed Any Time</strong> (the default) or lapsed within the last <strong>3 / 6 / 12 months</strong>{" "}— scoping the charts, KPI cards, subtotals, table and exports together; its edges line up with the chart bands, so at 3 months the &ldquo;1–3 months&rdquo; band is the last populated one and the bands sum to the total. Choosing a window that excludes a band you had clicked clears that band filter instead of showing an empty report. Click a band to filter the table; group by theatre/region/country, search, and export to CSV/Excel/PDF. Retired (legacy) certifications are shown by default — tick <strong>Exclude retired (legacy) certifications</strong> to hide them. The detail table is <strong>paginated</strong> — use the page controls beneath it to page through results; charts, KPI cards and exports always cover the full filtered set. Also available as a scheduled export.</p>
 
         <h3>Achievement Over Time</h3>
         <p>Area chart of completions with a dashed prior-period comparison line, beside a top-10 bar chart of trainings by completion count (coloured by product type). Pick a preset time range (12, 6, 3, or 1 month) or a custom date range; the chart automatically buckets by day, week, or month based on the window. Click a point to filter the table to that bucket. Type/theatre/function/region/product filters update the chart as well as the table.</p>
@@ -604,7 +604,7 @@ const helpSections: Record<string, HelpSection> = {
         <p>Gap funnel by product (ILT completed → ILT still active) plus the top theatres/regions/countries with gaps. When a training can lead to more than one certification, the options are treated as alternatives (OR): a student is only flagged if they hold none of them, and the &ldquo;Certification Not Obtained&rdquo; column lists every option joined with &ldquo;or&rdquo;.</p>
 
         <h3>Legacy Replacement Gap</h3>
-        <p>Learners who hold a <strong>legacy</strong>{" "}Certification/Accreditation but haven&rsquo;t taken its <strong>replacement</strong>{" "}(configured in Admin &gt; Training Data). Multiple replacements are alternatives — holding any one clears the learner. The expiry-horizon chart and the Already Expired / ≤ 1 / 3 / 6 / 12-month window filter key on the learner&rsquo;s legacy training expiry, so you can chase the most urgent migrations first. Two toggles tailor the view: <strong>Include legacy with no replacement</strong> (show holders of a retired cert with no successor) and <strong>Replacement must be active</strong> (when off, a previously-held but now-expired replacement also counts as satisfied).</p>
+        <p>Learners who hold a <strong>legacy</strong>{" "}Certification/Accreditation but haven&rsquo;t taken its <strong>replacement</strong>{" "}(configured in Admin &gt; Training Data). Multiple replacements are alternatives — holding any one clears the learner. The expiry-horizon chart and the Already Expired / ≤ 1 / 3 / 6 / 12-month window filter key on the learner&rsquo;s legacy training expiry, so you can chase the most urgent migrations first. Two toggles tailor the view: <strong>Include legacy with no replacement</strong> (show holders of a retired certification with no successor) and <strong>Replacement must be active</strong> (when off, a previously-held but now-expired replacement also counts as satisfied).</p>
 
         <h3>Theatre / Region / Country Comparison</h3>
         <p>
@@ -715,7 +715,7 @@ const helpSections: Record<string, HelpSection> = {
         <ul>
           <li><strong>Lapse age</strong> — records are bucketed by how long ago they expired: up to 1 month, 1&ndash;3, 3&ndash;6, 6&ndash;12, and over 12 months.</li>
           <li><strong>Lapsed</strong> — narrows the report to recent lapses. Its edges line up exactly with the chart bands, so at 3 months the 1&ndash;3 band is the last populated one and the bands still sum to the total.</li>
-          <li><strong>Exclude retired (legacy) certs</strong> — hides records for trainings marked legacy, which are expected to lapse because they have been superseded. See <strong>Legacy Replacement Gap</strong> for those.</li>
+          <li><strong>Exclude retired (legacy) certifications</strong> — hides records for trainings marked legacy, which are expected to lapse because they have been superseded. See <strong>Legacy Replacement Gap</strong> for those.</li>
         </ul>
       </>
     ),
@@ -810,7 +810,7 @@ const helpSections: Record<string, HelpSection> = {
           under-trained learners.
         </p>
         <ul>
-          <li><strong>Certs / Accreds / ILTs / OLX</strong> — counts per learner. Active completions only by default; tick <strong>Include expired in counts</strong> to count expired ones too.</li>
+          <li><strong>Certifications / Accreditations / ILTs / OLX</strong> — counts per learner. Active completions only by default; tick <strong>Include expired in counts</strong> to count expired ones too.</li>
           <li><strong>Total</strong> — sum of the four count columns; also drives the Top Achievers leaderboard.</li>
           <li><strong>Expiring Soon</strong> — active Certifications/Accreditations whose expiry falls within the selected window (1/3/6 months); always looks forward from today.</li>
           <li><strong>Expired</strong>{" "}— the learner&apos;s expired achievements.</li>
@@ -1374,7 +1374,7 @@ const helpSections: Record<string, HelpSection> = {
               <td>
                 The Certification(s) an ILT or OLX parent <strong>leads to</strong>{" "}
                 &mdash; the recommended preparation before sitting the exam that
-                earns the cert (the training does not itself grant it). Set it{" "}
+                earns the certification (the training does not itself grant it). Set it{" "}
                 <strong>once for the Full Title</strong>{" "}on its detail page:
                 you pick the certification by its Full Title, and it is applied to
                 every Training Title mapped to the training. Shown without opening
@@ -1435,7 +1435,7 @@ const helpSections: Record<string, HelpSection> = {
             <strong>OLX Sub-Items</strong>{" "}up as top-level rows so you can find
             and edit them. A{" "}
             <strong>Show legacy only</strong> toggle scopes the list to retired
-            Certs/Accreds, and <strong>Show ignored only</strong>{" "}to entries
+            Certifications/Accreditations, and <strong>Show ignored only</strong>{" "}to entries
             marked as not needed. Your search, filters, legacy toggle, and sort are
             remembered when you open a training and click <strong>Back</strong>{" "}
             (they&rsquo;re kept in the page URL, so the view is bookmarkable too).
@@ -1619,7 +1619,7 @@ const helpSections: Record<string, HelpSection> = {
             <strong>Full Titles</strong>{" "}that contain a
             Certification/Accreditation then appears &mdash; select one or more.
             Multiple replacements are <strong>alternatives</strong>: holding any
-            one of them counts as having migrated. Leave it empty for a cert
+            one of them counts as having migrated. Leave it empty for a certification
             retired with no successor.
           </li>
           <li>
@@ -1630,7 +1630,7 @@ const helpSections: Record<string, HelpSection> = {
             <em>&rarr; Replaced by: &lt;names&gt;</em> subtitle (or{" "}
             <em>&rarr; No replacement defined</em>), so you can audit
             replacements at a glance. Tick <strong>Show legacy only</strong> in
-            the search bar to scope the list to retired Certs/Accreds.
+            the search bar to scope the list to retired Certifications/Accreditations.
           </li>
           <li>
             Changing the type away from Certification/Accreditation clears the
@@ -1646,7 +1646,7 @@ const helpSections: Record<string, HelpSection> = {
           </li>
           <li>
             The <strong>Legacy Replacement Gap</strong>{" "}report uses this to find
-            learners still holding a legacy cert who haven&apos;t taken the
+            learners still holding a legacy certification who haven&apos;t taken the
             replacement.
           </li>
         </ul>
@@ -2660,33 +2660,33 @@ const helpSections: Record<string, HelpSection> = {
           Tick <strong>Tiered program</strong> when creating a program to unlock{" "}
           <strong>tiers</strong> (e.g. Tier A, B, C) that a partner reaches based on how
           many <strong>specialisations</strong>{" "}they have achieved. A specialisation is
-          achieved when all of its qualifying (Sales/Pre-Sales) cert requirements are met
+          achieved when all of its qualifying (Sales/Pre-Sales) certification requirements are met
           by enough distinct people. On a tiered program&apos;s page a <strong>Tiers</strong>{" "}
           section lets you add tiers (name, ladder order, and how many specialisations each
-          requires) and choose how <strong>Deployment</strong> cert requirements are handled:
+          requires) and choose how <strong>Deployment</strong> certification requirements are handled:
         </p>
         <ul>
-          <li><strong>Flat</strong> — each tier lists its own deployment cert requirements.</li>
+          <li><strong>Flat</strong> — each tier lists its own deployment certification requirements.</li>
           <li><strong>Per achieved specialisation</strong>{" "}— each achieved specialisation&apos;s
-            own deployment cert requirements must be met (add these as requirements with
+            own deployment certification requirements must be met (add these as requirements with
             purpose <em>Deployment</em>). The same set applies to every tier.</li>
           <li><strong>Per tier, per achieved specialisation</strong> — each tier lists its own
-            deployment cert requirements <em>for each specialisation</em>, so they scale up the
+            deployment certification requirements <em>for each specialisation</em>, so they scale up the
             ladder. When adding a tier&apos;s deployment requirement you pick which specialisation
             it applies to. The tier is reached when <em>at least the required number of</em>{" "}
             specialisations each meet all of that tier&apos;s criteria — achieved <em>and</em>{" "}all
-            of that tier&apos;s deployment certs for that specialisation (a specialisation with no
-            deployment certs for the tier counts on qualification alone). Specialisations that
+            of that tier&apos;s deployment certifications for that specialisation (a specialisation with no
+            deployment certifications for the tier counts on qualification alone). Specialisations that
             aren&apos;t fully met don&apos;t count toward the total, so they don&apos;t block the
             tier once enough others are met. For example, Tier A might need 1 specialisation and no
-            deployment certs, Tier B 2 specialisations each with 3 deployment certs, and Tier C 3
+            deployment certifications, Tier B 2 specialisations each with 3 deployment certifications, and Tier C 3
             specialisations each with 4 — so a partner with two specialisations fully deployed
-            reaches Tier B even if a third specialisation&apos;s certs aren&apos;t complete.</li>
+            reaches Tier B even if a third specialisation&apos;s certifications aren&apos;t complete.</li>
         </ul>
         <p>
           Because compliance counts <strong>distinct people</strong>, a requirement for
           &ldquo;2 of Cert A or Cert B&rdquo; needs two <em>different</em> individuals — one
-          person holding both certs still counts once.
+          person holding both certifications still counts once.
         </p>
 
         <h3>Required at every level</h3>
@@ -2703,7 +2703,7 @@ const helpSections: Record<string, HelpSection> = {
         </p>
         <p>
           Give one a <strong>Name</strong>{" "}in the requirement form — for example
-          &ldquo;4 per target country &mdash; any sales cert&rdquo; — and the dashboard shows
+          &ldquo;4 per target country &mdash; any sales certification&rdquo; — and the dashboard shows
           that name as its title, with the training and its alternatives on a smaller line
           beneath, which is far easier to read than a long list of alternatives. The name is
           optional, up to 120 characters, available on every requirement, and never changes
@@ -3061,24 +3061,24 @@ const helpSections: Record<string, HelpSection> = {
         <p>For each gap, candidates are ranked cheapest-first:</p>
         <ul>
           <li>
-            <strong>Renewal (expiring)</strong> — holds the required cert today,
+            <strong>Renewal (expiring)</strong> — holds the required certification today,
             but it expires inside the renewal window. Only offered when{" "}
             <strong>Plan for this window</strong> is ticked (see below).
           </li>
           <li>
             <strong>Easy win</strong> — completed an ILT/OLX that leads to the
-            required cert but never earned it; needs only the exam.
+            required certification but never earned it; needs only the exam.
           </li>
           <li>
-            <strong>Lapsed</strong> — held the cert but it expired; needs only a
+            <strong>Lapsed</strong> — held the certification but it expired; needs only a
             renewal.
           </li>
           <li>
-            <strong>Legacy upgrade</strong> — holds a legacy cert whose replacement
-            is the required cert.
+            <strong>Legacy upgrade</strong> — holds a legacy certification whose replacement
+            is the required certification.
           </li>
           <li>
-            <strong>Net-new</strong>{" "}— needs the full ILT/OLX &rarr; cert path.
+            <strong>Net-new</strong>{" "}— needs the full ILT/OLX &rarr; certification path.
             Reported as a remaining count rather than named people.
           </li>
         </ul>
@@ -3087,10 +3087,10 @@ const helpSections: Record<string, HelpSection> = {
           allocates candidates across the whole target. The{" "}
           <strong>&ldquo;Who to certify&rdquo;</strong> table lists one row per person
           with every gap they close (expand a row for detail) — so someone whose
-          single exam closes the same cert in several places appears once. Two
+          single exam closes the same certification in several places appears once. Two
           at-a-glance columns show <strong>which specialisation(s)</strong> that
           person would help fulfil and the <strong>relevant training they already
-          hold</strong>{" "}(the ILT/OLX behind an easy win, or the legacy cert behind a
+          hold</strong>{" "}(the ILT/OLX behind an easy win, or the legacy certification behind a
           legacy upgrade) — so it&apos;s obvious why they&apos;re a cheap candidate.
           Expanding a row spells each gap out in <strong>plain language</strong>{" "}—
           e.g. &ldquo;They have taken <em>Training A</em>. Passing the <em>Cert
@@ -3382,11 +3382,11 @@ const helpSections: Record<string, HelpSection> = {
           partner&apos;s <strong>highest tier achieved</strong> and progress toward
           the next one. Each tier card shows how many specialisations are achieved
           versus required (and <strong>lists which specialisations</strong>{" "}are
-          currently achieved at that scope), plus any Deployment cert requirements
+          currently achieved at that scope), plus any Deployment certification requirements
           with their distinct-holder counts (expand a requirement to see the
           per-theatre breakdown). With a &ldquo;Compliance as of&rdquo; horizon
           selected, the banner also shows the projected highest tier once expiring
-          certs drop out.
+          certifications drop out.
         </p>
         <p>
           A tiered program&apos;s <strong>Required at every level</strong>{" "}

@@ -578,7 +578,7 @@ export const LEARNER_SCORECARD_COLUMNS: ExportColumn<LearnerScorecardRow>[] = [
   { key: "total", header: "Total" },
   { key: "expiring", header: "Expiring Soon (6mo)" },
   { key: "lapsed", header: "Expired" },
-  { key: "gaps", header: "Cert Gaps" },
+  { key: "gaps", header: "Certification Gaps" },
   { key: "lastAchievement", header: "Last Achievement" },
 ];
 

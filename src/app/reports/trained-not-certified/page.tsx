@@ -347,7 +347,7 @@ function TrainedNotCertifiedPageInner() {
 
       <KpiStrip
         cards={[
-          { label: "Gaps (ILT → Cert)", value: kpis.total, icon: AlertCircle, tone: "red" },
+          { label: "Gaps (ILT → Certification)", value: kpis.total, icon: AlertCircle, tone: "red" },
           { label: "Distinct Students", value: kpis.distinctStudents, icon: Users, tone: "blue" },
           { label: "Distinct ILTs", value: kpis.distinctIlts, icon: GraduationCap, tone: "amber" },
           { label: "ILT Still Active", value: kpis.activeIlt, icon: Award, tone: "emerald" },
@@ -357,7 +357,7 @@ function TrainedNotCertifiedPageInner() {
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         <ExportableChart className="bg-white rounded-lg border border-gray-200 p-5">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-base font-semibold text-gray-900">Gap by Product (ILT → Cert)</h3>
+            <h3 className="text-base font-semibold text-gray-900">Gap by Product (ILT → Certification)</h3>
             {filterProduct && (
               <button onClick={() => setFilterProduct("")} className="text-xs text-blue-600 hover:underline">Clear product filter</button>
             )}
