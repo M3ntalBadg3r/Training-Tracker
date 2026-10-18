@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Fragment, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import PageHeader from "@/components/layout/PageHeader";
@@ -66,16 +67,19 @@ interface CoverageResponse {
 }
 
 const TYPE_OPTIONS: { value: TypeFilter; label: string; noun: string }[] = [
-  { value: "all", label: "Certifications & accreditations", noun: "Certs & accreds" },
-  { value: "cert", label: "Certifications only", noun: "Certs" },
-  { value: "accred", label: "Accreditations only", noun: "Accreds" },
+  { value: "all", label: "Certifications & accreditations", noun: "Certifications & accreditations" },
+  { value: "cert", label: "Certifications only", noun: "Certifications" },
+  { value: "accred", label: "Accreditations only", noun: "Accreditations" },
 ];
 
 const FUNCTIONS = [
-  { label: "Sales", count: "sales", people: "peopleSales" },
-  { label: "Pre-Sales", count: "preSales", people: "peoplePreSales" },
-  { label: "Deployments", count: "deployments", people: "peopleDeployments" },
+  { label: "Sales", fn: "Sales", count: "sales", people: "peopleSales" },
+  { label: "Pre-Sales", fn: "PreSales", count: "preSales", people: "peoplePreSales" },
+  { label: "Deployments", fn: "Deployments", count: "deployments", people: "peopleDeployments" },
 ] as const;
+
+/** The geography a clicked figure covers: one country, a theatre subtotal, or the grand total. */
+type CellScope = { theatre?: string; noTheatre?: boolean; region?: string; country?: string };
 
 /** How many countries the stacked chart draws before it stops being readable. */
 const CHART_MAX_COUNTRIES = 20;
@@ -192,7 +196,7 @@ function CountryCoverageInner() {
   }, [sorted, groups]);
   const showGroups = grouped.length > 1;
 
-  const noun = TYPE_OPTIONS.find((t) => t.value === typeFilter)?.noun ?? "Certs & accreds";
+  const noun = TYPE_OPTIONS.find((t) => t.value === typeFilter)?.noun ?? "Certifications & accreditations";
 
   const countryChart = useMemo(
     () =>
@@ -294,20 +298,57 @@ function CountryCoverageInner() {
     </th>
   );
 
-  const numberCells = (r: CoverageCounts) => (
+  // Every non-zero figure links to the people (or the completions) behind it.
+  // The list page takes the same filters as this report plus the cell's scope,
+  // and `back` carries this page's own query so its back link restores the view.
+  const drillHref = (scope: CellScope, metric: "headcount" | "people" | "held", fn?: string) => {
+    const params = new URLSearchParams();
+    if (scope.noTheatre) params.set("noTheatre", "true");
+    else if (scope.theatre) params.set("theatre", scope.theatre);
+    if (scope.region) params.set("region", scope.region);
+    if (scope.country) params.set("country", scope.country);
+    if (typeFilter !== "all") params.set("type", typeFilter);
+    if (includeInactive) params.set("includeInactive", "true");
+    params.set("metric", metric);
+    if (fn) params.set("fn", fn);
+    params.set("back", searchParams.toString());
+    return `/reports/country-coverage/students?${params.toString()}`;
+  };
+
+  const figure = (value: number, href: string, title: string) =>
+    value > 0 ? (
+      <Link href={href} title={title} className="text-blue-600 hover:underline">
+        {value.toLocaleString()}
+      </Link>
+    ) : (
+      value.toLocaleString()
+    );
+
+  const numberCells = (r: CoverageCounts, scope: CellScope) => (
     <>
-      <td className="px-3 py-2 text-right">{r.headcount.toLocaleString()}</td>
+      <td className="px-3 py-2 text-right">{figure(r.headcount, drillHref(scope, "headcount"), "View these students")}</td>
       {FUNCTIONS.map((f) => (
-        <td key={f.count} className="px-3 py-2 text-right">{r[f.count].toLocaleString()}</td>
+        <td key={f.count} className="px-3 py-2 text-right">
+          {figure(r[f.count], drillHref(scope, "held", f.fn), `View these ${f.label} ${noun.toLowerCase()}`)}
+        </td>
       ))}
-      <td className="px-3 py-2 text-right font-semibold">{r.total.toLocaleString()}</td>
+      <td className="px-3 py-2 text-right font-semibold">
+        {figure(r.total, drillHref(scope, "held"), `View these ${noun.toLowerCase()}`)}
+      </td>
       {FUNCTIONS.map((f) => (
-        <td key={f.people} className="px-3 py-2 text-right">{r[f.people].toLocaleString()}</td>
+        <td key={f.people} className="px-3 py-2 text-right">
+          {figure(r[f.people], drillHref(scope, "people", f.fn), `View the people holding ${f.label} ${noun.toLowerCase()}`)}
+        </td>
       ))}
-      <td className="px-3 py-2 text-right font-semibold">{r.people.toLocaleString()}</td>
+      <td className="px-3 py-2 text-right font-semibold">
+        {figure(r.people, drillHref(scope, "people"), "View the people holding at least one")}
+      </td>
       <td className="px-3 py-2 text-right">{coverageText(r.coverage)}</td>
     </>
   );
+
+  const groupScope = (theatre: string): CellScope =>
+    theatre ? { theatre, region: geo.region } : { noTheatre: true, region: geo.region };
 
   return (
     <div>
@@ -335,9 +376,9 @@ function CountryCoverageInner() {
 
       <KpiStrip
         cards={[
-          { label: "Countries", value: totals?.countries ?? 0, icon: MapIcon, tone: "blue", hint: `${countriesWithData} with ${noun.toLowerCase()}` },
+          { label: "Countries", value: totals?.countries ?? 0, icon: MapIcon, tone: "blue", hint: `${countriesWithData} with at least one held` },
           { label: "Headcount", value: (totals?.headcount ?? 0).toLocaleString(), icon: Users, tone: "indigo" },
-          { label: `${noun} held`, value: (totals?.total ?? 0).toLocaleString(), icon: Award, tone: "emerald" },
+          { label: "Total held", hint: noun, value: (totals?.total ?? 0).toLocaleString(), icon: Award, tone: "emerald" },
           { label: "People holding one", value: (totals?.people ?? 0).toLocaleString(), icon: UserCheck, tone: "green" },
           { label: "Coverage", value: coverageText(totals?.coverage ?? null), icon: Percent, tone: "amber", hint: "People holding ÷ headcount" },
         ]}
@@ -393,6 +434,7 @@ function CountryCoverageInner() {
           <p className="text-sm text-gray-500">
             {includeInactive ? "Counting active and expired" : "Counting active"} {noun.toLowerCase()}. A person holding
             {" "}{noun.toLowerCase()} in more than one function is counted under each, but once under &ldquo;Any&rdquo;.
+            Click a figure to see the people behind it.
           </p>
           <span className="text-sm font-medium text-gray-500">{rows.length} countr{rows.length !== 1 ? "ies" : "y"}</span>
         </div>
@@ -435,13 +477,13 @@ function CountryCoverageInner() {
                     <tr key={r.country} className={`border-b hover:bg-gray-50 ${r.headcount === 0 ? "text-gray-400" : ""}`}>
                       <td className="px-3 py-2 font-medium">{r.country}</td>
                       <td className="px-3 py-2">{displayRegion(r.region)}</td>
-                      {numberCells(r)}
+                      {numberCells(r, { country: r.country })}
                     </tr>
                   ))}
                   {showGroups && (
                     <tr className="border-b bg-gray-50 font-medium">
                       <td className="px-3 py-2" colSpan={2}>{group.theatre || "No theatre"} total</td>
-                      {numberCells(group)}
+                      {numberCells(group, groupScope(group.theatre))}
                     </tr>
                   )}
                 </Fragment>
@@ -454,7 +496,7 @@ function CountryCoverageInner() {
               <tfoot>
                 <tr className="bg-gray-100 border-t font-semibold">
                   <td className="px-3 py-2" colSpan={2}>Total</td>
-                  {numberCells(totals)}
+                  {numberCells(totals, geo)}
                 </tr>
               </tfoot>
             )}

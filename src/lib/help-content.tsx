@@ -882,6 +882,7 @@ const helpSections: Record<string, HelpSection> = {
           <li><strong>Counting</strong>{" "}— count certifications and accreditations together (the default), or either one on its own. The column headings follow your choice.</li>
           <li><strong>Include expired (inactive)</strong>{" "}— off by default, so only certifications and accreditations that have not yet expired count. Tick it to count expired ones too.</li>
           <li>Every column is sortable (rows sort within each theatre), and the table exports to CSV, Excel or PDF with the theatre subtotals and grand total included.</li>
+          <li><strong>Click any figure</strong>{" "}to see what is behind it — on a country&rsquo;s row, a theatre subtotal or the grand total. <strong>Headcount</strong>{" "}lists every student; a <strong>People holding</strong>{" "}figure lists each person once, with what they hold; a <strong>Held</strong>{" "}figure lists each certification or accreditation with its completion and expiry dates. The list uses the same filters as the report, so it is always as long as the figure you clicked. Click a name to open that student&rsquo;s record, and use the link at the top to return to the report as you left it. Each list is sortable, paged and exports to CSV, Excel or PDF. Figures of zero and the Coverage column are not clickable.</li>
         </ul>
       </>
     ),
