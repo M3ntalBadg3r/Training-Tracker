@@ -7,6 +7,7 @@ import PageHeader from "@/components/layout/PageHeader";
 import Modal from "@/components/ui/Modal";
 import RequirementModal, { RequirementScope } from "../RequirementModal";
 import TierModal from "../TierModal";
+import IncludedTheatresCard from "../IncludedTheatresCard";
 import MinimumCountriesFields, {
   EMPTY_MINIMUMS,
   minimumsBody,
@@ -70,6 +71,9 @@ export default function ProgramRequirementsPage() {
   const [deploymentMode, setDeploymentMode] = useState("flat");
   const [loading, setLoading] = useState(true);
 
+  // The program's included theatres (null until the program has loaded).
+  const [includedTheatres, setIncludedTheatres] = useState<string[] | null>(null);
+
   // The program's default minimum-countries settings (editable form).
   const [minimumsForm, setMinimumsForm] = useState<MinimumCountriesValue>(EMPTY_MINIMUMS);
   const [minimumsSaving, setMinimumsSaving] = useState(false);
@@ -130,6 +134,7 @@ export default function ProgramRequirementsPage() {
                 deploymentMode: string;
                 countrySetMinimumCountries: number | null;
                 targetMinimumCountries: number | null;
+                includedTheatres?: string[];
               }[]
             >)
           : null
@@ -140,6 +145,10 @@ export default function ProgramRequirementsPage() {
           setIsTiered(me.isTiered);
           setDeploymentMode(me.deploymentMode || "flat");
           setMinimumsForm(minimumsFromProgram(me));
+          setIncludedTheatres(me.includedTheatres ?? []);
+        } else {
+          // Not yet in the registry (legacy rows only): nothing stored.
+          setIncludedTheatres([]);
         }
       })
       .catch(() => { /* ignore */ });
@@ -379,6 +388,12 @@ export default function ProgramRequirementsPage() {
           view and its target Country Set for the By Theatre view are set on the Partner Specific Program Settings page.
         </p>
       </section>
+
+      <IncludedTheatresCard
+        programName={programName}
+        included={includedTheatres}
+        onSaved={setIncludedTheatres}
+      />
 
       {isTiered && (
         <section className="mb-6 bg-white rounded-lg border border-gray-200 p-4">

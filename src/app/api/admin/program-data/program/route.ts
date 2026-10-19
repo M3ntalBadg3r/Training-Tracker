@@ -48,6 +48,8 @@ export async function GET(request: NextRequest) {
     id: number | null;
     countrySetMinimumCountries: number | null;
     targetMinimumCountries: number | null;
+    /** The theatres the program operates in; empty = every theatre. */
+    includedTheatres: string[];
     /** Rows with neither a specialisation nor a tier (tiered programs only). */
     programWideCount: number;
   }
@@ -66,6 +68,7 @@ export async function GET(request: NextRequest) {
         id: null,
         countrySetMinimumCountries: null,
         targetMinimumCountries: null,
+        includedTheatres: [],
         programWideCount: 0,
       };
       agg.set(name, a);
@@ -81,6 +84,7 @@ export async function GET(request: NextRequest) {
     a.id = p.id;
     a.countrySetMinimumCountries = p.countrySetMinimumCountries;
     a.targetMinimumCountries = p.targetMinimumCountries;
+    a.includedTheatres = p.includedTheatres;
   }
 
   for (const r of rows) {
@@ -110,6 +114,7 @@ export async function GET(request: NextRequest) {
       id: a.id,
       countrySetMinimumCountries: a.countrySetMinimumCountries,
       targetMinimumCountries: a.targetMinimumCountries,
+      includedTheatres: a.includedTheatres,
       programWideCount: a.programWideCount,
     }))
     .sort((x, y) => x.name.localeCompare(y.name));

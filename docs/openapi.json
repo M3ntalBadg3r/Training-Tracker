@@ -1364,6 +1364,70 @@
                                       },
                                       "description": "Global level only: holders per theatre, and whether each theatre meets minimumPerTheatre."
                                     },
+                                    "theatreCompliance": {
+                                      "type": "object",
+                                      "properties": {
+                                        "requirements": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "trainingFullTitle": {
+                                                "type": "string"
+                                              },
+                                              "label": {
+                                                "type": [
+                                                  "string",
+                                                  "null"
+                                                ]
+                                              },
+                                              "quantityRequired": {
+                                                "type": "integer"
+                                              },
+                                              "alternatives": {
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "string"
+                                                }
+                                              }
+                                            }
+                                          }
+                                        },
+                                        "theatres": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "theatre": {
+                                                "type": "string"
+                                              },
+                                              "counts": {
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "integer"
+                                                },
+                                                "description": "Holders in this theatre, one per entry of requirements, in the same order."
+                                              },
+                                              "compliant": {
+                                                "type": "boolean"
+                                              },
+                                              "projectedCounts": {
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "integer"
+                                                },
+                                                "description": "With horizonMonths only."
+                                              },
+                                              "projectedCompliant": {
+                                                "type": "boolean",
+                                                "description": "With horizonMonths only."
+                                              }
+                                            }
+                                          }
+                                        }
+                                      },
+                                      "description": "Global level, on a requirement naming no training only (a \"N compliant theatres\" rule, where attained is a number of theatres): each of the program's included theatres, its holders against every Theatre-level requirement of the specialisation, and whether it meets them all."
+                                    },
                                     "aggregation": {
                                       "type": "string",
                                       "enum": [
@@ -1545,6 +1609,70 @@
                                       },
                                       "description": "Global level only: holders per theatre, and whether each theatre meets minimumPerTheatre."
                                     },
+                                    "theatreCompliance": {
+                                      "type": "object",
+                                      "properties": {
+                                        "requirements": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "trainingFullTitle": {
+                                                "type": "string"
+                                              },
+                                              "label": {
+                                                "type": [
+                                                  "string",
+                                                  "null"
+                                                ]
+                                              },
+                                              "quantityRequired": {
+                                                "type": "integer"
+                                              },
+                                              "alternatives": {
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "string"
+                                                }
+                                              }
+                                            }
+                                          }
+                                        },
+                                        "theatres": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "theatre": {
+                                                "type": "string"
+                                              },
+                                              "counts": {
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "integer"
+                                                },
+                                                "description": "Holders in this theatre, one per entry of requirements, in the same order."
+                                              },
+                                              "compliant": {
+                                                "type": "boolean"
+                                              },
+                                              "projectedCounts": {
+                                                "type": "array",
+                                                "items": {
+                                                  "type": "integer"
+                                                },
+                                                "description": "With horizonMonths only."
+                                              },
+                                              "projectedCompliant": {
+                                                "type": "boolean",
+                                                "description": "With horizonMonths only."
+                                              }
+                                            }
+                                          }
+                                        }
+                                      },
+                                      "description": "Global level, on a requirement naming no training only (a \"N compliant theatres\" rule, where attained is a number of theatres): each of the program's included theatres, its holders against every Theatre-level requirement of the specialisation, and whether it meets them all."
+                                    },
                                     "aggregation": {
                                       "type": "string",
                                       "enum": [
@@ -1690,6 +1818,20 @@
                             },
                             "hasMinimumPerTheatre": {
                               "type": "boolean"
+                            },
+                            "hasTheatreCountRows": {
+                              "type": "boolean",
+                              "description": "Whether some Global-level requirement names no training — a \"N compliant theatres\" rule."
+                            },
+                            "includedTheatres": {
+                              "type": [
+                                "array",
+                                "null"
+                              ],
+                              "items": {
+                                "type": "string"
+                              },
+                              "description": "The theatres the program operates in, or null when it counts every theatre. An excluded theatre is left out of theatres, of every Global per-theatre figure and of the tier block, and a level=theatre request for one returns an empty report."
                             },
                             "isTiered": {
                               "type": "boolean",
@@ -1954,6 +2096,70 @@
                                           },
                                           "description": "Global level only: holders per theatre, and whether each theatre meets minimumPerTheatre."
                                         },
+                                        "theatreCompliance": {
+                                          "type": "object",
+                                          "properties": {
+                                            "requirements": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "trainingFullTitle": {
+                                                    "type": "string"
+                                                  },
+                                                  "label": {
+                                                    "type": [
+                                                      "string",
+                                                      "null"
+                                                    ]
+                                                  },
+                                                  "quantityRequired": {
+                                                    "type": "integer"
+                                                  },
+                                                  "alternatives": {
+                                                    "type": "array",
+                                                    "items": {
+                                                      "type": "string"
+                                                    }
+                                                  }
+                                                }
+                                              }
+                                            },
+                                            "theatres": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "theatre": {
+                                                    "type": "string"
+                                                  },
+                                                  "counts": {
+                                                    "type": "array",
+                                                    "items": {
+                                                      "type": "integer"
+                                                    },
+                                                    "description": "Holders in this theatre, one per entry of requirements, in the same order."
+                                                  },
+                                                  "compliant": {
+                                                    "type": "boolean"
+                                                  },
+                                                  "projectedCounts": {
+                                                    "type": "array",
+                                                    "items": {
+                                                      "type": "integer"
+                                                    },
+                                                    "description": "With horizonMonths only."
+                                                  },
+                                                  "projectedCompliant": {
+                                                    "type": "boolean",
+                                                    "description": "With horizonMonths only."
+                                                  }
+                                                }
+                                              }
+                                            }
+                                          },
+                                          "description": "Global level, on a requirement naming no training only (a \"N compliant theatres\" rule, where attained is a number of theatres): each of the program's included theatres, its holders against every Theatre-level requirement of the specialisation, and whether it meets them all."
+                                        },
                                         "aggregation": {
                                           "type": "string",
                                           "enum": [
@@ -2160,6 +2366,70 @@
                                       }
                                     },
                                     "description": "Global level only: holders per theatre, and whether each theatre meets minimumPerTheatre."
+                                  },
+                                  "theatreCompliance": {
+                                    "type": "object",
+                                    "properties": {
+                                      "requirements": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "trainingFullTitle": {
+                                              "type": "string"
+                                            },
+                                            "label": {
+                                              "type": [
+                                                "string",
+                                                "null"
+                                              ]
+                                            },
+                                            "quantityRequired": {
+                                              "type": "integer"
+                                            },
+                                            "alternatives": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "string"
+                                              }
+                                            }
+                                          }
+                                        }
+                                      },
+                                      "theatres": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "theatre": {
+                                              "type": "string"
+                                            },
+                                            "counts": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "integer"
+                                              },
+                                              "description": "Holders in this theatre, one per entry of requirements, in the same order."
+                                            },
+                                            "compliant": {
+                                              "type": "boolean"
+                                            },
+                                            "projectedCounts": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "integer"
+                                              },
+                                              "description": "With horizonMonths only."
+                                            },
+                                            "projectedCompliant": {
+                                              "type": "boolean",
+                                              "description": "With horizonMonths only."
+                                            }
+                                          }
+                                        }
+                                      }
+                                    },
+                                    "description": "Global level, on a requirement naming no training only (a \"N compliant theatres\" rule, where attained is a number of theatres): each of the program's included theatres, its holders against every Theatre-level requirement of the specialisation, and whether it meets them all."
                                   },
                                   "aggregation": {
                                     "type": "string",

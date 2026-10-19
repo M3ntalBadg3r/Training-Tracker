@@ -2446,12 +2446,21 @@ export async function restoreCountrySets(
 function archiveProgramMinimumFields(p: Record<string, unknown>): {
   countrySetMinimumCountries: number | null;
   targetMinimumCountries: number | null;
+  includedTheatres: string[];
 } {
   return {
     countrySetMinimumCountries: positivePgInt(p.countrySetMinimumCountries),
     targetMinimumCountries: positivePgInt(
       "targetMinimumCountries" in p ? p.targetMinimumCountries : p.defaultMinimumCountries
     ),
+    // The program's included theatres ride here too, because both restores
+    // enumerate a program's columns (see Common Pitfalls in CLAUDE.md). An
+    // archive from before the setting has no key and restores "every theatre".
+    // Names are kept as written: one that no Region Data theatre carries simply
+    // matches nothing, and the admin card lists it so it can be removed.
+    includedTheatres: Array.isArray(p.includedTheatres)
+      ? [...new Set(p.includedTheatres.filter((t): t is string => typeof t === "string" && t.trim() !== "").map((t) => t.trim()))]
+      : [],
   };
 }
 

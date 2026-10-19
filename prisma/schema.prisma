@@ -266,6 +266,12 @@ model Program {
   //    theatre viewed in the By Theatre view (TargetCountries rows).
   countrySetMinimumCountries Int?     @map("country_set_minimum_countries")
   targetMinimumCountries     Int?     @map("target_minimum_countries")
+  // The theatres this program operates in. Empty = every theatre. When set,
+  // every theatre-based figure for the program is limited to these: the
+  // By Theatre picker, a Global row's "N compliant theatres" count, Global
+  // minimum-per-theatre breakdowns and the tier block's per-theatre checks.
+  // Pooled global head-counts are NOT filtered — they are not theatre-based.
+  includedTheatres           String[] @default([]) @map("included_theatres")
   createdAt                  DateTime @default(now()) @map("created_at")
 
   tiers           ProgramTier[]

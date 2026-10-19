@@ -84,6 +84,7 @@ import {
   type ReqLevel,
   type ScopeLevel,
   type TargetCountriesMeta,
+  isTheatreIncluded,
 } from "@/lib/program-levels";
 
 // ─── Public types ────────────────────────────────────────────────────────────
@@ -1713,13 +1714,28 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
   // first, so the theatre areas can be reconciled across targets before any
   // instance is built (see below).
   const loaded = [];
+  /** Programs whose included theatres leave out the plan's theatre. */
+  const excludedTheatrePrograms = new Set<string>();
   for (const target of input.targets) {
     const programRow = await prisma.program.findUnique({
       where: { name: target.program },
-      select: { id: true, name: true, isTiered: true, countrySetMinimumCountries: true, targetMinimumCountries: true },
+      select: {
+        id: true,
+        name: true,
+        isTiered: true,
+        countrySetMinimumCountries: true,
+        targetMinimumCountries: true,
+        includedTheatres: true,
+      },
     });
+    // A theatre plan in a theatre the program excludes plans nothing for it:
+    // its Theatre and Target-countries rows are dropped below, and its
+    // headline says why rather than reading as "compliant".
+    const theatreExcluded =
+      !!planTheatre && !!programRow && !isTheatreIncluded(planTheatre, programRow.includedTheatres);
+    if (theatreExcluded) excludedTheatrePrograms.add(target.program);
 
-    const [programData, tierRows] = await Promise.all([
+    const [allProgramData, tierRows] = await Promise.all([
       prisma.programData.findMany({
         where: { programName: target.program },
         select: {
@@ -1743,6 +1759,9 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
         select: { id: true, name: true, sortOrder: true, specialisationsRequired: true },
       }),
     ]);
+    const programData = theatreExcluded
+      ? allProgramData.filter((d) => d.level !== "Theatre" && d.level !== "TargetCountries")
+      : allProgramData;
 
     // Which area this target is planned over (see `PlanArea`).
     let area: PlanArea = sharedArea;
@@ -2174,7 +2193,9 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
     target.easyWins = easyWins;
     target.netNew = netNew;
     target.peopleMoves = targetEmails.size + netNew;
-    target.headline = buildHeadline(target, area.scopeLabel, input.renewalWindowMonths);
+    target.headline = excludedTheatrePrograms.has(target.program)
+      ? `${planTheatre} is not one of ${target.program}'s theatres, so nothing is planned for it there.`
+      : buildHeadline(target, area.scopeLabel, input.renewalWindowMonths);
   }
 
   // ── Candidate-centric drill-down ──

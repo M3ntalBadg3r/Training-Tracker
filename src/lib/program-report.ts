@@ -31,6 +31,8 @@ import {
   type PopulationKind,
   type ReqLevel,
   type TargetCountriesMeta,
+  isTheatreIncluded,
+  restrictToIncludedTheatres,
 } from "@/lib/program-levels";
 import {
   getProgramTerms,
@@ -125,6 +127,13 @@ export async function buildProgramReport(opts: BuildProgramReportOptions) {
     ),
     isTiered,
     deploymentMode,
+    // The program's included theatres, or null when it counts every theatre.
+    includedTheatres: program && program.includedTheatres.length > 0 ? [...program.includedTheatres].sort() : null,
+    // A Global row naming no training is a "N compliant theatres" rule; the
+    // dashboard draws those as cards with a per-theatre breakdown.
+    hasTheatreCountRows: programData.some(
+      (pd: ProgramDataRow) => pd.level === "Global" && pd.trainingTitle === null
+    ),
   };
 
   if (programData.length === 0 && !isTiered) {
@@ -155,7 +164,11 @@ export async function buildProgramReport(opts: BuildProgramReportOptions) {
   const regionData = await prisma.regionData.findMany({ orderBy: { country: "asc" } });
   const countries = regionData.map((r: typeof regionData[number]) => r.country);
   const regionList = [...new Set(regionData.map((r: typeof regionData[number]) => r.region))].filter(Boolean).sort();
-  const theatreList = await listTheatres(companyIds);
+  // Limited to the program's included theatres (all of them when none are
+  // set): this one list feeds the By Theatre picker, the Global "compliant
+  // theatres" count, every Global per-theatre minimum and the tier block's
+  // per-theatre checks, so an excluded theatre is left out of all of them.
+  const theatreList = restrictToIncludedTheatres(await listTheatres(companyIds), program?.includedTheatres);
   // Country Sets, unlike RegionData, ARE tenant data: each belongs to one
   // company and names are unique only per company, so two partners can each own
   // a "Set 1" over different countries. The list is therefore scoped — it holds
@@ -282,6 +295,13 @@ export async function buildProgramReport(opts: BuildProgramReportOptions) {
     };
   }
 
+  // An excluded theatre has no By Theatre view: the picker never offers it, and
+  // a direct request answers an empty report rather than counting a theatre
+  // the program does not operate in.
+  if (level === "theatre" && theatre && !isTheatreIncluded(theatre, program?.includedTheatres)) {
+    return { specialisations: [], ...lists, meta, horizonMonths };
+  }
+
   // A program with TargetCountries rows judges its Theatre view over two
   // populations (the theatre, and the partner's target countries inside it);
   // without any, By Theatre is exactly the single-level path below.
@@ -393,6 +413,42 @@ export async function buildProgramReport(opts: BuildProgramReportOptions) {
         ? countCompliantTheatres(theatreReqs, projectedTheatreByTitleAndTheatre)
         : 0;
 
+      // The detail behind a "N compliant theatres" row: for each included
+      // theatre, its count against every Theatre-level row of this
+      // specialisation. `compliant` is the same rule countCompliantTheatres
+      // applies, so the breakdown always adds up to the figure beside it.
+      const theatreComplianceDetail = () => {
+        const perTheatre = (byTitle: Map<string, Map<string, Set<string>>>) =>
+          distinctTheatres.map((t) => {
+            const counts = theatreReqs.map(
+              (r: ProgramDataRow) => unionAttainedByTheatre(r, byTitle, [t])[0]?.count ?? 0
+            );
+            const compliant =
+              theatreReqs.length > 0 && theatreReqs.every((r: ProgramDataRow, i: number) => counts[i] >= r.quantityRequired);
+            return { theatre: t, counts, compliant };
+          });
+        const current = perTheatre(theatreByTitleAndTheatre);
+        const projected = horizonDate ? perTheatre(projectedTheatreByTitleAndTheatre) : null;
+        return {
+          requirements: theatreReqs.map((r: ProgramDataRow) => ({
+            trainingFullTitle: r.trainingData?.fullTitle ?? r.trainingTitle ?? "—",
+            label: r.label ?? null,
+            quantityRequired: r.quantityRequired,
+            alternatives: r.alternatives.map(
+              (a: ProgramDataRow["alternatives"][number]) => a.trainingData?.fullTitle ?? a.trainingTitle
+            ),
+          })),
+          theatres: current.map((c, i) => ({
+            theatre: c.theatre,
+            counts: c.counts,
+            compliant: c.compliant,
+            ...(projected
+              ? { projectedCounts: projected[i].counts, projectedCompliant: projected[i].compliant }
+              : {}),
+          })),
+        };
+      };
+
       const buildGlobalReqDisplay = (req: ProgramDataRow) => {
         const hasTrainingTitle = req.trainingTitle !== null;
         const globalAttained = unionAttained(req, globalEmailSets);
@@ -454,6 +510,8 @@ export async function buildProgramReport(opts: BuildProgramReportOptions) {
           projectedGlobalAttained,
           projectedTheatreBreakdown,
           projectedCompliant,
+          // Only on a "N compliant theatres" row (no training named).
+          ...(hasTrainingTitle ? {} : { theatreCompliance: theatreComplianceDetail() }),
           alternatives: req.alternatives.map((a: ProgramDataRow["alternatives"][number]) => ({
             trainingType: a.trainingType,
             trainingTitle: a.trainingTitle,
@@ -1356,6 +1414,14 @@ async function resolveRosterScope(
     return { scope: { countries, companyIds }, hasArea: countries.length > 0 };
   }
   if (level === "theatre" && theatre) {
+    // A theatre the program excludes has no view, so it has no roster either.
+    if (opts.programName) {
+      const row = await prisma.program.findUnique({
+        where: { name: opts.programName },
+        select: { includedTheatres: true },
+      });
+      if (!isTheatreIncluded(theatre, row?.includedTheatres)) return closed;
+    }
     if (opts.programName && (await programHasTargetCountryRows(opts.programName))) {
       return resolveTargetRosterScope(opts.programName, opts);
     }

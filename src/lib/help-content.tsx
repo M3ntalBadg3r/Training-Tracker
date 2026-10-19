@@ -2753,6 +2753,13 @@ const helpSections: Record<string, HelpSection> = {
           <strong>Partner settings</strong>{" "}link on the card); a partner without their own
           minimum uses the program&apos;s default, and with neither there is no minimum.
         </p>
+        <p>
+          The <strong>Theatres included</strong>{" "}card says which theatres the program
+          operates in. Leave every box unticked to include them all. An excluded theatre is
+          left out of the <strong>By Theatre</strong>{" "}view, of the Global compliant-theatre
+          count and of every per-theatre minimum, and a Compliance Planning theatre plan for
+          it plans nothing. Global head counts still count everyone.
+        </p>
 
         <h3>Fields</h3>
         <table>
@@ -2881,7 +2888,9 @@ const helpSections: Record<string, HelpSection> = {
           Training, Quantity Required, Minimum per Theatre, Alternatives, plus the optional
           program-level <strong>Country Set Minimum Countries</strong>{" "}and{" "}
           <strong>Target Minimum Countries</strong>{" "}columns and an optional{" "}
-          <strong>Requirement Name</strong>{" "}(the rule&apos;s name, up to 120 characters).
+          <strong>Requirement Name</strong>{" "}(the rule&apos;s name, up to 120 characters)
+          and an optional <strong>Included Theatres</strong>{" "}(the program&apos;s theatres
+          separated by semicolons, or <em>All</em>; a blank cell leaves the setting alone).
           Column names are
           matched case-insensitively. Specialisations are auto-created if they don&apos;t
           exist. Training is matched by display name against the training catalog.
@@ -3498,7 +3507,8 @@ const helpSections: Record<string, HelpSection> = {
             <strong>Compliant-theatre count</strong>{" "}— when global rows have no
             specific training, the report shows how many theatres meet all of a
             specialisation&apos;s theatre-level requirements, against a target
-            number of compliant theatres.
+            number of compliant theatres. Expand the row to see each included
+            theatre&apos;s count against every theatre-level requirement.
           </li>
           <li>
             <strong>Global count with per-theatre minimums</strong> — when a

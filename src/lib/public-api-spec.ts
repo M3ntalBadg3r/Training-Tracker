@@ -457,6 +457,29 @@ const PROGRAM_REQUIREMENT_BASE = {
     ...arr(obj({ theatre: STR, count: INT, compliant: BOOL })),
     description: "Global level only: holders per theatre, and whether each theatre meets minimumPerTheatre.",
   },
+  theatreCompliance: {
+    ...obj({
+      requirements: arr(
+        obj({
+          trainingFullTitle: STR,
+          label: NULLABLE_STR,
+          quantityRequired: INT,
+          alternatives: arr(STR),
+        })
+      ),
+      theatres: arr(
+        obj({
+          theatre: STR,
+          counts: { ...arr(INT), description: "Holders in this theatre, one per entry of requirements, in the same order." },
+          compliant: BOOL,
+          projectedCounts: { ...arr(INT), description: "With horizonMonths only." },
+          projectedCompliant: { type: "boolean", description: "With horizonMonths only." },
+        })
+      ),
+    }),
+    description:
+      "Global level, on a requirement naming no training only (a \"N compliant theatres\" rule, where attained is a number of theatres): each of the program's included theatres, its holders against every Theatre-level requirement of the specialisation, and whether it meets them all.",
+  },
 };
 
 const PROGRAM_REQUIREMENT = obj({
@@ -772,6 +795,16 @@ export const PUBLIC_API_ENDPOINTS: readonly PublicApiEndpoint[] = [
                 description: "The requirement levels this program's rows use: Country, Region, CountrySet, TargetCountries, Theatre, Global.",
               },
               hasMinimumPerTheatre: BOOL,
+              hasTheatreCountRows: {
+                type: "boolean",
+                description: "Whether some Global-level requirement names no training — a \"N compliant theatres\" rule.",
+              },
+              includedTheatres: {
+                type: ["array", "null"],
+                items: STR,
+                description:
+                  "The theatres the program operates in, or null when it counts every theatre. An excluded theatre is left out of theatres, of every Global per-theatre figure and of the tier block, and a level=theatre request for one returns an empty report.",
+              },
               isTiered: { type: "boolean", description: "Absent from the empty out-of-scope payload." },
               deploymentMode: { type: "string", enum: ["flat", "perAchievedSpecialisation", "perTierPerSpecialisation"] },
               targetCountries: {
