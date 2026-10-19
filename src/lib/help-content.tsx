@@ -2635,7 +2635,8 @@ const helpSections: Record<string, HelpSection> = {
           The main page shows one <strong>box per program</strong>. Click a box to
           open that program&apos;s page, where you can add, edit, and delete its
           requirements. Use <strong>New Program</strong> to create a program (it
-          persists straight away, even before you add any requirements), the pencil
+          persists straight away, even before you add any requirements, and can be given
+          an optional description), the pencil
           icon on a box to <strong>rename</strong> a program (which also renames all
           of its requirements), and the bin icon to <strong>delete</strong> a program
           along with every one of its requirements. Import and Export cover all
@@ -2752,6 +2753,11 @@ const helpSections: Record<string, HelpSection> = {
           <strong>Admin &rsaquo; Partner Specific Program Settings</strong>{" "}(the{" "}
           <strong>Partner settings</strong>{" "}link on the card); a partner without their own
           minimum uses the program&apos;s default, and with neither there is no minimum.
+        </p>
+        <p>
+          A program&apos;s <strong>description</strong>{" "}shows on its box, on its card on
+          the Programs page and at the top of its dashboard. Change or clear it with{" "}
+          <strong>Edit details</strong>{" "}at the top of the program&apos;s page.
         </p>
         <p>
           The <strong>Theatres included</strong>{" "}card says which theatres the program
@@ -2890,7 +2896,9 @@ const helpSections: Record<string, HelpSection> = {
           <strong>Target Minimum Countries</strong>{" "}columns and an optional{" "}
           <strong>Requirement Name</strong>{" "}(the rule&apos;s name, up to 120 characters)
           and an optional <strong>Included Theatres</strong>{" "}(the program&apos;s theatres
-          separated by semicolons, or <em>All</em>; a blank cell leaves the setting alone).
+          separated by semicolons, or <em>All</em>; a blank cell leaves the setting alone)
+          and an optional <strong>Program Description</strong>{" "}(the first value per program
+          is used; a blank cell keeps the current description).
           Column names are
           matched case-insensitively. Specialisations are auto-created if they don&apos;t
           exist. Training is matched by display name against the training catalog.

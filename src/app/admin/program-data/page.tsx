@@ -64,6 +64,7 @@ export default function ProgramDataPage() {
   // New / Rename / Delete program
   const [showNew, setShowNew] = useState(false);
   const [newName, setNewName] = useState("");
+  const [newDescription, setNewDescription] = useState("");
   const [newIsTiered, setNewIsTiered] = useState(false);
   const [newDeploymentMode, setNewDeploymentMode] = useState("flat");
   const [newMinimums, setNewMinimums] = useState<MinimumCountriesValue>(EMPTY_MINIMUMS);
@@ -95,6 +96,7 @@ export default function ProgramDataPage() {
     targetMinimumCountries?: string | number | null;
     label?: string;
     includedTheatres?: string | null;
+    description?: string | null;
     // Columns of files exported before the Target countries level; the server
     // reads Default Minimum Countries as Target Minimum Countries and converts
     // a program with an Anchor Theatre (see the import route).
@@ -170,6 +172,7 @@ export default function ProgramDataPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name: trimmed,
+        description: newDescription.trim(),
         isTiered: newIsTiered,
         deploymentMode: newDeploymentMode,
         ...minimumsBody(newMinimums),
@@ -182,6 +185,7 @@ export default function ProgramDataPage() {
     }
     setShowNew(false);
     setNewName("");
+    setNewDescription("");
     setNewIsTiered(false);
     setNewDeploymentMode("flat");
     setNewMinimums(EMPTY_MINIMUMS);
@@ -281,6 +285,8 @@ export default function ProgramDataPage() {
     // The program's included theatres (blank = every theatre), program-level
     // like the minimums. Appended last, again so existing positions hold.
     { key: "includedTheatres" as const, header: "Included Theatres" },
+    // The program's description, program-level too. Appended last.
+    { key: "description" as const, header: "Program Description" },
   ];
 
   interface ExportRow {
@@ -302,6 +308,7 @@ export default function ProgramDataPage() {
     targetMinimumCountries: string | number;
     label: string;
     includedTheatres: string;
+    description: string;
   }
 
   const programByName = new Map(programs.map((p) => [p.name, p]));
@@ -311,6 +318,7 @@ export default function ProgramDataPage() {
       countrySetMinimumCountries: p?.countrySetMinimumCountries ?? "",
       targetMinimumCountries: p?.targetMinimumCountries ?? "",
       includedTheatres: p?.includedTheatres && p.includedTheatres.length > 0 ? [...p.includedTheatres].sort().join("; ") : "",
+      description: p?.description ?? "",
     };
   };
   const deploymentModeByProgram = new Map(programs.map((p) => [p.name, p.deploymentMode]));
@@ -377,7 +385,8 @@ export default function ProgramDataPage() {
       (p) =>
         (p.countrySetMinimumCountries != null ||
           p.targetMinimumCountries != null ||
-          (p.includedTheatres?.length ?? 0) > 0) &&
+          (p.includedTheatres?.length ?? 0) > 0 ||
+          !!p.description) &&
         !exportedPrograms.has(p.name)
     )
     .map((p) => ({
@@ -459,6 +468,8 @@ export default function ProgramDataPage() {
     includedtheatres: "includedTheatres",
     theatresincluded: "includedTheatres",
     theatres: "includedTheatres",
+    programdescription: "description",
+    description: "description",
     requirementname: "label",
     label: "label",
     displayname: "label",
@@ -617,6 +628,7 @@ export default function ProgramDataPage() {
         "Target Minimum Countries": "",
         "Requirement Name": "",
         "Included Theatres": "",
+        "Program Description": "",
       },
       {
         "Program Name": "Example Program",
@@ -637,6 +649,7 @@ export default function ProgramDataPage() {
         "Target Minimum Countries": "",
         "Requirement Name": "",
         "Included Theatres": "",
+        "Program Description": "",
       },
       {
         // Country Set, each country: every country in the set being viewed
@@ -659,6 +672,7 @@ export default function ProgramDataPage() {
         "Target Minimum Countries": "",
         "Requirement Name": "",
         "Included Theatres": "",
+        "Program Description": "",
       },
       {
         // Region, total: 2 holders pooled across the whole region being viewed.
@@ -680,6 +694,7 @@ export default function ProgramDataPage() {
         "Target Minimum Countries": "",
         "Requirement Name": "",
         "Included Theatres": "",
+        "Program Description": "",
       },
       {
         "Program Name": "Example Tiered Program",
@@ -700,6 +715,7 @@ export default function ProgramDataPage() {
         "Target Minimum Countries": "",
         "Requirement Name": "",
         "Included Theatres": "",
+        "Program Description": "",
       },
       {
         // Blank Specialisation AND blank Tier on a tiered program: required at
@@ -722,6 +738,7 @@ export default function ProgramDataPage() {
         "Target Minimum Countries": "",
         "Requirement Name": "",
         "Included Theatres": "",
+        "Program Description": "",
       },
       {
         // Target countries, each country: in the By Theatre view, every one of
@@ -747,6 +764,7 @@ export default function ProgramDataPage() {
         "Target Minimum Countries": 6,
         "Requirement Name": "",
         "Included Theatres": "",
+        "Program Description": "",
       },
     ];
     const templateCols = [
@@ -768,6 +786,7 @@ export default function ProgramDataPage() {
       { key: "Target Minimum Countries", header: "Target Minimum Countries" },
       { key: "Requirement Name", header: "Requirement Name" },
       { key: "Included Theatres", header: "Included Theatres" },
+      { key: "Program Description", header: "Program Description" },
     ];
     exportToCsv(templateData as never[], templateCols as never[], "program-data-import-template");
   };
@@ -850,7 +869,7 @@ export default function ProgramDataPage() {
             )}
           </div>
           <button
-            onClick={() => { setShowNew(true); setNewName(""); setNewError(""); setNewMinimums(EMPTY_MINIMUMS); }}
+            onClick={() => { setShowNew(true); setNewName(""); setNewDescription(""); setNewError(""); setNewMinimums(EMPTY_MINIMUMS); }}
             className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
           >
             <Plus size={16} /> New Program
@@ -878,6 +897,7 @@ export default function ProgramDataPage() {
                 <ClipboardList size={20} className="text-blue-600 shrink-0" />
                 <div className="min-w-0">
                   <h3 className="font-semibold truncate">{p.name}</h3>
+                  {p.description && <p className="mt-1 text-sm text-gray-600 line-clamp-2">{p.description}</p>}
                   <p className="text-sm text-gray-500 truncate">{describe(p)}</p>
                 </div>
               </Link>
@@ -918,6 +938,18 @@ export default function ProgramDataPage() {
               placeholder="e.g., a partner compliance program"
               className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
               onKeyDown={(e) => { if (e.key === "Enter") handleNewProgram(); }}
+            />
+          </div>
+          <div>
+            <label htmlFor="new-program-description" className="block text-sm font-medium mb-1">Description</label>
+            <textarea
+              id="new-program-description"
+              value={newDescription}
+              onChange={(e) => setNewDescription(e.target.value)}
+              rows={3}
+              maxLength={2000}
+              placeholder="Optional — what the program is and who it is for"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
             />
           </div>
           <div className="flex items-center gap-2">
@@ -1061,12 +1093,13 @@ export default function ProgramDataPage() {
               </div>
             )}
             <div className="pt-1 text-xs text-gray-500 space-y-1">
-              <p><strong>Expected columns:</strong> Program Name, Specialisation, Tier, Purpose, Level, Count Mode, Training Type, Training, Quantity Required, Minimum per Theatre, Alternatives, Deployment Handling, Tier Order, Tier Specialisations Required, Country Set Minimum Countries, Target Minimum Countries, Requirement Name, Included Theatres</p>
+              <p><strong>Expected columns:</strong> Program Name, Specialisation, Tier, Purpose, Level, Count Mode, Training Type, Training, Quantity Required, Minimum per Theatre, Alternatives, Deployment Handling, Tier Order, Tier Specialisations Required, Country Set Minimum Countries, Target Minimum Countries, Requirement Name, Included Theatres, Program Description</p>
               <p>Level is Country, Region, Country Set, Target Countries, Theatre or Global. Target Countries rows count in the By Theatre view, over each partner&apos;s target countries inside the theatre being viewed. For Region, Country Set and Target Countries rows, Count Mode is &ldquo;Total&rdquo; (holders pooled across the area) or &ldquo;Each country&rdquo; (every country must meet the quantity); blank means Total. Other levels leave it blank.</p>
               <p>Training Type and Training are optional for Global-level rows with no specific training (these count compliant theatres). Minimum per Theatre applies to Global rows only.</p>
               <p>On a tiered program, a row with a Level but no Specialisation and no Tier is required at every level (every tier needs it).</p>
               <p>Country Set Minimum Countries and Target Minimum Countries are the program&apos;s default minimum number of countries for the By Country Set view and of target countries for the By Theatre view (1–1000). A blank cell in either keeps the program&apos;s current setting.</p>
               <p>Included Theatres lists the theatres the program operates in, separated by semicolons (for example EMEA; NAM). A blank cell keeps the current setting and <em>All</em>{" "}includes every theatre again. Requirement Name is an optional name for the rule.</p>
+              <p>Program Description is the program&apos;s description. Only the first one given for a program is used, and a blank cell keeps the current description.</p>
               <p>Files from earlier versions still import: a Default Minimum Countries column is read as Target Minimum Countries, and an Anchor Theatre column is ignored with a warning — that program&apos;s Country Set rows import as Target Countries rows.</p>
               <p>Programs, tiers, and specialisations are auto-created if they don&apos;t already exist.</p>
               <p><strong>Importing replaces</strong> the existing requirements of every program named in the file — it does not merge or add to them.</p>

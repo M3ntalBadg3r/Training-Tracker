@@ -127,6 +127,8 @@ export async function buildProgramReport(opts: BuildProgramReportOptions) {
     ),
     isTiered,
     deploymentMode,
+    // The program's description (display only), or null when it has none.
+    description: program?.description ?? null,
     // The program's included theatres, or null when it counts every theatre.
     includedTheatres: program && program.includedTheatres.length > 0 ? [...program.includedTheatres].sort() : null,
     // A Global row naming no training is a "N compliant theatres" rule; the

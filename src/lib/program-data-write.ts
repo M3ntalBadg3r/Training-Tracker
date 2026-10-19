@@ -66,6 +66,27 @@ export function parseRequirementLabel(raw: unknown): { ok: true; value: string |
   return { ok: true, value };
 }
 
+/** Longest program description (`Program.description`) accepted on write. */
+export const MAX_PROGRAM_DESCRIPTION_LENGTH = 2000;
+
+/**
+ * Parse a program's optional description: null or blank is "no description"
+ * (null); a string is trimmed and must fit the length cap; anything else is
+ * rejected rather than coerced. Whether the key was present at all (absent =
+ * leave alone) is the caller's decision. Shared by the create and settings
+ * routes and the import so all three accept exactly the same values.
+ */
+export function parseProgramDescription(raw: unknown): { ok: true; value: string | null } | { ok: false; error: string } {
+  if (raw == null) return { ok: true, value: null };
+  if (typeof raw !== "string") return { ok: false, error: "Description must be text" };
+  const value = raw.trim();
+  if (value === "") return { ok: true, value: null };
+  if (value.length > MAX_PROGRAM_DESCRIPTION_LENGTH) {
+    return { ok: false, error: `Description must be ${MAX_PROGRAM_DESCRIPTION_LENGTH} characters or fewer` };
+  }
+  return { ok: true, value };
+}
+
 export const REQ_TRAINING_TYPES = ["Certification", "Accreditation", "InstructorLedTraining"] as const;
 export const REQ_PURPOSES = ["qualification", "deployment"] as const;
 

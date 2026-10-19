@@ -697,6 +697,10 @@ export const PUBLIC_API_ENDPOINTS: readonly PublicApiEndpoint[] = [
             ...arr({ type: "string", enum: LEVEL_ENUM }),
             description: "Configured requirement levels: Country, Region, CountrySet, TargetCountries, Theatre, Global.",
           },
+          description: {
+            type: ["string", "null"],
+            description: "The program's own description, as written by an administrator, or null when it has none.",
+          },
           hasMinimumPerTheatre: BOOL,
           isTiered: BOOL,
           hasTargetCountries: {
@@ -804,6 +808,11 @@ export const PUBLIC_API_ENDPOINTS: readonly PublicApiEndpoint[] = [
                 items: STR,
                 description:
                   "The theatres the program operates in, or null when it counts every theatre. An excluded theatre is left out of theatres, of every Global per-theatre figure and of the tier block, and a level=theatre request for one returns an empty report.",
+              },
+              description: {
+                type: ["string", "null"],
+                description:
+                  "The program's own description, as written by an administrator, or null when it has none. Absent from the empty out-of-scope payload.",
               },
               isTiered: { type: "boolean", description: "Absent from the empty out-of-scope payload." },
               deploymentMode: { type: "string", enum: ["flat", "perAchievedSpecialisation", "perTierPerSpecialisation"] },

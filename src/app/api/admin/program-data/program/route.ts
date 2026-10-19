@@ -4,7 +4,7 @@ import { requireSuperAdmin, handleAuthError } from "@/lib/auth";
 import { invalidateReportCache } from "@/lib/report-cache";
 import { readJsonBody } from "@/lib/request-body";
 import { REQ_LEVELS, isProgramWideRow } from "@/lib/program-levels";
-import { parseProgramMinimums } from "@/lib/program-data-write";
+import { parseProgramDescription, parseProgramMinimums } from "@/lib/program-data-write";
 
 const levelRank = (l: string) => (REQ_LEVELS as readonly string[]).indexOf(l);
 
@@ -50,6 +50,8 @@ export async function GET(request: NextRequest) {
     targetMinimumCountries: number | null;
     /** The theatres the program operates in; empty = every theatre. */
     includedTheatres: string[];
+    /** Optional free-text description; null = none. */
+    description: string | null;
     /** Rows with neither a specialisation nor a tier (tiered programs only). */
     programWideCount: number;
   }
@@ -69,6 +71,7 @@ export async function GET(request: NextRequest) {
         countrySetMinimumCountries: null,
         targetMinimumCountries: null,
         includedTheatres: [],
+        description: null,
         programWideCount: 0,
       };
       agg.set(name, a);
@@ -85,6 +88,7 @@ export async function GET(request: NextRequest) {
     a.countrySetMinimumCountries = p.countrySetMinimumCountries;
     a.targetMinimumCountries = p.targetMinimumCountries;
     a.includedTheatres = p.includedTheatres;
+    a.description = p.description;
   }
 
   for (const r of rows) {
@@ -115,6 +119,7 @@ export async function GET(request: NextRequest) {
       countrySetMinimumCountries: a.countrySetMinimumCountries,
       targetMinimumCountries: a.targetMinimumCountries,
       includedTheatres: a.includedTheatres,
+      description: a.description,
       programWideCount: a.programWideCount,
     }))
     .sort((x, y) => x.name.localeCompare(y.name));
@@ -124,8 +129,9 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST /api/admin/program-data/program
- * Creates an empty program (registry row). Body: { name, isTiered?,
- * deploymentMode?, countrySetMinimumCountries?, targetMinimumCountries? }.
+ * Creates an empty program (registry row). Body: { name, description?,
+ * isTiered?, deploymentMode?, countrySetMinimumCountries?,
+ * targetMinimumCountries? }. The description is free text (≤ 2000 characters).
  * Each default minimum is a whole number 1–1000, or null/"" for none.
  */
 export async function POST(request: NextRequest) {
@@ -155,6 +161,10 @@ export async function POST(request: NextRequest) {
   if (!minimums.ok) {
     return NextResponse.json({ error: minimums.error }, { status: 400 });
   }
+  const description = parseProgramDescription(body.description);
+  if (!description.ok) {
+    return NextResponse.json({ error: description.error }, { status: 400 });
+  }
   const countrySetMinimumCountries = minimums.value.countrySetMinimumCountries ?? null;
   const targetMinimumCountries = minimums.value.targetMinimumCountries ?? null;
 
@@ -164,13 +174,21 @@ export async function POST(request: NextRequest) {
   }
 
   const program = await prisma.program.create({
-    data: { name, isTiered, deploymentMode, countrySetMinimumCountries, targetMinimumCountries },
+    data: {
+      name,
+      description: description.value,
+      isTiered,
+      deploymentMode,
+      countrySetMinimumCountries,
+      targetMinimumCountries,
+    },
   });
   invalidateReportCache();
   return NextResponse.json(
     {
       id: program.id,
       name: program.name,
+      description: program.description,
       isTiered: program.isTiered,
       deploymentMode: program.deploymentMode,
       countrySetMinimumCountries: program.countrySetMinimumCountries,
