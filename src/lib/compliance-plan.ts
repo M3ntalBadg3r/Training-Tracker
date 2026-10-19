@@ -26,15 +26,17 @@
  * Because a person can only be *spent once*, candidate assignment is a greedy
  * allocation across the whole target (not an independent per-requirement count):
  * committing a person to earn one cert credits every requirement instance that
- * needs *that same cert* over a population containing them (the "one exam closes
- * Cert X in Program A and in Program B" dedup), but bars them from a *different*
- * cert's slot (contention). See `allocateCandidates`, which is pure and
+ * accepts *that cert* over a population containing them (the "one exam closes
+ * Cert X in Program A and in Program B" dedup — including a requirement that
+ * accepts Cert X as one of a family), but bars them from an unrelated cert's
+ * slot (contention). See `allocateCandidates`, which is pure and
  * unit-testable.
  *
  * **The same dedup governs the net-new remainder**, and that is easy to lose: a
  * cert required by three specialisations at 2 each, with nobody in its pools, is
- * *two* people to certify, not six. `netNewTotal` therefore groups instances by
- * cert + population and takes the largest remaining gap per group rather than
+ * *two* people to certify, not six; and "2 × Cert A" beside "8 × any of Certs
+ * A–H" is eight, not ten. `netNewTotal` therefore plans cohorts of new holders
+ * and counts each toward every requirement that accepts them rather than
  * summing (`groupCost`, which also knows that an "each country" requirement's
  * per-country gaps add up across countries while still counting toward a pooled
  * requirement on the same cert). Only the totals dedup — `PlanRequirement.netNew` and
@@ -202,7 +204,8 @@ export interface PlanRequirement {
    */
   netNew: number;
   /**
-   * The other specialisations in this target that need the same cert over a
+   * The other specialisations in this target that accept a certification this
+   * requirement accepts — the same one, or one of a shared family — over a
    * shared population — the same population, or this one's country inside the
    * other's area (or vice versa). Non-empty means this requirement's
    * `netNew`/gap is shared: closing it closes theirs too, and the target's
@@ -498,12 +501,12 @@ interface ReqInstance {
    */
   populationKey: string;
   /**
-   * The plan AREA this instance belongs to (`PlanArea.areaKey`), part of
-   * `certGroupKey`. Every population inside one area is NESTED: a standard
-   * scope has exactly one population (plus the per-country slices of it), and
-   * a theatre area of a program with TargetCountries rows is the theatre ⊇ its
-   * target countries ⊇ each single target country. `groupCost` and
-   * `sharesPopulation` rely on that nesting — see `certGroupKey`. Two areas
+   * The plan AREA this instance belongs to (`PlanArea.areaKey`). Every
+   * population inside one area is NESTED: a standard scope has exactly one
+   * population (plus the per-country slices of it), and a theatre area of a
+   * program with TargetCountries rows is the theatre ⊇ its target countries ⊇
+   * each single target country. `groupCost` and `canShareHolders` rely on that
+   * nesting — see `populationDepth`. Two areas
    * whose populations are not nested in each other (two programs with
    * different target sets) carry different keys and are never deduped against
    * each other, which can over-count but never under-count.
@@ -516,8 +519,15 @@ interface ReqInstance {
   isGate: boolean;
   /** Optional display name (ProgramData.label). */
   label: string | null;
-  /** Identity of the qualifying cert-set: two instances sharing it share moves. */
+  /** Identity of the qualifying cert-set (the sorted `certPairs`, joined). */
   certKey: string;
+  /**
+   * The (fullTitle, trainingType) pair keys a holder of any one of satisfies
+   * this requirement. Two instances whose pairs INTERSECT can be served by the
+   * same person — one certification both accept — which is what `groupCost`
+   * and `allocateCandidates` count on, not equality of `certKey`.
+   */
+  certPairs: string[];
   cert: string;
   /** See `PlanRequirement.certTitles`. */
   certTitles: string[];
@@ -1027,8 +1037,15 @@ function toRequirementRow(pd: ProgramDataWithRelations): RequirementRow | null {
  * the authored titles. A title with no catalogue row stays a singleton, which
  * is `resolveSiblingTitles`' own fallback.
  */
-function certKeyFor(row: RequirementRow, idx: CatalogueIndex): string {
-  return [...new Set(row.titles.map((t) => idx.pairKey.get(t) ?? t))].sort().join("|");
+function certKeyFor(row: RequirementRow, idx: CatalogueIndex): CertIdentity {
+  const pairs = [...new Set(row.titles.map((t) => idx.pairKey.get(t) ?? t))].sort();
+  return { key: pairs.join("|"), pairs };
+}
+
+/** A row's `certKey` together with the pair keys it is built from. */
+interface CertIdentity {
+  key: string;
+  pairs: string[];
 }
 
 /** The trainings that are a path to any of a row's certs (ILT/OLX, or legacy). */
@@ -1119,7 +1136,7 @@ function assemblePool(p: {
 function makeInstance(
   program: string,
   row: RequirementRow,
-  certKey: string,
+  certId: CertIdentity,
   geo: GeoPlan,
   area: PlanArea,
   population: { country: string | null; populationKey: string; scopeLabel: string },
@@ -1146,7 +1163,8 @@ function makeInstance(
     scopeLabel: population.scopeLabel,
     ...(geo.population ? { population: geo.population } : {}),
     isGate: false,
-    certKey,
+    certKey: certId.key,
+    certPairs: certId.pairs,
     cert: row.cert,
     certTitles: row.certTitles,
     titles: row.titles,
@@ -1184,9 +1202,9 @@ async function buildInstances(
 ): Promise<ReqInstance[]> {
   const geo = area.populations.find((g) => g.reqLevel === row.level);
   if (!geo) return [];
-  const certKey = certKeyFor(row, idx);
+  const certId = certKeyFor(row, idx);
   if (row.aggregation === "eachCountry") {
-    return buildEachCountryInstances(program, row, geo, area, idx, certKey, now, horizon, planForWindow);
+    return buildEachCountryInstances(program, row, geo, area, idx, certId, now, horizon, planForWindow);
   }
 
   const scope = geo.scope;
@@ -1233,7 +1251,7 @@ async function buildInstances(
 
   return [
     makeInstance(
-      program, row, certKey, geo, area,
+      program, row, certId, geo, area,
       { country: null, populationKey: geo.populationKey, scopeLabel: geo.scopeLabel },
       { attained, projectedAttained, gap, pool, expiringEmails },
     ),
@@ -1264,7 +1282,7 @@ async function buildEachCountryInstances(
   geo: GeoPlan,
   area: PlanArea,
   idx: CatalogueIndex,
-  certKey: string,
+  certId: CertIdentity,
   now: Date,
   horizon: Date | null,
   planForWindow: boolean,
@@ -1281,7 +1299,7 @@ async function buildEachCountryInstances(
     const gapFloor = Math.max(1, row.quantityRequired);
     return [
       makeInstance(
-        program, row, certKey, geo, area,
+        program, row, certId, geo, area,
         { country: null, populationKey: geo.populationKey, scopeLabel: geo.scopeLabel },
         {
           attained: 0,
@@ -1343,7 +1361,7 @@ async function buildEachCountryInstances(
 
   return perCountry.map((p) =>
     makeInstance(
-      program, row, certKey, geo, area,
+      program, row, certId, geo, area,
       { country: p.country, populationKey: `country:${p.country}`, scopeLabel: p.country },
       {
         attained: p.attained,
@@ -1394,54 +1412,64 @@ export interface AllocationResult {
 /**
  * Greedy candidate allocation across the whole target (v1).
  *
- * A "move" is a person earning one cert (identified by `certKey`). Committing a
- * person to a cert credits every instance needing that *same* cert whose pool
- * contains them (same-cert dedup across targets/programs) but bars them from a
- * *different* cert's slot (contention — one move can't grant two different certs).
+ * A "move" is a person earning one certification. A requirement accepts any of
+ * its `certPairs`, so committing a person credits every instance whose pairs
+ * share a certification with what they are committed to AND whose pool contains
+ * them — the same cert required twice, or a specific cert inside another
+ * requirement's "any of these" family. Each credit narrows what the person is
+ * committed to (to the certifications every instance they serve accepts), so a
+ * person can never be counted toward two instances that share no certification
+ * (contention — one move can't grant two different certs).
  *
  * Greedy heuristics, flagged so a future pass can swap in bipartite matching /
  * set-cover if it ever matters:
  *  - process instances closest to done first (smallest shortfall), so scarce
  *    easy people aren't burned on the largest gaps;
  *  - within an instance prefer cheaper tiers, then higher-coverage people (those
- *    whose one move closes the most same-cert instances).
+ *    whose one move closes the most overlapping instances).
+ *
+ * A narrowed commitment keeps the tier and path the person was nominated with,
+ * so on a partial overlap the "why" sentence may describe a route to a sibling
+ * certification of the one they end up committed to. The count is right either
+ * way: every certification left in the commitment is accepted by every instance
+ * it credited.
  *
  * One move per person applies to renewals too: someone committed to renewing
- * Cert A won't also be nominated to earn Cert B. That's right for "they can only
- * sit one exam", and mildly pessimistic for anyone who could do both.
+ * Cert A won't also be nominated to earn an unrelated Cert B. That's right for
+ * "they can only sit one exam", and mildly pessimistic for anyone who could do
+ * both.
  *
  * `netNewByInstance` is the remainder **per instance** and so is deliberately NOT
  * deduped — summing it charges a shared cert once per requirement. Totals go
- * through `netNewTotal`, which applies the same same-cert dedup to the remainder.
+ * through `netNewTotal`, which applies the same overlap dedup to the remainder.
  */
 export function allocateCandidates(instances: ReqInstance[]): AllocationResult {
   const open = instances.filter((i) => i.shortfall > 0);
 
-  const byCertKey = new Map<string, ReqInstance[]>();
+  // For each open instance, the open instances (itself first) a person
+  // committed to it might also serve: those sharing a certification.
+  const pairSet = new Map(open.map((i) => [i.id, new Set(i.certPairs)]));
+  const counterparts = new Map<string, ReqInstance[]>();
   for (const inst of open) {
-    if (!byCertKey.has(inst.certKey)) byCertKey.set(inst.certKey, []);
-    byCertKey.get(inst.certKey)!.push(inst);
+    const mine = pairSet.get(inst.id)!;
+    counterparts.set(inst.id, [
+      inst,
+      ...open.filter((o) => o !== inst && o.certPairs.some((p) => mine.has(p))),
+    ]);
   }
 
-  // Coverage of an (email, certKey): how many open same-cert instances it serves.
-  const coverage = new Map<string, number>();
-  const covKey = (email: string, certKey: string) => `${email} ${certKey}`;
-  for (const [certKey, insts] of byCertKey) {
-    const counts = new Map<string, number>();
-    for (const inst of insts) {
-      for (const email of inst.poolEmails) counts.set(email, (counts.get(email) ?? 0) + 1);
-    }
-    for (const [email, n] of counts) coverage.set(covKey(email, certKey), n);
-  }
+  // Coverage of a person for an instance: how many of its counterparts they could serve.
+  const coverageOf = (email: string, inst: ReqInstance) =>
+    counterparts.get(inst.id)!.filter((o) => o.poolEmails.has(email)).length;
 
-  const committedCert = new Map<string, string>(); // email → certKey
+  const committedPairs = new Map<string, Set<string>>(); // email → certifications still open to them
   const committedTier = new Map<string, Exclude<CandidateTier, "net-new">>();
   const filled = new Map<string, number>();
   const closesByEmail = new Map<string, PlanCandidateClose[]>();
   // Guard so each person is credited to a given instance at most once. Without
   // it, a cert shared by two instances (e.g. required by two specialisations)
   // re-credits an already-committed person every time the outer loop reaches
-  // another same-cert instance — inflating `filled` and duplicating `closes`.
+  // another counterpart — inflating `filled` and duplicating `closes`.
   const credited = new Set<string>(); // `${email}::${instanceId}`
 
   const record = (email: string, inst: ReqInstance, member: PoolMember) => {
@@ -1458,6 +1486,8 @@ export function allocateCandidates(instances: ReqInstance[]): AllocationResult {
     });
   };
 
+  const intersect = (a: Set<string>, b: Set<string>) => new Set([...a].filter((p) => b.has(p)));
+
   // Process instances closest to done first (smallest shortfall), so scarce
   // easy candidates aren't burned on the largest gaps.
   const ordered = [...open].sort((a, b) => a.shortfall - b.shortfall);
@@ -1465,39 +1495,38 @@ export function allocateCandidates(instances: ReqInstance[]): AllocationResult {
   for (const inst of ordered) {
     let have = filled.get(inst.id) ?? 0;
     if (have >= inst.shortfall) continue;
+    const own = pairSet.get(inst.id)!;
 
     const cands = [...inst.pool].sort((a, b) => {
       const tr = TIER_RANK[a.tier] - TIER_RANK[b.tier];
       if (tr !== 0) return tr;
-      return (
-        (coverage.get(covKey(b.email, inst.certKey)) ?? 0) -
-        (coverage.get(covKey(a.email, inst.certKey)) ?? 0)
-      );
+      return coverageOf(b.email, inst) - coverageOf(a.email, inst);
     });
 
     for (const cand of cands) {
       if (have >= inst.shortfall) break;
-      const already = committedCert.get(cand.email);
-      if (already && already !== inst.certKey) continue; // spent on a different cert
+      let pairs = committedPairs.get(cand.email) ?? own;
+      if (intersect(pairs, own).size === 0) continue; // spent on an unrelated cert
 
-      if (!already) {
-        committedCert.set(cand.email, inst.certKey);
-        committedTier.set(cand.email, cand.tier);
-      }
+      if (!committedTier.has(cand.email)) committedTier.set(cand.email, cand.tier);
 
-      // Credit this move to every open same-cert instance that can use them,
-      // but never twice to the same instance (a later same-cert pass would
-      // otherwise re-credit an already-committed person).
-      for (const other of byCertKey.get(inst.certKey)!) {
+      // Credit this move to every open counterpart that can use them — this
+      // instance first — narrowing the commitment as it goes, and never twice
+      // to the same instance.
+      for (const other of counterparts.get(inst.id)!) {
         if ((filled.get(other.id) ?? 0) >= other.shortfall) continue;
         const ck = `${cand.email}::${other.id}`;
         if (credited.has(ck)) continue;
         const m = other.pool.find((p) => p.email === cand.email);
         if (!m) continue;
+        const narrowed = intersect(pairs, pairSet.get(other.id)!);
+        if (narrowed.size === 0) continue;
+        pairs = narrowed;
         credited.add(ck);
         filled.set(other.id, (filled.get(other.id) ?? 0) + 1);
         record(cand.email, other, m);
       }
+      committedPairs.set(cand.email, pairs);
       have = filled.get(inst.id) ?? 0;
     }
   }
@@ -1511,99 +1540,128 @@ export function allocateCandidates(instances: ReqInstance[]): AllocationResult {
 }
 
 /**
- * The key two instances must share for one person's certification to be able to
- * count for both: the same qualifying cert-set within the same plan area.
+ * How far inside its area an instance's population sits, for `groupCost`'s
+ * containment test: 0 = one country of an "each country" requirement, 1 = the
+ * target countries of a theatre area, 2 = any other scope-wide population.
  *
- * Within a group, instances are either **scope-wide** (`country === null`,
- * counted over a whole population of the area) or **per-country** (one country
- * of an "each country" requirement). Those are not interchangeable — see
- * `groupCost` and `sharesPopulation`. `areaKey` rather than `scopeLabel` is in
- * the key because a country set may be named like a country; and it is in the
- * key at all because collapsing two areas' gaps into one would fail silently
- * and expensively.
- *
- * **The invariant everything below rests on: the populations inside one area
- * are nested.** A standard scope has one population, so every scope-wide
- * instance of a group shares it. A theatre area of a program with
- * TargetCountries rows has a CHAIN — the theatre ⊇ target countries ⊇ each
- * target country — so its scope-wide instances can sit over two different
- * populations (a Theatre "total" row and a TargetCountries "total" row on one
- * cert), but one is always inside the other, and every
- * per-country instance is inside both. That is what makes the `max` in
- * `groupCost` a sound charge for the scope-wide side: one cohort of N new
- * holders placed in the INNERMOST population counts toward every scope-wide
- * instance of the group, so the largest gap is enough. If an area ever held
- * two populations that are NOT nested (two disjoint target sets), `max` would
- * under-count; `resolveTheatreTargetPlanArea` keys the area on both populations so
- * that can only happen by changing it.
+ * **The invariant this rests on: the populations inside one area are nested.**
+ * A standard scope has one population (plus the per-country slices of it). A
+ * theatre area of a program with TargetCountries rows has a CHAIN — the theatre
+ * ⊇ target countries ⊇ each target country. So within an area a population of
+ * lower depth is always inside one of higher depth, and two scope-wide
+ * populations of the same depth are the same one. Two areas whose populations
+ * are not nested in each other (two programs with different target sets) carry
+ * different `areaKey`s and are never deduped against each other, which can
+ * over-count but never under-count; `resolveTheatreTargetPlanArea` keys the area
+ * on both populations so that can only change deliberately.
  */
-function certGroupKey(inst: ReqInstance): string {
-  return `${inst.certKey}::${inst.areaKey}`;
+function populationDepth(inst: ReqInstance): number {
+  if (inst.country !== null) return 0;
+  return inst.population === "targetCountries" ? 1 : 2;
 }
 
 /**
  * Whether one person's certification can count toward both instances: the same
- * cert within one area, unless they are two DIFFERENT countries' slices of an
- * "each country" requirement — someone certified in one country does nothing
- * for another's gap.
- *
- * Everything else in an area shares by the nesting invariant on `certGroupKey`:
- * the same population trivially; a scope-wide instance and a per-country one
- * because the country is inside every scope-wide population of the area; and
- * (theatre areas with target countries only) two scope-wide instances over
- * different populations, because a person certified in a target country is
- * inside the theatre too. For a single-population area that last case never
- * arises — every scope-wide instance has the one population.
+ * area, a certification both accept (intersecting `certPairs`), and not two
+ * DIFFERENT countries' slices of an "each country" requirement — someone
+ * certified in one country does nothing for another's gap. Everything else in
+ * an area is nested (see `populationDepth`), so a holder placed in the inner
+ * population counts for the outer one too. Drives `sharedWith`.
  */
-function sharesPopulation(a: ReqInstance, b: ReqInstance): boolean {
-  if (certGroupKey(a) !== certGroupKey(b)) return false;
-  if (a.country !== null && b.country !== null) return a.country === b.country;
-  return true;
+function canShareHolders(a: ReqInstance, b: ReqInstance): boolean {
+  if (a.areaKey !== b.areaKey) return false;
+  if (a.country !== null && b.country !== null && a.country !== b.country) return false;
+  const pairs = new Set(a.certPairs);
+  return b.certPairs.some((p) => pairs.has(p));
 }
 
 /**
  * The one dedup rule behind every "how many people" figure — `netNewTotal`,
- * `specSetCost` — applied to whatever per-instance value the caller supplies.
+ * `specSetCost`, the program-wide block and the tier's delivery and gate
+ * shortfalls — applied to whatever per-instance value the caller supplies.
  *
- * Per `certGroupKey`, the cost is `max(P, Σ_c g_c)`:
- *  - `P` is the largest value among the group's scope-wide instances. They share
- *    one population (or, in a theatre area with target countries, nested ones —
- *    see `certGroupKey`),
- *    so a single cohort of N new holders placed in the innermost satisfies every
- *    one whose gap is ≤ N — three specialisations each needing 2 holders of the
- *    same cert cost 2 people, not 6.
- *  - `g_c` is the largest value among the per-country instances for country c
- *    (the same reasoning, one country at a time), and those are SUMMED: a person
- *    certified in one country does nothing for another's gap.
- *  - The max, not the sum, of the two sides because every per-country holder is
- *    also inside the area: people certified to close the countries' gaps count
- *    toward the area-wide total as well. "4 × Cert A in each country" beside
- *    "2 × Cert A total" is never charged twice — and in a theatre area "4 in
- *    each target country" beside "15 across the theatre" is
- *    `max(15 − have, Σ country gaps)`, never their sum.
+ * A greedy cover, per plan area (`greedy v3`). Instances are taken innermost
+ * population first (each country, then target countries, then the rest — see
+ * `populationDepth`), then the fewest acceptable certifications first, then the
+ * largest value. Each one is first credited with the COHORTS already planned
+ * that it can use — a cohort being "N new holders of one of these
+ * certifications in this population" — when the cohort's certifications
+ * intersect its own and the cohort's population lies inside its own. Credit is
+ * not consumed (one holder counts toward every requirement that accepts them),
+ * but a cohort that is used narrows to the certifications both accept,
+ * splitting off the used part when only part of it is needed. Whatever is still
+ * short becomes a new cohort. The total is the sum of the cohorts.
  *
- * With no per-country instances this is exactly the old max-per-group rule, so a
- * plan built only from pooled requirements produces the same numbers it always
- * did. Pure — nothing here touches the database.
+ * What that gives:
+ *  - The same certification required by several requirements over one
+ *    population costs the largest gap, not the sum — three specialisations each
+ *    needing 2 holders of Cert A cost 2 people, not 6.
+ *  - "N in each country" beside "M across the area" on one certification costs
+ *    `max(M, Σ country gaps)`: someone certified in one country does nothing for
+ *    another's gap, but every country's holders count toward the area total.
+ *  - A specific certification inside another requirement's "any of these"
+ *    family is counted once: "2 × Cert A" beside "8 × any of Certs A–H" costs 8
+ *    if the family needs 8, because the 2 holders of Cert A are 2 of the 8.
+ *    (Taking the fewest certifications first is what lets the specific one be
+ *    planned before the family that can absorb it.)
+ *
+ * Every figure is a feasible plan — each cohort ends with at least one
+ * certification, accepted by every requirement it was counted toward — so this
+ * never under-counts; and because an identical list always still intersects a
+ * narrowed cohort, it never charges more than the older exact-list grouping
+ * did. It is greedy rather than an optimal set cover. Pure — nothing here
+ * touches the database.
  */
 export function groupCost(instances: Iterable<ReqInstance>, valueOf: (inst: ReqInstance) => number): number {
-  const groups = new Map<string, { wide: number; byCountry: Map<string, number> }>();
-  for (const inst of instances) {
-    const key = certGroupKey(inst);
-    let g = groups.get(key);
-    if (!g) {
-      g = { wide: 0, byCountry: new Map() };
-      groups.set(key, g);
-    }
-    const v = valueOf(inst);
-    if (inst.country === null) g.wide = Math.max(g.wide, v);
-    else g.byCountry.set(inst.country, Math.max(g.byCountry.get(inst.country) ?? 0, v));
+  interface Cohort {
+    pairs: Set<string>;
+    country: string | null;
+    depth: number;
+    count: number;
   }
+  const byArea = new Map<string, { inst: ReqInstance; value: number }[]>();
+  for (const inst of instances) {
+    const value = valueOf(inst);
+    if (value <= 0) continue;
+    if (!byArea.has(inst.areaKey)) byArea.set(inst.areaKey, []);
+    byArea.get(inst.areaKey)!.push({ inst, value });
+  }
+
   let total = 0;
-  for (const g of groups.values()) {
-    let perCountry = 0;
-    for (const v of g.byCountry.values()) perCountry += v;
-    total += Math.max(g.wide, perCountry);
+  for (const items of byArea.values()) {
+    items.sort(
+      (a, b) =>
+        populationDepth(a.inst) - populationDepth(b.inst) ||
+        a.inst.certPairs.length - b.inst.certPairs.length ||
+        b.value - a.value ||
+        a.inst.id.localeCompare(b.inst.id),
+    );
+    const cohorts: Cohort[] = [];
+    for (const { inst, value } of items) {
+      const own = new Set(inst.certPairs);
+      const depth = populationDepth(inst);
+      let remaining = value;
+      for (const c of [...cohorts]) {
+        if (remaining <= 0) break;
+        // The cohort's population must lie inside this instance's.
+        const inside = c.country !== null
+          ? inst.country === null || inst.country === c.country
+          : inst.country === null && c.depth <= depth;
+        if (!inside) continue;
+        const narrowed = new Set([...c.pairs].filter((p) => own.has(p)));
+        if (narrowed.size === 0) continue;
+        const take = Math.min(c.count, remaining);
+        if (take < c.count) {
+          c.count -= take;
+          cohorts.push({ pairs: narrowed, country: c.country, depth: c.depth, count: take });
+        } else {
+          c.pairs = narrowed;
+        }
+        remaining -= take;
+      }
+      if (remaining > 0) cohorts.push({ pairs: own, country: inst.country, depth, count: remaining });
+    }
+    for (const c of cohorts) total += c.count;
   }
   return total;
 }
@@ -1718,7 +1776,7 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
     gateInsts: ReqInstance[];
     /** The instances that count toward this target's people-to-certify total. */
     counted: ReqInstance[];
-    /** instanceId → the OTHER specialisations needing the same cert (see `sharedWith`). */
+    /** instanceId → the OTHER specialisations accepting a certification this one accepts (see `sharedWith`). */
     sharedByInstanceId: Map<string, string[]>;
     /** The cheapest `needed` specialisations, in the order they were picked;
      *  empty for non-tier targets. These are what `counted` was built from. */
@@ -1911,27 +1969,21 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
       bySpec.get(key)!.push(inst);
     }
 
-    // Which of this target's requirements are the *same* cert over a shared
-    // population (`sharesPopulation` — the same rule `groupCost` charges by), so
-    // the page can say why the per-specialisation figures add up to more than
-    // the headline. Computed over every instance, counted or not — it is
-    // informational, and a non-counted specialisation's requirement is just as
-    // shared. `label` mirrors how the roadmap groups the rows. Instances are
-    // bucketed by group first, so the pairwise test only runs within one cert.
+    // Which of this target's requirements accept a certification another one
+    // accepts over a shared population (`canShareHolders` — the overlap
+    // `groupCost` charges by), so the page can say why the per-specialisation
+    // figures add up to more than the headline. Computed over every instance,
+    // counted or not — it is informational, and a non-counted specialisation's
+    // requirement is just as shared. `label` mirrors how the roadmap groups the
+    // rows.
     const specLabel = (inst: ReqInstance) =>
       inst.isGate ? PROGRAM_WIDE_BLOCK_NAME : inst.specialisation ?? inst.tierName ?? "—";
-    const instancesByGroup = new Map<string, ReqInstance[]>();
-    for (const inst of rowInstances) {
-      const key = certGroupKey(inst);
-      if (!instancesByGroup.has(key)) instancesByGroup.set(key, []);
-      instancesByGroup.get(key)!.push(inst);
-    }
     const sharedByInstanceId = new Map<string, string[]>();
     for (const inst of rowInstances) {
       const own = specLabel(inst);
       const others = new Set<string>();
-      for (const other of instancesByGroup.get(certGroupKey(inst)) ?? []) {
-        if (other === inst || !sharesPopulation(inst, other)) continue;
+      for (const other of rowInstances) {
+        if (other === inst || !canShareHolders(inst, other)) continue;
         const label = specLabel(other);
         if (label !== own) others.add(label);
       }
@@ -2648,9 +2700,14 @@ function buildHeadlineBody(target: PlanTargetResult, scopeLabel: string, windowM
       const rec = target.specialisations.filter(
         (s) => s.chosen && !s.kind && !s.name.endsWith("delivery certs"),
       );
-      const names = rec.map(
-        (s) => `${s.name} (${s.marginalCost ?? s.cost} to certify${s.easyWins > 0 ? `, ${s.easyWins} easy` : ""})`,
-      );
+      // A marginal of 0 with a gap still open means the people already counted
+      // elsewhere can take a certification it also accepts — say so rather
+      // than "0 to certify", which reads as already done.
+      const names = rec.map((s) => {
+        const n = s.marginalCost ?? s.cost;
+        const cost = n <= 0 && s.cost > 0 ? "no extra people" : `${n} to certify`;
+        return `${s.name} (${cost}${s.easyWins > 0 ? `, ${s.easyWins} easy` : ""})`;
+      });
       let clause = `achieve ${needed} more specialisation${needed === 1 ? "" : "s"}`;
       if (names.length > 0) {
         const joined = names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;

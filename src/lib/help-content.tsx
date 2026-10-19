@@ -3006,6 +3006,15 @@ const helpSections: Record<string, HelpSection> = {
             Program Data to show that instead).
           </li>
           <li>
+            <strong>Counting a certification once</strong>{" "}— one person
+            certified counts toward every requirement that accepts their
+            certification. If a specialisation needs 2 &times; Cert A and the
+            program also needs 8 people holding any of Certs A&ndash;H, the 2
+            people certified in Cert A are 2 of the 8. A step that adds nobody
+            for this reason reads <strong>Covered by other steps</strong>, and
+            the requirement shows a <strong>shared with</strong>{" "}tag.
+          </li>
+          <li>
             <strong>People</strong>{" "}— who to certify. The{" "}
             <strong>Recommended</strong>{" "}list is the cheapest people the plan
             picks; <strong>All eligible</strong>{" "}shows everyone who could be.
