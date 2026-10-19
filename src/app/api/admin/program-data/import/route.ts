@@ -12,10 +12,12 @@ import {
   type ReqLevel,
 } from "@/lib/program-levels";
 import {
+  MAX_INCLUDED_THEATRES,
   MAX_MINIMUM_COUNTRIES,
   PROGRAM_WIDE_NOT_TIERED_ERROR,
   parseMinimumCountries,
   parseRequirementLabel,
+  unknownTheatres,
 } from "@/lib/program-data-write";
 
 /*
@@ -29,6 +31,11 @@ import {
  * stored value is kept, so a file that predates them imports unchanged.
  * Clearing a minimum is done in the editor, not by import. The first non-blank
  * value in the file wins; a different value on a later row is a warning.
+ *
+ * A third program-level column, `Included Theatres`, lists the theatres the
+ * program operates in (separated by ; | or commas). It follows the same rules,
+ * except that the word "All" clears it (every theatre), and every theatre named
+ * must exist in Region Data.
  *
  * Files written while "anchored programs" existed are still accepted:
  *  - `Default Minimum Countries` is read as Target Minimum Countries (it was the
@@ -65,6 +72,8 @@ interface RawRow {
   // Program-level default minimums (round-tripped from export)
   countrySetMinimumCountries?: string | number | null;
   targetMinimumCountries?: string | number | null;
+  /** Program-level: the theatres the program operates in ("All" = every theatre). */
+  includedTheatres?: string | null;
   // Read for compatibility with files from before the target-countries level.
   anchorTheatre?: string | null;
   defaultMinimumCountries?: string | number | null;
@@ -259,8 +268,25 @@ export async function POST(request: NextRequest) {
   /** Programs a non-blank Anchor Theatre names somewhere in the file: their Country Set rows convert. */
   const convertedPrograms = new Set<string>();
   const fileTiered = new Set<string>();
+  // Included Theatres: a program-level cell like the minimums — the first
+  // non-blank value per program wins, a blank or unmapped cell writes nothing,
+  // and "All" clears it (every theatre). Names split on ; | or comma.
+  type TheatreCell = { kind: "blank" } | { kind: "ok"; value: string[]; text: string };
+  const theatreCells: TheatreCell[] = [];
+  const fileTheatres = new Map<string, string[]>();
+  const parseTheatreCell = (raw: unknown): TheatreCell => {
+    const text = cellText(raw);
+    if (!text || isNullMarker(text)) return { kind: "blank" };
+    if (text.toLowerCase() === "all") return { kind: "ok", value: [], text };
+    const value = [...new Set(text.split(/[;|,\n]/).map((t) => t.trim()).filter(Boolean))].sort();
+    return { kind: "ok", value, text };
+  };
   rows.forEach((raw, index) => {
     const program = raw?.programName?.trim() ?? "";
+
+    const theatreCell = parseTheatreCell(raw?.includedTheatres);
+    theatreCells.push(theatreCell);
+    if (program && theatreCell.kind === "ok" && !fileTheatres.has(program)) fileTheatres.set(program, theatreCell.value);
 
     const csCell = parseMinCell(raw?.countrySetMinimumCountries, MIN_COLUMNS.countrySet);
     // The legacy Default Minimum Countries column was the anchored program's
@@ -284,6 +310,11 @@ export async function POST(request: NextRequest) {
     const tier = cellText(raw?.tierName);
     if (program && tier && !isNullMarker(tier)) fileTiered.add(program);
   });
+  // Every theatre a cell names must be a Region Data theatre (global
+  // reference data, so naming an unknown one back is safe).
+  const unknownTheatreSet = new Set(
+    await unknownTheatres([...new Set(theatreCells.flatMap((c) => (c.kind === "ok" ? c.value : [])))])
+  );
   const fileProgramNames = [...new Set(rows.map((r) => r?.programName?.trim() ?? "").filter(Boolean))];
   const storedPrograms = fileProgramNames.length
     ? await prisma.program.findMany({
@@ -327,6 +358,21 @@ export async function POST(request: NextRequest) {
       const first = fileMinimum[key].get(programName);
       if (cell.value !== first) {
         programWarnings.push(`${cell.column} ${cell.value} ignored — an earlier row set it to ${first}`);
+      }
+    }
+    const theatreCell = theatreCells[index];
+    if (theatreCell.kind === "ok") {
+      const unknown = theatreCell.value.filter((t) => unknownTheatreSet.has(t));
+      if (unknown.length > 0) return { ok: false, message: `Included Theatres: unknown theatre ${unknown.join(", ")}` };
+      if (theatreCell.value.length > MAX_INCLUDED_THEATRES) {
+        return { ok: false, message: `Included Theatres: at most ${MAX_INCLUDED_THEATRES} theatres` };
+      }
+      hasMinimum = true;
+      const first = fileTheatres.get(programName) ?? [];
+      if (first.join("|") !== theatreCell.value.join("|")) {
+        programWarnings.push(
+          `Included Theatres "${theatreCell.text.slice(0, 60)}" ignored — an earlier row set ${first.length ? first.join(", ") : "All"}`
+        );
       }
     }
     const hasAnchorCell = anchorRows.has(index);
@@ -562,9 +608,11 @@ export async function POST(request: NextRequest) {
         // Blank / unmapped minimum columns write nothing (see the header).
         const countrySetMinimumCountries = fileMinimum.countrySet.get(name);
         const targetMinimumCountries = fileMinimum.target.get(name);
+        const includedTheatres = fileTheatres.get(name);
         const minimumData = {
           ...(countrySetMinimumCountries !== undefined ? { countrySetMinimumCountries } : {}),
           ...(targetMinimumCountries !== undefined ? { targetMinimumCountries } : {}),
+          ...(includedTheatres !== undefined ? { includedTheatres } : {}),
         };
         await tx.program.upsert({
           where: { name },

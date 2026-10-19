@@ -336,3 +336,43 @@ export function parseProgramMinimums(
   }
   return { ok: true, value };
 }
+
+/** Upper bound on a program's included-theatre list (there are only ever a handful). */
+export const MAX_INCLUDED_THEATRES = 50;
+
+/**
+ * Parse a program's `includedTheatres` from a request body or an import cell
+ * list: an array of theatre names (or null = every theatre). Names are trimmed,
+ * blanks dropped and duplicates removed; anything that is not a list of strings
+ * is refused rather than coerced. Whether each name is a real theatre is checked
+ * separately by `unknownTheatres`, which needs the database.
+ */
+export function parseIncludedTheatres(
+  raw: unknown
+): { ok: true; value: string[] } | { ok: false; error: string } {
+  if (raw === null) return { ok: true, value: [] };
+  if (!Array.isArray(raw) || raw.some((t) => typeof t !== "string")) {
+    return { ok: false, error: "Theatres included must be a list of theatre names" };
+  }
+  const value = [...new Set((raw as string[]).map((t) => t.trim()).filter((t) => t.length > 0))];
+  if (value.length > MAX_INCLUDED_THEATRES) {
+    return { ok: false, error: `Theatres included: at most ${MAX_INCLUDED_THEATRES} theatres` };
+  }
+  return { ok: true, value };
+}
+
+/**
+ * The names in `theatres` that no Region Data row carries as its theatre.
+ * Region Data is global reference data, so naming them back in an error
+ * discloses nothing about any tenant.
+ */
+export async function unknownTheatres(theatres: string[]): Promise<string[]> {
+  if (theatres.length === 0) return [];
+  const rows = await prisma.regionData.findMany({
+    where: { theatre: { in: theatres } },
+    select: { theatre: true },
+    distinct: ["theatre"],
+  });
+  const known = new Set(rows.map((r) => r.theatre));
+  return theatres.filter((t) => !known.has(t));
+}

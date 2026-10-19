@@ -143,6 +143,8 @@ export interface ProgramSummaryRow {
   countrySetMinimumCountries: number | null;
   /** By Theatre view: the minimum number of target countries, for a partner with no setting of its own. */
   targetMinimumCountries: number | null;
+  /** The theatres the program operates in; empty = every theatre. */
+  includedTheatres?: string[];
   /** Program-wide gates: rows with neither a specialisation nor a tier (tiered programs only). */
   programWideCount: number;
 }
