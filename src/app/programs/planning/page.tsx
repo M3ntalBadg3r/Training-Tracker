@@ -97,7 +97,7 @@ interface PlanRequirement {
   lapsedPool: number;
   legacyPool: number;
   netNew: number;
-  /** Other specialisations needing the same cert — the totals count it once. */
+  /** Other specialisations accepting a certification this one accepts — the totals count it once. */
   sharedWith: string[];
   expiringSoon: number;
 }
@@ -675,9 +675,9 @@ function sharedNoteSegments(cost: number): Segment[] {
     { text: "shared", accent: true },
     {
       text:
-        " is the same certification another specialisation needs. Certifying those" +
-        " people closes both, so the figures at the top of this program count them" +
-        " once and can be lower than these blocks added together.",
+        " accepts a certification another block also accepts. Certifying those" +
+        " people in it closes both, so the figures at the top of this program count" +
+        " them once and can be lower than these blocks added together.",
     },
   ];
 }
@@ -2195,14 +2195,28 @@ function StepIcon({ state }: { state: RiskState }) {
 /**
  * What a checklist step costs, in words. A chosen specialisation reads its
  * marginal cost — what it adds on top of the other chosen ones — so the steps
- * add up to the "people to certify" figure beside them.
+ * add up to the "people to certify" figure beside them. A step that still has
+ * a gap but adds nobody is covered by people another step already counts:
+ * they can take a certification both accept.
  */
 function stepCostText(spec: PlanSpecialisation, windowMonths: number): string {
   const state = specRiskState(spec);
   if (state === "compliant") return "Already met";
   if (state === "atRisk") return `Met now · at risk in ${windowMonths}mo`;
   const n = spec.marginalCost ?? spec.cost;
-  return n > 0 ? `${n} to certify` : "Nobody left to certify";
+  if (n > 0) return `${n} to certify`;
+  return spec.cost > 0 ? "Covered by other steps" : "Nobody left to certify";
+}
+
+/** The hover text for a step `stepCostText` reads as covered, else undefined. */
+function stepCostTitle(spec: PlanSpecialisation): string | undefined {
+  const state = specRiskState(spec);
+  if (state === "compliant" || state === "atRisk") return undefined;
+  if ((spec.marginalCost ?? spec.cost) > 0 || spec.cost === 0) return undefined;
+  return (
+    `On its own this needs ${spec.cost} to certify, but the people counted for the other` +
+    " steps can take a certification this one also accepts, so it adds nobody."
+  );
 }
 
 /**
@@ -2332,7 +2346,9 @@ function TargetCard({
                     </span>
                     <StepIcon state={state} />
                     <span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-900">{s.name}</span>
-                    <span className={`shrink-0 text-sm ${RISK_TEXT[state]}`}>{stepCostText(s, windowMonths)}</span>
+                    <span className={`shrink-0 text-sm ${RISK_TEXT[state]}`} title={stepCostTitle(s)}>
+                      {stepCostText(s, windowMonths)}
+                    </span>
                     <ChevronRight size={16} className="shrink-0 text-gray-400" />
                   </button>
                 </li>
