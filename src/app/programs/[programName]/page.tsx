@@ -84,6 +84,8 @@ interface ProgramMeta {
   hasTheatreCountRows?: boolean;
   /** The program's included theatres, or null/absent when it counts every theatre. */
   includedTheatres?: string[] | null;
+  /** The program's own description, or null/absent when it has none. */
+  description?: string | null;
   isTiered?: boolean;
   deploymentMode?: string;
   /**
@@ -1234,6 +1236,14 @@ function ProgramDetailPageInner() {
         back to "All companies" would otherwise leave that company's report on
         screen underneath a card saying no company is selected.
       */}
+      {/* The program's own description, like an offering's. Registry text, not
+          company data, so it may stay on screen whatever the header says. */}
+      {meta?.description && (
+        <div className="mb-4 rounded-lg border border-gray-200 bg-white p-4">
+          <p className="whitespace-pre-line text-sm text-gray-700">{meta.description}</p>
+        </div>
+      )}
+
       {companyRequired && <CompanyRequired what="dashboard" />}
 
       {!companyRequired && !noOfferedLevels && horizonMonths > 0 && meta && meta.levels.length > 0 && (

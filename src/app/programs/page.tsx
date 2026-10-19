@@ -12,6 +12,8 @@ interface ProgramInfo {
   levels: string[];
   hasMinimumPerTheatre: boolean;
   isTiered?: boolean;
+  /** The program's own description, or null when it has none. */
+  description?: string | null;
   /** Has TargetCountries rows: its By Theatre view also counts each partner's target countries. */
   hasTargetCountries?: boolean;
 }
@@ -80,6 +82,7 @@ export default function ProgramsPage() {
                 <ShieldCheck size={20} className="text-blue-600 shrink-0" />
                 <div>
                   <h3 className="font-semibold">{p.name}</h3>
+                  {p.description && <p className="mt-1 text-sm text-gray-600 line-clamp-2">{p.description}</p>}
                   <p className="text-sm text-gray-500">{describe(p)}</p>
                 </div>
               </div>

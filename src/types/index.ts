@@ -145,6 +145,8 @@ export interface ProgramSummaryRow {
   targetMinimumCountries: number | null;
   /** The theatres the program operates in; empty = every theatre. */
   includedTheatres?: string[];
+  /** Optional free-text description; null/absent = none. */
+  description?: string | null;
   /** Program-wide gates: rows with neither a specialisation nor a tier (tiered programs only). */
   programWideCount: number;
 }

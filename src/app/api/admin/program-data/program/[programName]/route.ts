@@ -4,7 +4,12 @@ import { requireSuperAdmin, handleAuthError } from "@/lib/auth";
 import { safeDecodeParam } from "@/lib/utils";
 import { invalidateReportCache } from "@/lib/report-cache";
 import { readJsonBody } from "@/lib/request-body";
-import { parseIncludedTheatres, parseProgramMinimums, unknownTheatres } from "@/lib/program-data-write";
+import {
+  parseIncludedTheatres,
+  parseProgramDescription,
+  parseProgramMinimums,
+  unknownTheatres,
+} from "@/lib/program-data-write";
 
 /**
  * PATCH /api/admin/program-data/program/[programName]
@@ -23,6 +28,8 @@ import { parseIncludedTheatres, parseProgramMinimums, unknownTheatres } from "@/
  *  - includedTheatres: the theatres the program operates in, as a list of
  *    Region Data theatre names; [] or null = every theatre. An absent key
  *    leaves it alone; an unknown theatre is a 400 naming it.
+ *  - description: free text (≤ 2000 characters); null or "" clears it, an
+ *    absent key leaves it alone.
  * Any subset may be provided; a settings-only PATCH omits newName.
  */
 export async function PATCH(
@@ -71,6 +78,13 @@ export async function PATCH(
     includedTheatres = theatres.value;
   }
 
+  let description: string | null | undefined;
+  if (Object.prototype.hasOwnProperty.call(body, "description")) {
+    const parsedDescription = parseProgramDescription(body.description);
+    if (!parsedDescription.ok) return NextResponse.json({ error: parsedDescription.error }, { status: 400 });
+    description = parsedDescription.value;
+  }
+
   // Existence check: the program must exist either in the registry or as rows.
   const [existingProgram, existingRows] = await Promise.all([
     prisma.program.findUnique({ where: { name: oldName } }),
@@ -114,7 +128,9 @@ export async function PATCH(
       countrySetMinimumCountries?: number | null;
       targetMinimumCountries?: number | null;
       includedTheatres?: string[];
+      description?: string | null;
     } = {};
+    if (description !== undefined) settings.description = description;
     if (includedTheatres !== undefined) settings.includedTheatres = includedTheatres;
     if (hasIsTiered) settings.isTiered = body.isTiered as boolean;
     if (hasDeploymentMode) settings.deploymentMode = deploymentMode;
@@ -149,7 +165,12 @@ export async function PATCH(
 
   const after = await prisma.program.findUnique({
     where: { name: finalName },
-    select: { countrySetMinimumCountries: true, targetMinimumCountries: true, includedTheatres: true },
+    select: {
+      countrySetMinimumCountries: true,
+      targetMinimumCountries: true,
+      includedTheatres: true,
+      description: true,
+    },
   });
   return NextResponse.json({
     success: true,
@@ -157,6 +178,7 @@ export async function PATCH(
     countrySetMinimumCountries: after?.countrySetMinimumCountries ?? null,
     targetMinimumCountries: after?.targetMinimumCountries ?? null,
     includedTheatres: after?.includedTheatres ?? [],
+    description: after?.description ?? null,
   });
 }
 

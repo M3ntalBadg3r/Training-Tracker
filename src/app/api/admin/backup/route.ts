@@ -2447,6 +2447,7 @@ function archiveProgramMinimumFields(p: Record<string, unknown>): {
   countrySetMinimumCountries: number | null;
   targetMinimumCountries: number | null;
   includedTheatres: string[];
+  description: string | null;
 } {
   return {
     countrySetMinimumCountries: positivePgInt(p.countrySetMinimumCountries),
@@ -2461,6 +2462,9 @@ function archiveProgramMinimumFields(p: Record<string, unknown>): {
     includedTheatres: Array.isArray(p.includedTheatres)
       ? [...new Set(p.includedTheatres.filter((t): t is string => typeof t === "string" && t.trim() !== "").map((t) => t.trim()))]
       : [],
+    // The program's description, for the same reason; an older archive has
+    // none. Non-text or blank values restore as no description.
+    description: typeof p.description === "string" && p.description.trim() !== "" ? p.description : null,
   };
 }
 

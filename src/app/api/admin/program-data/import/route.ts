@@ -16,6 +16,7 @@ import {
   MAX_MINIMUM_COUNTRIES,
   PROGRAM_WIDE_NOT_TIERED_ERROR,
   parseMinimumCountries,
+  parseProgramDescription,
   parseRequirementLabel,
   unknownTheatres,
 } from "@/lib/program-data-write";
@@ -36,6 +37,11 @@ import {
  * program operates in (separated by ; | or commas). It follows the same rules,
  * except that the word "All" clears it (every theatre), and every theatre named
  * must exist in Region Data.
+ *
+ * A fourth, `Program Description`, carries the program's description. It too
+ * writes nothing when blank or unmapped (so it is never cleared by import —
+ * that is done in the editor) and the first non-blank value wins; a value over
+ * the length cap is a row error.
  *
  * Files written while "anchored programs" existed are still accepted:
  *  - `Default Minimum Countries` is read as Target Minimum Countries (it was the
@@ -74,6 +80,8 @@ interface RawRow {
   targetMinimumCountries?: string | number | null;
   /** Program-level: the theatres the program operates in ("All" = every theatre). */
   includedTheatres?: string | null;
+  /** Program-level: the program's description ("Program Description" column). */
+  description?: string | null;
   // Read for compatibility with files from before the target-countries level.
   anchorTheatre?: string | null;
   defaultMinimumCountries?: string | number | null;
@@ -281,8 +289,26 @@ export async function POST(request: NextRequest) {
     const value = [...new Set(text.split(/[;|,\n]/).map((t) => t.trim()).filter(Boolean))].sort();
     return { kind: "ok", value, text };
   };
+  // Program Description: blank or unmapped writes nothing; the first non-blank
+  // value per program wins.
+  type DescriptionCell = { kind: "blank" } | { kind: "ok"; value: string } | { kind: "bad"; message: string };
+  const descriptionCells: DescriptionCell[] = [];
+  const fileDescriptions = new Map<string, string>();
+  const parseDescriptionCell = (raw: unknown): DescriptionCell => {
+    const text = cellText(raw);
+    if (!text || isNullMarker(text)) return { kind: "blank" };
+    const parsedDescription = parseProgramDescription(text);
+    if (!parsedDescription.ok) return { kind: "bad", message: `Program ${parsedDescription.error}` };
+    return parsedDescription.value === null ? { kind: "blank" } : { kind: "ok", value: parsedDescription.value };
+  };
   rows.forEach((raw, index) => {
     const program = raw?.programName?.trim() ?? "";
+
+    const descriptionCell = parseDescriptionCell(raw?.description);
+    descriptionCells.push(descriptionCell);
+    if (program && descriptionCell.kind === "ok" && !fileDescriptions.has(program)) {
+      fileDescriptions.set(program, descriptionCell.value);
+    }
 
     const theatreCell = parseTheatreCell(raw?.includedTheatres);
     theatreCells.push(theatreCell);
@@ -373,6 +399,14 @@ export async function POST(request: NextRequest) {
         programWarnings.push(
           `Included Theatres "${theatreCell.text.slice(0, 60)}" ignored — an earlier row set ${first.length ? first.join(", ") : "All"}`
         );
+      }
+    }
+    const descriptionCell = descriptionCells[index];
+    if (descriptionCell.kind === "bad") return { ok: false, message: descriptionCell.message };
+    if (descriptionCell.kind === "ok") {
+      hasMinimum = true;
+      if (descriptionCell.value !== fileDescriptions.get(programName)) {
+        programWarnings.push("Program Description ignored — an earlier row set a different description");
       }
     }
     const hasAnchorCell = anchorRows.has(index);
@@ -609,7 +643,9 @@ export async function POST(request: NextRequest) {
         const countrySetMinimumCountries = fileMinimum.countrySet.get(name);
         const targetMinimumCountries = fileMinimum.target.get(name);
         const includedTheatres = fileTheatres.get(name);
+        const description = fileDescriptions.get(name);
         const minimumData = {
+          ...(description !== undefined ? { description } : {}),
           ...(countrySetMinimumCountries !== undefined ? { countrySetMinimumCountries } : {}),
           ...(targetMinimumCountries !== undefined ? { targetMinimumCountries } : {}),
           ...(includedTheatres !== undefined ? { includedTheatres } : {}),
