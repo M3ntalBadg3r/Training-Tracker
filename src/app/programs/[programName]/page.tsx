@@ -773,12 +773,16 @@ function ProgramDetailPageInner() {
   const horizonSuffix = horizonMonths > 0 ? `-plus${horizonMonths}mo` : "";
 
   // Report presentation for the selected scope.
-  const REPORT_META: Record<ScopeLevel, { label: string; icon: ReactNode; unit: "people" | "theatres" }> = {
+  const REPORT_META: Record<ScopeLevel, { label: string; icon: ReactNode; unit: "people" }> = {
     country: { label: "Country Report", icon: <MapPin size={20} className="text-blue-600" />, unit: "people" },
     region: { label: "Region Report", icon: <Map size={20} className="text-teal-600" />, unit: "people" },
     countrySet: { label: "Country Set Report", icon: <Boxes size={20} className="text-cyan-600" />, unit: "people" },
     theatre: { label: "Theatre Report", icon: <Building2 size={20} className="text-purple-600" />, unit: "people" },
-    global: { label: "Global Report", icon: <Globe size={20} className="text-green-600" />, unit: "theatres" },
+    // A Global row naming a training is a worldwide head count, so people; a
+    // row naming none ("N compliant theatres") switches the page to the card
+    // layout, and `requirementUnit` labels such a row in theatres wherever it
+    // is drawn.
+    global: { label: "Global Report", icon: <Globe size={20} className="text-green-600" />, unit: "people" },
   };
   const report = REPORT_META[scopeLevel];
   // A blank Country Set is the partner's configured set: titled with the name
@@ -811,7 +815,6 @@ function ProgramDetailPageInner() {
     // The Global card layout counts holders worldwide and gates on a per-theatre
     // minimum; every other layout counts people inside the selected scope.
     const globalCards = globalCardsView;
-    const unitLabel = globalCards ? "people" : report.unit;
 
     // Weighted so the training name — the only column whose content is prose —
     // gets the room it needs, and the Status column stays wide enough to hold a
@@ -1186,7 +1189,12 @@ function ProgramDetailPageInner() {
         (scopeLevel === "global" || scopeLevel === "theatre")
           ? [{ label: "Theatres counted", value: meta.includedTheatres.join(", ") }]
           : []),
-        { label: "Counting", value: unitLabel === "theatres" ? "compliant theatres" : "people" },
+        {
+          label: "Counting",
+          // A Global view with "N compliant theatres" rows counts both.
+          value:
+            scopeLevel === "global" && meta?.hasTheatreCountRows ? "people, and compliant theatres" : "people",
+        },
         {
           label: "Compliance as of",
           value: horizonMonths > 0 ? `+${horizonMonths} months` : "Now",

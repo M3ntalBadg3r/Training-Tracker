@@ -3507,7 +3507,7 @@ const helpSections: Record<string, HelpSection> = {
         <h3>Global Report</h3>
         <p>
           Shown when the <strong>View</strong> level is Global (available when the
-          program has global-level requirements). Two presentations are supported
+          program has global-level requirements). Three presentations are supported
           automatically:
         </p>
         <ul>
@@ -3524,6 +3524,11 @@ const helpSections: Record<string, HelpSection> = {
             a card with a global attained/required total and an expandable
             per-theatre breakdown. The requirement is only met when the global
             total is reached <em>and</em> every theatre meets its minimum.
+          </li>
+          <li>
+            <strong>Global head count</strong>{" "}— when every global row names a
+            training and none has a per-theatre minimum, the report is a plain table
+            whose figures are people: distinct holders worldwide.
           </li>
         </ul>
 
