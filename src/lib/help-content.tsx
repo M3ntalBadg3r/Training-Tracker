@@ -3148,13 +3148,17 @@ const helpSections: Record<string, HelpSection> = {
           single exam closes the same certification in several places appears once. Two
           at-a-glance columns show <strong>which specialisation(s)</strong> that
           person would help fulfil and the <strong>relevant training they already
-          hold</strong>{" "}(the ILT/OLX behind an easy win, or the legacy certification behind a
-          legacy upgrade) — so it&apos;s obvious why they&apos;re a cheap candidate.
-          Expanding a row spells each gap out in <strong>plain language</strong>{" "}—
-          e.g. &ldquo;They have taken <em>Training A</em>. Passing the <em>Cert
-          A</em> certification exam will contribute to the <em>Specialisation Y</em>{" "}
-          specialisation.&rdquo; — worded to match their situation (training already
-          taken, a lapsed renewal, or a legacy upgrade).
+          hold</strong>{" "}(the ILT/OLX behind an easy win, the legacy certification behind a
+          legacy upgrade, or the certification they let expire) — so it&apos;s obvious
+          why they&apos;re a cheap candidate. A requirement every tier needs shows as{" "}
+          <strong>Required at every level</strong>. Expanding a row spells each gap out
+          in <strong>plain language</strong>{" "}— e.g. &ldquo;They have taken{" "}
+          <em>Training A</em>, so they only need to pass the exam. That counts toward{" "}
+          <em>Cert A</em>{" "}(Specialisation Y).&rdquo; For a lapsed renewal it names the
+          certification they actually held and the date it expired. Beneath that,{" "}
+          <strong>The same certification also counts toward</strong>{" "}lists every
+          other requirement it would feed, including ones that are already met (which
+          is why those are not counted as gaps closed).
         </p>
         <p>
           The People tab&apos;s <strong>All eligible</strong>{" "}toggle lists the{" "}

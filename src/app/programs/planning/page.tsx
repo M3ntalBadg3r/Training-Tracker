@@ -164,6 +164,21 @@ interface PlanCandidateClose {
   /** Every qualifying training/legacy cert held at this tier, `path` first.
    *  Absent on an older cached payload, which falls back to `path`. */
   paths?: string[];
+  /** The requirement's own name and accepted certifications (optional on older payloads). */
+  label?: string | null;
+  certTitles?: string[];
+  /** Lapsed closes: what the person held and when it expired, latest first. */
+  expired?: { title: string; expiredOn: string }[];
+}
+interface PlanCandidateAlsoCounts {
+  program: string;
+  specialisation: string | null;
+  tierName: string | null;
+  cert: string;
+  certTitles?: string[];
+  label: string | null;
+  scopeLabel: string;
+  met: boolean;
 }
 interface PlanCandidate {
   email: string;
@@ -173,6 +188,8 @@ interface PlanCandidate {
   topTier: CandidateTier;
   closesCount: number;
   closes: PlanCandidateClose[];
+  /** Other requirements their certification would also count toward (optional on older payloads). */
+  alsoCounts?: PlanCandidateAlsoCounts[];
 }
 interface PlanRiskImpact {
   program: string;
@@ -870,16 +887,49 @@ function showsProjection(attained: number, projected: number | undefined): boole
 // Shared by the per-section ExportMenus and the page-level "Export report"
 // (ReportExportMenu) so the two surfaces can never drift.
 
-/** Distinct specialisations a candidate would help fulfil, across all their gaps. */
+/** The program-wide block's name — restated from the engine's `PROGRAM_WIDE_BLOCK_NAME`, which imports Prisma. */
+const PROGRAM_WIDE_LABEL = "Required at every level";
+
+/**
+ * What a close (or an also-counts entry) is for, as a short phrase: the
+ * specialisation, the tier, or — a requirement with neither — the program-wide
+ * block every tier needs.
+ */
+function closeGoalName(cl: { specialisation: string | null; tierName: string | null }): string {
+  if (cl.specialisation) return cl.specialisation;
+  if (cl.tierName) return `${cl.tierName} tier`;
+  return PROGRAM_WIDE_LABEL;
+}
+
+/** The requirement a close counts toward, short: its name, else its first certification. */
+function closeRequirementName(cl: { cert: string; certTitles?: string[]; label?: string | null }): string {
+  return cl.label || shortCertText(cl);
+}
+
+/** Distinct specialisations (or program-wide / tier blocks) a candidate would help fulfil. */
 function candidateSpecialisations(c: PlanCandidate): string {
-  return [...new Set(c.closes.map((cl) => cl.specialisation).filter((s): s is string => !!s))].join(", ");
+  return [...new Set(c.closes.map(closeGoalName))].join(", ");
 }
 /**
  * The qualifying training a candidate already holds that gives them a head-start —
- * the ILT/OLX behind an easy win (or the legacy cert behind a legacy upgrade).
+ * the ILT/OLX behind an easy win, the legacy cert behind a legacy upgrade, or the
+ * certification they let expire (marked so).
  */
 function candidateHelpfulTraining(c: PlanCandidate): string {
-  return [...new Set(c.closes.flatMap(closePaths))].join(", ");
+  return [
+    ...new Set(
+      c.closes.flatMap((cl) =>
+        cl.tier === "lapsed" ? closePaths(cl).map((t) => `${t} (expired)`) : closePaths(cl),
+      ),
+    ),
+  ].join(", ");
+}
+
+/** "Also counts toward" entries as one line each, open gaps first (for exports). */
+function alsoCountsLines(c: PlanCandidate): string[] {
+  return (c.alsoCounts ?? []).map(
+    (a) => `${closeRequirementName(a)} (${closeGoalName(a)}, ${a.scopeLabel})${a.met ? " — already met" : ""}`,
+  );
 }
 
 /** Every route a close names — all of them, not just the first the engine met. */
@@ -897,41 +947,46 @@ function joinAnd(items: string[]): string {
 // would close, worded per tier. `closeSegments` returns the sentence as ordered
 // pieces so both the on-screen `CloseSentence` (which bolds names) and the export
 // (`closeSentenceText`, plain) render the exact same wording and can't drift.
-function closeSegments(cl: PlanCandidateClose): Segment[] {
-  const goal: Segment[] = cl.specialisation
-    ? [{ text: "the " }, { text: cl.specialisation, bold: true }, { text: " specialisation" }]
-    : cl.tierName
-      ? [{ text: "the " }, { text: cl.tierName, bold: true }, { text: " tier" }]
-      : [{ text: "this requirement" }];
-  const cert = { text: cl.cert, bold: true };
+function closeSegments(
+  cl: PlanCandidateClose,
+  formatDate: (iso: string) => string = (iso) => iso.slice(0, 10),
+): Segment[] {
+  const req = { text: closeRequirementName(cl), bold: true };
+  const goal: Segment = { text: ` (${closeGoalName(cl)}).` };
   switch (cl.tier) {
     case "renewal":
       return [
-        { text: "They hold " }, cert,
-        { text: ", but it expires within the renewal window. Renewing it keeps " }, ...goal,
-        { text: " compliant." },
+        { text: "Their certification expires within the renewal window. Renewing it keeps " }, req,
+        { text: " met" }, goal,
       ];
     case "easy-win":
       return [
         { text: "They have taken " }, { text: joinAnd(closePaths(cl)) || "the required training", bold: true },
-        { text: ". Passing the " }, cert, { text: " certification exam will contribute to " },
-        ...goal, { text: "." },
+        { text: ", so they only need to pass the exam. That counts toward " }, req, goal,
       ];
-    case "lapsed":
-      return [
-        { text: "They previously held " }, cert,
-        { text: ", but it has expired. Renewing it will contribute to " }, ...goal, { text: "." },
-      ];
+    case "lapsed": {
+      const held = cl.expired ?? [];
+      if (held.length === 0) {
+        return [{ text: "A certification they held has expired. Renewing it counts toward " }, req, goal];
+      }
+      const shown = held.slice(0, 2);
+      const segs: Segment[] = [{ text: "Their " }];
+      shown.forEach((h, i) => {
+        if (i > 0) segs.push({ text: ", and " });
+        segs.push({ text: h.title, bold: true }, { text: ` expired on ${formatDate(h.expiredOn)}` });
+      });
+      if (held.length > 2) segs.push({ text: ` (+ ${held.length - 2} more)` });
+      segs.push({ text: `. Renewing ${held.length > 1 ? "one" : "it"} counts toward ` }, req, goal);
+      return segs;
+    }
     case "legacy":
       return [
         { text: closePaths(cl).length > 1 ? "They hold the legacy certifications " : "They hold the legacy certification " },
         { text: joinAnd(closePaths(cl)) || "a superseded certification", bold: true },
-        { text: ". Upgrading to " }, cert, { text: " will contribute to " }, ...goal, { text: "." },
+        { text: ". Upgrading counts toward " }, req, goal,
       ];
     default:
-      return [
-        { text: "Passing the " }, cert, { text: " certification exam will contribute to " }, ...goal, { text: "." },
-      ];
+      return [{ text: "Certifying them counts toward " }, req, goal];
   }
 }
 
@@ -960,6 +1015,7 @@ function buildCandidateSection(candidates: PlanCandidate[], title = "Who to cert
       { key: "Relevant training", header: "Relevant training held" },
       { key: "Gaps closed", header: "Gaps closed" },
       { key: "Detail", header: "Detail" },
+      { key: "Also counts toward", header: "Also counts toward" },
     ],
     rows: candidates.map((c) => ({
       Name: c.fullName,
@@ -971,6 +1027,7 @@ function buildCandidateSection(candidates: PlanCandidate[], title = "Who to cert
       "Relevant training": candidateHelpfulTraining(c),
       "Gaps closed": c.closesCount,
       Detail: c.closes.map(closeDetailLine).join("\n"),
+      "Also counts toward": alsoCountsLines(c).join("\n"),
     })),
   };
 }
@@ -1456,7 +1513,10 @@ function buildCandidatePdfSection(
         },
         // The page labels each explanation with the move it describes; without it
         // a list of sentences reads as one undifferentiated block.
-        detail: c.closes.map((cl) => `${TIER_LABEL[cl.tier]}: ${closeDetailLine(cl)}`),
+        detail: [
+          ...c.closes.map((cl) => `${TIER_LABEL[cl.tier]}: ${closeDetailLine(cl)}`),
+          ...alsoCountsLines(c).map((l) => `Also counts toward: ${l}`),
+        ],
       }),
     ),
     emptyText: text.emptyText,
@@ -2810,10 +2870,11 @@ function ReqRow({
 // or a legacy upgrade). Renders the shared `closeSegments` wording (bolding names)
 // so it always matches the export's `closeSentenceText`.
 function CloseSentence({ cl }: { cl: PlanCandidateClose }) {
+  const { formatDate } = useDateFormat();
   return (
     <div className="flex flex-col">
       <span>
-        {closeSegments(cl).map((s, i) =>
+        {closeSegments(cl, formatDate).map((s, i) =>
           s.bold ? <strong key={i}>{s.text}</strong> : <Fragment key={i}>{s.text}</Fragment>,
         )}
       </span>
@@ -2941,6 +3002,26 @@ function CandidateTable({
                             </li>
                           ))}
                         </ul>
+                        {(c.alsoCounts?.length ?? 0) > 0 && (
+                          <div className="mt-2 border-t border-gray-200 pt-2 text-xs text-gray-600">
+                            <p className="mb-1 text-gray-500">The same certification also counts toward:</p>
+                            <ul className="space-y-0.5">
+                              {c.alsoCounts!.map((a, i) => (
+                                <li key={i} className="flex flex-wrap items-baseline gap-x-1.5">
+                                  <span className="font-medium text-gray-800">{closeRequirementName(a)}</span>
+                                  <span className="text-gray-400">
+                                    {closeGoalName(a)} · {a.program} · {a.scopeLabel}
+                                  </span>
+                                  {a.met ? (
+                                    <span className="rounded-full bg-gray-100 px-1.5 text-[11px] text-gray-500">already met</span>
+                                  ) : (
+                                    <span className="rounded-full bg-amber-50 px-1.5 text-[11px] text-amber-700">open gap</span>
+                                  )}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   )}
