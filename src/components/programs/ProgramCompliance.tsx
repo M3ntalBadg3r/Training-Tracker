@@ -368,6 +368,17 @@ export function requiredText(
   return `${req.quantityRequired} ${unitLabel}`.trim();
 }
 
+/**
+ * The unit a requirement's Required and Attained cells are counted in. A row
+ * naming no training is a "N compliant theatres" rule and counts theatres; every
+ * other row counts distinct people, whatever the view. Decided per row rather
+ * than per view, because a Global view can hold both kinds: the view-wide unit
+ * once labelled a Global head count "N theatres" when it was N people.
+ */
+export function requirementUnit(req: { trainingTitle: string | null }, unitLabel: string): string {
+  return req.trainingTitle === null ? "theatres" : unitLabel;
+}
+
 /** Whether a view scope ("region", "countrySet", …) spans several countries. */
 export function isMultiCountryScope(level: string): boolean {
   const scope = parseScopeLevel(level);
@@ -722,7 +733,7 @@ function RequirementRowGroup({
           return (
             <td key={spec.name} className="px-4 py-2 text-center border border-gray-200">
               {req ? (
-                <span className="font-semibold">{requiredText(req, level, unitLabel)}</span>
+                <span className="font-semibold">{requiredText(req, level, requirementUnit(req, unitLabel))}</span>
               ) : (
                 <span className="text-gray-300">—</span>
               )}
@@ -779,7 +790,7 @@ function RequirementRowGroup({
               <AttainedValue
                 attained={req.attained}
                 projected={req.projectedAttained}
-                unitLabel={unitLabel}
+                unitLabel={requirementUnit(req, unitLabel)}
                 className={`font-bold ${RISK_TEXT[state]}`}
               />
               {level !== "global" && req.trainingTitle && (

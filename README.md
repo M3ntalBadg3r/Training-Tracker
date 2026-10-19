@@ -1557,12 +1557,13 @@ Above the report a line gives the number of target countries in the theatre, whi
 
 The **By Country Set** view's set picker has the same **Partner's configured set** blank option, which it opens on. Above the report a line gives the number of countries in the set and the partner's minimum; with fewer countries than the minimum a red *Minimum countries in the Country Set not met* notice appears and no tier is reached. A partner with no Country Set configured is pointed at Admin › Partner Specific Program Settings. The tier cards say which minimum is keeping them unreachable.
 
-### Global report — two presentations
+### Global report — three presentations
 
 The Global report auto-adapts based on the program's data:
 
 - **Compliant-theatre count** — when Global rows have no specific training, the report shows how many theatres meet all of a specialisation's theatre-level requirements, against a target number of compliant theatres. Click the chevron for a per-theatre breakdown: one row per included theatre, with its count against each Theatre-level requirement and whether it qualifies.
 - **Global count with per-theatre minimums** — when a requirement has a **Minimum per Theatre** value, each specialisation appears as a card with a **Compliant** / **Not Compliant** badge and a global attained/required total. Click the chevron to expand a per-theatre breakdown. The requirement is only **Met** when the global total is reached **and** every theatre meets its minimum.
+- **Global head count** — when every Global row names a training and none has a per-theatre minimum, the report is the ordinary table: each requirement's attained and required figures are **people** (distinct holders worldwide), labelled as such.
 
 All sections support export to CSV, Excel, and PDF. CSV and Excel are the flat data table; **the PDF mirrors the dashboard** — a section per specialisation with its Met / Not-met badge and the page's colour shading, deployment requirements as their own labelled block, and, for a tiered program, a **Tier Status** section carrying the tier ladder. Alternative trainings (OR logic) configured on a requirement count any qualifying training, deduplicated by student.
 
