@@ -337,6 +337,39 @@ export interface PlanCandidateClose {
    * whichever the pool met first, so "Relevant training held" named one.
    */
   paths: string[];
+  /** See `PlanRequirement.label` — the requirement this close counts toward. */
+  label: string | null;
+  /** See `PlanRequirement.certTitles`. */
+  certTitles: string[];
+  /**
+   * Lapsed closes only: the qualifying certifications the person held and let
+   * expire, latest-expired first, each with its expiry date (ISO). `cert` is the
+   * requirement's whole accepted list; this is what they actually held.
+   */
+  expired?: PlanExpiredHolding[];
+}
+
+export interface PlanExpiredHolding {
+  title: string;
+  expiredOn: string;
+}
+
+/**
+ * A requirement a committed candidate's certification would ALSO count toward
+ * beyond the gaps it is credited with (`closes`): it accepts a certification
+ * the candidate is committed to, over a population they are in. `met` ones are
+ * already at target, which is why the plan does not credit the person there —
+ * listed so the reader can see everything one certification feeds.
+ */
+export interface PlanCandidateAlsoCounts {
+  program: string;
+  specialisation: string | null;
+  tierName: string | null;
+  cert: string;
+  certTitles: string[];
+  label: string | null;
+  scopeLabel: string;
+  met: boolean;
 }
 
 export interface PlanCandidate {
@@ -347,6 +380,8 @@ export interface PlanCandidate {
   topTier: CandidateTier;
   closesCount: number;
   closes: PlanCandidateClose[];
+  /** Committed candidates only (empty on `eligible`) — see `PlanCandidateAlsoCounts`. */
+  alsoCounts: PlanCandidateAlsoCounts[];
 }
 
 /** One requirement that falls below target as training expires in the window. */
@@ -476,6 +511,8 @@ interface PoolMember {
   path: string | null;
   /** Every path held at `tier`, `path` first (see `PlanCandidateClose.paths`). */
   paths: string[];
+  /** Lapsed members only: the qualifying certifications they held, latest-expired first. */
+  held?: LapsedHolding[];
 }
 
 /** A requirement instance with its resolved gap + candidate pools. */
@@ -515,6 +552,12 @@ interface ReqInstance {
   scopeLabel: string;
   /** Theatre plans of a targets program only — see `PlanRequirement.population`. */
   population?: PopulationKind;
+  /**
+   * The geography this instance counts holders over (one country for a
+   * per-country instance). Read only by `alsoCountsFor`, to tell whether a
+   * named person is inside it; the company scope here is the plan's own.
+   */
+  populationScope: ComplianceScope;
   /** A tiered program's program-wide requirement (neither specialisation nor tier). */
   isGate: boolean;
   /** Optional display name (ProgramData.label). */
@@ -660,11 +703,44 @@ function studentWhereFromScope(scope: ComplianceScope): Record<string, unknown> 
   return Object.keys(w).length > 0 ? w : null;
 }
 
-/** Distinct emails that have *ever* held any of the given titles within scope
- *  (regardless of expiry) — the basis of the "lapsed" pool. */
-async function holdersEver(titles: string[], scope: ComplianceScope): Promise<Set<string>> {
-  if (titles.length === 0) return new Set();
-  if (Array.isArray(scope.companyIds) && scope.companyIds.length === 0) return new Set();
+/**
+ * One qualifying certification a person has held, for the lapsed pool: its
+ * display title, its (fullTitle, trainingType) pair key and the latest expiry
+ * of any completion of it.
+ */
+interface LapsedHolding {
+  title: string;
+  pair: string;
+  expiredOn: Date;
+}
+
+/** Fold completion rows into email → holdings, one per certification, latest expiry first. */
+function foldHoldings(
+  rows: { email: string; expiryDate: Date; trainingData: { fullTitle: string; trainingType: string } }[],
+): Map<string, LapsedHolding[]> {
+  const byEmail = new Map<string, Map<string, LapsedHolding>>();
+  for (const r of rows) {
+    const pair = `${r.trainingData.fullTitle}::${r.trainingData.trainingType}`;
+    if (!byEmail.has(r.email)) byEmail.set(r.email, new Map());
+    const held = byEmail.get(r.email)!;
+    const prev = held.get(pair);
+    if (!prev || r.expiryDate > prev.expiredOn) {
+      held.set(pair, { title: r.trainingData.fullTitle, pair, expiredOn: r.expiryDate });
+    }
+  }
+  const out = new Map<string, LapsedHolding[]>();
+  for (const [email, held] of byEmail) {
+    out.set(email, [...held.values()].sort((a, b) => b.expiredOn.getTime() - a.expiredOn.getTime()));
+  }
+  return out;
+}
+
+/** Everyone who has *ever* held any of the given titles within scope
+ *  (regardless of expiry) — the basis of the "lapsed" pool — with what they
+ *  held. Current holders are in it too; `assemblePool` drops them. */
+async function holdersEver(titles: string[], scope: ComplianceScope): Promise<Map<string, LapsedHolding[]>> {
+  if (titles.length === 0) return new Map();
+  if (Array.isArray(scope.companyIds) && scope.companyIds.length === 0) return new Map();
   const { fetchTitles } = await resolveSiblingTitles(titles);
   const studentWhere = studentWhereFromScope(scope);
   const rows = await prisma.trainingTaken.findMany({
@@ -672,10 +748,9 @@ async function holdersEver(titles: string[], scope: ComplianceScope): Promise<Se
       trainingTitle: { in: fetchTitles },
       ...(studentWhere ? { student: studentWhere } : {}),
     },
-    select: { email: true },
-    distinct: ["email"],
+    select: { email: true, expiryDate: true, trainingData: { select: { fullTitle: true, trainingType: true } } },
   });
-  return new Set(rows.map((r: { email: string }) => r.email));
+  return foldHoldings(rows);
 }
 
 /**
@@ -687,8 +762,8 @@ async function holdersEver(titles: string[], scope: ComplianceScope): Promise<Se
 async function holdersEverByCountry(
   titles: string[],
   scope: ComplianceScope,
-): Promise<Map<string, Set<string>>> {
-  const out = new Map<string, Set<string>>();
+): Promise<Map<string, Map<string, LapsedHolding[]>>> {
+  const out = new Map<string, Map<string, LapsedHolding[]>>();
   if (titles.length === 0) return out;
   if (Array.isArray(scope.companyIds) && scope.companyIds.length === 0) return out;
   const { fetchTitles } = await resolveSiblingTitles(titles);
@@ -698,13 +773,20 @@ async function holdersEverByCountry(
       trainingTitle: { in: fetchTitles },
       ...(studentWhere ? { student: studentWhere } : {}),
     },
-    select: { email: true, student: { select: { country: true } } },
+    select: {
+      email: true,
+      expiryDate: true,
+      trainingData: { select: { fullTitle: true, trainingType: true } },
+      student: { select: { country: true } },
+    },
   });
+  const rowsByCountry = new Map<string, typeof rows>();
   for (const r of rows) {
     const c = r.student.country;
-    if (!out.has(c)) out.set(c, new Set());
-    out.get(c)!.add(r.email);
+    if (!rowsByCountry.has(c)) rowsByCountry.set(c, []);
+    rowsByCountry.get(c)!.push(r);
   }
+  for (const [c, rs] of rowsByCountry) out.set(c, foldHoldings(rs));
   return out;
 }
 
@@ -1099,7 +1181,7 @@ function assemblePool(p: {
   planForWindow: boolean;
   ilt: Map<string, Set<string>> | undefined;
   iltFullFor: Map<string, string>;
-  ever: Set<string> | undefined;
+  ever: Map<string, LapsedHolding[]> | undefined;
   legacy: Map<string, Set<string>> | undefined;
   legacyFullFor: Map<string, string>;
 }): PoolMember[] {
@@ -1118,9 +1200,9 @@ function assemblePool(p: {
     }
   }
   // lapsed: ever-held minus currently-active.
-  for (const email of p.ever ?? []) {
+  for (const [email, held] of p.ever ?? []) {
     if (p.active.has(email)) continue;
-    addPool(seen, { email, tier: "lapsed", path: null });
+    addPool(seen, { email, tier: "lapsed", path: held[0]?.title ?? null, held });
   }
   // legacy: active holders of a legacy cert that upgrades into a qualifying cert.
   for (const [title, set] of p.legacy ?? []) {
@@ -1162,6 +1244,7 @@ function makeInstance(
     areaKey: area.areaKey,
     scopeLabel: population.scopeLabel,
     ...(geo.population ? { population: geo.population } : {}),
+    populationScope: population.country !== null ? { country: population.country } : geo.scope,
     isGate: false,
     certKey: certId.key,
     certPairs: certId.pairs,
@@ -1343,7 +1426,7 @@ async function buildEachCountryInstances(
   // Pools, still one query each over the whole area, and only if some country
   // actually has a gap to fill.
   let iltBy: Map<string, Map<string, Set<string>>> | null = null;
-  let everBy: Map<string, Set<string>> | null = null;
+  let everBy: Map<string, Map<string, LapsedHolding[]>> | null = null;
   let legacyBy: Map<string, Map<string, Set<string>>> | null = null;
   const ilt = pathTitles(row, idx, idx.reverseCert);
   const lg = pathTitles(row, idx, idx.legacyForCert);
@@ -1390,7 +1473,8 @@ async function buildEachCountryInstances(
 function addPool(seen: Map<string, PoolMember>, m: Omit<PoolMember, "paths">): void {
   const existing = seen.get(m.email);
   if (!existing || TIER_RANK[m.tier] < TIER_RANK[existing.tier]) {
-    seen.set(m.email, { ...m, paths: m.path ? [m.path] : [] });
+    const paths = m.held ? m.held.map((h) => h.title) : m.path ? [m.path] : [];
+    seen.set(m.email, { ...m, paths });
   } else if (existing.tier === m.tier && m.path && !existing.paths.includes(m.path)) {
     // Same tier, another route there: keep it, so the person is shown with
     // every qualifying training they hold rather than an arbitrary one.
@@ -1400,6 +1484,25 @@ function addPool(seen: Map<string, PoolMember>, m: Omit<PoolMember, "paths">): v
 
 // ─── Pure greedy allocation ──────────────────────────────────────────────────
 
+/** One pool member's close of one instance — shared by `candidates` and `eligible`. */
+function closeFor(inst: ReqInstance, member: PoolMember): PlanCandidateClose {
+  return {
+    program: inst.program,
+    specialisation: inst.specialisation,
+    tierName: inst.tierName,
+    cert: inst.cert,
+    scopeLabel: inst.scopeLabel,
+    tier: member.tier,
+    path: member.path,
+    paths: member.paths,
+    label: inst.label,
+    certTitles: inst.certTitles,
+    ...(member.held
+      ? { expired: member.held.map((h) => ({ title: h.title, expiredOn: h.expiredOn.toISOString() })) }
+      : {}),
+  };
+}
+
 export interface AllocationResult {
   /** email → the ordered closes it was assigned. */
   closesByEmail: Map<string, PlanCandidateClose[]>;
@@ -1407,6 +1510,10 @@ export interface AllocationResult {
   committedTier: Map<string, Exclude<CandidateTier, "net-new">>;
   /** instanceId → net-new slots still open after allocation. */
   netNewByInstance: Map<string, number>;
+  /** email → the certifications (pair keys) they are committed to, after every narrowing. */
+  committedPairs: Map<string, Set<string>>;
+  /** email → the instance ids they were credited to. */
+  creditedIds: Map<string, Set<string>>;
 }
 
 /**
@@ -1472,18 +1579,12 @@ export function allocateCandidates(instances: ReqInstance[]): AllocationResult {
   // another counterpart — inflating `filled` and duplicating `closes`.
   const credited = new Set<string>(); // `${email}::${instanceId}`
 
+  const creditedIds = new Map<string, Set<string>>();
   const record = (email: string, inst: ReqInstance, member: PoolMember) => {
     if (!closesByEmail.has(email)) closesByEmail.set(email, []);
-    closesByEmail.get(email)!.push({
-      program: inst.program,
-      specialisation: inst.specialisation,
-      tierName: inst.tierName,
-      cert: inst.cert,
-      scopeLabel: inst.scopeLabel,
-      tier: member.tier,
-      path: member.path,
-      paths: member.paths,
-    });
+    closesByEmail.get(email)!.push(closeFor(inst, member));
+    if (!creditedIds.has(email)) creditedIds.set(email, new Set());
+    creditedIds.get(email)!.add(inst.id);
   };
 
   const intersect = (a: Set<string>, b: Set<string>) => new Set([...a].filter((p) => b.has(p)));
@@ -1505,7 +1606,14 @@ export function allocateCandidates(instances: ReqInstance[]): AllocationResult {
 
     for (const cand of cands) {
       if (have >= inst.shortfall) break;
-      let pairs = committedPairs.get(cand.email) ?? own;
+      // A first commitment starts from what this requirement accepts — narrowed,
+      // for someone renewing, to the certifications they actually held, since
+      // renewing is re-sitting one of those.
+      let pairs = committedPairs.get(cand.email);
+      if (!pairs) {
+        const held = cand.held ? intersect(own, new Set(cand.held.map((h) => h.pair))) : null;
+        pairs = held && held.size > 0 ? held : own;
+      }
       if (intersect(pairs, own).size === 0) continue; // spent on an unrelated cert
 
       if (!committedTier.has(cand.email)) committedTier.set(cand.email, cand.tier);
@@ -1536,7 +1644,7 @@ export function allocateCandidates(instances: ReqInstance[]): AllocationResult {
     netNewByInstance.set(inst.id, Math.max(0, inst.shortfall - (filled.get(inst.id) ?? 0)));
   }
 
-  return { closesByEmail, committedTier, netNewByInstance };
+  return { closesByEmail, committedTier, netNewByInstance, committedPairs, creditedIds };
 }
 
 /**
@@ -1573,6 +1681,46 @@ function canShareHolders(a: ReqInstance, b: ReqInstance): boolean {
   if (a.country !== null && b.country !== null && a.country !== b.country) return false;
   const pairs = new Set(a.certPairs);
   return b.certPairs.some((p) => pairs.has(p));
+}
+
+/** Whether a person with this country and theatre is inside an instance's population. */
+function inPopulation(scope: ComplianceScope, person: { country: string; theatre: string }): boolean {
+  if (scope.country !== undefined && person.country !== scope.country) return false;
+  if (scope.countries !== undefined && !scope.countries.includes(person.country)) return false;
+  if (scope.theatre !== undefined && person.theatre !== scope.theatre) return false;
+  return true;
+}
+
+/**
+ * The requirements a committed person's certification would also count toward
+ * beyond the ones they are credited to: any instance (met or not, on the
+ * recommended path or not) that accepts one of the certifications they are
+ * committed to, over a population they are in. One entry per requirement and
+ * scope; met ones last.
+ */
+function alsoCountsFor(
+  pairs: Set<string>,
+  credited: Set<string>,
+  person: { country: string; theatre: string },
+  instances: ReqInstance[],
+): PlanCandidateAlsoCounts[] {
+  const out = new Map<string, PlanCandidateAlsoCounts>();
+  for (const inst of instances) {
+    if (credited.has(inst.id) || out.has(inst.id)) continue;
+    if (!inst.certPairs.some((p) => pairs.has(p))) continue;
+    if (!inPopulation(inst.populationScope, person)) continue;
+    out.set(inst.id, {
+      program: inst.program,
+      specialisation: inst.specialisation,
+      tierName: inst.tierName,
+      cert: inst.cert,
+      certTitles: inst.certTitles,
+      label: inst.label,
+      scopeLabel: inst.scopeLabel,
+      met: inst.shortfallNow === 0,
+    });
+  }
+  return [...out.values()].sort((a, b) => Number(a.met) - Number(b.met));
 }
 
 /**
@@ -2288,14 +2436,23 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
     const topTier = alloc.committedTier.get(email) ?? "easy-win";
     // easy-wins float to the top of each person's close list.
     const sortedCloses = [...closes].sort((a, b) => tierOrder(a.tier) - tierOrder(b.tier));
+    const person = { country: s?.country ?? "", theatre: s?.theatre ?? "" };
     candidates.push({
       email,
       fullName: s?.fullName ?? email,
-      country: s?.country ?? "",
-      theatre: s?.theatre ?? "",
+      country: person.country,
+      theatre: person.theatre,
       topTier,
       closesCount: closes.length,
       closes: sortedCloses,
+      alsoCounts: s
+        ? alsoCountsFor(
+            alloc.committedPairs.get(email) ?? new Set(),
+            alloc.creditedIds.get(email) ?? new Set(),
+            person,
+            allInstances,
+          )
+        : [],
     });
   }
   candidates.sort(
@@ -2310,16 +2467,7 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
   for (const inst of countedInstances) {
     for (const m of inst.pool) {
       if (!eligibleByEmail.has(m.email)) eligibleByEmail.set(m.email, []);
-      eligibleByEmail.get(m.email)!.push({
-        program: inst.program,
-        specialisation: inst.specialisation,
-        tierName: inst.tierName,
-        cert: inst.cert,
-        scopeLabel: inst.scopeLabel,
-        tier: m.tier,
-        path: m.path,
-        paths: m.paths,
-      });
+      eligibleByEmail.get(m.email)!.push(closeFor(inst, m));
     }
   }
   const eligible: PlanCandidate[] = [];
@@ -2334,6 +2482,7 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
       topTier: sortedCloses[0]?.tier ?? "easy-win",
       closesCount: closes.length,
       closes: sortedCloses,
+      alsoCounts: [],
     });
   }
   eligible.sort(
