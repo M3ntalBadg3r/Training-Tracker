@@ -14,6 +14,11 @@ export interface KpiCard {
    * The student record uses it for a legacy-certification count.
    */
   badge?: { text: string; title?: string };
+  /**
+   * Makes the card a button — a shortcut to where its figure is broken down
+   * (Compliance Planning uses it to switch tabs). Absent = a plain card.
+   */
+  onClick?: () => void;
 }
 
 const TONE: Record<NonNullable<KpiCard["tone"]>, { bg: string; icon: string }> = {
@@ -48,10 +53,15 @@ export default function KpiStrip({ cards }: { cards: KpiCard[] }) {
         const Icon = c.icon;
         const tone = TONE[c.tone ?? "blue"];
         const value = typeof c.value === "number" ? c.value.toLocaleString() : c.value;
+        // A clickable card is a <button>; the data attributes ride on either.
+        const Card = c.onClick ? "button" : "div";
         return (
-          <div
+          <Card
             key={c.label}
-            className="bg-white rounded-lg border border-gray-200 p-4 flex items-center gap-3"
+            {...(c.onClick ? { type: "button" as const, onClick: c.onClick } : {})}
+            className={`bg-white rounded-lg border border-gray-200 p-4 flex items-center gap-3 text-left${
+              c.onClick ? " hover:border-blue-300 hover:shadow-sm transition-colors cursor-pointer" : ""
+            }`}
             // Read back by `ChartCaptureProvider` so a PDF export can redraw the
             // strip. `data-kpi-value` carries the *rendered* string, so the PDF
             // cannot disagree with the screen about a formatted value.
@@ -77,7 +87,7 @@ export default function KpiStrip({ cards }: { cards: KpiCard[] }) {
                 </span>
               )}
             </div>
-          </div>
+          </Card>
         );
       })}
     </section>
