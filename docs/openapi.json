@@ -3014,6 +3014,13 @@
                                           "cert": {
                                             "type": "string"
                                           },
+                                          "certTitles": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string"
+                                            },
+                                            "description": "The qualifying certifications' full titles, primary first, de-duplicated — the list cert joins with \" or \"."
+                                          },
                                           "label": {
                                             "type": [
                                               "string",
@@ -3265,6 +3272,13 @@
                               },
                               "cert": {
                                 "type": "string"
+                              },
+                              "certTitles": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "description": "The qualifying certifications' full titles, primary first, de-duplicated — the list cert joins with \" or \"."
                               },
                               "label": {
                                 "type": [

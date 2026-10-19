@@ -286,6 +286,10 @@ const PLAN_REQUIREMENT = obj({
       'Theatre plans of a program with TargetCountries requirements only (absent otherwise): "theatre" for a Theatre-level requirement counted over the theatre, "targetCountries" for a TargetCountries-level one counted over the partner\'s target countries inside it (or one of them, for an eachCountry instance).',
   },
   cert: STR,
+  certTitles: {
+    ...arr(STR),
+    description: 'The qualifying certifications\' full titles, primary first, de-duplicated — the list cert joins with " or ".',
+  },
   label: { ...NULLABLE_STR, description: "Optional display name for the requirement (e.g. \"4 per target country — any sales certification\"). Display only; null when unnamed." },
   required: INT,
   attained: INT,
@@ -377,6 +381,10 @@ const PLAN_RISK_IMPACT = obj({
   specialisation: NULLABLE_STR,
   tierName: NULLABLE_STR,
   cert: STR,
+  certTitles: {
+    ...arr(STR),
+    description: 'The qualifying certifications\' full titles, primary first, de-duplicated — the list cert joins with " or ".',
+  },
   label: { ...NULLABLE_STR, description: "Optional display name for the requirement (e.g. \"4 per target country — any sales certification\"). Display only; null when unnamed." },
   aggregation: AGGREGATION,
   country: { ...NULLABLE_STR, description: 'Set for one country of an "eachCountry" requirement.' },

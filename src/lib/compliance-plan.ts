@@ -168,6 +168,13 @@ export interface PlanRequirement {
    */
   population?: PopulationKind;
   cert: string;
+  /**
+   * The qualifying certifications' full titles, primary first, de-duplicated —
+   * the list `cert` joins with " or ". Carried as a list because a full title
+   * may itself contain " or ", so the page cannot split `cert` back apart.
+   * Display only.
+   */
+  certTitles: string[];
   /** The requirement's optional display name (ProgramData.label); null when unnamed. Display only — `cert` stays the identity. */
   label: string | null;
   required: number;
@@ -345,6 +352,8 @@ export interface PlanRiskImpact {
   specialisation: string | null;
   tierName: string | null;
   cert: string;
+  /** See `PlanRequirement.certTitles`. */
+  certTitles: string[];
   /** See `PlanRequirement.label`. */
   label: string | null;
   /** See `PlanRequirement.aggregation`. */
@@ -375,6 +384,19 @@ export interface PlanRenewalRow {
   country: string;
   theatre: string;
   cert: string;
+  /** See `PlanRequirement.certTitles`. */
+  certTitles: string[];
+  /** The requirement's optional display name (ProgramData.label); null when unnamed. */
+  label: string | null;
+  /**
+   * The certification this person actually holds that lapses inside the window
+   * (its full title), and when it does (ISO date). When they hold several
+   * qualifying ones, the latest-expiring — that is when they stop counting.
+   * Null only if the completion could not be found again (it has just been
+   * changed under the plan).
+   */
+  heldTraining: string | null;
+  expiresOn: string | null;
   scopeLabel: string;
   /**
    * On the plan's recommended path — a counted instance: a tier target's chosen
@@ -497,6 +519,10 @@ interface ReqInstance {
   /** Identity of the qualifying cert-set: two instances sharing it share moves. */
   certKey: string;
   cert: string;
+  /** See `PlanRequirement.certTitles`. */
+  certTitles: string[];
+  /** The qualifying trainingTitles as authored (primary + alternatives), for the renewal lookup. */
+  titles: string[];
   required: number;
   attained: number;
   /** Holders still active at the horizon; null when no renewal window is set. */
@@ -946,6 +972,8 @@ interface RequirementRow {
   titles: string[];
   /** Display: " or "-joined full titles. */
   cert: string;
+  /** The same full titles as a list (see `PlanRequirement.certTitles`). */
+  certTitles: string[];
   /** Optional display name (ProgramData.label). */
   label: string | null;
 }
@@ -986,6 +1014,7 @@ function toRequirementRow(pd: ProgramDataWithRelations): RequirementRow | null {
     quantityRequired: pd.quantityRequired,
     titles,
     cert: [...new Set(fulls)].join(" or "),
+    certTitles: [...new Set(fulls)],
     label: pd.label ?? null,
   };
 }
@@ -1119,6 +1148,8 @@ function makeInstance(
     isGate: false,
     certKey,
     cert: row.cert,
+    certTitles: row.certTitles,
+    titles: row.titles,
     label: row.label,
     required: row.quantityRequired,
     attained: figures.attained,
@@ -2264,7 +2295,7 @@ export async function computeCompliancePlan(input: CompliancePlanInput): Promise
   // counted: reproducing the flag on the client would mean re-deriving the
   // chosen specialisations *and* the tier's delivery certs.
   const riskImpacts = buildRiskImpacts(allInstances, countedInstanceIds);
-  const renewals = buildRenewalRows(allInstances, countedInstanceIds, studentById);
+  const renewals = await buildRenewalRows(allInstances, countedInstanceIds, studentById, now, horizon);
 
   // ── Overall totals ──
   let easyWins = 0;
@@ -2335,6 +2366,7 @@ function buildRiskImpacts(all: ReqInstance[], countedInstanceIds: Set<string>): 
       specialisation: i.specialisation,
       tierName: i.tierName,
       cert: i.cert,
+      certTitles: i.certTitles,
       label: i.label,
       aggregation: i.aggregation,
       country: i.country,
@@ -2376,12 +2408,16 @@ function buildRiskImpacts(all: ReqInstance[], countedInstanceIds: Set<string>): 
  * country" row (labelled C) and a pooled row on the same cert (labelled with
  * the area), and is still one renewal to book, not two.
  */
-function buildRenewalRows(
+async function buildRenewalRows(
   all: ReqInstance[],
   countedInstanceIds: Set<string>,
   studentById: Map<string, { fullName: string; country: string; theatre: string }>,
-): PlanRenewalRow[] {
+  now: Date,
+  horizon: Date | null,
+): Promise<PlanRenewalRow[]> {
   const rows: PlanRenewalRow[] = [];
+  // The instance each row came from, for the held-training lookup below.
+  const sourceOf = new Map<PlanRenewalRow, ReqInstance>();
   const seen = new Set<string>();
   const collect = (instances: ReqInstance[], onPath: boolean) => {
     for (const inst of instances) {
@@ -2390,15 +2426,21 @@ function buildRenewalRows(
         if (seen.has(k)) continue;
         seen.add(k);
         const s = studentById.get(email);
-        rows.push({
+        const row: PlanRenewalRow = {
           email,
           fullName: s?.fullName ?? email,
           country: s?.country ?? "",
           theatre: s?.theatre ?? "",
           cert: inst.cert,
+          certTitles: inst.certTitles,
+          label: inst.label,
+          heldTraining: null,
+          expiresOn: null,
           scopeLabel: inst.scopeLabel,
           onPath,
-        });
+        };
+        rows.push(row);
+        sourceOf.set(row, inst);
       }
     }
   };
@@ -2413,7 +2455,60 @@ function buildRenewalRows(
       a.fullName.localeCompare(b.fullName) ||
       a.cert.localeCompare(b.cert),
   );
+  await attachLapsingCompletions(rows, sourceOf, now, horizon);
   return rows;
+}
+
+/**
+ * Name the certification each renewal row is about — the one the person holds
+ * that lapses inside the window — and when it lapses, so the page can say
+ * "Cert A, expires 12 Mar" instead of repeating the requirement's whole list of
+ * alternatives. One query for every row: the holders' completions of every
+ * qualifying title (sibling-expanded, as the counts are) that are active now
+ * and expire by the horizon. A holder is "expiring" exactly when every
+ * qualifying completion they hold ends inside the window, so each of theirs
+ * falls in that range; the latest is when they stop counting. Display only —
+ * nothing here feeds a count, and a row it cannot match keeps nulls.
+ */
+async function attachLapsingCompletions(
+  rows: PlanRenewalRow[],
+  sourceOf: Map<PlanRenewalRow, ReqInstance>,
+  now: Date,
+  horizon: Date | null,
+): Promise<void> {
+  if (rows.length === 0 || !horizon) return;
+  const requested = [...new Set(rows.flatMap((r) => sourceOf.get(r)?.titles ?? []))];
+  if (requested.length === 0) return;
+  const { fetchTitles, groupMembers } = await resolveSiblingTitles(requested);
+  const completions = await prisma.trainingTaken.findMany({
+    where: {
+      email: { in: [...new Set(rows.map((r) => r.email))] },
+      trainingTitle: { in: fetchTitles },
+      completedDate: { lte: now },
+      expiryDate: { gt: now, lte: horizon },
+    },
+    select: { email: true, trainingTitle: true, expiryDate: true, trainingData: { select: { fullTitle: true } } },
+  });
+  const byEmail = new Map<string, typeof completions>();
+  for (const c of completions) {
+    const list = byEmail.get(c.email);
+    if (list) list.push(c);
+    else byEmail.set(c.email, [c]);
+  }
+  for (const row of rows) {
+    const inst = sourceOf.get(row);
+    if (!inst) continue;
+    const qualifying = new Set(inst.titles.flatMap((t) => groupMembers.get(t) ?? [t]));
+    let latest: (typeof completions)[number] | null = null;
+    for (const c of byEmail.get(row.email) ?? []) {
+      if (!qualifying.has(c.trainingTitle)) continue;
+      if (!latest || c.expiryDate > latest.expiryDate) latest = c;
+    }
+    if (latest) {
+      row.heldTraining = latest.trainingData?.fullTitle ?? latest.trainingTitle;
+      row.expiresOn = latest.expiryDate.toISOString();
+    }
+  }
 }
 
 // ─── Small helpers ───────────────────────────────────────────────────────────
@@ -2457,6 +2552,7 @@ function toPlanRequirement(
     scopeLabel: inst.scopeLabel,
     ...(inst.population ? { population: inst.population } : {}),
     cert: inst.cert,
+    certTitles: inst.certTitles,
     label: inst.label,
     required: inst.required,
     attained: inst.attained,

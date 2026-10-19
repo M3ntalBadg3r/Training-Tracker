@@ -2984,6 +2984,38 @@ const helpSections: Record<string, HelpSection> = {
           certification once, and it is the number of people you actually need.
         </p>
 
+        <h3>Reading the plan</h3>
+        <p>
+          Below the metric cards the results are split into three tabs:{" "}
+          <strong>Plan</strong>, <strong>People</strong>{" "}and{" "}
+          <strong>Renewals</strong>{" "}(only while a renewal window is set).
+          Clicking a metric card opens the tab behind it.
+        </p>
+        <ul>
+          <li>
+            <strong>Plan</strong>{" "}— one card per program, summary first: the
+            number of <strong>people to certify</strong>{" "}and a numbered{" "}
+            <strong>What it takes</strong>{" "}checklist, one step per part of the
+            plan, each with a tick, warning or cross and what it adds. Click a step
+            to open its detail table; specialisations the plan doesn&apos;t use are
+            under <strong>Other options</strong>. Inside a table, requirements that
+            are already met are folded behind{" "}
+            <strong>Show N met requirements</strong>, and a long list of accepted
+            certifications shows its first one and a{" "}
+            <strong>+ N alternatives</strong>{" "}link (give a requirement a name in
+            Program Data to show that instead).
+          </li>
+          <li>
+            <strong>People</strong>{" "}— who to certify. The{" "}
+            <strong>Recommended</strong>{" "}list is the cheapest people the plan
+            picks; <strong>All eligible</strong>{" "}shows everyone who could be.
+          </li>
+          <li>
+            <strong>Renewals</strong>{" "}— one row per person, with each
+            certification that expires inside the window and its date.
+          </li>
+        </ul>
+
         <h3>Choosing a target</h3>
         <p>
           Pick a <strong>Scope</strong> (Global / Theatre / Region / Country Set /
@@ -3116,8 +3148,8 @@ const helpSections: Record<string, HelpSection> = {
           taken, a lapsed renewal, or a legacy upgrade).
         </p>
         <p>
-          Below &ldquo;Who to certify&rdquo;, an <strong>&ldquo;All eligible
-          candidates&rdquo;</strong> section lists the <strong>full pool</strong>{" "}—
+          The People tab&apos;s <strong>All eligible</strong>{" "}toggle lists the{" "}
+          <strong>full pool</strong>{" "}—
           everyone who already holds qualifying training and could be certified, not
           just the cheapest subset the plan nominates. Use it to pick alternatives
           (e.g. someone in a particular country) when the recommended person
@@ -3175,16 +3207,18 @@ const helpSections: Record<string, HelpSection> = {
           of the window is shaded <strong>amber</strong> and badged{" "}
           <strong>&ldquo;At risk in Nmo&rdquo;</strong> alongside its green{" "}
           <strong>Achieved</strong>{" "}badge — it is compliant now and won&apos;t be then.
-          The <strong>Renewals at risk</strong> section lists the holders whose training
-          expires, led by a summary of exactly which requirements their expiry breaks.
+          The <strong>Renewals</strong>{" "}tab lists the holders whose training
+          expires &mdash; one row per person, naming each certification and when it
+          expires &mdash; led by a summary of exactly which requirements their expiry
+          breaks.
         </p>
         <p>
-          That section covers <em>every</em> requirement on the page, split into two
-          groups.{" "}<strong>On the recommended path</strong>{" "}holds the requirements
-          the plan is costed against — the renewals counted in{" "}
-          <strong>People to certify</strong>{" "}come from this group.{" "}
-          <strong>Reference</strong>{" "}holds the ones the roadmap dims because the plan
-          doesn&apos;t route through them; nothing there is counted, but the expiry is
+          That list covers <em>every</em> requirement on the page. Most are{" "}
+          <strong>on the recommended path</strong>{" "}— the requirements the plan is
+          costed against, where the renewals counted in{" "}
+          <strong>People to certify</strong>{" "}come from. Ones marked{" "}
+          <strong>reference</strong>{" "}belong to requirements the plan
+          doesn&apos;t route through; nothing there is counted, but the expiry is
           just as real, so it is shown rather than hidden. For a tiered program the
           cheapest path can change as you widen the window, so listing only the
           recommended path meant a 6-month window could show{" "}<em>fewer</em>{" "}
