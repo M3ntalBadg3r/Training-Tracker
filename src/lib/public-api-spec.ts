@@ -286,6 +286,10 @@ const PLAN_REQUIREMENT = obj({
       'Theatre plans of a program with TargetCountries requirements only (absent otherwise): "theatre" for a Theatre-level requirement counted over the theatre, "targetCountries" for a TargetCountries-level one counted over the partner\'s target countries inside it (or one of them, for an eachCountry instance).',
   },
   cert: STR,
+  certTitles: {
+    ...arr(STR),
+    description: 'The qualifying certifications\' full titles, primary first, de-duplicated — the list cert joins with " or ".',
+  },
   label: { ...NULLABLE_STR, description: "Optional display name for the requirement (e.g. \"4 per target country — any sales certification\"). Display only; null when unnamed." },
   required: INT,
   attained: INT,
@@ -377,6 +381,10 @@ const PLAN_RISK_IMPACT = obj({
   specialisation: NULLABLE_STR,
   tierName: NULLABLE_STR,
   cert: STR,
+  certTitles: {
+    ...arr(STR),
+    description: 'The qualifying certifications\' full titles, primary first, de-duplicated — the list cert joins with " or ".',
+  },
   label: { ...NULLABLE_STR, description: "Optional display name for the requirement (e.g. \"4 per target country — any sales certification\"). Display only; null when unnamed." },
   aggregation: AGGREGATION,
   country: { ...NULLABLE_STR, description: 'Set for one country of an "eachCountry" requirement.' },
@@ -456,6 +464,29 @@ const PROGRAM_REQUIREMENT_BASE = {
   theatreBreakdown: {
     ...arr(obj({ theatre: STR, count: INT, compliant: BOOL })),
     description: "Global level only: holders per theatre, and whether each theatre meets minimumPerTheatre.",
+  },
+  theatreCompliance: {
+    ...obj({
+      requirements: arr(
+        obj({
+          trainingFullTitle: STR,
+          label: NULLABLE_STR,
+          quantityRequired: INT,
+          alternatives: arr(STR),
+        })
+      ),
+      theatres: arr(
+        obj({
+          theatre: STR,
+          counts: { ...arr(INT), description: "Holders in this theatre, one per entry of requirements, in the same order." },
+          compliant: BOOL,
+          projectedCounts: { ...arr(INT), description: "With horizonMonths only." },
+          projectedCompliant: { type: "boolean", description: "With horizonMonths only." },
+        })
+      ),
+    }),
+    description:
+      "Global level, on a requirement naming no training only (a \"N compliant theatres\" rule, where attained is a number of theatres): each of the program's included theatres, its holders against every Theatre-level requirement of the specialisation, and whether it meets them all.",
   },
 };
 
@@ -674,6 +705,10 @@ export const PUBLIC_API_ENDPOINTS: readonly PublicApiEndpoint[] = [
             ...arr({ type: "string", enum: LEVEL_ENUM }),
             description: "Configured requirement levels: Country, Region, CountrySet, TargetCountries, Theatre, Global.",
           },
+          description: {
+            type: ["string", "null"],
+            description: "The program's own description, as written by an administrator, or null when it has none.",
+          },
           hasMinimumPerTheatre: BOOL,
           isTiered: BOOL,
           hasTargetCountries: {
@@ -772,6 +807,21 @@ export const PUBLIC_API_ENDPOINTS: readonly PublicApiEndpoint[] = [
                 description: "The requirement levels this program's rows use: Country, Region, CountrySet, TargetCountries, Theatre, Global.",
               },
               hasMinimumPerTheatre: BOOL,
+              hasTheatreCountRows: {
+                type: "boolean",
+                description: "Whether some Global-level requirement names no training — a \"N compliant theatres\" rule.",
+              },
+              includedTheatres: {
+                type: ["array", "null"],
+                items: STR,
+                description:
+                  "The theatres the program operates in, or null when it counts every theatre. An excluded theatre is left out of theatres, of every Global per-theatre figure and of the tier block, and a level=theatre request for one returns an empty report.",
+              },
+              description: {
+                type: ["string", "null"],
+                description:
+                  "The program's own description, as written by an administrator, or null when it has none. Absent from the empty out-of-scope payload.",
+              },
               isTiered: { type: "boolean", description: "Absent from the empty out-of-scope payload." },
               deploymentMode: { type: "string", enum: ["flat", "perAchievedSpecialisation", "perTierPerSpecialisation"] },
               targetCountries: {

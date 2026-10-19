@@ -7,6 +7,7 @@ import PageHeader from "@/components/layout/PageHeader";
 import Modal from "@/components/ui/Modal";
 import RequirementModal, { RequirementScope } from "../RequirementModal";
 import TierModal from "../TierModal";
+import IncludedTheatresCard from "../IncludedTheatresCard";
 import MinimumCountriesFields, {
   EMPTY_MINIMUMS,
   minimumsBody,
@@ -70,6 +71,15 @@ export default function ProgramRequirementsPage() {
   const [deploymentMode, setDeploymentMode] = useState("flat");
   const [loading, setLoading] = useState(true);
 
+  // The program's description (display + "Edit details" modal).
+  const [description, setDescription] = useState<string | null>(null);
+  const [showEditDetails, setShowEditDetails] = useState(false);
+  const [editDescription, setEditDescription] = useState("");
+  const [editDetailsError, setEditDetailsError] = useState("");
+
+  // The program's included theatres (null until the program has loaded).
+  const [includedTheatres, setIncludedTheatres] = useState<string[] | null>(null);
+
   // The program's default minimum-countries settings (editable form).
   const [minimumsForm, setMinimumsForm] = useState<MinimumCountriesValue>(EMPTY_MINIMUMS);
   const [minimumsSaving, setMinimumsSaving] = useState(false);
@@ -130,6 +140,8 @@ export default function ProgramRequirementsPage() {
                 deploymentMode: string;
                 countrySetMinimumCountries: number | null;
                 targetMinimumCountries: number | null;
+                includedTheatres?: string[];
+                description?: string | null;
               }[]
             >)
           : null
@@ -140,6 +152,11 @@ export default function ProgramRequirementsPage() {
           setIsTiered(me.isTiered);
           setDeploymentMode(me.deploymentMode || "flat");
           setMinimumsForm(minimumsFromProgram(me));
+          setIncludedTheatres(me.includedTheatres ?? []);
+          setDescription(me.description ?? null);
+        } else {
+          // Not yet in the registry (legacy rows only): nothing stored.
+          setIncludedTheatres([]);
         }
       })
       .catch(() => { /* ignore */ });
@@ -167,6 +184,22 @@ export default function ProgramRequirementsPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ deploymentMode: mode }),
     });
+  };
+
+  const saveDetails = async () => {
+    setEditDetailsError("");
+    const res = await fetch(`/api/admin/program-data/program/${encodeURIComponent(programName)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ description: editDescription }),
+    });
+    const result = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setEditDetailsError(typeof result.error === "string" ? result.error : "Failed to save");
+      return;
+    }
+    setDescription(typeof result.description === "string" ? result.description : null);
+    setShowEditDetails(false);
   };
 
   const saveMinimums = async () => {
@@ -342,7 +375,54 @@ export default function ProgramRequirementsPage() {
 
   return (
     <div>
-      <PageHeader title={programName} showBack helpSlug="admin-program-data" />
+      <PageHeader
+        title={programName}
+        showBack
+        helpSlug="admin-program-data"
+        rightContent={
+          <button
+            onClick={() => { setShowEditDetails(true); setEditDescription(description ?? ""); setEditDetailsError(""); }}
+            className="flex items-center gap-1 px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50"
+          >
+            <Pencil size={16} /> Edit details
+          </button>
+        }
+      />
+
+      <div className="mb-6 border border-gray-200 rounded-lg p-4 bg-white">
+        {description ? (
+          <p className="whitespace-pre-line text-sm text-gray-700">{description}</p>
+        ) : (
+          <p className="text-sm text-gray-400 italic">No description</p>
+        )}
+      </div>
+
+      <Modal open={showEditDetails} onClose={() => setShowEditDetails(false)} title="Edit Program Details">
+        <div className="space-y-4">
+          {editDetailsError && <div className="p-2 bg-red-50 text-red-700 rounded text-sm">{editDetailsError}</div>}
+          <div>
+            <label htmlFor="program-description" className="block text-sm font-medium mb-1">Description</label>
+            <textarea
+              id="program-description"
+              value={editDescription}
+              onChange={(e) => setEditDescription(e.target.value)}
+              rows={4}
+              maxLength={2000}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm"
+            />
+            <p className="mt-1 text-xs text-gray-500">
+              Shown on the program&apos;s cards and its dashboard. Leave blank for none. To rename the program, use the
+              pencil on its card in Program Data.
+            </p>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <button onClick={() => setShowEditDetails(false)} className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
+            <button onClick={saveDetails} className="flex items-center gap-1 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+              <Save size={16} /> Save
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       <section className="mb-6 bg-white rounded-lg border border-gray-200 p-4">
         <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
@@ -379,6 +459,12 @@ export default function ProgramRequirementsPage() {
           view and its target Country Set for the By Theatre view are set on the Partner Specific Program Settings page.
         </p>
       </section>
+
+      <IncludedTheatresCard
+        programName={programName}
+        included={includedTheatres}
+        onSaved={setIncludedTheatres}
+      />
 
       {isTiered && (
         <section className="mb-6 bg-white rounded-lg border border-gray-200 p-4">

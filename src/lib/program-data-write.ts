@@ -66,6 +66,27 @@ export function parseRequirementLabel(raw: unknown): { ok: true; value: string |
   return { ok: true, value };
 }
 
+/** Longest program description (`Program.description`) accepted on write. */
+export const MAX_PROGRAM_DESCRIPTION_LENGTH = 2000;
+
+/**
+ * Parse a program's optional description: null or blank is "no description"
+ * (null); a string is trimmed and must fit the length cap; anything else is
+ * rejected rather than coerced. Whether the key was present at all (absent =
+ * leave alone) is the caller's decision. Shared by the create and settings
+ * routes and the import so all three accept exactly the same values.
+ */
+export function parseProgramDescription(raw: unknown): { ok: true; value: string | null } | { ok: false; error: string } {
+  if (raw == null) return { ok: true, value: null };
+  if (typeof raw !== "string") return { ok: false, error: "Description must be text" };
+  const value = raw.trim();
+  if (value === "") return { ok: true, value: null };
+  if (value.length > MAX_PROGRAM_DESCRIPTION_LENGTH) {
+    return { ok: false, error: `Description must be ${MAX_PROGRAM_DESCRIPTION_LENGTH} characters or fewer` };
+  }
+  return { ok: true, value };
+}
+
 export const REQ_TRAINING_TYPES = ["Certification", "Accreditation", "InstructorLedTraining"] as const;
 export const REQ_PURPOSES = ["qualification", "deployment"] as const;
 
@@ -335,4 +356,44 @@ export function parseProgramMinimums(
     value[key] = parsed.value;
   }
   return { ok: true, value };
+}
+
+/** Upper bound on a program's included-theatre list (there are only ever a handful). */
+export const MAX_INCLUDED_THEATRES = 50;
+
+/**
+ * Parse a program's `includedTheatres` from a request body or an import cell
+ * list: an array of theatre names (or null = every theatre). Names are trimmed,
+ * blanks dropped and duplicates removed; anything that is not a list of strings
+ * is refused rather than coerced. Whether each name is a real theatre is checked
+ * separately by `unknownTheatres`, which needs the database.
+ */
+export function parseIncludedTheatres(
+  raw: unknown
+): { ok: true; value: string[] } | { ok: false; error: string } {
+  if (raw === null) return { ok: true, value: [] };
+  if (!Array.isArray(raw) || raw.some((t) => typeof t !== "string")) {
+    return { ok: false, error: "Theatres included must be a list of theatre names" };
+  }
+  const value = [...new Set((raw as string[]).map((t) => t.trim()).filter((t) => t.length > 0))];
+  if (value.length > MAX_INCLUDED_THEATRES) {
+    return { ok: false, error: `Theatres included: at most ${MAX_INCLUDED_THEATRES} theatres` };
+  }
+  return { ok: true, value };
+}
+
+/**
+ * The names in `theatres` that no Region Data row carries as its theatre.
+ * Region Data is global reference data, so naming them back in an error
+ * discloses nothing about any tenant.
+ */
+export async function unknownTheatres(theatres: string[]): Promise<string[]> {
+  if (theatres.length === 0) return [];
+  const rows = await prisma.regionData.findMany({
+    where: { theatre: { in: theatres } },
+    select: { theatre: true },
+    distinct: ["theatre"],
+  });
+  const known = new Set(rows.map((r) => r.theatre));
+  return theatres.filter((t) => !known.has(t));
 }

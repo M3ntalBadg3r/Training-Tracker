@@ -2635,7 +2635,8 @@ const helpSections: Record<string, HelpSection> = {
           The main page shows one <strong>box per program</strong>. Click a box to
           open that program&apos;s page, where you can add, edit, and delete its
           requirements. Use <strong>New Program</strong> to create a program (it
-          persists straight away, even before you add any requirements), the pencil
+          persists straight away, even before you add any requirements, and can be given
+          an optional description), the pencil
           icon on a box to <strong>rename</strong> a program (which also renames all
           of its requirements), and the bin icon to <strong>delete</strong> a program
           along with every one of its requirements. Import and Export cover all
@@ -2752,6 +2753,18 @@ const helpSections: Record<string, HelpSection> = {
           <strong>Admin &rsaquo; Partner Specific Program Settings</strong>{" "}(the{" "}
           <strong>Partner settings</strong>{" "}link on the card); a partner without their own
           minimum uses the program&apos;s default, and with neither there is no minimum.
+        </p>
+        <p>
+          A program&apos;s <strong>description</strong>{" "}shows on its box, on its card on
+          the Programs page and at the top of its dashboard. Change or clear it with{" "}
+          <strong>Edit details</strong>{" "}at the top of the program&apos;s page.
+        </p>
+        <p>
+          The <strong>Theatres included</strong>{" "}card says which theatres the program
+          operates in. Leave every box unticked to include them all. An excluded theatre is
+          left out of the <strong>By Theatre</strong>{" "}view, of the Global compliant-theatre
+          count and of every per-theatre minimum, and a Compliance Planning theatre plan for
+          it plans nothing. Global head counts still count everyone.
         </p>
 
         <h3>Fields</h3>
@@ -2881,7 +2894,11 @@ const helpSections: Record<string, HelpSection> = {
           Training, Quantity Required, Minimum per Theatre, Alternatives, plus the optional
           program-level <strong>Country Set Minimum Countries</strong>{" "}and{" "}
           <strong>Target Minimum Countries</strong>{" "}columns and an optional{" "}
-          <strong>Requirement Name</strong>{" "}(the rule&apos;s name, up to 120 characters).
+          <strong>Requirement Name</strong>{" "}(the rule&apos;s name, up to 120 characters)
+          and an optional <strong>Included Theatres</strong>{" "}(the program&apos;s theatres
+          separated by semicolons, or <em>All</em>; a blank cell leaves the setting alone)
+          and an optional <strong>Program Description</strong>{" "}(the first value per program
+          is used; a blank cell keeps the current description).
           Column names are
           matched case-insensitively. Specialisations are auto-created if they don&apos;t
           exist. Training is matched by display name against the training catalog.
@@ -2966,6 +2983,47 @@ const helpSections: Record<string, HelpSection> = {
           program&apos;s headline. The headline is the one that counts a shared
           certification once, and it is the number of people you actually need.
         </p>
+
+        <h3>Reading the plan</h3>
+        <p>
+          Below the metric cards the results are split into three tabs:{" "}
+          <strong>Plan</strong>, <strong>People</strong>{" "}and{" "}
+          <strong>Renewals</strong>{" "}(only while a renewal window is set).
+          Clicking a metric card opens the tab behind it.
+        </p>
+        <ul>
+          <li>
+            <strong>Plan</strong>{" "}— one card per program, summary first: the
+            number of <strong>people to certify</strong>{" "}and a numbered{" "}
+            <strong>What it takes</strong>{" "}checklist, one step per part of the
+            plan, each with a tick, warning or cross and what it adds. Click a step
+            to open its detail table; specialisations the plan doesn&apos;t use are
+            under <strong>Other options</strong>. Inside a table, requirements that
+            are already met are folded behind{" "}
+            <strong>Show N met requirements</strong>, and a long list of accepted
+            certifications shows its first one and a{" "}
+            <strong>+ N alternatives</strong>{" "}link (give a requirement a name in
+            Program Data to show that instead).
+          </li>
+          <li>
+            <strong>Counting a certification once</strong>{" "}— one person
+            certified counts toward every requirement that accepts their
+            certification. If a specialisation needs 2 &times; Cert A and the
+            program also needs 8 people holding any of Certs A&ndash;H, the 2
+            people certified in Cert A are 2 of the 8. A step that adds nobody
+            for this reason reads <strong>Covered by other steps</strong>, and
+            the requirement shows a <strong>shared with</strong>{" "}tag.
+          </li>
+          <li>
+            <strong>People</strong>{" "}— who to certify. The{" "}
+            <strong>Recommended</strong>{" "}list is the cheapest people the plan
+            picks; <strong>All eligible</strong>{" "}shows everyone who could be.
+          </li>
+          <li>
+            <strong>Renewals</strong>{" "}— one row per person, with each
+            certification that expires inside the window and its date.
+          </li>
+        </ul>
 
         <h3>Choosing a target</h3>
         <p>
@@ -3090,17 +3148,21 @@ const helpSections: Record<string, HelpSection> = {
           single exam closes the same certification in several places appears once. Two
           at-a-glance columns show <strong>which specialisation(s)</strong> that
           person would help fulfil and the <strong>relevant training they already
-          hold</strong>{" "}(the ILT/OLX behind an easy win, or the legacy certification behind a
-          legacy upgrade) — so it&apos;s obvious why they&apos;re a cheap candidate.
-          Expanding a row spells each gap out in <strong>plain language</strong>{" "}—
-          e.g. &ldquo;They have taken <em>Training A</em>. Passing the <em>Cert
-          A</em> certification exam will contribute to the <em>Specialisation Y</em>{" "}
-          specialisation.&rdquo; — worded to match their situation (training already
-          taken, a lapsed renewal, or a legacy upgrade).
+          hold</strong>{" "}(the ILT/OLX behind an easy win, the legacy certification behind a
+          legacy upgrade, or the certification they let expire) — so it&apos;s obvious
+          why they&apos;re a cheap candidate. A requirement every tier needs shows as{" "}
+          <strong>Required at every level</strong>. Expanding a row spells each gap out
+          in <strong>plain language</strong>{" "}— e.g. &ldquo;They have taken{" "}
+          <em>Training A</em>, so they only need to pass the exam. That counts toward{" "}
+          <em>Cert A</em>{" "}(Specialisation Y).&rdquo; For a lapsed renewal it names the
+          certification they actually held and the date it expired. Beneath that,{" "}
+          <strong>The same certification also counts toward</strong>{" "}lists every
+          other requirement it would feed, including ones that are already met (which
+          is why those are not counted as gaps closed).
         </p>
         <p>
-          Below &ldquo;Who to certify&rdquo;, an <strong>&ldquo;All eligible
-          candidates&rdquo;</strong> section lists the <strong>full pool</strong>{" "}—
+          The People tab&apos;s <strong>All eligible</strong>{" "}toggle lists the{" "}
+          <strong>full pool</strong>{" "}—
           everyone who already holds qualifying training and could be certified, not
           just the cheapest subset the plan nominates. Use it to pick alternatives
           (e.g. someone in a particular country) when the recommended person
@@ -3158,16 +3220,18 @@ const helpSections: Record<string, HelpSection> = {
           of the window is shaded <strong>amber</strong> and badged{" "}
           <strong>&ldquo;At risk in Nmo&rdquo;</strong> alongside its green{" "}
           <strong>Achieved</strong>{" "}badge — it is compliant now and won&apos;t be then.
-          The <strong>Renewals at risk</strong> section lists the holders whose training
-          expires, led by a summary of exactly which requirements their expiry breaks.
+          The <strong>Renewals</strong>{" "}tab lists the holders whose training
+          expires &mdash; one row per person, naming each certification and when it
+          expires &mdash; led by a summary of exactly which requirements their expiry
+          breaks.
         </p>
         <p>
-          That section covers <em>every</em> requirement on the page, split into two
-          groups.{" "}<strong>On the recommended path</strong>{" "}holds the requirements
-          the plan is costed against — the renewals counted in{" "}
-          <strong>People to certify</strong>{" "}come from this group.{" "}
-          <strong>Reference</strong>{" "}holds the ones the roadmap dims because the plan
-          doesn&apos;t route through them; nothing there is counted, but the expiry is
+          That list covers <em>every</em> requirement on the page. Most are{" "}
+          <strong>on the recommended path</strong>{" "}— the requirements the plan is
+          costed against, where the renewals counted in{" "}
+          <strong>People to certify</strong>{" "}come from. Ones marked{" "}
+          <strong>reference</strong>{" "}belong to requirements the plan
+          doesn&apos;t route through; nothing there is counted, but the expiry is
           just as real, so it is shown rather than hidden. For a tiered program the
           cheapest path can change as you widen the window, so listing only the
           recommended path meant a 6-month window could show{" "}<em>fewer</em>{" "}
@@ -3490,7 +3554,7 @@ const helpSections: Record<string, HelpSection> = {
         <h3>Global Report</h3>
         <p>
           Shown when the <strong>View</strong> level is Global (available when the
-          program has global-level requirements). Two presentations are supported
+          program has global-level requirements). Three presentations are supported
           automatically:
         </p>
         <ul>
@@ -3498,7 +3562,8 @@ const helpSections: Record<string, HelpSection> = {
             <strong>Compliant-theatre count</strong>{" "}— when global rows have no
             specific training, the report shows how many theatres meet all of a
             specialisation&apos;s theatre-level requirements, against a target
-            number of compliant theatres.
+            number of compliant theatres. Expand the row to see each included
+            theatre&apos;s count against every theatre-level requirement.
           </li>
           <li>
             <strong>Global count with per-theatre minimums</strong> — when a
@@ -3506,6 +3571,11 @@ const helpSections: Record<string, HelpSection> = {
             a card with a global attained/required total and an expandable
             per-theatre breakdown. The requirement is only met when the global
             total is reached <em>and</em> every theatre meets its minimum.
+          </li>
+          <li>
+            <strong>Global head count</strong>{" "}— when every global row names a
+            training and none has a per-theatre minimum, the report is a plain table
+            whose figures are people: distinct holders worldwide.
           </li>
         </ul>
 

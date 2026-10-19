@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Fragment, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
@@ -13,6 +13,8 @@ import {
   ChevronRight,
   AlertTriangle,
   Info,
+  CircleCheck,
+  CircleX,
 } from "lucide-react";
 import PageHeader from "@/components/layout/PageHeader";
 import LoadingState from "@/components/ui/LoadingState";
@@ -43,6 +45,7 @@ import { useRegionData } from "@/hooks/useRegionData";
 import { useTableSort } from "@/hooks/useTableSort";
 import { useDebounce } from "@/hooks/useDebounce";
 import { useFetchJson } from "@/hooks/useFetchJson";
+import { useDateFormat } from "@/components/date-format/DateFormatProvider";
 import {
   AGGREGATION_SHORT_LABELS,
   SCOPE_LEVELS,
@@ -79,6 +82,8 @@ interface PlanRequirement {
    *  populations the row counts over. */
   population?: PopulationKind;
   cert: string;
+  /** `cert`'s full titles as a list, primary first. Absent on an older cached payload. */
+  certTitles?: string[];
   /** Optional display name for the requirement; shown instead of `cert`, which stays the identity. */
   label?: string | null;
   required: number;
@@ -92,7 +97,7 @@ interface PlanRequirement {
   lapsedPool: number;
   legacyPool: number;
   netNew: number;
-  /** Other specialisations needing the same cert — the totals count it once. */
+  /** Other specialisations accepting a certification this one accepts — the totals count it once. */
   sharedWith: string[];
   expiringSoon: number;
 }
@@ -159,6 +164,21 @@ interface PlanCandidateClose {
   /** Every qualifying training/legacy cert held at this tier, `path` first.
    *  Absent on an older cached payload, which falls back to `path`. */
   paths?: string[];
+  /** The requirement's own name and accepted certifications (optional on older payloads). */
+  label?: string | null;
+  certTitles?: string[];
+  /** Lapsed closes: what the person held and when it expired, latest first. */
+  expired?: { title: string; expiredOn: string }[];
+}
+interface PlanCandidateAlsoCounts {
+  program: string;
+  specialisation: string | null;
+  tierName: string | null;
+  cert: string;
+  certTitles?: string[];
+  label: string | null;
+  scopeLabel: string;
+  met: boolean;
 }
 interface PlanCandidate {
   email: string;
@@ -168,12 +188,15 @@ interface PlanCandidate {
   topTier: CandidateTier;
   closesCount: number;
   closes: PlanCandidateClose[];
+  /** Other requirements their certification would also count toward (optional on older payloads). */
+  alsoCounts?: PlanCandidateAlsoCounts[];
 }
 interface PlanRiskImpact {
   program: string;
   specialisation: string | null;
   tierName: string | null;
   cert: string;
+  certTitles?: string[];
   label?: string | null;
   aggregation: Aggregation;
   country: string | null;
@@ -193,6 +216,11 @@ interface PlanRenewalRow {
   country: string;
   theatre: string;
   cert: string;
+  certTitles?: string[];
+  label?: string | null;
+  /** The certification they hold that lapses in the window, and when (ISO). */
+  heldTraining?: string | null;
+  expiresOn?: string | null;
   scopeLabel: string;
   /** On the plan's recommended cheapest path, and so costed into
    *  "People to certify". False means the roadmap dims this requirement for
@@ -258,6 +286,15 @@ interface TargetSelection {
 
 /** The renewal-window <select>'s options — a value outside this set has no option to render. */
 const WINDOW_OPTIONS = [0, 1, 3, 6, 12];
+
+/** The results tabs. Renewals is offered only while a renewal window is set. */
+type PlanTab = "plan" | "people" | "renewals";
+const PLAN_TABS: readonly PlanTab[] = ["plan", "people", "renewals"];
+function parseTab(v: string | null): PlanTab {
+  return PLAN_TABS.includes(v as PlanTab) ? (v as PlanTab) : "plan";
+}
+/** The People tab's list: the recommended subset, or everyone eligible. */
+type PeopleView = "recommended" | "all";
 const DEFAULT_WINDOW_MONTHS = 3;
 
 function parseLevel(v: string | null): ScopeLevel {
@@ -445,8 +482,8 @@ const PLAN_FOR_WINDOW_HINT = {
   off: "Tick “Plan for this window” to count the renewals needed to hold them.",
 };
 
-/** The two bands the Renewals-at-risk table splits into, on screen and in
- *  print, so the heading and the PDF card title can't drift apart. */
+/** The two bands the Renewals-at-risk PDF splits into (the screen groups by
+ *  person and marks off-path items "reference" instead). */
 const RENEWAL_GROUP = {
   onPath: "On the recommended path",
   offPath: "Reference — not on the recommended path",
@@ -547,7 +584,7 @@ function riskImpactSegments(impact: PlanRiskImpact): Segment[] {
     { text: impact.program, bold: true },
     ...(owner ? [{ text: ` · ${owner}`, muted: true }] : []),
     { text: " — " },
-    { text: `${impact.label || impact.cert}: ` },
+    { text: `${impact.label || shortCertText(impact)}: ` },
     { text: `${impact.attained} → ${impact.projectedAttained}`, bold: true },
     {
       text: ` / ${impact.required} (${impact.scopeLabel}${
@@ -655,9 +692,9 @@ function sharedNoteSegments(cost: number): Segment[] {
     { text: "shared", accent: true },
     {
       text:
-        " is the same certification another specialisation needs. Certifying those" +
-        " people closes both, so the figures at the top of this program count them" +
-        " once and can be lower than these blocks added together.",
+        " accepts a certification another block also accepts. Certifying those" +
+        " people in it closes both, so the figures at the top of this program count" +
+        " them once and can be lower than these blocks added together.",
     },
   ];
 }
@@ -789,6 +826,23 @@ function eachCountryStatus(rows: PlanRequirement[]): string {
   return parts.length > 0 ? parts.join(" · ") : `All ${rows.length} countr${rows.length === 1 ? "y" : "ies"} met`;
 }
 
+/**
+ * A requirement's qualifying certifications as a list, primary first. The
+ * server sends them as `certTitles`; an older cached payload has only the
+ * " or "-joined `cert`, which is NOT split here — a full title may itself
+ * contain " or ", so it is shown whole instead.
+ */
+function titlesOf(r: { cert: string; certTitles?: string[] }): string[] {
+  return r.certTitles && r.certTitles.length > 0 ? r.certTitles : [r.cert];
+}
+
+/** "Cert A (+ 9 alternatives)" — the short form of a requirement's certifications. */
+function shortCertText(r: { cert: string; certTitles?: string[] }): string {
+  const titles = titlesOf(r);
+  const extra = titles.length - 1;
+  return extra > 0 ? `${titles[0]} (+ ${extra} alternative${extra === 1 ? "" : "s"})` : titles[0];
+}
+
 /** The requirement cell for a plain row — names an empty-area placeholder for what it is. */
 function requirementLabel(r: PlanRequirement): string {
   return r.aggregation === "eachCountry" ? `${eachCountryTitle(r)} (no countries in scope)` : r.label || r.cert;
@@ -833,16 +887,49 @@ function showsProjection(attained: number, projected: number | undefined): boole
 // Shared by the per-section ExportMenus and the page-level "Export report"
 // (ReportExportMenu) so the two surfaces can never drift.
 
-/** Distinct specialisations a candidate would help fulfil, across all their gaps. */
+/** The program-wide block's name — restated from the engine's `PROGRAM_WIDE_BLOCK_NAME`, which imports Prisma. */
+const PROGRAM_WIDE_LABEL = "Required at every level";
+
+/**
+ * What a close (or an also-counts entry) is for, as a short phrase: the
+ * specialisation, the tier, or — a requirement with neither — the program-wide
+ * block every tier needs.
+ */
+function closeGoalName(cl: { specialisation: string | null; tierName: string | null }): string {
+  if (cl.specialisation) return cl.specialisation;
+  if (cl.tierName) return `${cl.tierName} tier`;
+  return PROGRAM_WIDE_LABEL;
+}
+
+/** The requirement a close counts toward, short: its name, else its first certification. */
+function closeRequirementName(cl: { cert: string; certTitles?: string[]; label?: string | null }): string {
+  return cl.label || shortCertText(cl);
+}
+
+/** Distinct specialisations (or program-wide / tier blocks) a candidate would help fulfil. */
 function candidateSpecialisations(c: PlanCandidate): string {
-  return [...new Set(c.closes.map((cl) => cl.specialisation).filter((s): s is string => !!s))].join(", ");
+  return [...new Set(c.closes.map(closeGoalName))].join(", ");
 }
 /**
  * The qualifying training a candidate already holds that gives them a head-start —
- * the ILT/OLX behind an easy win (or the legacy cert behind a legacy upgrade).
+ * the ILT/OLX behind an easy win, the legacy cert behind a legacy upgrade, or the
+ * certification they let expire (marked so).
  */
 function candidateHelpfulTraining(c: PlanCandidate): string {
-  return [...new Set(c.closes.flatMap(closePaths))].join(", ");
+  return [
+    ...new Set(
+      c.closes.flatMap((cl) =>
+        cl.tier === "lapsed" ? closePaths(cl).map((t) => `${t} (expired)`) : closePaths(cl),
+      ),
+    ),
+  ].join(", ");
+}
+
+/** "Also counts toward" entries as one line each, open gaps first (for exports). */
+function alsoCountsLines(c: PlanCandidate): string[] {
+  return (c.alsoCounts ?? []).map(
+    (a) => `${closeRequirementName(a)} (${closeGoalName(a)}, ${a.scopeLabel})${a.met ? " — already met" : ""}`,
+  );
 }
 
 /** Every route a close names — all of them, not just the first the engine met. */
@@ -860,41 +947,46 @@ function joinAnd(items: string[]): string {
 // would close, worded per tier. `closeSegments` returns the sentence as ordered
 // pieces so both the on-screen `CloseSentence` (which bolds names) and the export
 // (`closeSentenceText`, plain) render the exact same wording and can't drift.
-function closeSegments(cl: PlanCandidateClose): Segment[] {
-  const goal: Segment[] = cl.specialisation
-    ? [{ text: "the " }, { text: cl.specialisation, bold: true }, { text: " specialisation" }]
-    : cl.tierName
-      ? [{ text: "the " }, { text: cl.tierName, bold: true }, { text: " tier" }]
-      : [{ text: "this requirement" }];
-  const cert = { text: cl.cert, bold: true };
+function closeSegments(
+  cl: PlanCandidateClose,
+  formatDate: (iso: string) => string = (iso) => iso.slice(0, 10),
+): Segment[] {
+  const req = { text: closeRequirementName(cl), bold: true };
+  const goal: Segment = { text: ` (${closeGoalName(cl)}).` };
   switch (cl.tier) {
     case "renewal":
       return [
-        { text: "They hold " }, cert,
-        { text: ", but it expires within the renewal window. Renewing it keeps " }, ...goal,
-        { text: " compliant." },
+        { text: "Their certification expires within the renewal window. Renewing it keeps " }, req,
+        { text: " met" }, goal,
       ];
     case "easy-win":
       return [
         { text: "They have taken " }, { text: joinAnd(closePaths(cl)) || "the required training", bold: true },
-        { text: ". Passing the " }, cert, { text: " certification exam will contribute to " },
-        ...goal, { text: "." },
+        { text: ", so they only need to pass the exam. That counts toward " }, req, goal,
       ];
-    case "lapsed":
-      return [
-        { text: "They previously held " }, cert,
-        { text: ", but it has expired. Renewing it will contribute to " }, ...goal, { text: "." },
-      ];
+    case "lapsed": {
+      const held = cl.expired ?? [];
+      if (held.length === 0) {
+        return [{ text: "A certification they held has expired. Renewing it counts toward " }, req, goal];
+      }
+      const shown = held.slice(0, 2);
+      const segs: Segment[] = [{ text: "Their " }];
+      shown.forEach((h, i) => {
+        if (i > 0) segs.push({ text: ", and " });
+        segs.push({ text: h.title, bold: true }, { text: ` expired on ${formatDate(h.expiredOn)}` });
+      });
+      if (held.length > 2) segs.push({ text: ` (+ ${held.length - 2} more)` });
+      segs.push({ text: `. Renewing ${held.length > 1 ? "one" : "it"} counts toward ` }, req, goal);
+      return segs;
+    }
     case "legacy":
       return [
         { text: closePaths(cl).length > 1 ? "They hold the legacy certifications " : "They hold the legacy certification " },
         { text: joinAnd(closePaths(cl)) || "a superseded certification", bold: true },
-        { text: ". Upgrading to " }, cert, { text: " will contribute to " }, ...goal, { text: "." },
+        { text: ". Upgrading counts toward " }, req, goal,
       ];
     default:
-      return [
-        { text: "Passing the " }, cert, { text: " certification exam will contribute to " }, ...goal, { text: "." },
-      ];
+      return [{ text: "Certifying them counts toward " }, req, goal];
   }
 }
 
@@ -923,6 +1015,7 @@ function buildCandidateSection(candidates: PlanCandidate[], title = "Who to cert
       { key: "Relevant training", header: "Relevant training held" },
       { key: "Gaps closed", header: "Gaps closed" },
       { key: "Detail", header: "Detail" },
+      { key: "Also counts toward", header: "Also counts toward" },
     ],
     rows: candidates.map((c) => ({
       Name: c.fullName,
@@ -934,6 +1027,7 @@ function buildCandidateSection(candidates: PlanCandidate[], title = "Who to cert
       "Relevant training": candidateHelpfulTraining(c),
       "Gaps closed": c.closesCount,
       Detail: c.closes.map(closeDetailLine).join("\n"),
+      "Also counts toward": alsoCountsLines(c).join("\n"),
     })),
   };
 }
@@ -949,11 +1043,17 @@ function buildRenewalSection(renewals: PlanRenewalRow[], windowMonths: number): 
       // The screen groups these rows and the PDF draws them as two cards; the
       // flat builders are the machine-readable rectangle, so here it is a column.
       { key: "OnPath", header: "On recommended path" },
+      // Appended, so every existing column keeps its position.
+      { key: "HeldTraining", header: "Held training" },
+      { key: "Expires", header: "Expires" },
     ],
     rows: renewals.map((r) => ({
       Name: r.fullName, Email: r.email, Country: r.country,
       Theatre: r.theatre, Cert: r.cert, Scope: r.scopeLabel,
       OnPath: r.onPath ? "Yes" : "No",
+      HeldTraining: r.heldTraining ?? "",
+      // ISO yyyy-mm-dd: unambiguous in a spreadsheet whatever the reader's locale.
+      Expires: r.expiresOn ? r.expiresOn.slice(0, 10) : "",
     })),
   };
 }
@@ -1413,7 +1513,10 @@ function buildCandidatePdfSection(
         },
         // The page labels each explanation with the move it describes; without it
         // a list of sentences reads as one undifferentiated block.
-        detail: c.closes.map((cl) => `${TIER_LABEL[cl.tier]}: ${closeDetailLine(cl)}`),
+        detail: [
+          ...c.closes.map((cl) => `${TIER_LABEL[cl.tier]}: ${closeDetailLine(cl)}`),
+          ...alsoCountsLines(c).map((l) => `Also counts toward: ${l}`),
+        ],
       }),
     ),
     emptyText: text.emptyText,
@@ -1679,6 +1782,15 @@ function CompliancePlanningPageInner() {
     () => searchParams.get("planForWindow") === "true" && parseWindowMonths(searchParams.get("window")) > 0
   );
   const [showReportExport, setShowReportExport] = useState(false);
+  // Which results tab, and which list the People tab shows. Seeded from the URL
+  // like the rest of the view so Back from a student record returns to them.
+  // Renewals only exists while a window is set; asked for without one, the
+  // Plan tab is shown (derived, so the mirror writes the corrected value).
+  const [tabState, setTab] = useState<PlanTab>(() => parseTab(searchParams.get("tab")));
+  const tab: PlanTab = tabState === "renewals" && renewalWindowMonths === 0 ? "plan" : tabState;
+  const [peopleView, setPeopleView] = useState<PeopleView>(() =>
+    searchParams.get("people") === "all" ? "all" : "recommended"
+  );
 
   // Mirror the whole selection back to the URL. Without this, clicking a student
   // from the candidate or renewals table and pressing Back remounted the page at
@@ -1691,8 +1803,10 @@ function CompliancePlanningPageInner() {
     params.set("window", String(renewalWindowMonths));
     if (planForWindow) params.set("planForWindow", "true");
     if (Object.keys(targets).length > 0) params.set("targets", JSON.stringify(targets));
+    if (tab !== "plan") params.set("tab", tab);
+    if (peopleView === "all") params.set("people", "all");
     return params;
-  }, [level, scopeValue, targetSet, renewalWindowMonths, planForWindow, targets]);
+  }, [level, scopeValue, targetSet, renewalWindowMonths, planForWindow, targets, tab, peopleView]);
 
   useEffect(() => {
     const qs = buildViewParams().toString();
@@ -1782,10 +1896,39 @@ function CompliancePlanningPageInner() {
             plan.planForWindow && plan.totals.renewalMoves > 0
               ? `Incl. ${plan.totals.renewalMoves} renewal${plan.totals.renewalMoves === 1 ? "" : "s"}`
               : undefined,
+          onClick: () => setTab("people"),
         },
-        { label: "Easy wins", value: plan.totals.easyWins, icon: Zap, tone: "green" as const, hint: "Just need the exam" },
-        { label: "Net-new training", value: plan.totals.netNew, icon: ClipboardCheck, tone: "indigo" as const },
-        { ...renewalKpi(plan), icon: RefreshCw },
+        {
+          label: "Easy wins",
+          value: plan.totals.easyWins,
+          icon: Zap,
+          tone: "green" as const,
+          hint: "Just need the exam",
+          onClick: () => setTab("people"),
+        },
+        {
+          label: "Net-new training",
+          value: plan.totals.netNew,
+          icon: ClipboardCheck,
+          tone: "indigo" as const,
+          onClick: () => setTab("plan"),
+        },
+        {
+          ...renewalKpi(plan),
+          icon: RefreshCw,
+          ...(plan.renewalWindowMonths > 0 ? { onClick: () => setTab("renewals") } : {}),
+        },
+      ]
+    : [];
+  const tabs: { key: PlanTab; label: string; count?: number }[] = plan
+    ? [
+        { key: "plan", label: "Plan" },
+        {
+          key: "people",
+          label: "People",
+          count: peopleView === "all" ? plan.eligible.length : plan.candidates.length,
+        },
+        ...(renewalWindowMonths > 0 ? [{ key: "renewals" as const, label: "Renewals", count: plan.renewals.length }] : []),
       ]
     : [];
 
@@ -1984,46 +2127,97 @@ function CompliancePlanningPageInner() {
 
           <KpiStrip cards={kpis} />
 
-          {/* Aggregate roadmap. Keyed by the projection because SpecBlock's
-              collapse default is a mount-only useState initialiser — without this
-              a spec that becomes at-risk would stay collapsed. */}
-          <div className="space-y-4 mb-6">
-            {plan.targets.map((t) => (
-              <TargetCard
-                key={`${t.program}-${plan.renewalWindowMonths}-${plan.planForWindow}`}
-                target={t}
-                windowMonths={plan.renewalWindowMonths}
-              />
+          <div role="tablist" aria-label="Plan sections" className="mb-4 flex gap-1 border-b border-gray-200">
+            {tabs.map((t) => (
+              <button
+                key={t.key}
+                type="button"
+                role="tab"
+                aria-selected={tab === t.key}
+                onClick={() => setTab(t.key)}
+                className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium ${
+                  tab === t.key
+                    ? "border-blue-600 text-blue-700"
+                    : "border-transparent text-gray-500 hover:text-gray-800"
+                }`}
+              >
+                {t.label}
+                {t.count !== undefined && (
+                  <span className="ml-1.5 rounded-full bg-gray-100 px-1.5 py-0.5 text-xs text-gray-600">{t.count}</span>
+                )}
+              </button>
             ))}
           </div>
 
-          {/* Candidate-centric drill-down */}
-          <CandidateTable candidates={plan.candidates} scopeLabel={plan.scopeLabel} />
+          {/* Plan: one card per target, summary first. Keyed by the
+              projection so each card's collapsed state starts afresh when the
+              window or basis changes. */}
+          {tab === "plan" && (
+            <div className="space-y-4 mb-6">
+              {plan.targets.map((t) => (
+                <TargetCard
+                  key={`${t.program}-${plan.renewalWindowMonths}-${plan.planForWindow}`}
+                  target={t}
+                  windowMonths={plan.renewalWindowMonths}
+                  scopeLabel={plan.scopeLabel}
+                />
+              ))}
+            </div>
+          )}
 
-          {/* Full eligible pool (superset of the nominated candidates) */}
-          {plan.eligible.length > 0 && (
+          {/* People: the recommended subset or the full eligible pool, in one
+              card — the two lists are mostly the same people. */}
+          {tab === "people" && (
             <CandidateTable
-              candidates={plan.eligible}
+              key={peopleView}
+              candidates={peopleView === "all" ? plan.eligible : plan.candidates}
               scopeLabel={plan.scopeLabel}
-              title={CANDIDATE_TEXT.eligible.title}
-              subtitle={CANDIDATE_TEXT.eligible.subtitle}
-              filenameKind="eligible"
-              countLabel={CANDIDATE_TEXT.eligible.countLabel}
-              emptyText={CANDIDATE_TEXT.eligible.emptyText}
+              {...(peopleView === "all"
+                ? {
+                    title: CANDIDATE_TEXT.eligible.title,
+                    subtitle: CANDIDATE_TEXT.eligible.subtitle,
+                    filenameKind: "eligible",
+                    countLabel: CANDIDATE_TEXT.eligible.countLabel,
+                    emptyText: CANDIDATE_TEXT.eligible.emptyText,
+                  }
+                : {})}
+              toolbar={
+                <div className="inline-flex rounded-lg border border-gray-200 p-0.5 text-sm" role="group" aria-label="Which people">
+                  {(["recommended", "all"] as const).map((v) => (
+                    <button
+                      key={v}
+                      type="button"
+                      aria-pressed={peopleView === v}
+                      onClick={() => setPeopleView(v)}
+                      className={`rounded-md px-3 py-1 ${
+                        peopleView === v ? "bg-blue-600 text-white" : "text-gray-600 hover:bg-gray-50"
+                      }`}
+                    >
+                      {v === "recommended"
+                        ? `Recommended (${plan.candidates.length})`
+                        : `All eligible (${plan.eligible.length})`}
+                    </button>
+                  ))}
+                </div>
+              }
             />
           )}
 
-          {/* Renewal-at-risk */}
-          {plan.renewals.length > 0 && (
-            <RenewalTable
-              renewals={plan.renewals}
-              impacts={plan.riskImpacts}
-              windowMonths={plan.renewalWindowMonths}
-              planForWindow={plan.planForWindow}
-              renewalMoves={plan.totals.renewalMoves}
-              scopeLabel={plan.scopeLabel}
-            />
-          )}
+          {tab === "renewals" &&
+            (plan.renewals.length > 0 ? (
+              <RenewalTable
+                renewals={plan.renewals}
+                impacts={plan.riskImpacts}
+                windowMonths={plan.renewalWindowMonths}
+                planForWindow={plan.planForWindow}
+                renewalMoves={plan.totals.renewalMoves}
+                scopeLabel={plan.scopeLabel}
+              />
+            ) : (
+              <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-500 mb-6">
+                Nobody&apos;s training expires within {monthsLabel(plan.renewalWindowMonths)}.
+              </div>
+            ))}
         </>
       )}
 
@@ -2051,27 +2245,119 @@ export default function CompliancePlanningPage() {
 }
 
 // ── Roadmap card for one target ──
-function TargetCard({ target, windowMonths }: { target: PlanTargetResult; windowMonths: number }) {
+/** One step's status icon in the "What it takes" checklist. */
+function StepIcon({ state }: { state: RiskState }) {
+  if (state === "compliant") return <CircleCheck size={18} className="shrink-0 text-green-600" aria-label="Met" />;
+  if (state === "atRisk") return <AlertTriangle size={18} className="shrink-0 text-amber-600" aria-label="At risk" />;
+  return <CircleX size={18} className="shrink-0 text-red-600" aria-label="Gap" />;
+}
+
+/**
+ * What a checklist step costs, in words. A chosen specialisation reads its
+ * marginal cost — what it adds on top of the other chosen ones — so the steps
+ * add up to the "people to certify" figure beside them. A step that still has
+ * a gap but adds nobody is covered by people another step already counts:
+ * they can take a certification both accept.
+ */
+function stepCostText(spec: PlanSpecialisation, windowMonths: number): string {
+  const state = specRiskState(spec);
+  if (state === "compliant") return "Already met";
+  if (state === "atRisk") return `Met now · at risk in ${windowMonths}mo`;
+  const n = spec.marginalCost ?? spec.cost;
+  if (n > 0) return `${n} to certify`;
+  return spec.cost > 0 ? "Covered by other steps" : "Nobody left to certify";
+}
+
+/** The hover text for a step `stepCostText` reads as covered, else undefined. */
+function stepCostTitle(spec: PlanSpecialisation): string | undefined {
+  const state = specRiskState(spec);
+  if (state === "compliant" || state === "atRisk") return undefined;
+  if ((spec.marginalCost ?? spec.cost) > 0 || spec.cost === 0) return undefined;
+  return (
+    `On its own this needs ${spec.cost} to certify, but the people counted for the other` +
+    " steps can take a certification this one also accepts, so it adds nobody."
+  );
+}
+
+/**
+ * A specialisation the plan is costed against: every block of a non-tier
+ * target, and of a tier target the program-wide block plus the chosen
+ * specialisations. Everything else is an option the reader may look at.
+ */
+function isCostedSpec(spec: PlanSpecialisation, tiered: boolean): boolean {
+  return spec.kind === "programWide" || !tiered || !!spec.chosen;
+}
+
+function TargetCard({
+  target,
+  windowMonths,
+  scopeLabel,
+}: {
+  target: PlanTargetResult;
+  windowMonths: number;
+  /** The plan's scope, stated once here rather than on every row. */
+  scopeLabel: string;
+}) {
+  const tiered = !!target.tierPlan;
+  const costed = target.specialisations.filter((s) => isCostedSpec(s, tiered));
+  const others = target.specialisations.filter((s) => !isCostedSpec(s, tiered));
+  const achievedOthers = tiered ? others.filter((s) => s.achieved) : [];
+  const alternatives = others.filter((s) => s.alternative);
+  // Every block starts collapsed: the checklist is the summary, and a step
+  // opens its block. A Set of names rather than per-block state so a step
+  // click can open one from outside it.
+  const [open, setOpen] = useState<Set<string>>(() => new Set());
+  const [showOthers, setShowOthers] = useState(false);
+  const anchors = useRef(new Map<string, HTMLDivElement | null>());
+  const toggle = (name: string) =>
+    setOpen((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  const reveal = (name: string) => {
+    setOpen((prev) => new Set(prev).add(name));
+    requestAnimationFrame(() => anchors.current.get(name)?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  };
+  const scopeLine = target.targetCountries
+    ? targetCountriesLine(target.targetCountries)
+    : target.countrySetMinimum
+      ? countrySetLine(target.countrySetMinimum)
+      : scopeLabel;
+  const block = (s: PlanSpecialisation) => (
+    <div key={s.name} ref={(el) => { anchors.current.set(s.name, el); }} className="scroll-mt-4">
+      <SpecBlock
+        spec={s}
+        tiered={tiered}
+        windowMonths={windowMonths}
+        open={open.has(s.name)}
+        onToggle={() => toggle(s.name)}
+      />
+    </div>
+  );
   return (
     <div className="bg-white rounded-lg border border-gray-200 p-5">
-      <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div>
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div className="min-w-0">
           <h2 className="text-lg font-semibold text-gray-900">
             {target.program}
             {target.tierName && <span className="ml-2 text-sm font-normal text-indigo-600">→ {target.tierName}</span>}
           </h2>
-          <p className="text-sm text-gray-600 mt-1">{target.headline}</p>
-          {target.targetCountries && (
-            <p className="text-xs text-gray-500 mt-1">{targetCountriesLine(target.targetCountries)}</p>
-          )}
-          {target.countrySetMinimum && (
-            <p className="text-xs text-gray-500 mt-1">{countrySetLine(target.countrySetMinimum)}</p>
-          )}
+          <p className="text-xs text-gray-500 mt-1">{scopeLine}</p>
+          {target.tierPlan && <p className="text-xs text-gray-500 mt-0.5">{tierPlanLine(target.tierPlan)}</p>}
         </div>
-        <div className="flex items-center gap-3 text-sm">
-          {targetSummaryChips(target).map((chip) => (
-            <span key={chip.text} className={chip.className}>{chip.text}</span>
-          ))}
+        <div className="text-right">
+          <div className="text-2xl font-bold text-blue-700 leading-none">{target.peopleMoves}</div>
+          <div className="text-xs text-gray-500 mt-1">people to certify</div>
+          {(target.easyWins > 0 || target.netNew > 0) && (
+            <div className="text-[11px] text-gray-400 mt-0.5">
+              {[
+                target.easyWins > 0 ? `${target.easyWins} easy` : "",
+                target.netNew > 0 ? `${target.netNew} net-new` : "",
+              ].filter(Boolean).join(" · ")}
+            </div>
+          )}
         </div>
       </div>
 
@@ -2098,16 +2384,94 @@ function TargetCard({ target, windowMonths }: { target: PlanTargetResult; window
         </div>
       )}
 
-      {target.tierPlan && (
-        <div className="mt-3 text-xs text-gray-500">{tierPlanLine(target.tierPlan)}</div>
+      {/* The summary: what it takes, one step per block the plan is costed
+          against. The long engine headline stays in the exports. */}
+      <div className="mt-4">
+        <div className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">What it takes</div>
+        {costed.length === 0 ? (
+          <p className="text-sm text-gray-500">Nothing to plan — every requirement in scope is already met.</p>
+        ) : (
+          <ol className="space-y-1.5">
+            {costed.map((s, i) => {
+              const state = specRiskState(s);
+              return (
+                <li key={s.name}>
+                  <button
+                    type="button"
+                    onClick={() => reveal(s.name)}
+                    className="flex w-full items-center gap-3 rounded-md border border-gray-200 px-3 py-2 text-left hover:bg-gray-50"
+                  >
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gray-100 text-xs font-semibold text-gray-600">
+                      {i + 1}
+                    </span>
+                    <StepIcon state={state} />
+                    <span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-900">{s.name}</span>
+                    <span className={`shrink-0 text-sm ${RISK_TEXT[state]}`} title={stepCostTitle(s)}>
+                      {stepCostText(s, windowMonths)}
+                    </span>
+                    <ChevronRight size={16} className="shrink-0 text-gray-400" />
+                  </button>
+                </li>
+              );
+            })}
+          </ol>
+        )}
+        {achievedOthers.length > 0 && (
+          <p className="mt-2 text-xs text-gray-600">
+            <span className="font-medium text-green-700">Already achieved:</span>{" "}
+            {achievedOthers.map((s) => s.name).join(", ")}
+          </p>
+        )}
+        {alternatives.length > 0 && (
+          <p className="mt-1 text-xs text-gray-600">
+            <span className="font-medium">Equal-cost alternatives:</span>{" "}
+            {alternatives.map((s) => s.name).join(", ")} — any of these could replace a recommended step at no extra cost.
+          </p>
+        )}
+      </div>
+
+      {costed.length > 0 && (
+        <div className="mt-5">
+          <div className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">Details</div>
+          <div className="space-y-2">{costed.map(block)}</div>
+        </div>
       )}
 
-      <div className="mt-4 space-y-3">
-        {target.specialisations.map((s) => (
-          <SpecBlock key={s.name} spec={s} tiered={!!target.tierPlan} windowMonths={windowMonths} />
-        ))}
-      </div>
+      {others.length > 0 && (
+        <div className="mt-3">
+          <button
+            type="button"
+            onClick={() => setShowOthers((v) => !v)}
+            className="flex items-center gap-1.5 text-sm font-medium text-gray-600 hover:text-gray-900"
+            aria-expanded={showOthers}
+          >
+            {showOthers ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            Other options ({others.length})
+          </button>
+          {showOthers && (
+            <div className="mt-2 space-y-2">
+              <p className="text-xs text-gray-500">
+                Not on the recommended path — shown for reference, and not counted in the people to certify.
+              </p>
+              {others.map(block)}
+            </div>
+          )}
+        </div>
+      )}
     </div>
+  );
+}
+
+/** The width of each table column, shared by every block so the columns line up. */
+function RoadmapColumns({ showScope }: { showScope: boolean }) {
+  return (
+    <colgroup>
+      <col />
+      {showScope && <col className="w-40" />}
+      <col className="w-44" />
+      <col className="w-44" />
+      <col className="w-56" />
+    </colgroup>
   );
 }
 
@@ -2115,15 +2479,17 @@ function SpecBlock({
   spec,
   tiered,
   windowMonths,
+  open,
+  onToggle,
 }: {
   spec: PlanSpecialisation;
   tiered: boolean;
   windowMonths: number;
+  open: boolean;
+  onToggle: () => void;
 }) {
   const state = specRiskState(spec);
-  // An at-risk block starts open — hiding the lapse behind a collapsed card is
-  // exactly the problem this is here to fix.
-  const [open, setOpen] = useState(state !== "compliant");
+  const [showMet, setShowMet] = useState(false);
   const dim = specDimmed(spec, tiered, state);
   const hasShared = specHasSharedGap(spec);
   const tint =
@@ -2132,9 +2498,29 @@ function SpecBlock({
       : state === "atRisk"
         ? "border-amber-200 bg-amber-50/50"
         : "border-gray-200";
+  const rows = roadmapRows(spec.requirements);
+  const rowState = (row: RoadmapRow) => requirementState(row.kind === "single" ? row.r : row.summary);
+  const metCount = rows.filter((row) => rowState(row) === "compliant").length;
+  // Met requirements fold away only while something else needs work — a block
+  // that is fully met shows them, or it would show nothing at all.
+  const hideMet = metCount > 0 && metCount < rows.length && !showMet;
+  const visible = hideMet ? rows.filter((row) => rowState(row) !== "compliant") : rows;
+  // The scope is stated once, on the program; a column is needed only where
+  // rows in one block are counted over different populations. A block whose
+  // rows share one population that is not the program's whole scope (target
+  // countries, or the theatre beside them) says so once, above its table.
+  const scopeKeys = new Set(spec.requirements.map((r) => `${r.scopeLabel}|${r.population ?? ""}`));
+  const showScope = spec.requirements.some((r) => r.aggregation === "eachCountry") || scopeKeys.size > 1;
+  const sharedPopulation = !showScope ? spec.requirements[0]?.population : undefined;
+  const columnCount = showScope ? 5 : 4;
   return (
     <div className={`rounded-lg border ${tint} ${dim ? "opacity-60" : ""}`}>
-      <button onClick={() => setOpen((o) => !o)} className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left"
+      >
         <span className="flex items-center gap-2 text-sm font-medium">
           {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
           {spec.name}
@@ -2148,24 +2534,45 @@ function SpecBlock({
       </button>
       {open && (
         <div className="px-3 pb-3">
+          {sharedPopulation && (
+            <p className="mb-1 text-[11px] text-gray-500">
+              Counted over {spec.requirements[0].scopeLabel} ({POPULATION_LABEL[sharedPopulation]})
+            </p>
+          )}
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full min-w-[640px] table-fixed text-sm">
+              <RoadmapColumns showScope={showScope} />
               <thead>
                 <tr className="text-left text-xs text-gray-500 border-b border-gray-100">
                   <th className="py-1 pr-3 font-medium">Requirement</th>
-                  <th className="py-1 pr-3 font-medium">Scope</th>
+                  {showScope && <th className="py-1 pr-3 font-medium">Scope</th>}
                   <th className="py-1 pr-3 font-medium">Have / Need</th>
                   <th className="py-1 pr-3 font-medium">Gap</th>
                   <th className="py-1 font-medium">Candidates</th>
                 </tr>
               </thead>
               <tbody>
-                {roadmapRows(spec.requirements).map((row) =>
+                {visible.map((row) =>
                   row.kind === "single" ? (
-                    <ReqRow key={row.r.instanceId} r={row.r} windowMonths={windowMonths} />
+                    <ReqRow key={row.r.instanceId} r={row.r} windowMonths={windowMonths} showScope={showScope} />
                   ) : (
                     <EachCountryRows key={row.key} row={row} windowMonths={windowMonths} />
                   ),
+                )}
+                {metCount > 0 && metCount < rows.length && (
+                  <tr>
+                    <td colSpan={columnCount} className="pt-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setShowMet((v) => !v)}
+                        className="text-xs text-blue-600 hover:underline"
+                      >
+                        {showMet
+                          ? "Hide met requirements"
+                          : `Show ${metCount} met requirement${metCount === 1 ? "" : "s"}`}
+                      </button>
+                    </td>
+                  </tr>
                 )}
               </tbody>
             </table>
@@ -2190,10 +2597,127 @@ function SpecBlock({
 }
 
 /**
+ * A requirement's name: its own label when it has one, otherwise its first
+ * qualifying certification with the alternatives behind a "+ N alternatives"
+ * toggle (and in the tooltip) — the whole OR-list used to print as a paragraph.
+ */
+function RequirementTitle({
+  r,
+  prefix,
+}: {
+  r: { cert: string; certTitles?: string[]; label?: string | null };
+  prefix?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const titles = titlesOf(r);
+  const extra = titles.length - 1;
+  const full = titles.join(" or ");
+  const altToggle =
+    extra > 0 ? (
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        title={full}
+        aria-expanded={open}
+        className="ml-1.5 whitespace-nowrap text-[11px] font-normal text-blue-600 hover:underline"
+      >
+        {open ? "hide alternatives" : `+ ${extra} alternative${extra === 1 ? "" : "s"}`}
+      </button>
+    ) : null;
+  const list =
+    open && extra > 0 ? (
+      <ul className="mt-1 list-disc space-y-0.5 pl-4 text-[11px] font-normal text-gray-500">
+        {titles.map((t) => <li key={t}>{t}</li>)}
+      </ul>
+    ) : null;
+  if (r.label) {
+    return (
+      <div className="break-words">
+        <div className="font-medium">{prefix}{r.label}</div>
+        <div className="text-[11px] text-gray-400">
+          {titles[0]}
+          {altToggle}
+        </div>
+        {list}
+      </div>
+    );
+  }
+  return (
+    <div className="break-words">
+      <span title={extra > 0 ? full : undefined}>{prefix}{titles[0]}</span>
+      {altToggle}
+      {list}
+    </div>
+  );
+}
+
+/** The fill colour of a Have / Need bar — the same three states the rows are shaded by. */
+const BAR_FILL: Record<RiskState, string> = {
+  compliant: "bg-green-500",
+  atRisk: "bg-amber-500",
+  nonCompliant: "bg-red-500",
+};
+
+/** How far along a requirement is: a bar beside "attained / required". */
+function ProgressBar({
+  attained,
+  projected,
+  required,
+  state,
+}: {
+  attained: number;
+  projected?: number;
+  required: number;
+  state: RiskState;
+}) {
+  const pct = required > 0 ? Math.min(100, Math.round((attained / required) * 100)) : 100;
+  return (
+    <div className="flex items-center gap-2">
+      <div
+        className="h-1.5 w-14 shrink-0 overflow-hidden rounded-full bg-gray-200"
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={required}
+        aria-valuenow={Math.min(attained, required)}
+      >
+        <div className={`h-full ${BAR_FILL[state]}`} style={{ width: `${pct}%` }} />
+      </div>
+      <span className={`whitespace-nowrap ${RISK_TEXT[state]}`}>
+        <AttainedValue attained={attained} projected={projected} /> / {required}
+      </span>
+    </div>
+  );
+}
+
+/** The Gap cell: a pill saying what is needed, in the row's own colour. */
+function GapPill({ r, state, windowMonths }: { r: PlanRequirement; state: RiskState; windowMonths: number }) {
+  const projectedGap = r.projectedShortfall ?? r.shortfall;
+  if (state === "compliant") {
+    return <span className="inline-block rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">✓ met</span>;
+  }
+  if (state === "atRisk") {
+    return (
+      <span className="inline-block rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800">
+        ✓ now · need {projectedGap} in {windowMonths}mo
+      </span>
+    );
+  }
+  return (
+    <>
+      <span className="inline-block rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700">need {r.shortfall}</span>
+      {projectedGap > r.shortfall && (
+        <div className="text-[11px] text-amber-600 mt-0.5 font-medium">→ {projectedGap} in {windowMonths}mo</div>
+      )}
+    </>
+  );
+}
+
+/**
  * An "each country" requirement: one heading row carrying the lowest country's
  * figures and the summed gap, the countries that are short or at risk as
  * indented rows beneath it, and the met ones folded into a single line of chips
  * — so a large set stays readable without hiding which countries need work.
+ * A block holding one always shows the Scope column.
  */
 function EachCountryRows({
   row,
@@ -2204,18 +2728,23 @@ function EachCountryRows({
 }) {
   const needy = row.rows.filter((r) => countryState(r) !== "compliant");
   const met = row.rows.filter((r) => countryState(r) === "compliant");
+  const summaryState = requirementState(row.summary);
   return (
     <>
       <ReqRow
         r={row.summary}
         windowMonths={windowMonths}
+        showScope
         label={
-          <span className="flex flex-wrap items-center gap-1.5">
-            <span className="font-medium">{row.summary.label || `${row.summary.required} × ${row.summary.cert}`}</span>
+          <div className="flex flex-wrap items-start gap-1.5">
+            <RequirementTitle
+              r={row.summary}
+              prefix={row.summary.label ? undefined : `${row.summary.required} × `}
+            />
             <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700">
               {row.summary.population === "targetCountries" ? "each target country" : "each country"}
             </span>
-          </span>
+          </div>
         }
         scope={
           <span className="text-xs text-gray-600" title="The lowest country's count is shown; the gap is summed across countries.">
@@ -2224,11 +2753,12 @@ function EachCountryRows({
         }
         haveNeed={
           <>
-            <AttainedValue
+            <ProgressBar
               attained={row.summary.attained}
               projected={row.summary.projectedAttained ?? undefined}
-            />{" "}
-            / {row.summary.required}
+              required={row.summary.required}
+              state={summaryState}
+            />
             <div className="text-[11px] text-gray-400 mt-0.5">lowest country</div>
             {row.summary.expiringSoon > 0 && (
               <div className="text-[11px] text-amber-600 font-medium">
@@ -2243,6 +2773,7 @@ function EachCountryRows({
           key={r.instanceId}
           r={r}
           windowMonths={windowMonths}
+          showScope
           label={<span className="pl-4 text-gray-400">↳</span>}
         />
       ))}
@@ -2268,12 +2799,15 @@ function EachCountryRows({
 function ReqRow({
   r,
   windowMonths,
+  showScope,
   label,
   scope,
   haveNeed,
 }: {
   r: PlanRequirement;
   windowMonths: number;
+  /** Whether the block draws a Scope column (see `SpecBlock`). */
+  showScope: boolean;
   /** Replaces the requirement cell — the per-country sub-rows and group heading use it. */
   label?: ReactNode;
   /** Replaces the scope cell. */
@@ -2283,58 +2817,38 @@ function ReqRow({
 }) {
   const projected = r.projectedAttained ?? undefined;
   const state = requirementState(r);
-  const projectedGap = r.projectedShortfall ?? r.shortfall;
   const chips = candidateChips(r);
+  // An "each country" placeholder for an area with no countries names itself.
+  const emptyArea = r.aggregation === "eachCountry" && r.country === null;
   return (
-    <tr className={`border-b border-gray-50 ${ROW_BG[state]}`}>
+    <tr className={`border-b border-gray-50 align-top ${ROW_BG[state]}`}>
       <td className="py-1.5 pr-3">
-        {label ??
-          (r.label ? (
+        {label ?? (emptyArea ? requirementLabel(r) : <RequirementTitle r={r} />)}
+      </td>
+      {showScope && (
+        <td className="py-1.5 pr-3">
+          {scope ?? (
             <>
-              <div className="font-medium">{requirementLabel(r)}</div>
-              <div className="text-[11px] text-gray-400">{r.cert}</div>
+              {r.scopeLabel}
+              {r.population && (
+                <div className="text-[11px] text-gray-400">{POPULATION_LABEL[r.population]}</div>
+              )}
             </>
-          ) : (
-            requirementLabel(r)
-          ))}
-      </td>
-      <td className="py-1.5 pr-3">
-        {scope ?? (
-          <>
-            {r.scopeLabel}
-            {r.population && (
-              <div className="text-[11px] text-gray-400">{POPULATION_LABEL[r.population]}</div>
-            )}
-          </>
-        )}
-      </td>
+          )}
+        </td>
+      )}
       {/* The expiry marker lives here, under the numbers it changes — not beside
           the scope label, where it read as a property of the geography. */}
-      <td className={`py-1.5 pr-3 ${RISK_TEXT[state]}`}>
+      <td className="py-1.5 pr-3">
         {haveNeed ?? (
           <>
-            <AttainedValue attained={r.attained} projected={projected} /> / {r.required}
+            <ProgressBar attained={r.attained} projected={projected} required={r.required} state={state} />
             <ExpiringNote attained={r.attained} projected={projected} />
           </>
         )}
       </td>
       <td className="py-1.5 pr-3">
-        {state === "compliant" && <span className="text-green-600">✓</span>}
-        {state === "atRisk" && (
-          <span className="font-medium text-amber-700">
-            ✓ now · need {projectedGap} in {windowMonths}mo
-          </span>
-        )}
-        {state === "nonCompliant" && (
-          <>
-            <span className="font-medium text-red-700">need {r.shortfall}</span>
-            {projectedGap > r.shortfall && (
-              <div className="text-[11px] text-amber-600 mt-0.5 font-medium">
-                → {projectedGap} in {windowMonths}mo
-              </div>
-            )}
-          </>
-        )}
+        <GapPill r={r} state={state} windowMonths={windowMonths} />
       </td>
       <td className="py-1.5 text-xs text-gray-600">
         {chips.length === 0 ? "—" : (
@@ -2356,10 +2870,11 @@ function ReqRow({
 // or a legacy upgrade). Renders the shared `closeSegments` wording (bolding names)
 // so it always matches the export's `closeSentenceText`.
 function CloseSentence({ cl }: { cl: PlanCandidateClose }) {
+  const { formatDate } = useDateFormat();
   return (
     <div className="flex flex-col">
       <span>
-        {closeSegments(cl).map((s, i) =>
+        {closeSegments(cl, formatDate).map((s, i) =>
           s.bold ? <strong key={i}>{s.text}</strong> : <Fragment key={i}>{s.text}</Fragment>,
         )}
       </span>
@@ -2381,6 +2896,7 @@ function CandidateTable({
   filenameKind = "candidates",
   countLabel = CANDIDATE_TEXT.candidates.countLabel,
   emptyText = CANDIDATE_TEXT.candidates.emptyText,
+  toolbar,
 }: {
   candidates: PlanCandidate[];
   scopeLabel: string;
@@ -2389,6 +2905,8 @@ function CandidateTable({
   filenameKind?: string;
   countLabel?: string;
   emptyText?: string;
+  /** Drawn beside the export menu — the People tab's Recommended / All toggle. */
+  toolbar?: ReactNode;
 }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [showExport, setShowExport] = useState(false);
@@ -2419,6 +2937,8 @@ function CandidateTable({
           <h2 className="text-base font-semibold text-gray-900">{title} ({candidates.length})</h2>
           <p className="text-sm text-gray-500 mt-0.5">{subtitle}</p>
         </div>
+        <div className="flex items-center gap-2">
+        {toolbar}
         {candidates.length > 0 && (
           <ExportMenu
             show={showExport}
@@ -2437,6 +2957,7 @@ function CandidateTable({
             align="right"
           />
         )}
+        </div>
       </div>
       {candidates.length === 0 ? (
         <p className="text-sm text-gray-500">{emptyText}</p>
@@ -2481,6 +3002,26 @@ function CandidateTable({
                             </li>
                           ))}
                         </ul>
+                        {(c.alsoCounts?.length ?? 0) > 0 && (
+                          <div className="mt-2 border-t border-gray-200 pt-2 text-xs text-gray-600">
+                            <p className="mb-1 text-gray-500">The same certification also counts toward:</p>
+                            <ul className="space-y-0.5">
+                              {c.alsoCounts!.map((a, i) => (
+                                <li key={i} className="flex flex-wrap items-baseline gap-x-1.5">
+                                  <span className="font-medium text-gray-800">{closeRequirementName(a)}</span>
+                                  <span className="text-gray-400">
+                                    {closeGoalName(a)} · {a.program} · {a.scopeLabel}
+                                  </span>
+                                  {a.met ? (
+                                    <span className="rounded-full bg-gray-100 px-1.5 text-[11px] text-gray-500">already met</span>
+                                  ) : (
+                                    <span className="rounded-full bg-amber-50 px-1.5 text-[11px] text-amber-700">open gap</span>
+                                  )}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   )}
@@ -2511,30 +3052,48 @@ function RenewalTable({
   scopeLabel: string;
 }) {
   const [showExport, setShowExport] = useState(false);
+  const { formatDate } = useDateFormat();
   const exportSection = buildRenewalSection(renewals, windowMonths);
   const pdfSections: ReportSection[] = [
     ...(impacts.length > 0 ? [buildRiskImpactNote(impacts)] : []),
     buildRenewalPdfSection(renewals, windowMonths, planForWindow, renewalMoves),
   ];
-  // The server sorts on-path rows first, so a filter keeps the intended order.
-  const onPathRows = renewals.filter((r) => r.onPath);
-  const offPathRows = renewals.filter((r) => !r.onPath);
-  const groups = [
-    {
-      key: "onPath",
-      title: RENEWAL_GROUP.onPath,
-      lead: planForWindow ? RENEWAL_LEAD.onPathPlanned(renewalMoves) : RENEWAL_LEAD.onPathStatus,
-      rows: onPathRows,
-      dim: false,
-    },
-    {
-      key: "offPath",
-      title: RENEWAL_GROUP.offPath,
-      lead: RENEWAL_LEAD.offPath,
-      rows: offPathRows,
-      dim: true,
-    },
-  ].filter((g) => g.rows.length > 0);
+  // One row per person. A person's rows are one per (person, requirement), so
+  // two requirements accepting the same certification would list it twice:
+  // items are merged on the certification they actually hold (and its date),
+  // keeping every requirement name it counts toward.
+  const people = useMemo(() => {
+    type Item = { key: string; held: string; expiresOn: string | null; labels: string[]; scopes: string[]; onPath: boolean };
+    const byEmail = new Map<
+      string,
+      { email: string; fullName: string; country: string; theatre: string; onPath: boolean; items: Map<string, Item> }
+    >();
+    for (const r of renewals) {
+      let p = byEmail.get(r.email);
+      if (!p) {
+        p = { email: r.email, fullName: r.fullName, country: r.country, theatre: r.theatre, onPath: false, items: new Map() };
+        byEmail.set(r.email, p);
+      }
+      p.onPath ||= r.onPath;
+      const held = r.heldTraining || shortCertText(r);
+      const key = `${held}|${r.expiresOn ?? ""}`;
+      let item = p.items.get(key);
+      if (!item) {
+        item = { key, held, expiresOn: r.expiresOn ?? null, labels: [], scopes: [], onPath: false };
+        p.items.set(key, item);
+      }
+      item.onPath ||= r.onPath;
+      if (r.label && !item.labels.includes(r.label)) item.labels.push(r.label);
+      if (!item.scopes.includes(r.scopeLabel)) item.scopes.push(r.scopeLabel);
+    }
+    return [...byEmail.values()]
+      .map((p) => ({ ...p, items: [...p.items.values()] }))
+      .sort((a, b) => Number(b.onPath) - Number(a.onPath) || a.fullName.localeCompare(b.fullName));
+  }, [renewals]);
+  // The scope is the plan's own unless rows are counted over several (one per
+  // country of an "each country" requirement, or target countries).
+  const showScope = new Set(renewals.map((r) => r.scopeLabel)).size > 1;
+  const hasOffPath = renewals.some((r) => !r.onPath);
   return (
     <div className="bg-white rounded-lg border border-amber-200 p-4 mb-6">
       <div className="flex items-center justify-between mb-3">
@@ -2543,6 +3102,9 @@ function RenewalTable({
               defines the total that way), so this and the KPI card cannot
               disagree — they reported different measures until they did. */}
           <AlertTriangle size={18} /> Renewals at risk — expiring within {monthsLabel(windowMonths)} ({renewals.length})
+          <span className="text-sm font-normal text-amber-700">
+            · {people.length} {people.length === 1 ? "person" : "people"}
+          </span>
         </h2>
         <ExportMenu
           show={showExport}
@@ -2584,38 +3146,55 @@ function RenewalTable({
           </ul>
         </div>
       )}
-      <p className="text-xs text-gray-500 mb-2">{RENEWAL_LEAD.all}</p>
+      <p className="text-xs text-gray-500 mb-1">
+        {RENEWAL_LEAD.all} {planForWindow ? RENEWAL_LEAD.onPathPlanned(renewalMoves) : RENEWAL_LEAD.onPathStatus}
+      </p>
+      {hasOffPath && (
+        <p className="text-xs text-gray-500 mb-2">
+          <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-600">reference</span>{" "}
+          {RENEWAL_LEAD.offPath}
+        </p>
+      )}
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs text-gray-500 border-b border-gray-200">
-              <th className="py-2 pr-3">Name</th><th className="py-2 pr-3">Country</th><th className="py-2 pr-3">Theatre</th><th className="py-2 pr-3">Certification</th><th className="py-2">Scope</th>
+              <th className="py-2 pr-3">Name</th>
+              <th className="py-2 pr-3">Country</th>
+              <th className="py-2 pr-3">Theatre</th>
+              <th className="py-2">Expiring certification</th>
             </tr>
           </thead>
-          {groups.map((g) => (
-            <tbody key={g.key}>
-              <tr>
-                <td colSpan={5} className="pt-3 pb-1">
-                  <div className="text-xs font-medium text-gray-700">
-                    {g.title}{" "}({g.rows.length})
-                  </div>
-                  <div className="text-xs text-gray-500">{g.lead}</div>
+          <tbody>
+            {people.map((p) => (
+              <tr key={p.email} className={`border-b border-gray-50 align-top${p.onPath ? "" : " text-gray-500"}`}>
+                <td className="py-1.5 pr-3">
+                  <Link href={`/students/${encodeURIComponent(p.email)}`} className="text-blue-600 hover:underline">{p.fullName}</Link>
+                </td>
+                <td className="py-1.5 pr-3">{p.country}</td>
+                <td className="py-1.5 pr-3">{p.theatre}</td>
+                <td className="py-1.5">
+                  <ul className="space-y-0.5">
+                    {p.items.map((item) => (
+                      <li key={item.key}>
+                        <span className="font-medium text-gray-800">{item.held}</span>
+                        {item.expiresOn && (
+                          <span className="text-amber-700"> · expires {formatDate(item.expiresOn)}</span>
+                        )}
+                        {item.labels.length > 0 && (
+                          <span className="text-xs text-gray-500"> · for {item.labels.join(", ")}</span>
+                        )}
+                        {showScope && <span className="text-xs text-gray-400"> · {item.scopes.join(", ")}</span>}
+                        {!item.onPath && (
+                          <span className="ml-1.5 rounded bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-600">reference</span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
                 </td>
               </tr>
-              {g.rows.map((r) => (
-                <tr
-                  key={`${r.email}-${r.cert}`}
-                  className={`border-b border-gray-50${g.dim ? " text-gray-500" : ""}`}
-                >
-                  <td className="py-1.5 pr-3"><Link href={`/students/${encodeURIComponent(r.email)}`} className="text-blue-600 hover:underline">{r.fullName}</Link></td>
-                  <td className="py-1.5 pr-3">{r.country}</td>
-                  <td className="py-1.5 pr-3">{r.theatre}</td>
-                  <td className="py-1.5 pr-3">{r.cert}</td>
-                  <td className="py-1.5">{r.scopeLabel}</td>
-                </tr>
-              ))}
-            </tbody>
-          ))}
+            ))}
+          </tbody>
         </table>
       </div>
     </div>

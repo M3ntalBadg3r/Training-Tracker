@@ -4,7 +4,12 @@ import { requireSuperAdmin, handleAuthError } from "@/lib/auth";
 import { safeDecodeParam } from "@/lib/utils";
 import { invalidateReportCache } from "@/lib/report-cache";
 import { readJsonBody } from "@/lib/request-body";
-import { parseProgramMinimums } from "@/lib/program-data-write";
+import {
+  parseIncludedTheatres,
+  parseProgramDescription,
+  parseProgramMinimums,
+  unknownTheatres,
+} from "@/lib/program-data-write";
 
 /**
  * PATCH /api/admin/program-data/program/[programName]
@@ -20,6 +25,11 @@ import { parseProgramMinimums } from "@/lib/program-data-write";
  *    minimum countries for the By Country Set view and the By Theatre view
  *    (target countries). Each 1–1000, or null/"" to clear; an absent key
  *    leaves the stored value alone.
+ *  - includedTheatres: the theatres the program operates in, as a list of
+ *    Region Data theatre names; [] or null = every theatre. An absent key
+ *    leaves it alone; an unknown theatre is a 400 naming it.
+ *  - description: free text (≤ 2000 characters); null or "" clears it, an
+ *    absent key leaves it alone.
  * Any subset may be provided; a settings-only PATCH omits newName.
  */
 export async function PATCH(
@@ -56,6 +66,23 @@ export async function PATCH(
   const minimums = parseProgramMinimums(body);
   if (!minimums.ok) {
     return NextResponse.json({ error: minimums.error }, { status: 400 });
+  }
+  let includedTheatres: string[] | undefined;
+  if (Object.prototype.hasOwnProperty.call(body, "includedTheatres")) {
+    const theatres = parseIncludedTheatres(body.includedTheatres);
+    if (!theatres.ok) return NextResponse.json({ error: theatres.error }, { status: 400 });
+    const unknown = await unknownTheatres(theatres.value);
+    if (unknown.length > 0) {
+      return NextResponse.json({ error: `Unknown theatre: ${unknown.join(", ")}` }, { status: 400 });
+    }
+    includedTheatres = theatres.value;
+  }
+
+  let description: string | null | undefined;
+  if (Object.prototype.hasOwnProperty.call(body, "description")) {
+    const parsedDescription = parseProgramDescription(body.description);
+    if (!parsedDescription.ok) return NextResponse.json({ error: parsedDescription.error }, { status: 400 });
+    description = parsedDescription.value;
   }
 
   // Existence check: the program must exist either in the registry or as rows.
@@ -100,7 +127,11 @@ export async function PATCH(
       deploymentMode?: string;
       countrySetMinimumCountries?: number | null;
       targetMinimumCountries?: number | null;
+      includedTheatres?: string[];
+      description?: string | null;
     } = {};
+    if (description !== undefined) settings.description = description;
+    if (includedTheatres !== undefined) settings.includedTheatres = includedTheatres;
     if (hasIsTiered) settings.isTiered = body.isTiered as boolean;
     if (hasDeploymentMode) settings.deploymentMode = deploymentMode;
     if (minimums.value.countrySetMinimumCountries !== undefined) {
@@ -134,13 +165,20 @@ export async function PATCH(
 
   const after = await prisma.program.findUnique({
     where: { name: finalName },
-    select: { countrySetMinimumCountries: true, targetMinimumCountries: true },
+    select: {
+      countrySetMinimumCountries: true,
+      targetMinimumCountries: true,
+      includedTheatres: true,
+      description: true,
+    },
   });
   return NextResponse.json({
     success: true,
     updated,
     countrySetMinimumCountries: after?.countrySetMinimumCountries ?? null,
     targetMinimumCountries: after?.targetMinimumCountries ?? null,
+    includedTheatres: after?.includedTheatres ?? [],
+    description: after?.description ?? null,
   });
 }
 

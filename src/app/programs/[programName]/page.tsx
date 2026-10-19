@@ -80,6 +80,12 @@ import {
 interface ProgramMeta {
   levels: string[];
   hasMinimumPerTheatre: boolean;
+  /** Some Global row names no training: a "N compliant theatres" rule. */
+  hasTheatreCountRows?: boolean;
+  /** The program's included theatres, or null/absent when it counts every theatre. */
+  includedTheatres?: string[] | null;
+  /** The program's own description, or null/absent when it has none. */
+  description?: string | null;
   isTiered?: boolean;
   deploymentMode?: string;
   /**
@@ -269,7 +275,10 @@ function ProgramDetailPageInner() {
     scopeLevelOffered(l, levels) && (l !== "countrySet" || countrySets.length > 0);
   const offeredLevels = SCOPE_LEVELS.filter((l) => levelOffered(l, meta?.levels ?? []));
   const listsCurrent = companyId !== null && listsCompanyId === companyId;
-  const gdStyleGlobal = meta?.hasMinimumPerTheatre ?? false;
+  // The Global view is drawn as per-specialisation cards with per-theatre
+  // breakdowns whenever there is a per-theatre figure to break down: a
+  // minimum per theatre, or a "N compliant theatres" row.
+  const gdStyleGlobal = (meta?.hasMinimumPerTheatre ?? false) || (meta?.hasTheatreCountRows ?? false);
   const isTiered = meta?.isTiered ?? false;
   // A program with TargetCountries rows counts them in its By Theatre view, over
   // the partner's target countries inside the viewed theatre — so that view
@@ -654,8 +663,13 @@ function ProgramDetailPageInner() {
         if (req.alternatives && req.alternatives.length > 0) {
           trainingLabel += " (or " + req.alternatives.map((a) => a.trainingFullTitle).join(", ") + ")";
         }
-        const globalAttained = req.globalAttained ?? req.attained;
-        const projectedGlobal = req.projectedGlobalAttained ?? globalAttained;
+        // A "N compliant theatres" row counts theatres, not holders, so its
+        // figure is `attained`; `globalAttained` would read 0 for it.
+        const theatreCount = req.theatreCompliance;
+        const globalAttained = theatreCount ? req.attained : req.globalAttained ?? req.attained;
+        const projectedGlobal = theatreCount
+          ? req.projectedAttained ?? globalAttained
+          : req.projectedGlobalAttained ?? globalAttained;
         const projCols = (count: number, projected: number, required: number): Record<string, string | number> =>
           horizonMonths > 0
             ? {
@@ -664,6 +678,7 @@ function ProgramDetailPageInner() {
                 projectedCompliant: projected >= required ? "Yes" : "No",
               }
             : {};
+        if (theatreCount) trainingLabel = req.label || "Theatre compliance (theatres meeting every Theatre requirement)";
         rows.push({
           specialisation: spec.name,
           purpose,
@@ -679,6 +694,31 @@ function ProgramDetailPageInner() {
           ...projCols(globalAttained, projectedGlobal, req.quantityRequired),
           ...(hasRequirementNames ? { requirementName: req.label ?? "" } : {}),
         });
+        if (theatreCount) {
+          // One row per theatre per Theatre-level requirement: the counts the
+          // theatre is judged on.
+          for (const t of theatreCount.theatres) {
+            theatreCount.requirements.forEach((r, i) => {
+              const count = t.counts[i] ?? 0;
+              const projected = t.projectedCounts?.[i] ?? count;
+              rows.push({
+                specialisation: spec.name,
+                purpose,
+                training: r.label || r.trainingFullTitle,
+                type: "—",
+                required: req.quantityRequired,
+                attained: globalAttained,
+                compliant: req.compliant ? "Yes" : "No",
+                theatre: t.theatre,
+                theatreCount: count,
+                theatreRequired: r.quantityRequired,
+                theatreCompliant: count >= r.quantityRequired ? "Yes" : "No",
+                ...projCols(count, projected, r.quantityRequired),
+                ...(hasRequirementNames ? { requirementName: r.label ?? "" } : {}),
+              });
+            });
+          }
+        }
         if (req.theatreBreakdown) {
           for (const t of req.theatreBreakdown) {
             const tReq = req.minimumPerTheatre ?? 0;
@@ -733,12 +773,16 @@ function ProgramDetailPageInner() {
   const horizonSuffix = horizonMonths > 0 ? `-plus${horizonMonths}mo` : "";
 
   // Report presentation for the selected scope.
-  const REPORT_META: Record<ScopeLevel, { label: string; icon: ReactNode; unit: "people" | "theatres" }> = {
+  const REPORT_META: Record<ScopeLevel, { label: string; icon: ReactNode; unit: "people" }> = {
     country: { label: "Country Report", icon: <MapPin size={20} className="text-blue-600" />, unit: "people" },
     region: { label: "Region Report", icon: <Map size={20} className="text-teal-600" />, unit: "people" },
     countrySet: { label: "Country Set Report", icon: <Boxes size={20} className="text-cyan-600" />, unit: "people" },
     theatre: { label: "Theatre Report", icon: <Building2 size={20} className="text-purple-600" />, unit: "people" },
-    global: { label: "Global Report", icon: <Globe size={20} className="text-green-600" />, unit: "theatres" },
+    // A Global row naming a training is a worldwide head count, so people; a
+    // row naming none ("N compliant theatres") switches the page to the card
+    // layout, and `requirementUnit` labels such a row in theatres wherever it
+    // is drawn.
+    global: { label: "Global Report", icon: <Globe size={20} className="text-green-600" />, unit: "people" },
   };
   const report = REPORT_META[scopeLevel];
   // A blank Country Set is the partner's configured set: titled with the name
@@ -771,7 +815,6 @@ function ProgramDetailPageInner() {
     // The Global card layout counts holders worldwide and gates on a per-theatre
     // minimum; every other layout counts people inside the selected scope.
     const globalCards = globalCardsView;
-    const unitLabel = globalCards ? "people" : report.unit;
 
     // Weighted so the training name — the only column whose content is prose —
     // gets the room it needs, and the Status column stays wide enough to hold a
@@ -882,6 +925,33 @@ function ProgramDetailPageInner() {
           tone: RISK_TONE[state],
           cells,
           detail: countryBreakdownLines(req.countryBreakdown, req.projectedCountryBreakdown, req.quantityRequired),
+        };
+      }
+      const theatreCount = req.theatreCompliance;
+      if (theatreCount) {
+        const tcState = riskState(req.attained, req.projectedAttained, req.quantityRequired);
+        const tcStatus = complianceRiskState(req.compliant, req.projectedCompliant);
+        const tcCells: Record<string, ReportCellValue> = {
+          training: {
+            text: req.label || "Theatre compliance",
+            sub: "Theatres meeting every Theatre-level requirement",
+          },
+          type: "—",
+          attained: attainedCell(req.attained, req.projectedAttained, req.quantityRequired),
+          status: { text: RISK_STATUS_LABEL[tcStatus], align: "center" },
+        };
+        if (globalCards) tcCells.minPerTheatre = "—";
+        return {
+          tone: RISK_TONE[tcState],
+          cells: tcCells,
+          detail: theatreCount.theatres.map((t) => {
+            const parts = theatreCount.requirements.map((r, i) => {
+              const projected = t.projectedCounts?.[i];
+              return `${r.label || r.trainingFullTitle} ${attainedText(t.counts[i] ?? 0, projected)} / ${r.quantityRequired}`;
+            });
+            const state = RISK_STATUS_LABEL[complianceRiskState(t.compliant, t.projectedCompliant)];
+            return `${t.theatre}: ${parts.join("; ")} (${state})`;
+          }),
         };
       }
       const attained = globalCards ? req.globalAttained ?? req.attained : req.attained;
@@ -1115,7 +1185,16 @@ function ProgramDetailPageInner() {
               { label: "Minimum countries", value: minimumText(targetMeta) },
             ]
           : []),
-        { label: "Counting", value: unitLabel === "theatres" ? "compliant theatres" : "people" },
+        ...(meta?.includedTheatres && meta.includedTheatres.length > 0 &&
+        (scopeLevel === "global" || scopeLevel === "theatre")
+          ? [{ label: "Theatres counted", value: meta.includedTheatres.join(", ") }]
+          : []),
+        {
+          label: "Counting",
+          // A Global view with "N compliant theatres" rows counts both.
+          value:
+            scopeLevel === "global" && meta?.hasTheatreCountRows ? "people, and compliant theatres" : "people",
+        },
         {
           label: "Compliance as of",
           value: horizonMonths > 0 ? `+${horizonMonths} months` : "Now",
@@ -1165,6 +1244,14 @@ function ProgramDetailPageInner() {
         back to "All companies" would otherwise leave that company's report on
         screen underneath a card saying no company is selected.
       */}
+      {/* The program's own description, like an offering's. Registry text, not
+          company data, so it may stay on screen whatever the header says. */}
+      {meta?.description && (
+        <div className="mb-4 rounded-lg border border-gray-200 bg-white p-4">
+          <p className="whitespace-pre-line text-sm text-gray-700">{meta.description}</p>
+        </div>
+      )}
+
       {companyRequired && <CompanyRequired what="dashboard" />}
 
       {!companyRequired && !noOfferedLevels && horizonMonths > 0 && meta && meta.levels.length > 0 && (
@@ -1248,6 +1335,17 @@ function ProgramDetailPageInner() {
               )}
             </FilterBar.Row>
           </FilterBar>
+
+          {/* A program limited to some theatres says which, on the views that
+              count theatres, so an absent theatre reads as excluded rather than
+              as missing data. */}
+          {meta?.includedTheatres && meta.includedTheatres.length > 0 &&
+            (scopeLevel === "global" || scopeLevel === "theatre") && (
+              <div className="mb-4 rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm text-gray-700">
+                <span className="font-medium">Theatres counted:</span> {meta.includedTheatres.join(", ")}
+                <span className="text-gray-500"> — this program does not include any other theatre.</span>
+              </div>
+            )}
 
           {/* The view's own header: what its minimum-countries gate counts, and
               anything about that the reader must not miss. None of it is

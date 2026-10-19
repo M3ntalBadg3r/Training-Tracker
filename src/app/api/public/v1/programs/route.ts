@@ -11,6 +11,7 @@ import { authorizePublicRequest } from "@/lib/public-api";
  *  - `hasMinimumPerTheatre`: whether any requirement enforces a per-theatre
  *    minimum (drives the per-theatre breakdown on the Global level)
  *  - `isTiered`: whether the program has a tier ladder
+ *  - `description`: the program's description as written by a SuperAdmin, or null
  *  - `hasTargetCountries`: whether the program has TargetCountries rows, so its
  *    `level=theatre` view also counts each partner's target countries inside
  *    the theatre (and needs the request narrowed to exactly one company)
@@ -24,9 +25,9 @@ import { authorizePublicRequest } from "@/lib/public-api";
  *    `Offering` is the deliberate contrast: it DOES carry a `companyId`,
  *    because offerings are tenant data. When something here is meant to be
  *    per-tenant, the schema says so.
- *  - Nothing per-company leaves this handler. The response is four fields per
- *    program — the program name, its configured levels and four booleans —
- *    all read from the registry tables above. No student, completion, count,
+ *  - Nothing per-company leaves this handler. The response per program is its
+ *    name, its description, its configured levels and three booleans — all
+ *    read from the registry tables above. No student, completion, count,
  *    attainment or company value is read, derived or returned, so no key can
  *    learn anything about another key's companies from it. The compliance
  *    numbers that ARE tenant data live at `/api/public/v1/programs/{name}`,
@@ -48,11 +49,12 @@ export async function GET(request: NextRequest) {
     prisma.programData.findMany({
       select: { programName: true, level: true, minimumPerTheatre: true },
     }),
-    prisma.program.findMany({ select: { name: true, isTiered: true } }),
+    prisma.program.findMany({ select: { name: true, isTiered: true, description: true } }),
     prisma.programTier.findMany({ select: { programName: true } }),
   ]);
 
   const isTieredByName = new Map(registry.map((p) => [p.name, p.isTiered]));
+  const descriptionByName = new Map(registry.map((p) => [p.name, p.description]));
   const hasTiers = new Set(tiers.map((t) => t.programName));
 
   const byProgram = new Map<string, { levels: Set<string>; hasMinimumPerTheatre: boolean }>();
@@ -81,6 +83,8 @@ export async function GET(request: NextRequest) {
       name,
       levels: [...info.levels],
       hasMinimumPerTheatre: info.hasMinimumPerTheatre,
+      // The program's free-text description (display only), or null.
+      description: descriptionByName.get(name) ?? null,
       isTiered: isTieredByName.get(name) === true,
       // A program with TargetCountries rows judges its By Theatre view over
       // the theatre AND each partner's target countries inside it, which

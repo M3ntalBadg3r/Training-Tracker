@@ -38,6 +38,28 @@ export interface AlternativeEntry {
   trainingFullTitle: string;
 }
 
+/**
+ * The detail behind a Global "N compliant theatres" row (a Global row naming no
+ * training): for each of the program's included theatres, its count against
+ * every Theatre-level row of the specialisation, in `requirements` order. A
+ * theatre is compliant when every count reaches its row's quantity.
+ */
+export interface TheatreComplianceDetail {
+  requirements: {
+    trainingFullTitle: string;
+    label: string | null;
+    quantityRequired: number;
+    alternatives: string[];
+  }[];
+  theatres: {
+    theatre: string;
+    counts: number[];
+    compliant: boolean;
+    projectedCounts?: number[];
+    projectedCompliant?: boolean;
+  }[];
+}
+
 export interface Requirement {
   trainingType: string | null;
   trainingTitle: string | null;
@@ -61,6 +83,8 @@ export interface Requirement {
   projectedGlobalAttained?: number;
   projectedTheatreBreakdown?: { theatre: string; count: number; compliant: boolean }[] | null;
   projectedCompliant?: boolean;
+  /** Global "N compliant theatres" rows only (optional for older payloads). */
+  theatreCompliance?: TheatreComplianceDetail;
   /**
    * How the row counts. Always present from the current API; optional here so
    * an older cached payload still renders. `"eachCountry"` only ever appears on
@@ -342,6 +366,17 @@ export function requiredText(
   if (isEachCountry(req)) return `${req.quantityRequired} per country`;
   if (isMultiCountryScope(level) || req.population === "targetCountries") return `${req.quantityRequired} total`;
   return `${req.quantityRequired} ${unitLabel}`.trim();
+}
+
+/**
+ * The unit a requirement's Required and Attained cells are counted in. A row
+ * naming no training is a "N compliant theatres" rule and counts theatres; every
+ * other row counts distinct people, whatever the view. Decided per row rather
+ * than per view, because a Global view can hold both kinds: the view-wide unit
+ * once labelled a Global head count "N theatres" when it was N people.
+ */
+export function requirementUnit(req: { trainingTitle: string | null }, unitLabel: string): string {
+  return req.trainingTitle === null ? "theatres" : unitLabel;
 }
 
 /** Whether a view scope ("region", "countrySet", …) spans several countries. */
@@ -698,7 +733,7 @@ function RequirementRowGroup({
           return (
             <td key={spec.name} className="px-4 py-2 text-center border border-gray-200">
               {req ? (
-                <span className="font-semibold">{requiredText(req, level, unitLabel)}</span>
+                <span className="font-semibold">{requiredText(req, level, requirementUnit(req, unitLabel))}</span>
               ) : (
                 <span className="text-gray-300">—</span>
               )}
@@ -755,7 +790,7 @@ function RequirementRowGroup({
               <AttainedValue
                 attained={req.attained}
                 projected={req.projectedAttained}
-                unitLabel={unitLabel}
+                unitLabel={requirementUnit(req, unitLabel)}
                 className={`font-bold ${RISK_TEXT[state]}`}
               />
               {level !== "global" && req.trainingTitle && (
@@ -1022,6 +1057,11 @@ export function SpecialisationCard({ spec }: { spec: Specialisation }) {
 }
 
 function RequirementRows({ req }: { req: Requirement }) {
+  if (req.theatreCompliance) return <TheatreCountRows req={req} detail={req.theatreCompliance} />;
+  return <HolderCountRows req={req} />;
+}
+
+function HolderCountRows({ req }: { req: Requirement }) {
   const [expanded, setExpanded] = useState(false);
   const hasTheatreBreakdown = req.theatreBreakdown != null && req.theatreBreakdown.length > 0;
   const globalAttained = req.globalAttained ?? req.attained;
@@ -1114,6 +1154,116 @@ function RequirementRows({ req }: { req: Requirement }) {
                             className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${RISK_BADGE[tState]}`}
                           >
                             {tLabel}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
+/**
+ * A Global "N compliant theatres" row in a specialisation card. The figure is
+ * how many of the program's included theatres meet every Theatre-level row of
+ * the specialisation; the expander shows each theatre's count against each of
+ * those rows, so a reader can see which theatre falls short and by how much.
+ */
+function TheatreCountRows({ req, detail }: { req: Requirement; detail: TheatreComplianceDetail }) {
+  const [expanded, setExpanded] = useState(false);
+  const canExpand = detail.theatres.length > 0 && detail.requirements.length > 0;
+  const attainedState = riskState(req.attained, req.projectedAttained, req.quantityRequired);
+  const statusState = complianceRiskState(req.compliant, req.projectedCompliant);
+  const theatresWord = (n: number) => `${n} theatre${n === 1 ? "" : "s"}`;
+
+  return (
+    <>
+      <tr className="border-t border-gray-100 hover:bg-gray-50">
+        <td className="px-4 py-3">
+          {canExpand ? (
+            <button
+              onClick={() => setExpanded((p) => !p)}
+              className="text-gray-400 hover:text-gray-700"
+              title={expanded ? "Collapse theatre breakdown" : "Expand theatre breakdown"}
+            >
+              {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+            </button>
+          ) : null}
+        </td>
+        <td className="px-4 py-3">
+          <div className="font-medium">{req.label || "Theatre compliance"}</div>
+          <div className="text-xs text-gray-600">
+            Theatres meeting every Theatre-level requirement of this specialisation
+          </div>
+        </td>
+        <td className="px-4 py-3 text-gray-600">—</td>
+        <td className="px-4 py-3 text-center font-semibold">{theatresWord(req.quantityRequired)}</td>
+        <td className="px-4 py-3 text-center">
+          <AttainedValue
+            attained={req.attained}
+            projected={req.projectedAttained}
+            className={`font-bold ${RISK_TEXT[attainedState]}`}
+          />
+          <div className="text-xs text-gray-500">of {theatresWord(detail.theatres.length)}</div>
+        </td>
+        <td className="px-4 py-3 text-center text-gray-600">—</td>
+        <td className="px-4 py-3 text-center">
+          <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${RISK_BADGE[statusState]}`}>
+            {RISK_STATUS_LABEL[statusState]}
+          </span>
+        </td>
+      </tr>
+      {expanded && canExpand && (
+        <tr className="bg-gray-50">
+          <td colSpan={7} className="px-4 pb-3 pt-0">
+            <div className="ml-6 rounded border border-gray-200 overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-100">
+                  <tr>
+                    <th className="px-3 py-2 text-left font-medium text-gray-600">Theatre</th>
+                    {detail.requirements.map((r, i) => (
+                      <th key={i} className="px-3 py-2 text-center font-medium text-gray-600">
+                        <div>{r.label || r.trainingFullTitle}</div>
+                        {r.alternatives.length > 0 && !r.label && (
+                          <div className="text-xs font-normal text-gray-500">or {r.alternatives.join(", ")}</div>
+                        )}
+                        <div className="text-xs font-normal text-gray-500">need {r.quantityRequired}</div>
+                      </th>
+                    ))}
+                    <th className="px-3 py-2 text-center font-medium text-gray-600">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {detail.theatres.map((t) => {
+                    const tState = complianceRiskState(t.compliant, t.projectedCompliant);
+                    return (
+                      <tr key={t.theatre} className="border-t border-gray-200">
+                        <td className="px-3 py-2">{t.theatre}</td>
+                        {detail.requirements.map((r, i) => {
+                          const projected = t.projectedCounts?.[i];
+                          const cState = riskState(t.counts[i], projected, r.quantityRequired);
+                          return (
+                            <td key={i} className="px-3 py-2 text-center">
+                              <AttainedValue
+                                attained={t.counts[i]}
+                                projected={projected}
+                                className={`font-semibold ${RISK_TEXT[cState]}`}
+                              />
+                              <span className="text-gray-500"> / {r.quantityRequired}</span>
+                            </td>
+                          );
+                        })}
+                        <td className="px-3 py-2 text-center">
+                          <span
+                            className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${RISK_BADGE[tState]}`}
+                          >
+                            {RISK_STATUS_LABEL[tState]}
                           </span>
                         </td>
                       </tr>

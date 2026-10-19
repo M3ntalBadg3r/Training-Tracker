@@ -12,6 +12,7 @@ import { requireAuth, handleAuthError } from "@/lib/auth";
  *    Region rows exist; it is no longer derived from the Country rows.
  *  - `hasMinimumPerTheatre`: whether any requirement enforces a per-theatre
  *    minimum (drives the per-theatre breakdown on the Global level)
+ *  - `description`: the program's own description, or null
  *  - `hasTargetCountries`: the program has TargetCountries rows, so its By
  *    Theatre view also counts each partner's target countries inside the
  *    viewed theatre (`program-target-countries.ts`)
@@ -30,11 +31,12 @@ export async function GET(request: NextRequest) {
     prisma.programData.findMany({
       select: { programName: true, level: true, minimumPerTheatre: true },
     }),
-    prisma.program.findMany({ select: { name: true, isTiered: true } }),
+    prisma.program.findMany({ select: { name: true, isTiered: true, description: true } }),
     prisma.programTier.findMany({ select: { programName: true } }),
   ]);
 
   const isTieredByName = new Map(registry.map((p) => [p.name, p.isTiered]));
+  const descriptionByName = new Map(registry.map((p) => [p.name, p.description]));
   const hasTiers = new Set(tiers.map((t) => t.programName));
 
   const byProgram = new Map<string, { levels: Set<string>; hasMinimumPerTheatre: boolean }>();
@@ -63,6 +65,8 @@ export async function GET(request: NextRequest) {
       name,
       levels: [...info.levels],
       hasMinimumPerTheatre: info.hasMinimumPerTheatre,
+      // The program's free-text description (display only), or null.
+      description: descriptionByName.get(name) ?? null,
       isTiered: isTieredByName.get(name) === true,
       // A program with TargetCountries rows judges its By Theatre view over
       // the theatre AND each partner's target countries inside it, which

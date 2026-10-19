@@ -223,3 +223,28 @@ export interface MinimumCountriesGate {
   /** Whose rule the minimum came from: the partner's own, the program default, or none. */
   source: MinimumCountriesSource;
 }
+
+// ── Included theatres ───────────────────────────────────────────────────────
+
+/**
+ * Limit a theatre list to a program's included theatres (`Program.includedTheatres`).
+ * An empty or missing list means "every theatre", which is what every program
+ * meant before the setting existed — so this returns the input unchanged then.
+ * Order follows `theatres`, never `included`, so pick-lists keep their sort.
+ */
+export function restrictToIncludedTheatres(
+  theatres: readonly string[],
+  included: readonly string[] | null | undefined
+): string[] {
+  if (!included || included.length === 0) return [...theatres];
+  const keep = new Set(included);
+  return theatres.filter((t) => keep.has(t));
+}
+
+/** Whether a program with these included theatres counts `theatre` (empty = every theatre). */
+export function isTheatreIncluded(
+  theatre: string,
+  included: readonly string[] | null | undefined
+): boolean {
+  return !included || included.length === 0 || included.includes(theatre);
+}
