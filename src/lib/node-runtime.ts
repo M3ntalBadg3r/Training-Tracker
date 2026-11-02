@@ -15,4 +15,5 @@
 export {
   NODE_SECURITY_FLOORS,
   assessNodeVersion,
+  assessRunningNode,
 } from "../../deploy/lib/node-runtime.mjs";
