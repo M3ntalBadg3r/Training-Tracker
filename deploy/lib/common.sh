@@ -1348,6 +1348,131 @@ ensure_node_runtime() {
     return 0
 }
 
+# --- Automatic OS security updates -------------------------------------------
+#
+# The app's own updates cover the app and (via ensure_node_runtime) Node.js.
+# Everything else on the host — PostgreSQL, system OpenSSL, ca-certificates,
+# git, curl, the kernel — comes from the distribution, whose security fixes
+# arrive through its own channel. On Debian/Ubuntu that channel is
+# unattended-upgrades, and on a minimal install it is often not installed, so
+# nothing patched those packages at all. Admin › Updates reports whether it is
+# on (src/lib/os-updates.ts); this is the install-time half.
+#
+# Deliberately called from install.sh ONLY, never from an update. Turning on
+# OS-wide automatic patching is a decision about the whole host, so it is asked
+# once, when the operator is present to answer — not applied to every existing
+# box behind its operator's back by a routine app update.
+#
+# Rules, each for a reason:
+#   - Fail-soft, always returns 0: an install must never fail over this.
+#   - An explicit "0" in apt's configuration is a deliberate choice and is left
+#     alone unless the operator said yes outright (UNATTENDED_UPGRADES=yes or a
+#     "y" at the prompt). A container image's APT::Periodic::Enable "0" is never
+#     overridden at all — it switches off every periodic apt job on the host,
+#     and that is not this script's call.
+#   - It writes /etc/apt/apt.conf.d/20auto-upgrades, the same file the package
+#     and `dpkg-reconfigure unattended-upgrades` manage, with the package's own
+#     default content — not a file of our own that would silently override the
+#     operator's later dpkg-reconfigure. (The debconf route is not used because
+#     ucf will not recreate that file once an admin has deleted it.)
+#   - It never edits 50unattended-upgrades: which origins are patched stays the
+#     distribution's default.
+#   - A masked apt timer is reported, never unmasked.
+
+# The value apt resolves for KEY across every configuration file (later files
+# win), or nothing when it is unset. Read with `apt-config dump`, never sourced
+# or eval'd.
+apt_config_value() {
+    command -v apt-config >/dev/null 2>&1 || return 0
+    apt-config dump 2>/dev/null | awk -v want="$1" '
+        tolower($1) == tolower(want) {
+            v = $0; sub(/^[^ ]+ /, "", v); sub(/;$/, "", v); gsub(/^"|"$/, "", v); val = v
+        }
+        END { if (val != "") print val }'
+}
+
+# Is an APT::Periodic interval value "on"? Unset and "0" are off; anything else
+# ("1", "7", "always") runs.
+_apt_periodic_on() {
+    [ -n "$1" ] && [ "$1" != "0" ]
+}
+
+ensure_apt_timers() {
+    command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ] || return 0
+    local t state
+    for t in apt-daily.timer apt-daily-upgrade.timer; do
+        state="$(systemctl is-enabled "${t}" 2>/dev/null)" || true
+        case "${state}" in
+            enabled|enabled-runtime|static|alias|indirect|generated) ;;
+            masked|masked-runtime)
+                echo "Automatic OS security updates: WARNING — ${t} is masked, so they will not run. Left as it is (systemctl unmask ${t} to change that)." ;;
+            *)
+                systemctl enable --now "${t}" >/dev/null 2>&1 \
+                    || echo "Automatic OS security updates: WARNING — could not enable ${t}." ;;
+        esac
+    done
+}
+
+# $1: yes | no | default (default = enable unless apt's configuration already
+# switches it off explicitly).
+# $2: the apt configuration directory to write into. For the fixture tests only
+#     (so they never write the real /etc); install.sh never passes it. An
+#     argument rather than an environment variable, so nothing outside the
+#     caller can redirect where root writes.
+ensure_unattended_upgrades() {
+    local choice="${1:-default}" conf_dir="${2:-/etc/apt/apt.conf.d}" enable upgrade lists
+    if ! command -v apt-get >/dev/null 2>&1; then
+        echo "Automatic OS security updates: not an apt-based system — skipped. Keep this host patched by its own mechanism."
+        return 0
+    fi
+    if [ "${choice}" = "no" ]; then
+        echo "Automatic OS security updates: declined — left as configured."
+        return 0
+    fi
+
+    if ! command -v unattended-upgrade >/dev/null 2>&1; then
+        if ! DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+                -o DPkg::Lock::Timeout=120 unattended-upgrades >/dev/null 2>&1; then
+            echo "Automatic OS security updates: WARNING — could not install unattended-upgrades."
+            return 0
+        fi
+    fi
+
+    enable="$(apt_config_value APT::Periodic::Enable)"
+    if [ "${enable}" = "0" ]; then
+        echo "Automatic OS security updates: WARNING — APT::Periodic::Enable is \"0\" in this host's apt configuration, which switches off every periodic apt job (common in container images). Left as it is."
+        return 0
+    fi
+
+    upgrade="$(apt_config_value APT::Periodic::Unattended-Upgrade)"
+    lists="$(apt_config_value APT::Periodic::Update-Package-Lists)"
+    if _apt_periodic_on "${upgrade}" && _apt_periodic_on "${lists}"; then
+        ensure_apt_timers
+        echo "Automatic OS security updates: already on."
+        return 0
+    fi
+    if [ "${choice}" = "default" ] && { [ "${upgrade}" = "0" ] || [ "${lists}" = "0" ]; }; then
+        echo "Automatic OS security updates: switched off explicitly in this host's apt configuration — left as it is (run with UNATTENDED_UPGRADES=yes to turn them on)."
+        return 0
+    fi
+
+    if ! printf 'APT::Periodic::Update-Package-Lists "1";\nAPT::Periodic::Unattended-Upgrade "1";\n' \
+            > "${conf_dir}/20auto-upgrades" 2>/dev/null; then
+        echo "Automatic OS security updates: WARNING — could not write ${conf_dir}/20auto-upgrades."
+        return 0
+    fi
+    ensure_apt_timers
+
+    upgrade="$(apt_config_value APT::Periodic::Unattended-Upgrade)"
+    lists="$(apt_config_value APT::Periodic::Update-Package-Lists)"
+    if _apt_periodic_on "${upgrade}" && _apt_periodic_on "${lists}"; then
+        echo "Automatic OS security updates: turned on (unattended-upgrades, distribution security updates)."
+    else
+        echo "Automatic OS security updates: WARNING — another apt configuration file still switches them off."
+    fi
+    return 0
+}
+
 # --- Build -------------------------------------------------------------------
 #
 # Everything below exists because of one failure mode: a production build dying

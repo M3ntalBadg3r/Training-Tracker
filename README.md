@@ -119,7 +119,7 @@ The installation script (`deploy/install.sh`) performs a complete, automated set
 bash deploy/install.sh
 ```
 
-**What it does (9 steps):**
+**What it does (10 steps):**
 
 1. **Updates system packages** via `apt-get update`.
 2. **Installs Node.js 22 LTS** from the NodeSource repository — the newest 22.x it carries. If a system-wide Node 22 or later is already present it is kept, but a packaged one below the Node.js security floor (see [Node.js security updates](#nodejs-security-updates)) is upgraded within its release line.
@@ -129,7 +129,8 @@ bash deploy/install.sh
 6. **Configures the `.env` file** — creates it if missing (or appends only the missing keys to an existing one) and **auto-generates strong random secrets** for `JWT_SECRET`, `ENCRYPTION_KEY`, and `CRON_SECRET`. It also **prompts** whether you use a public domain name (→ `APP_BASE_URL`) and whether you sit behind a reverse proxy (→ `TRUSTED_PROXIES`, asking for the proxy IP(s), default `127.0.0.1,::1`). On a non-interactive install (`curl | sudo bash` with no terminal) the prompts are skipped; you can preset them via environment variables instead, e.g. `APP_BASE_URL="https://tracker.example.com" bash deploy/install.sh`. Finally, when a system CA bundle is present it sets `NODE_EXTRA_CA_CERTS` so installs **behind an SSL-inspecting proxy/firewall** work (see below).
 7. **Installs npm dependencies**, runs Prisma migrations, generates the Prisma client, and builds the application.
 8. **Installs a systemd service** (`training-tracker.service`) so the application starts automatically on boot. Falls back to an init.d script if systemd is not available.
-9. **Prints the URL** plus a configuration summary — including the **generated database password** (save it; it is also stored in `.env`).
+9. **Installs the scheduled jobs**, and turns on **automatic OS security updates** (`unattended-upgrades`) so PostgreSQL, OpenSSL and the rest of the system keep receiving the distribution's security fixes. It asks first (default yes); `UNATTENDED_UPGRADES=yes|no` answers in advance for a non-interactive install. A server whose apt configuration already switches them off explicitly is left as it is unless you answer yes. See [OS security updates](#os-security-updates).
+10. **Prints the URL** plus a configuration summary — including the **generated database password** (save it; it is also stored in `.env`).
 
 **Database credentials:** database `training_tracker`, user `tracker`, with a random password generated at install time and written to `DATABASE_URL` in `/opt/training-tracker/.env`. The generated password is printed in the install summary. To change it later, edit `/opt/training-tracker/.env` (and the PostgreSQL role) and restart the service.
 
@@ -1120,6 +1121,12 @@ The Updates page shows the running Node.js version, and an amber notice when it 
 apt-get update && apt-get install --only-upgrade nodejs
 systemctl restart training-tracker
 ```
+
+#### OS security updates
+
+Training Tracker's updates cover the application and Node.js. **PostgreSQL, OpenSSL, `ca-certificates` and the rest of the operating system get their security fixes from the distribution**, which on Debian/Ubuntu means `unattended-upgrades`. The installer turns it on (see step 9 above). It writes only the standard `/etc/apt/apt.conf.d/20auto-upgrades`, the file `dpkg-reconfigure unattended-upgrades` also manages, and leaves the distribution's choice of which updates to apply (`50unattended-upgrades`) untouched. It never overrides an `APT::Periodic::Enable "0"` (common in container images) and never unmasks an apt timer.
+
+The Updates page shows whether automatic OS security updates are on, read from the apt configuration on disk. When they are off, an amber notice gives the reason and the commands to fix it. **Applying a Training Tracker update never changes this setting**, because it affects the whole server; servers installed before this existed are covered only by that notice. Note that a PostgreSQL security update restarts the database briefly; the app reconnects on its own.
 
 #### Rollback & Error Handling
 
