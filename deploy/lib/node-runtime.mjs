@@ -84,6 +84,27 @@ export function assessNodeVersion(input) {
 }
 
 /**
+ * Classify the Node.js release this process is running on.
+ *
+ * Reads `process.versions` HERE rather than at the call site, and that is
+ * load-bearing for `src/instrumentation.ts`: that module is also compiled for
+ * the edge runtime, and a direct `process.versions` reference in it makes
+ * Turbopack print "Ecmascript file had an error" on every successful build —
+ * which `deploy/perform-update.sh` copies into `.update-log`, the file an
+ * operator reads when an update goes wrong. Instrumentation reaches this
+ * function through a dynamic import inside its `NEXT_RUNTIME === "nodejs"`
+ * guard, which the edge build never follows. Read defensively (`globalThis`,
+ * optional chaining) so the module stays loadable anywhere; an unreadable
+ * version is reported as "unknown", never as fine.
+ *
+ * @returns {NodeAssessment}
+ */
+export function assessRunningNode() {
+  const version = globalThis.process?.versions?.node;
+  return assessNodeVersion(typeof version === "string" ? version : "");
+}
+
+/**
  * The upstream part of a Debian package version: `1:22.23.4-1nodesource1` and
  * `22.23.4-ns6.3.9` both give `22.23.4`. Used by root to compare an apt
  * candidate against the floor before installing it.

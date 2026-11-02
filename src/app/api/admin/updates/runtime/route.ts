@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSuperAdmin, handleAuthError } from "@/lib/auth";
-import { assessNodeVersion } from "@/lib/node-runtime";
+import { assessRunningNode } from "@/lib/node-runtime";
 
 /**
  * The Node.js runtime this server is running on, judged against the security
@@ -10,9 +10,9 @@ import { assessNodeVersion } from "@/lib/node-runtime";
  * SuperAdmin-only (`/api/admin/updates` is in the proxy's SuperAdmin prefixes
  * and guarded here as well): an exact runtime version is a fingerprinting
  * primitive, which is the same reason the app version is not exposed before
- * sign-in. It reads `process.versions.node`, i.e. the binary actually serving
- * requests — after an upgrade the package on disk is newer until the service
- * restarts, and the running one is what matters.
+ * sign-in. It reads `process.versions.node` (via `assessRunningNode`), i.e.
+ * the binary actually serving requests — after an upgrade the package on disk
+ * is newer until the service restarts, and the running one is what matters.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
     return handleAuthError(error);
   }
 
-  const assessment = assessNodeVersion(process.versions.node);
+  const assessment = assessRunningNode();
   return NextResponse.json({
     node: {
       version: assessment.version,

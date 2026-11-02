@@ -265,12 +265,15 @@ export async function register(): Promise<void> {
   // puts `node:net` in the edge bundle and makes every successful build print
   // an "error" line into the operator-facing update log.
   const { resolveTrustedProxies } = await import("@/lib/client-ip");
-  const { assessNodeVersion } = await import("@/lib/node-runtime");
+  // `assessRunningNode` reads process.versions itself: a direct reference here
+  // is flagged by Turbopack's edge-runtime check on every build (see
+  // deploy/lib/node-runtime.mjs).
+  const { assessRunningNode } = await import("@/lib/node-runtime");
 
   const findings = collectFindings(
     process.env,
     resolveTrustedProxies(process.env.TRUSTED_PROXIES),
-    assessNodeVersion(process.versions.node)
+    assessRunningNode()
   );
   // In development a healthy install is completely silent. In production it
   // prints exactly one line — the trusted-proxy set, which is deliberately
