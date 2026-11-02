@@ -1,0 +1,44 @@
+name: Dependency audit
+
+# Fails when `npm audit` reports an advisory that is neither fixed nor listed,
+# with a reason, in scripts/check-npm-audit.mjs. See that file's header for why
+# it exists and what it does and does not cover.
+#
+# A workflow of its own, rather than a step in ci.yml's `check` job, for two
+# reasons:
+#
+#   - It runs on a SCHEDULE as well. Advisories are published against code that
+#     has not changed, so a check that only ran on pushes would say nothing in a
+#     quiet week — which is exactly when nobody is looking. A failed scheduled
+#     run notifies the repository owner.
+#   - It answers from the registry's advisory database, which moves under it.
+#     Inside `check` (a required status check) a newly published advisory would
+#     turn every open PR red at once, unrelated ones included. As its own job
+#     it reports on every PR without that coupling; making it required is a
+#     branch-protection setting, deliberately left as a decision.
+#
+# No `npm ci`: `npm audit` reads the lockfile and the registry, not
+# node_modules, so this needs nothing installed beyond Node itself.
+
+on:
+  push:
+    branches: [dev, beta, master]
+  pull_request:
+    branches: [dev, master]
+  schedule:
+    # Mondays 06:17 UTC — off the hour, which is when scheduled runs queue.
+    - cron: "17 6 * * 1"
+  workflow_dispatch: {}
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: npm audit (every advisory fixed or accepted with a reason)
+        run: npm run check:audit
