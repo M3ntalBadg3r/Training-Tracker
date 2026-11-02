@@ -15,6 +15,7 @@
     "check:release": "node scripts/check-release-hygiene.mjs",
     "check:deid": "node scripts/check-deidentification.mjs",
     "check:version": "node scripts/check-version-order.mjs",
+    "check:audit": "node scripts/check-npm-audit.mjs",
     "notes:draft": "node scripts/draft-release-notes.mjs",
     "check:jsx": "node scripts/check-jsx-whitespace.mjs",
     "check:deploy": "bash scripts/check-deploy-scripts.sh && node scripts/check-deploy-parity.mjs",
@@ -25,11 +26,11 @@
     "api-spec:inventory": "node scripts/check-api-spec.mjs --inventory"
   },
   "dependencies": {
-    "@prisma/adapter-pg": "^7.5.0",
-    "@prisma/client": "^7.5.0",
+    "@prisma/adapter-pg": "^7.10.1",
+    "@prisma/client": "^7.10.1",
     "@types/nodemailer": "^8.0.1",
     "bcryptjs": "^3.0.3",
-    "box-node-sdk": "^10.5.0",
+    "box-node-sdk": "^10.18.0",
     "dotenv": "^17.3.1",
     "googleapis": "^178.1.1",
     "jose": "^6.2.2",
@@ -38,7 +39,7 @@
     "jszip": "^3.10.1",
     "lucide-react": "^1.7.0",
     "next": "16.4.1",
-    "nodemailer": "^10.0.3",
+    "nodemailer": "^10.3.1",
     "otpauth": "^9.5.0",
     "papaparse": "^5.5.3",
     "qrcode": "^1.5.4",
@@ -58,7 +59,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.4.1",
-    "prisma": "^7.5.0",
+    "prisma": "^7.10.1",
     "tailwindcss": "^4",
     "typescript": "^6"
   }
