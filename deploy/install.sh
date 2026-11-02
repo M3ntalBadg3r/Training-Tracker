@@ -149,6 +149,10 @@ if ! command -v npm &> /dev/null; then
     echo "npm still not found, installing npm separately..."
     apt-get install -y npm
 fi
+# The skip above keeps an existing system Node — which may predate a Node
+# security release. Bring a packaged one up to the security floor now rather
+# than at the first update. No-op (no apt call) when it is already there.
+ensure_node_runtime
 echo "Using Node $(node --version), npm $(npm --version)"
 
 # 3. Install PostgreSQL
