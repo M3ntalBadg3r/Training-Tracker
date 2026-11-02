@@ -38,7 +38,8 @@
  *
  * `xlsx` is installed from the vendor's CDN, not the registry, so `npm audit`
  * cannot see it at all — see the Deployment section of CLAUDE.md. A clean run
- * here says nothing about it.
+ * here says nothing about it; `scripts/check-xlsx-version.mjs` (`npm run
+ * check:xlsx`, the same workflow) watches it against the vendor instead.
  *
  * Run: npm run check:audit
  */

@@ -19,6 +19,12 @@ name: Dependency audit
 #
 # No `npm ci`: `npm audit` reads the lockfile and the registry, not
 # node_modules, so this needs nothing installed beyond Node itself.
+#
+# The `xlsx` job is the same watch for the one dependency `npm audit` cannot
+# see: SheetJS is installed from the vendor's CDN, so its releases and
+# advisories are checked against cdn.sheetjs.com directly
+# (scripts/check-xlsx-version.mjs). A separate job so that one failing does not
+# hide the other's answer.
 
 on:
   push:
@@ -42,3 +48,15 @@ jobs:
 
       - name: npm audit (every advisory fixed or accepted with a reason)
         run: npm run check:audit
+
+  xlsx:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: xlsx (pinned to the newest SheetJS release, every vendor advisory fixed)
+        run: npm run check:xlsx
