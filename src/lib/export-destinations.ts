@@ -13,6 +13,7 @@ import { Readable } from "stream";
 import { refreshTokens } from "@/lib/oauth-providers";
 import { persistRefreshToken } from "@/lib/credential-health";
 import { exportRoot, resolveWithin } from "@/lib/safe-path";
+import { uploadToBox } from "@/lib/box-upload";
 
 // ─── Local filesystem ────────────────────────────────────────────────────────────
 
@@ -197,12 +198,12 @@ export async function deliverBox(
     refreshToken: config.refreshToken,
   });
 
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const BoxSDK = require("box-node-sdk");
-  const sdk = new BoxSDK({ clientID: config.clientId, clientSecret: config.clientSecret });
-  const client = sdk.getBasicClient(refreshed.accessToken);
-  const folderId = config.folderId ?? "0";
-  await client.files.uploadFile(folderId, filename, buffer);
+  await uploadToBox({
+    accessToken: refreshed.accessToken,
+    folderId: config.folderId ?? "0",
+    filename,
+    content: buffer,
+  });
 
   // Box rotates refresh tokens on every grant — persist the new one or the
   // next run will fail. Best-effort: swallow persist errors so the upload

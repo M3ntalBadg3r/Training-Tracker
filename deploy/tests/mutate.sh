@@ -79,6 +79,8 @@ SUITES=(
     test-nofollow-primitives.sh
     test-load-env-allowlist.sh
     test-ensure-ownership.sh
+    test-ensure-node-runtime.sh
+    test-ensure-unattended-upgrades.sh
 )
 
 # One throwaway account for the whole run. Created once, verified, and removed
@@ -194,6 +196,16 @@ MUTATIONS=(
 "|test-ensure-ownership.sh|make .env 0664 instead of 0660|s/                chmod 0660 \"\${APP_DIR}\/.env\"/                chmod 0664 \"\${APP_DIR}\/.env\"/"
 "|test-ensure-ownership.sh|drop the symlink guard on the .env chown\/chmod|s/            if \[ -e \"\${APP_DIR}\/.env\" \] \&\& \[ ! -L \"\${APP_DIR}\/.env\" \]; then/            if [ -e \"\${APP_DIR}\/.env\" ]; then/"
 "|test-ensure-ownership.sh|delete an operator's root-owned .env symlink too|s/       \[ \"\$(stat -c '%U' \"\${APP_DIR}\/.env\" 2>\/dev\/null || echo root)\" = \"\${SVC_USER}\" \]; then/       true; then/"
+# --- ensure_node_runtime -----------------------------------------------------
+"|test-ensure-node-runtime.sh|call apt even when Node is already at its floor|s/^        ok)$/        okxx)/"
+"|test-ensure-node-runtime.sh|upgrade a Node that dpkg did not install|s/    if \[ \"\${pkg}\" != \"nodejs\" \]; then/    if false; then/"
+"|test-ensure-node-runtime.sh|follow apt across a major line|s/    if \[ \"\${cand_major}\" != \"\${cur_major}\" \]; then/    if false; then/"
+"|test-ensure-node-runtime.sh|fail the caller when the install fails|/still on \${current}\\.\"/{n;s/^        return 0$/        return 1/}"
+# --- ensure_unattended_upgrades ---------------------------------------------
+"|test-ensure-unattended-upgrades.sh|override an explicit \"0\" on the default answer|s/    if \[ \"\${choice}\" = \"default\" \] \&\& {/    if false \&\& {/"
+"|test-ensure-unattended-upgrades.sh|override APT::Periodic::Enable \"0\"|s/    if \[ \"\${enable}\" = \"0\" \]; then/    if false; then/"
+"|test-ensure-unattended-upgrades.sh|act on a declined answer|s/    if \[ \"\${choice}\" = \"no\" \]; then/    if false; then/"
+"|test-ensure-unattended-upgrades.sh|fail the install when the package cannot be installed|/could not install unattended-upgrades/{n;s/^            return 0$/            return 1/}"
 )
 
 total=0; undetected=0; canary_ok=0

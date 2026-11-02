@@ -18,6 +18,7 @@ import {
   ArrowRightLeft,
 } from "lucide-react";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { useFetchJson } from "@/hooks/useFetchJson";
 
 /**
  * The three update channels. Each IS a branch the installer pulls — `dev`
@@ -89,6 +90,49 @@ interface UpdateInfo {
   message?: string;
   error?: string;
 }
+
+/** GET /api/admin/updates/runtime — see deploy/lib/node-runtime.mjs and lib/os-updates.ts. */
+interface RuntimeInfo {
+  node: {
+    version: string;
+    status: "ok" | "belowFloor" | "unsupported" | "unknown";
+    floor: string | null;
+  };
+  osUpdates?:
+    | { status: "on" | "unsupported" | "unknown" }
+    | {
+        status: "off";
+        reason: "notInstalled" | "periodicDisabled" | "upgradesOff" | "listsOff" | "timerOff";
+      };
+}
+
+/** Why automatic OS security updates are off, and the commands that fix it. */
+const OS_UPDATES_OFF: Record<
+  "notInstalled" | "periodicDisabled" | "upgradesOff" | "listsOff" | "timerOff",
+  { why: string; fix: string; lead?: string }
+> = {
+  notInstalled: {
+    why: "The unattended-upgrades package is not installed.",
+    fix: "apt-get install unattended-upgrades\ndpkg-reconfigure -plow unattended-upgrades",
+  },
+  upgradesOff: {
+    why: "Automatic upgrades are switched off in this server's apt configuration.",
+    fix: "dpkg-reconfigure -plow unattended-upgrades",
+  },
+  listsOff: {
+    why: "The daily package-list refresh is switched off, so new security updates would never be seen.",
+    fix: "dpkg-reconfigure -plow unattended-upgrades",
+  },
+  periodicDisabled: {
+    why: "An apt configuration file sets APT::Periodic::Enable to \"0\", which switches off every automatic apt job (common in container images).",
+    fix: "grep -rn 'Periodic::Enable' /etc/apt/apt.conf /etc/apt/apt.conf.d/",
+    lead: "To find the file that sets it (removing or changing that line turns them back on), as root:",
+  },
+  timerOff: {
+    why: "The apt-daily timers that run the updates are disabled or masked.",
+    fix: "systemctl unmask apt-daily.timer apt-daily-upgrade.timer\nsystemctl enable --now apt-daily.timer apt-daily-upgrade.timer",
+  },
+};
 
 interface UpdateStatus {
   step?: number;
@@ -188,6 +232,9 @@ export default function UpdatesPage() {
 
   const { appVersion } = useAuth();
   const currentVersion = appVersion || "0.0";
+  const { data: runtime } = useFetchJson<RuntimeInfo>("/api/admin/updates/runtime");
+  const nodeRuntime = runtime?.node ?? null;
+  const osUpdates = runtime?.osUpdates ?? null;
   const channel = process.env.UPDATE_CHANNEL || "stable";
 
   // Promise chains rather than async/await: an async function called from an
@@ -670,6 +717,18 @@ export default function UpdatesPage() {
                 {channelInfo(channel).badge}
               </button>
             </div>
+            {nodeRuntime && (
+              <p className="text-sm text-gray-500 mt-2">
+                Running on Node.js {nodeRuntime.version}
+              </p>
+            )}
+            {osUpdates &&
+              (osUpdates.status === "on" || osUpdates.status === "off") && (
+                <p className="text-sm text-gray-500">
+                  Automatic OS security updates:{" "}
+                  {osUpdates.status === "on" ? "on" : "off"}
+                </p>
+              )}
           </div>
           <button
             onClick={checkForUpdates}
@@ -684,6 +743,71 @@ export default function UpdatesPage() {
           </button>
         </div>
       </section>
+
+      {/* Node.js runtime below the security floor. ensure_node_runtime in
+          deploy/lib/common.sh upgrades a packaged Node during an update, so
+          this only stays up when that could not happen. */}
+      {nodeRuntime &&
+        (nodeRuntime.status === "belowFloor" ||
+          nodeRuntime.status === "unsupported") && (
+          <section className="mb-6 p-4 bg-amber-50 rounded-lg border border-amber-200">
+            <div className="flex items-start gap-2 text-amber-800">
+              <AlertTriangle size={18} className="mt-0.5 shrink-0" />
+              <div className="text-sm space-y-1">
+                {nodeRuntime.status === "belowFloor" ? (
+                  <>
+                    <p className="font-medium">
+                      Node.js {nodeRuntime.version} is missing security fixes
+                      (minimum for this line: {nodeRuntime.floor}).
+                    </p>
+                    <p>
+                      Applying an update upgrades Node automatically when it
+                      was installed from the system package. If this message
+                      remains after an update, upgrade it as root and restart
+                      the service:
+                    </p>
+                    <pre className="mt-1 p-2 bg-white/70 rounded font-mono text-xs whitespace-pre-wrap break-all">
+                      {"apt-get update && apt-get install --only-upgrade nodejs\nsystemctl restart training-tracker"}
+                    </pre>
+                  </>
+                ) : (
+                  <p className="font-medium">
+                    Node.js {nodeRuntime.version} is not a supported release
+                    line. Use Node 22, 24 or 26.
+                  </p>
+                )}
+              </div>
+            </div>
+          </section>
+        )}
+
+      {/* Automatic OS security updates off. The app's updates cover the app
+          and Node.js only; PostgreSQL, OpenSSL and the rest of the system are
+          patched by the distribution's unattended-upgrades, which
+          deploy/install.sh offers to turn on (lib/os-updates.ts reads it). */}
+      {osUpdates && osUpdates.status === "off" && (
+        <section className="mb-6 p-4 bg-amber-50 rounded-lg border border-amber-200">
+          <div className="flex items-start gap-2 text-amber-800">
+            <AlertTriangle size={18} className="mt-0.5 shrink-0" />
+            <div className="text-sm space-y-1">
+              <p className="font-medium">
+                Automatic OS security updates are off on this server.
+              </p>
+              <p>
+                {OS_UPDATES_OFF[osUpdates.reason].why} Training Tracker&apos;s
+                updates cover the application and Node.js only; PostgreSQL,
+                OpenSSL and the rest of the system get their security fixes
+                from the operating system.{" "}
+                {OS_UPDATES_OFF[osUpdates.reason].lead ??
+                  "To turn them on, as root:"}
+              </p>
+              <pre className="mt-1 p-2 bg-white/70 rounded font-mono text-xs whitespace-pre-wrap break-all">
+                {OS_UPDATES_OFF[osUpdates.reason].fix}
+              </pre>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Update Available / Up to Date */}
       {updateInfo && (

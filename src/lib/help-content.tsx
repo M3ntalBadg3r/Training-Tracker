@@ -2030,6 +2030,46 @@ const helpSections: Record<string, HelpSection> = {
           </li>
         </ol>
 
+        <h3>Node.js Runtime</h3>
+        <p>
+          Under the version number the page shows which Node.js release the
+          application is running on. Node.js publishes security fixes of its
+          own, separate from Training Tracker releases, and the application
+          knows the minimum safe release for each Node.js line.
+        </p>
+        <p>
+          When an update is applied and the server&apos;s Node.js is older
+          than that minimum, the update upgrades it automatically within the
+          same release line (for example 22.x to a newer 22.x, never 22 to 24)
+          — provided Node.js was installed from the system package, which is
+          what the installer does. A Node.js installed another way is left
+          alone.
+        </p>
+        <p>
+          If Node.js is still below the minimum, an amber notice on this page
+          says so and gives the commands to upgrade it by hand. This usually
+          means automatic upgrading was not possible on this server, or no
+          update has been applied since the fix was published.
+        </p>
+
+        <h3>Operating System Security Updates</h3>
+        <p>
+          Training Tracker&apos;s updates cover the application and Node.js.
+          Everything else on the server — PostgreSQL, OpenSSL and the rest of
+          the operating system — gets its security fixes from the operating
+          system itself. On Debian and Ubuntu that is done by a package called
+          unattended-upgrades, which installs those fixes automatically each
+          day.
+        </p>
+        <p>
+          The installer asks whether to turn this on (the default answer is
+          yes). It leaves alone a server whose settings already switch it off
+          deliberately. This page shows whether it is on; when it is off, an
+          amber notice says why and gives the commands to turn it on. Updating
+          Training Tracker never changes this setting, because it affects the
+          whole server.
+        </p>
+
         <h3>Available Update</h3>
         <p>
           When an update is available, the release version, name, date, and

@@ -1191,7 +1191,14 @@ needs_non_root_migration() {
     return 1
 }
 
-# Bring an install up to the current privilege model. Safe to call repeatedly.
+# Bring an install up to the current deploy model. Safe to call repeatedly.
+#
+# Despite the name (kept because every entry point and every older copy of the
+# update scripts calls it by this name) it is the one hook guaranteed to run
+# from the NEWLY PULLED lib/common.sh during an update: perform-update.sh and
+# update.sh re-invoke it in a fresh bash after the pull. Anything that must take
+# effect in the same update that ships it belongs here, which is why the Node
+# runtime check is the last step.
 ensure_non_root_runtime() {
     ensure_service_user
     ensure_log_dir
@@ -1199,6 +1206,271 @@ ensure_non_root_runtime() {
     ensure_ownership
     install_units
     ensure_cron_jobs
+    ensure_node_runtime
+}
+
+# --- Node.js runtime ---------------------------------------------------------
+#
+# The app's updater pulls and rebuilds the app; until this existed nothing ever
+# upgraded the Node.js it runs on. install.sh installs the newest package once,
+# and from then on a host stayed on that Node until somebody ran apt by hand —
+# so a Node security release reached no installed system at all.
+#
+# deploy/lib/node-runtime.mjs holds a per-line security floor. When the running
+# Node is below its line's floor, upgrade the `nodejs` package within that line
+# and say what happened; otherwise do nothing (no apt call, no network). The
+# floor is raised in a release, so a fix lands on every box that takes that
+# release, during the update itself, before the build.
+#
+# Rules, each for a reason:
+#   - **Fail-soft, always returns 0.** A Node upgrade that cannot happen (no
+#     apt, apt locked, offline, a Node not installed from a package) must never
+#     block or roll back an app update. It is logged, and Admin › Updates keeps
+#     saying the runtime is below the floor until it is fixed.
+#   - **Only the `nodejs` package dpkg owns.** A Node from nvm, a tarball or a
+#     snap is the operator's to manage; replacing it from apt behind their back
+#     would leave two Nodes on the host.
+#   - **Never across a major line.** The apt candidate must be on the same major
+#     as the running Node. setup_22.x already pins NodeSource to one line, but a
+#     host with other sources configured could offer a different major, and a
+#     major jump is a change the app must be built and tested against, not a
+#     patch.
+#   - **`--only-upgrade nodejs`, never `apt-get upgrade`.** Only this one package
+#     (and whatever it strictly depends on) is touched.
+#   - Values handed to node are argv elements, never program text — the same
+#     rule as check-update.sh, since this runs as root.
+
+# The directory holding this file, captured at source time so the module path
+# is right however the caller found lib/common.sh.
+_TT_COMMON_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
+
+# Print "<status> <floor>" for a Node version ("ok 22.23.4", "belowFloor
+# 22.23.4", "unsupported -", "unknown -"); nothing when node cannot run.
+node_floor_status() {
+    command -v node >/dev/null 2>&1 || return 1
+    node --input-type=module -e '
+        const [modulePath, version] = process.argv.slice(1);
+        const { assessNodeVersion } = await import(modulePath);
+        const a = assessNodeVersion(version);
+        process.stdout.write(`${a.status} ${a.floor ?? "-"}`);
+    ' "${_TT_COMMON_LIB_DIR}/node-runtime.mjs" "$1" 2>/dev/null
+}
+
+# Upstream version of a Debian package version string, via the same module.
+_node_upstream_version() {
+    node --input-type=module -e '
+        const [modulePath, deb] = process.argv.slice(1);
+        const { upstreamOfDebianVersion } = await import(modulePath);
+        process.stdout.write(upstreamOfDebianVersion(deb));
+    ' "${_TT_COMMON_LIB_DIR}/node-runtime.mjs" "$1" 2>/dev/null
+}
+
+ensure_node_runtime() {
+    local node_bin current status floor assessment pkg candidate cand_up \
+          cur_major cand_major after
+    node_bin="$(command -v node 2>/dev/null)" || {
+        echo "Node.js runtime: node not found on PATH — skipping the security check."
+        return 0
+    }
+    current="$(node -p 'process.versions.node' 2>/dev/null)" || current=""
+    assessment="$(node_floor_status "${current}")" || assessment=""
+    status="${assessment%% *}"
+    floor="${assessment#* }"
+
+    case "${status}" in
+        ok)
+            return 0
+            ;;
+        belowFloor)
+            echo "Node.js runtime: ${current} is below the security floor ${floor} — upgrading."
+            ;;
+        unsupported)
+            echo "Node.js runtime: WARNING — Node ${current} is not a supported release line (use 22, 24 or 26). Not upgraded automatically."
+            return 0
+            ;;
+        *)
+            echo "Node.js runtime: could not assess the installed Node version — skipping."
+            return 0
+            ;;
+    esac
+
+    if ! command -v apt-get >/dev/null 2>&1 || ! command -v dpkg-query >/dev/null 2>&1; then
+        echo "Node.js runtime: WARNING — no apt on this host; upgrade Node to ${floor} or later by hand."
+        return 0
+    fi
+
+    # Is the node on PATH the one the `nodejs` package installed?
+    pkg="$(dpkg-query -S "$(readlink -f "${node_bin}" 2>/dev/null || echo "${node_bin}")" 2>/dev/null)" || pkg=""
+    pkg="${pkg%%:*}"
+    if [ "${pkg}" != "nodejs" ]; then
+        echo "Node.js runtime: WARNING — ${node_bin} was not installed by the nodejs package; upgrade it to ${floor} or later by hand."
+        return 0
+    fi
+
+    # A failure here is often one unrelated source being unreachable, which
+    # apt reports as an error even when the Node source refreshed fine — so warn
+    # and carry on with whatever the package lists now hold.
+    if ! DEBIAN_FRONTEND=noninteractive apt-get update -qq \
+            -o DPkg::Lock::Timeout=120 >/dev/null 2>&1; then
+        echo "Node.js runtime: WARNING — apt-get update reported errors; trying the package lists as they are."
+    fi
+
+    candidate="$(apt-cache policy nodejs 2>/dev/null | awk '/Candidate:/ {print $2; exit}')"
+    cand_up="$(_node_upstream_version "${candidate}")" || cand_up=""
+    cur_major="${current%%.*}"
+    cand_major="${cand_up%%.*}"
+    if [ -z "${cand_up}" ] || [ "${candidate}" = "(none)" ]; then
+        echo "Node.js runtime: WARNING — apt offers no nodejs package; Node not upgraded."
+        return 0
+    fi
+    if [ "${cand_major}" != "${cur_major}" ]; then
+        echo "Node.js runtime: WARNING — apt offers nodejs ${cand_up}, a different major line from ${current}; not upgrading across lines automatically."
+        return 0
+    fi
+
+    if ! DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --only-upgrade \
+            -o DPkg::Lock::Timeout=120 \
+            -o Dpkg::Options::=--force-confdef \
+            -o Dpkg::Options::=--force-confold \
+            nodejs >/dev/null 2>&1; then
+        echo "Node.js runtime: WARNING — apt-get could not upgrade nodejs; still on ${current}."
+        return 0
+    fi
+
+    hash -r 2>/dev/null || true
+    after="$(node -p 'process.versions.node' 2>/dev/null)" || after="${current}"
+    assessment="$(node_floor_status "${after}")" || assessment=""
+    if [ "${assessment%% *}" = "ok" ]; then
+        echo "Node.js runtime: upgraded ${current} -> ${after}."
+    else
+        echo "Node.js runtime: WARNING — now on ${after}, still below ${floor}; the package repository may not carry the fix yet (will retry on the next update)."
+    fi
+    return 0
+}
+
+# --- Automatic OS security updates -------------------------------------------
+#
+# The app's own updates cover the app and (via ensure_node_runtime) Node.js.
+# Everything else on the host — PostgreSQL, system OpenSSL, ca-certificates,
+# git, curl, the kernel — comes from the distribution, whose security fixes
+# arrive through its own channel. On Debian/Ubuntu that channel is
+# unattended-upgrades, and on a minimal install it is often not installed, so
+# nothing patched those packages at all. Admin › Updates reports whether it is
+# on (src/lib/os-updates.ts); this is the install-time half.
+#
+# Deliberately called from install.sh ONLY, never from an update. Turning on
+# OS-wide automatic patching is a decision about the whole host, so it is asked
+# once, when the operator is present to answer — not applied to every existing
+# box behind its operator's back by a routine app update.
+#
+# Rules, each for a reason:
+#   - Fail-soft, always returns 0: an install must never fail over this.
+#   - An explicit "0" in apt's configuration is a deliberate choice and is left
+#     alone unless the operator said yes outright (UNATTENDED_UPGRADES=yes or a
+#     "y" at the prompt). A container image's APT::Periodic::Enable "0" is never
+#     overridden at all — it switches off every periodic apt job on the host,
+#     and that is not this script's call.
+#   - It writes /etc/apt/apt.conf.d/20auto-upgrades, the same file the package
+#     and `dpkg-reconfigure unattended-upgrades` manage, with the package's own
+#     default content — not a file of our own that would silently override the
+#     operator's later dpkg-reconfigure. (The debconf route is not used because
+#     ucf will not recreate that file once an admin has deleted it.)
+#   - It never edits 50unattended-upgrades: which origins are patched stays the
+#     distribution's default.
+#   - A masked apt timer is reported, never unmasked.
+
+# The value apt resolves for KEY across every configuration file (later files
+# win), or nothing when it is unset. Read with `apt-config dump`, never sourced
+# or eval'd.
+apt_config_value() {
+    command -v apt-config >/dev/null 2>&1 || return 0
+    apt-config dump 2>/dev/null | awk -v want="$1" '
+        tolower($1) == tolower(want) {
+            v = $0; sub(/^[^ ]+ /, "", v); sub(/;$/, "", v); gsub(/^"|"$/, "", v); val = v
+        }
+        END { if (val != "") print val }'
+}
+
+# Is an APT::Periodic interval value "on"? Unset and "0" are off; anything else
+# ("1", "7", "always") runs.
+_apt_periodic_on() {
+    [ -n "$1" ] && [ "$1" != "0" ]
+}
+
+ensure_apt_timers() {
+    command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ] || return 0
+    local t state
+    for t in apt-daily.timer apt-daily-upgrade.timer; do
+        state="$(systemctl is-enabled "${t}" 2>/dev/null)" || true
+        case "${state}" in
+            enabled|enabled-runtime|static|alias|indirect|generated) ;;
+            masked|masked-runtime)
+                echo "Automatic OS security updates: WARNING — ${t} is masked, so they will not run. Left as it is (systemctl unmask ${t} to change that)." ;;
+            *)
+                systemctl enable --now "${t}" >/dev/null 2>&1 \
+                    || echo "Automatic OS security updates: WARNING — could not enable ${t}." ;;
+        esac
+    done
+}
+
+# $1: yes | no | default (default = enable unless apt's configuration already
+# switches it off explicitly).
+# $2: the apt configuration directory to write into. For the fixture tests only
+#     (so they never write the real /etc); install.sh never passes it. An
+#     argument rather than an environment variable, so nothing outside the
+#     caller can redirect where root writes.
+ensure_unattended_upgrades() {
+    local choice="${1:-default}" conf_dir="${2:-/etc/apt/apt.conf.d}" enable upgrade lists
+    if ! command -v apt-get >/dev/null 2>&1; then
+        echo "Automatic OS security updates: not an apt-based system — skipped. Keep this host patched by its own mechanism."
+        return 0
+    fi
+    if [ "${choice}" = "no" ]; then
+        echo "Automatic OS security updates: declined — left as configured."
+        return 0
+    fi
+
+    if ! command -v unattended-upgrade >/dev/null 2>&1; then
+        if ! DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+                -o DPkg::Lock::Timeout=120 unattended-upgrades >/dev/null 2>&1; then
+            echo "Automatic OS security updates: WARNING — could not install unattended-upgrades."
+            return 0
+        fi
+    fi
+
+    enable="$(apt_config_value APT::Periodic::Enable)"
+    if [ "${enable}" = "0" ]; then
+        echo "Automatic OS security updates: WARNING — APT::Periodic::Enable is \"0\" in this host's apt configuration, which switches off every periodic apt job (common in container images). Left as it is."
+        return 0
+    fi
+
+    upgrade="$(apt_config_value APT::Periodic::Unattended-Upgrade)"
+    lists="$(apt_config_value APT::Periodic::Update-Package-Lists)"
+    if _apt_periodic_on "${upgrade}" && _apt_periodic_on "${lists}"; then
+        ensure_apt_timers
+        echo "Automatic OS security updates: already on."
+        return 0
+    fi
+    if [ "${choice}" = "default" ] && { [ "${upgrade}" = "0" ] || [ "${lists}" = "0" ]; }; then
+        echo "Automatic OS security updates: switched off explicitly in this host's apt configuration — left as it is (run with UNATTENDED_UPGRADES=yes to turn them on)."
+        return 0
+    fi
+
+    if ! printf 'APT::Periodic::Update-Package-Lists "1";\nAPT::Periodic::Unattended-Upgrade "1";\n' \
+            > "${conf_dir}/20auto-upgrades" 2>/dev/null; then
+        echo "Automatic OS security updates: WARNING — could not write ${conf_dir}/20auto-upgrades."
+        return 0
+    fi
+    ensure_apt_timers
+
+    upgrade="$(apt_config_value APT::Periodic::Unattended-Upgrade)"
+    lists="$(apt_config_value APT::Periodic::Update-Package-Lists)"
+    if _apt_periodic_on "${upgrade}" && _apt_periodic_on "${lists}"; then
+        echo "Automatic OS security updates: turned on (unattended-upgrades, distribution security updates)."
+    else
+        echo "Automatic OS security updates: WARNING — another apt configuration file still switches them off."
+    fi
+    return 0
 }
 
 # --- Build -------------------------------------------------------------------
