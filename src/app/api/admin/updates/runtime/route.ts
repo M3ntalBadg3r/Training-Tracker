@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSuperAdmin, handleAuthError } from "@/lib/auth";
 import { assessRunningNode } from "@/lib/node-runtime";
+import { readOsUpdatesStatus } from "@/lib/os-updates";
 
 /**
  * The Node.js runtime this server is running on, judged against the security
@@ -13,6 +14,11 @@ import { assessRunningNode } from "@/lib/node-runtime";
  * sign-in. It reads `process.versions.node` (via `assessRunningNode`), i.e.
  * the binary actually serving requests — after an upgrade the package on disk
  * is newer until the service restarts, and the running one is what matters.
+ *
+ * Also reports whether the host applies its operating system's own security
+ * updates (`osUpdates`, from `lib/os-updates.ts`) — PostgreSQL, OpenSSL and the
+ * rest of the system, which the app's updates never touch. Read from the apt
+ * configuration on disk on each request; no shell is run.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -28,5 +34,6 @@ export async function GET(request: NextRequest) {
       status: assessment.status,
       floor: assessment.floor,
     },
+    osUpdates: readOsUpdatesStatus(),
   });
 }

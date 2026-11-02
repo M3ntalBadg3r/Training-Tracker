@@ -2052,6 +2052,24 @@ const helpSections: Record<string, HelpSection> = {
           update has been applied since the fix was published.
         </p>
 
+        <h3>Operating System Security Updates</h3>
+        <p>
+          Training Tracker&apos;s updates cover the application and Node.js.
+          Everything else on the server — PostgreSQL, OpenSSL and the rest of
+          the operating system — gets its security fixes from the operating
+          system itself. On Debian and Ubuntu that is done by a package called
+          unattended-upgrades, which installs those fixes automatically each
+          day.
+        </p>
+        <p>
+          The installer asks whether to turn this on (the default answer is
+          yes). It leaves alone a server whose settings already switch it off
+          deliberately. This page shows whether it is on; when it is off, an
+          amber notice says why and gives the commands to turn it on. Updating
+          Training Tracker never changes this setting, because it affects the
+          whole server.
+        </p>
+
         <h3>Available Update</h3>
         <p>
           When an update is available, the release version, name, date, and

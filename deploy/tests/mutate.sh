@@ -80,6 +80,7 @@ SUITES=(
     test-load-env-allowlist.sh
     test-ensure-ownership.sh
     test-ensure-node-runtime.sh
+    test-ensure-unattended-upgrades.sh
 )
 
 # One throwaway account for the whole run. Created once, verified, and removed
@@ -200,6 +201,11 @@ MUTATIONS=(
 "|test-ensure-node-runtime.sh|upgrade a Node that dpkg did not install|s/    if \[ \"\${pkg}\" != \"nodejs\" \]; then/    if false; then/"
 "|test-ensure-node-runtime.sh|follow apt across a major line|s/    if \[ \"\${cand_major}\" != \"\${cur_major}\" \]; then/    if false; then/"
 "|test-ensure-node-runtime.sh|fail the caller when the install fails|/still on \${current}\\.\"/{n;s/^        return 0$/        return 1/}"
+# --- ensure_unattended_upgrades ---------------------------------------------
+"|test-ensure-unattended-upgrades.sh|override an explicit \"0\" on the default answer|s/    if \[ \"\${choice}\" = \"default\" \] \&\& {/    if false \&\& {/"
+"|test-ensure-unattended-upgrades.sh|override APT::Periodic::Enable \"0\"|s/    if \[ \"\${enable}\" = \"0\" \]; then/    if false; then/"
+"|test-ensure-unattended-upgrades.sh|act on a declined answer|s/    if \[ \"\${choice}\" = \"no\" \]; then/    if false; then/"
+"|test-ensure-unattended-upgrades.sh|fail the install when the package cannot be installed|/could not install unattended-upgrades/{n;s/^            return 0$/            return 1/}"
 )
 
 total=0; undetected=0; canary_ok=0

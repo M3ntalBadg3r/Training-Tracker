@@ -84,6 +84,7 @@ SUITES=(
     test-load-env-allowlist.sh
     test-ensure-ownership.sh
     test-ensure-node-runtime.sh
+    test-ensure-unattended-upgrades.sh
 )
 
 failed=0

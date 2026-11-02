@@ -269,6 +269,23 @@ if [ -z "${TRUSTED_PROXIES}" ] && ! env_has TRUSTED_PROXIES; then
     esac
 fi
 
+# Automatic OS security updates (applied in step 9). An env var wins and skips
+# the prompt; with no terminal the answer is the default, which turns them on
+# unless this host's apt configuration already switches them off explicitly.
+# See ensure_unattended_upgrades in lib/common.sh.
+case "${UNATTENDED_UPGRADES:-}" in
+    [Yy]*|1|true|on) UNATTENDED_UPGRADES=yes ;;
+    [Nn]*|0|false|off) UNATTENDED_UPGRADES=no ;;
+    *)
+        _uu="$(prompt_tty "Turn on automatic OS security updates (unattended-upgrades) for PostgreSQL, OpenSSL and the rest of the system? [Y/n]: ")"
+        case "${_uu}" in
+            [Nn]*) UNATTENDED_UPGRADES=no ;;
+            [Yy]*) UNATTENDED_UPGRADES=yes ;;
+            *) UNATTENDED_UPGRADES=default ;;
+        esac
+        ;;
+esac
+
 DB_PASS_ENCODED=$(url_encode_password "${DB_PASS}")
 
 if [ ! -f "${ENV_FILE}" ]; then
@@ -441,6 +458,11 @@ if command -v crontab &> /dev/null || [ -d /etc/cron.d ]; then
 else
     echo "cron not available — scheduled updates, backups, exports and credential checks will not run."
 fi
+
+# The OS's own security updates — PostgreSQL, OpenSSL, ca-certificates and the
+# rest of the system. The app's updates never touch those packages. Answered
+# at step 6; never fails the install.
+ensure_unattended_upgrades "${UNATTENDED_UPGRADES:-default}"
 
 # 10. Done
 echo ""
