@@ -122,7 +122,7 @@ bash deploy/install.sh
 **What it does (9 steps):**
 
 1. **Updates system packages** via `apt-get update`.
-2. **Installs Node.js 22 LTS** from the NodeSource repository.
+2. **Installs Node.js 22 LTS** from the NodeSource repository — the newest 22.x it carries. If a system-wide Node 22 or later is already present it is kept, but a packaged one below the Node.js security floor (see [Node.js security updates](#nodejs-security-updates)) is upgraded within its release line.
 3. **Installs PostgreSQL** (if not already installed) and starts the service.
 4. **Creates the database and user** — database `training_tracker`, user `tracker` with a **randomly generated password** (`openssl rand -hex 32`).
 5. **Copies application files** to `/opt/training-tracker` (skipped if already running from that directory).
@@ -1109,6 +1109,17 @@ Click **Update Now** to start the update. A progress bar shows the current step:
 6. Restarts the service
 
 On completion, a success message is shown with the new version. The progress panel pins to the top of the page while the update is running so it stays visible as you scroll, and the page warns you if you try to refresh the tab or click a sidebar link before the update completes (the update itself continues in the background, but leaving the page hides the progress indicator). Do not close the page during the update.
+
+#### Node.js security updates
+
+The application keeps a minimum safe Node.js release for each supported line (22, 24, 26) in `deploy/lib/node-runtime.mjs`, raised whenever Node.js publishes a security release that affects it. Every update — from the Updates page, the automatic schedule, or `deploy/update.sh` — checks the server's Node.js against it before building. If Node.js is below the minimum **and** was installed from the `nodejs` system package (as the installer does), the update runs `apt-get install --only-upgrade nodejs` and the restart at the end of the update puts the new Node.js into service. It never moves to another major line, never runs a general `apt-get upgrade`, and never fails the app update if the upgrade cannot happen — it logs a warning instead. When Node.js is already at or above the minimum, it does nothing at all.
+
+The Updates page shows the running Node.js version, and an amber notice when it is below the minimum (the server log carries the same warning at startup). That notice staying up after an update means the automatic upgrade was not possible — no apt, or a Node.js installed some other way. Upgrade it by hand, as root:
+
+```bash
+apt-get update && apt-get install --only-upgrade nodejs
+systemctl restart training-tracker
+```
 
 #### Rollback & Error Handling
 

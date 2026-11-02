@@ -59,13 +59,18 @@
  * `deploy/perform-update.sh` copies into `.update-log`, the file an operator
  * reads when an update goes wrong. A false alarm on every healthy run is how a
  * log stops being read, which is the same argument this module makes about
- * startup noise. So the one dependency it needs is pulled in **dynamically,
- * inside the `NEXT_RUNTIME` guard**, where the edge build never reaches it.
+ * startup noise. So its dependencies (`lib/client-ip.ts`, and the
+ * dependency-free Node security floor in `lib/node-runtime.ts`) are pulled in
+ * **dynamically, inside the `NEXT_RUNTIME` guard**, where the edge build never
+ * reaches them.
  * That also keeps the promise that matters: no Prisma, no app graph, no
  * database needed in order to report that the database is unconfigured.
  */
 
 import type { TrustedProxies } from "@/lib/client-ip";
+import type { assessNodeVersion } from "@/lib/node-runtime";
+
+type NodeAssessment = ReturnType<typeof assessNodeVersion>;
 
 /** Where an operator is told to put things. Matches `deploy/install.sh`. */
 const ENV_FILE_HINT =
@@ -85,7 +90,11 @@ const MIN_JWT_SECRET_LENGTH = 32;
 
 const HEX_32_BYTES = /^[0-9a-fA-F]{64}$/;
 
-function collectFindings(env: NodeJS.ProcessEnv, trusted: TrustedProxies): Finding[] {
+function collectFindings(
+  env: NodeJS.ProcessEnv,
+  trusted: TrustedProxies,
+  nodeRuntime: NodeAssessment
+): Finding[] {
   const findings: Finding[] = [];
   const add = (level: Level, variable: string, message: string) =>
     findings.push({ level, variable, message });
@@ -153,6 +162,28 @@ function collectFindings(env: NodeJS.ProcessEnv, trusted: TrustedProxies): Findi
       "not set — automatic backups, scheduled exports and the daily credential health check will be rejected, " +
         "with the same 401 a forged signature gets. Generate with: openssl rand -hex 32 (the value must match the " +
         "one the deploy/auto-*.sh cron scripts read from the same .env)."
+    );
+  }
+
+  // The Node.js runtime itself. Not an environment variable, but the same kind
+  // of silent problem: an update upgrades the host's `nodejs` package when it
+  // is below the security floor (`deploy/lib/common.sh:ensure_node_runtime`),
+  // and this is what says so when that could not happen — no apt, a Node not
+  // installed from a package, or automatic updates switched off. Reported in
+  // development too: a healthy runtime is silent, so it costs nothing there.
+  if (nodeRuntime.status === "belowFloor") {
+    add(
+      "warn",
+      "Node.js",
+      `${nodeRuntime.version} is below the security floor for its release line (${nodeRuntime.floor}) and is ` +
+        "missing published security fixes. Applying an app update upgrades a packaged Node automatically; " +
+        "otherwise, as root: apt-get update && apt-get install --only-upgrade nodejs, then restart the service."
+    );
+  } else if (nodeRuntime.status === "unsupported") {
+    add(
+      "warn",
+      "Node.js",
+      `${nodeRuntime.version} is not a supported release line — use Node 22, 24 or 26.`
     );
   }
 
@@ -234,8 +265,13 @@ export async function register(): Promise<void> {
   // puts `node:net` in the edge bundle and makes every successful build print
   // an "error" line into the operator-facing update log.
   const { resolveTrustedProxies } = await import("@/lib/client-ip");
+  const { assessNodeVersion } = await import("@/lib/node-runtime");
 
-  const findings = collectFindings(process.env, resolveTrustedProxies(process.env.TRUSTED_PROXIES));
+  const findings = collectFindings(
+    process.env,
+    resolveTrustedProxies(process.env.TRUSTED_PROXIES),
+    assessNodeVersion(process.versions.node)
+  );
   // In development a healthy install is completely silent. In production it
   // prints exactly one line — the trusted-proxy set, which is deliberately
   // unconditional; see `collectFindings`.

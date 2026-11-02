@@ -83,6 +83,7 @@ SUITES=(
     test-nofollow-primitives.sh
     test-load-env-allowlist.sh
     test-ensure-ownership.sh
+    test-ensure-node-runtime.sh
 )
 
 failed=0

@@ -18,6 +18,7 @@ import {
   ArrowRightLeft,
 } from "lucide-react";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { useFetchJson } from "@/hooks/useFetchJson";
 
 /**
  * The three update channels. Each IS a branch the installer pulls — `dev`
@@ -88,6 +89,15 @@ interface UpdateInfo {
   htmlUrl?: string;
   message?: string;
   error?: string;
+}
+
+/** GET /api/admin/updates/runtime — see deploy/lib/node-runtime.mjs. */
+interface RuntimeInfo {
+  node: {
+    version: string;
+    status: "ok" | "belowFloor" | "unsupported" | "unknown";
+    floor: string | null;
+  };
 }
 
 interface UpdateStatus {
@@ -188,6 +198,8 @@ export default function UpdatesPage() {
 
   const { appVersion } = useAuth();
   const currentVersion = appVersion || "0.0";
+  const { data: runtime } = useFetchJson<RuntimeInfo>("/api/admin/updates/runtime");
+  const nodeRuntime = runtime?.node ?? null;
   const channel = process.env.UPDATE_CHANNEL || "stable";
 
   // Promise chains rather than async/await: an async function called from an
@@ -670,6 +682,11 @@ export default function UpdatesPage() {
                 {channelInfo(channel).badge}
               </button>
             </div>
+            {nodeRuntime && (
+              <p className="text-sm text-gray-500 mt-2">
+                Running on Node.js {nodeRuntime.version}
+              </p>
+            )}
           </div>
           <button
             onClick={checkForUpdates}
@@ -684,6 +701,43 @@ export default function UpdatesPage() {
           </button>
         </div>
       </section>
+
+      {/* Node.js runtime below the security floor. ensure_node_runtime in
+          deploy/lib/common.sh upgrades a packaged Node during an update, so
+          this only stays up when that could not happen. */}
+      {nodeRuntime &&
+        (nodeRuntime.status === "belowFloor" ||
+          nodeRuntime.status === "unsupported") && (
+          <section className="mb-6 p-4 bg-amber-50 rounded-lg border border-amber-200">
+            <div className="flex items-start gap-2 text-amber-800">
+              <AlertTriangle size={18} className="mt-0.5 shrink-0" />
+              <div className="text-sm space-y-1">
+                {nodeRuntime.status === "belowFloor" ? (
+                  <>
+                    <p className="font-medium">
+                      Node.js {nodeRuntime.version} is missing security fixes
+                      (minimum for this line: {nodeRuntime.floor}).
+                    </p>
+                    <p>
+                      Applying an update upgrades Node automatically when it
+                      was installed from the system package. If this message
+                      remains after an update, upgrade it as root and restart
+                      the service:
+                    </p>
+                    <pre className="mt-1 p-2 bg-white/70 rounded font-mono text-xs whitespace-pre-wrap break-all">
+                      {"apt-get update && apt-get install --only-upgrade nodejs\nsystemctl restart training-tracker"}
+                    </pre>
+                  </>
+                ) : (
+                  <p className="font-medium">
+                    Node.js {nodeRuntime.version} is not a supported release
+                    line. Use Node 22, 24 or 26.
+                  </p>
+                )}
+              </div>
+            </div>
+          </section>
+        )}
 
       {/* Update Available / Up to Date */}
       {updateInfo && (

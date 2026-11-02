@@ -1191,7 +1191,14 @@ needs_non_root_migration() {
     return 1
 }
 
-# Bring an install up to the current privilege model. Safe to call repeatedly.
+# Bring an install up to the current deploy model. Safe to call repeatedly.
+#
+# Despite the name (kept because every entry point and every older copy of the
+# update scripts calls it by this name) it is the one hook guaranteed to run
+# from the NEWLY PULLED lib/common.sh during an update: perform-update.sh and
+# update.sh re-invoke it in a fresh bash after the pull. Anything that must take
+# effect in the same update that ships it belongs here, which is why the Node
+# runtime check is the last step.
 ensure_non_root_runtime() {
     ensure_service_user
     ensure_log_dir
@@ -1199,6 +1206,146 @@ ensure_non_root_runtime() {
     ensure_ownership
     install_units
     ensure_cron_jobs
+    ensure_node_runtime
+}
+
+# --- Node.js runtime ---------------------------------------------------------
+#
+# The app's updater pulls and rebuilds the app; until this existed nothing ever
+# upgraded the Node.js it runs on. install.sh installs the newest package once,
+# and from then on a host stayed on that Node until somebody ran apt by hand —
+# so a Node security release reached no installed system at all.
+#
+# deploy/lib/node-runtime.mjs holds a per-line security floor. When the running
+# Node is below its line's floor, upgrade the `nodejs` package within that line
+# and say what happened; otherwise do nothing (no apt call, no network). The
+# floor is raised in a release, so a fix lands on every box that takes that
+# release, during the update itself, before the build.
+#
+# Rules, each for a reason:
+#   - **Fail-soft, always returns 0.** A Node upgrade that cannot happen (no
+#     apt, apt locked, offline, a Node not installed from a package) must never
+#     block or roll back an app update. It is logged, and Admin › Updates keeps
+#     saying the runtime is below the floor until it is fixed.
+#   - **Only the `nodejs` package dpkg owns.** A Node from nvm, a tarball or a
+#     snap is the operator's to manage; replacing it from apt behind their back
+#     would leave two Nodes on the host.
+#   - **Never across a major line.** The apt candidate must be on the same major
+#     as the running Node. setup_22.x already pins NodeSource to one line, but a
+#     host with other sources configured could offer a different major, and a
+#     major jump is a change the app must be built and tested against, not a
+#     patch.
+#   - **`--only-upgrade nodejs`, never `apt-get upgrade`.** Only this one package
+#     (and whatever it strictly depends on) is touched.
+#   - Values handed to node are argv elements, never program text — the same
+#     rule as check-update.sh, since this runs as root.
+
+# The directory holding this file, captured at source time so the module path
+# is right however the caller found lib/common.sh.
+_TT_COMMON_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
+
+# Print "<status> <floor>" for a Node version ("ok 22.23.4", "belowFloor
+# 22.23.4", "unsupported -", "unknown -"); nothing when node cannot run.
+node_floor_status() {
+    command -v node >/dev/null 2>&1 || return 1
+    node --input-type=module -e '
+        const [modulePath, version] = process.argv.slice(1);
+        const { assessNodeVersion } = await import(modulePath);
+        const a = assessNodeVersion(version);
+        process.stdout.write(`${a.status} ${a.floor ?? "-"}`);
+    ' "${_TT_COMMON_LIB_DIR}/node-runtime.mjs" "$1" 2>/dev/null
+}
+
+# Upstream version of a Debian package version string, via the same module.
+_node_upstream_version() {
+    node --input-type=module -e '
+        const [modulePath, deb] = process.argv.slice(1);
+        const { upstreamOfDebianVersion } = await import(modulePath);
+        process.stdout.write(upstreamOfDebianVersion(deb));
+    ' "${_TT_COMMON_LIB_DIR}/node-runtime.mjs" "$1" 2>/dev/null
+}
+
+ensure_node_runtime() {
+    local node_bin current status floor assessment pkg candidate cand_up \
+          cur_major cand_major after
+    node_bin="$(command -v node 2>/dev/null)" || {
+        echo "Node.js runtime: node not found on PATH — skipping the security check."
+        return 0
+    }
+    current="$(node -p 'process.versions.node' 2>/dev/null)" || current=""
+    assessment="$(node_floor_status "${current}")" || assessment=""
+    status="${assessment%% *}"
+    floor="${assessment#* }"
+
+    case "${status}" in
+        ok)
+            return 0
+            ;;
+        belowFloor)
+            echo "Node.js runtime: ${current} is below the security floor ${floor} — upgrading."
+            ;;
+        unsupported)
+            echo "Node.js runtime: WARNING — Node ${current} is not a supported release line (use 22, 24 or 26). Not upgraded automatically."
+            return 0
+            ;;
+        *)
+            echo "Node.js runtime: could not assess the installed Node version — skipping."
+            return 0
+            ;;
+    esac
+
+    if ! command -v apt-get >/dev/null 2>&1 || ! command -v dpkg-query >/dev/null 2>&1; then
+        echo "Node.js runtime: WARNING — no apt on this host; upgrade Node to ${floor} or later by hand."
+        return 0
+    fi
+
+    # Is the node on PATH the one the `nodejs` package installed?
+    pkg="$(dpkg-query -S "$(readlink -f "${node_bin}" 2>/dev/null || echo "${node_bin}")" 2>/dev/null)" || pkg=""
+    pkg="${pkg%%:*}"
+    if [ "${pkg}" != "nodejs" ]; then
+        echo "Node.js runtime: WARNING — ${node_bin} was not installed by the nodejs package; upgrade it to ${floor} or later by hand."
+        return 0
+    fi
+
+    # A failure here is often one unrelated source being unreachable, which
+    # apt reports as an error even when the Node source refreshed fine — so warn
+    # and carry on with whatever the package lists now hold.
+    if ! DEBIAN_FRONTEND=noninteractive apt-get update -qq \
+            -o DPkg::Lock::Timeout=120 >/dev/null 2>&1; then
+        echo "Node.js runtime: WARNING — apt-get update reported errors; trying the package lists as they are."
+    fi
+
+    candidate="$(apt-cache policy nodejs 2>/dev/null | awk '/Candidate:/ {print $2; exit}')"
+    cand_up="$(_node_upstream_version "${candidate}")" || cand_up=""
+    cur_major="${current%%.*}"
+    cand_major="${cand_up%%.*}"
+    if [ -z "${cand_up}" ] || [ "${candidate}" = "(none)" ]; then
+        echo "Node.js runtime: WARNING — apt offers no nodejs package; Node not upgraded."
+        return 0
+    fi
+    if [ "${cand_major}" != "${cur_major}" ]; then
+        echo "Node.js runtime: WARNING — apt offers nodejs ${cand_up}, a different major line from ${current}; not upgrading across lines automatically."
+        return 0
+    fi
+
+    if ! DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --only-upgrade \
+            -o DPkg::Lock::Timeout=120 \
+            -o Dpkg::Options::=--force-confdef \
+            -o Dpkg::Options::=--force-confold \
+            nodejs >/dev/null 2>&1; then
+        echo "Node.js runtime: WARNING — apt-get could not upgrade nodejs; still on ${current}."
+        return 0
+    fi
+
+    hash -r 2>/dev/null || true
+    after="$(node -p 'process.versions.node' 2>/dev/null)" || after="${current}"
+    assessment="$(node_floor_status "${after}")" || assessment=""
+    if [ "${assessment%% *}" = "ok" ]; then
+        echo "Node.js runtime: upgraded ${current} -> ${after}."
+    else
+        echo "Node.js runtime: WARNING — now on ${after}, still below ${floor}; the package repository may not carry the fix yet (will retry on the next update)."
+    fi
+    return 0
 }
 
 # --- Build -------------------------------------------------------------------
